@@ -5,8 +5,10 @@
 This package was renamed to [`stepstone`](https://www.npmjs.com/package/stepstone).
 
 `pi-worklist` now contains no implementation.
-It depends on `stepstone` and forwards both the `pi-worklist` bin and the Pi extension entry point to it, so existing installs keep working unchanged.
-It is frozen at parity with the release that renamed it and will not receive further development.
+It forwards exactly two surfaces to `stepstone`: the `pi-worklist` bin and the Pi extension entry point.
+Deep subpath imports are not forwarded: `pi-worklist/src/types.ts`, and anything else under `pi-worklist/src/`, no longer resolves and has to move to `stepstone`.
+
+This is the last version of this package. It is published once and never republished, so it will not receive further development, but it depends on `stepstone` by range rather than by pin, so it keeps resolving the current release rather than pinning you to an old one.
 
 ## Moving over
 

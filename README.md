@@ -59,8 +59,11 @@ pi -e ./src/extension.ts
 This package was published as `pi-worklist` through 0.17.0.
 The tool never required Pi for anything but the session-scoped features, so the name told everyone driving it from another coding agent that it was not for them.
 
-`pi-worklist` remains on npm as a deprecated alias that depends on `stepstone` and forwards both the bin and the Pi extension entry point, so nothing installed today stops working.
-It is frozen at parity and will not gain new releases indefinitely, so move to `stepstone` when convenient:
+`pi-worklist` remains on npm as a deprecated alias, published once at 0.17.0 and never republished.
+It forwards exactly two surfaces to `stepstone`: the `pi-worklist` bin and the Pi extension entry point.
+Its own version never moves, but it depends on `stepstone` by range rather than by pin, so an install of the old name still resolves the current release.
+Deep subpath imports are not forwarded: `pi-worklist/src/types.ts`, and anything else under `pi-worklist/src/`, stops resolving and has to move to `stepstone`.
+Move over when convenient:
 
 ```sh
 pi install npm:stepstone
@@ -435,10 +438,10 @@ git push origin main --follow-tags
 That tag push runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which re-runs `npm run verify` and `npm run no-pi-install:check` against the tagged commit, publishes to npm, and creates a GitHub Release with notes generated from the pull requests merged since the previous tag.
 It refuses to publish when the tag disagrees with `package.json`, which is the mistake that would otherwise ship the wrong version under the right name.
 
-The same run then publishes the deprecated `pi-worklist` alias in [`alias/pi-worklist`](alias/pi-worklist), after `stepstone` itself, so the dependency it declares already resolves.
-That package holds no implementation, only a bin shim and a re-exported extension entry point, so it needs no build.
-Its version and its pin on `stepstone` are rewritten by the `version` lifecycle script during `npm version` and staged into the same commit, and `npm run alias:check`, inside `npm run check`, fails the build if they ever drift; neither can be bumped alone.
-`npm run no-pi-install:check` installs it beside the packed release and requires its bin to produce the same exit code, stdout, and stderr as the real one, so the `exports` entry the shim imports cannot be dropped, and the shim's rename notice cannot leak into a redirected stderr, without failing the build.
+The deprecated `pi-worklist` alias in [`alias/pi-worklist`](alias/pi-worklist) is deliberately not part of that run.
+It holds no implementation, only a bin shim and a re-exported extension entry point, and it ships exactly once by hand as part of the one-time setup below.
+Because no later release republishes it, the single `npm deprecate` on the old name keeps warning instead of being undone by the next tag, and because it depends on `stepstone` by range rather than by pin, it still resolves the current release without its own version ever moving.
+`npm run no-pi-install:check` installs it beside the packed release anyway and requires its bin to produce the same exit code, stdout, and stderr as the real one, so the `exports` entry the shim imports cannot be dropped, and the shim's rename notice cannot leak into a redirected stderr, without failing the build.
 
 Authentication is npm Trusted Publishing over OIDC, so the repository stores no `NPM_TOKEN` and a release needs no local `npm login`.
 npm attaches build provenance to every tarball published this way, letting an installer verify the package was built from this repository at that commit.
@@ -450,9 +453,10 @@ The rename from `pi-worklist` to `stepstone` invalidates the existing publish co
 None of it is in the repository, so none of it is enforced by CI.
 
 - Rename the GitHub repository to `stepstone`. GitHub redirects the old path, so existing clones and links keep working.
-- Update the `pi-worklist` package's Trusted Publishers entry on npm to the renamed repository, or the alias publish is rejected.
 - Publish `stepstone@0.17.0` once by hand, because Trusted Publishing cannot create a package that does not exist yet: npm has nothing to attach a publisher to until the name is claimed. Then add its Trusted Publishers entry naming this repository and `release.yml`, after which every later release runs entirely in CI.
-- Run `npm deprecate pi-worklist "Renamed to stepstone. Install stepstone instead."` so the old name warns on install rather than only in its README.
+- Publish the alias once by hand, with `npm publish` from `alias/pi-worklist`, after `stepstone@0.17.0` is on npm so the dependency it declares already resolves. Nothing republishes it afterwards, so this is the only time it ships.
+- Run `npm deprecate pi-worklist "Renamed to stepstone. Install stepstone instead."` so the old name warns on install rather than only in its README. A deprecation applies per published version, so doing this after the alias's only publish is what makes it stick.
+- Confirm the forwarded extension still loads: `pi install npm:pi-worklist` in a scratch project, start a session, and check the worklist widget appears. No CI job can cover this, because the Pi-free install gate deliberately installs without Pi.
 
 Verify npm, Pi installation, and the gallery after the workflow finishes:
 

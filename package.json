@@ -53,9 +53,6 @@
 		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
 		"docs": "node ./scripts/generate-docs.ts",
 		"docs:check": "node ./scripts/generate-docs.ts --check",
-		"alias:sync": "node ./scripts/sync-alias-version.ts",
-		"alias:check": "node ./scripts/sync-alias-version.ts --check",
-		"version": "node ./scripts/sync-alias-version.ts && git add alias/pi-worklist/package.json",
 		"imports:check": "node ./scripts/cli-import-graph.ts",
 		"no-pi-install:check": "node ./scripts/no-pi-install-check.ts",
 		"prepack": "npm run build",
@@ -66,7 +63,7 @@
 		"format:check": "biome format .",
 		"lint": "biome lint --write .",
 		"lint:check": "biome lint .",
-		"check": "npm run typecheck && npm run imports:check && npm run alias:check && biome check . && npm run test",
+		"check": "npm run typecheck && npm run imports:check && biome check . && npm run test",
 		"pack:check": "npm pack --dry-run",
 		"verify": "npm run check && npm run pack:check"
 	},

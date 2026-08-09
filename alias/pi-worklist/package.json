@@ -4,7 +4,6 @@
 	"description": "Deprecated alias for stepstone. Install stepstone instead; this package only forwards to it.",
 	"type": "module",
 	"keywords": [
-		"pi-package",
 		"pi",
 		"extension",
 		"worklist",
@@ -43,7 +42,7 @@
 		]
 	},
 	"dependencies": {
-		"stepstone": "0.17.0"
+		"stepstone": ">=0.17.0"
 	},
 	"engines": {
 		"node": ">=20"
