@@ -395,11 +395,12 @@ git switch main
 git pull --ff-only
 ```
 
-Optionally run the release checks locally, which is the same `npm run verify` the release workflow runs but with faster feedback than waiting on CI:
+Optionally run the release checks locally, the same `npm run verify` and `npm run no-pi-install:check` the release workflow runs, but with faster feedback than waiting on CI:
 
 ```sh
 npm ci
 npm run verify
+npm run no-pi-install:check
 ```
 
 Create the release commit and tag with the appropriate semantic version bump:
@@ -415,7 +416,7 @@ Push the version commit and its tag, which is the step that publishes:
 git push origin main --follow-tags
 ```
 
-That tag push runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which re-runs `npm run verify` against the tagged commit, publishes to npm, and creates a GitHub Release with notes generated from the pull requests merged since the previous tag.
+That tag push runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which re-runs `npm run verify` and `npm run no-pi-install:check` against the tagged commit, publishes to npm, and creates a GitHub Release with notes generated from the pull requests merged since the previous tag.
 It refuses to publish when the tag disagrees with `package.json`, which is the mistake that would otherwise ship the wrong version under the right name.
 
 Authentication is npm Trusted Publishing over OIDC, so the repository stores no `NPM_TOKEN` and a release needs no local `npm login`.

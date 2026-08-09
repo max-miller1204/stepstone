@@ -10,7 +10,7 @@
 - Keep the board's rendering pure in `src/tui/goal-board.ts` and all I/O in `src/tui/goal-board-runtime.ts`, so frames stay testable without a pseudo-terminal.
 - Keep the widget compact and width-safe.
 - Keep the model-facing schema compatible with Google providers by using `StringEnum` for string enums.
-- Run `npm run check`, `npm audit`, `npm run pack:check`, and the real Pi RPC test before release.
+- Run `npm run check`, `npm audit`, `npm run pack:check`, `npm run no-pi-install:check`, and the real Pi RPC test before release.
 - Releases are published by CI from a `v*.*.*` tag push, never by hand: run `npm version <bump>` and `git push --follow-tags`, and never `npm publish`. The tag must agree with `package.json`, `.github/workflows/release.yml` re-runs `npm run verify` against the tagged commit, and npm authenticates that workflow by filename over OIDC, so renaming or moving it breaks publishing until the package's Trusted Publishers entry is updated to match.
 - `docs/cli.md` and `.claude/skills/worklist/SKILL.md` are generated from `src/cli-contract.ts`; never hand-edit them, run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
 - Do not manually add a changelog.
