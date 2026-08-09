@@ -19,8 +19,5 @@
 		"types": ["node"]
 	},
 	"include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"],
-	// `alias` is a separately published package that resolves this one from the
-	// registry, so it cannot typecheck against this checkout and is excluded here
-	// rather than merely left out of `include`.
-	"exclude": ["node_modules", "dist", "alias"]
+	"exclude": ["node_modules", "dist"]
 }

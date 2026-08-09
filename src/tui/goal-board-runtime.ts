@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import type { WorklistApplicationService, WorklistOperation } from "../application-service.ts";
+import { CLI_COMMAND_CONTRACT } from "../cli-contract.ts";
 import { WORKLIST_ERROR_CODES } from "../result-envelope.ts";
 import type { ProjectGoal } from "../types.ts";
 import type { BoardIntent } from "./goal-board.ts";
@@ -174,7 +175,7 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 			board.setMessage("Set $EDITOR or $VISUAL to edit descriptions.", "error");
 			return;
 		}
-		const directory = await mkdtemp(join(tmpdir(), "stepstone-goal-"));
+		const directory = await mkdtemp(join(tmpdir(), `${CLI_COMMAND_CONTRACT.binary}-goal-`));
 		const file = join(directory, "description.md");
 		const original = goal.description ?? "";
 		try {

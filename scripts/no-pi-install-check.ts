@@ -1,5 +1,5 @@
 /**
- * Proves the published tarballs run with nothing installed but Node.
+ * Proves the published tarball runs with nothing installed but Node.
  *
  *   npm run no-pi-install:check
  *
@@ -7,20 +7,14 @@
  * that leaked into the CLI path resolves in this checkout and fails only for
  * someone running `npx` on the published name without Pi - the install this
  * package's own agent skill prescribes. So the check refuses to trust the local
- * tree: it packs the real tarballs, installs them into a scratch directory with
- * no dev dependencies and no Pi packages, and drives the installed bins across
+ * tree: it packs the real tarball, installs it into a scratch directory with
+ * no dev dependencies and no Pi packages, and drives the installed bin across
  * the command surface, asserting exit codes and `--json` envelopes rather than
  * only that the process started.
  *
- * The deprecated alias in alias/ is packed and installed alongside even though
- * no release publishes it: it ships by hand exactly once, and nothing here or in
- * release.yml should ever republish it. It is covered here because it reaches
- * the CLI through the published `exports` map rather than through anything the
- * compiler or the test suite can see, which leaves this gate as its only proof.
- *
  * scripts/cli-import-graph.ts catches the same regression from the sources in
- * milliseconds; this is the slower proof that the tarballs a user downloads
- * actually work.
+ * milliseconds; this is the slower proof that the tarball a user downloads
+ * actually works.
  */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -32,7 +26,6 @@ import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
-const aliasRoot = join(repoRoot, "alias", "pi-worklist");
 const { binary } = CLI_COMMAND_CONTRACT;
 
 interface CliResult {
@@ -85,30 +78,25 @@ async function run(command: string, args: string[], cwd: string): Promise<void> 
 	}
 }
 
-/** Packs one package the way publishing does, prepack build included. */
-async function packTarball(packageRoot: string, destination: string): Promise<string> {
-	await run("npm", ["pack", "--pack-destination", destination], packageRoot);
+/** Packs the tarball the way publishing does, prepack build included. */
+async function packTarball(destination: string): Promise<string> {
+	await run("npm", ["pack", "--pack-destination", destination], repoRoot);
 	const packed = (await readdir(destination)).filter((entry) => entry.endsWith(".tgz"));
 	assert.equal(packed.length, 1, `expected exactly one packed tarball, got ${packed.join(", ") || "none"}`);
 	return join(destination, packed[0] as string);
 }
 
 /**
- * Installs the tarballs on their own. Every Pi peer is declared optional, so npm
+ * Installs the tarball on its own. Every Pi peer is declared optional, so npm
  * leaves them out unless something already depends on them, and `--omit=peer`
  * keeps that true even if that ever changes.
- *
- * Both go in through a single command so npm satisfies the alias's dependency
- * on this release from the tarball beside it. Resolving it from the registry
- * would test whatever is already published instead, and before the first
- * release under this name there is nothing there to resolve at all.
  */
-async function installTarballs(tarballs: readonly string[], installDir: string): Promise<void> {
+async function installTarball(tarball: string, installDir: string): Promise<void> {
 	const manifest = { name: "no-pi-install-fixture", version: "0.0.0", private: true };
 	await writeFile(join(installDir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	await run(
 		"npm",
-		["install", ...tarballs, "--omit=dev", "--omit=peer", "--no-audit", "--no-fund", "--loglevel=error"],
+		["install", tarball, "--omit=dev", "--omit=peer", "--no-audit", "--no-fund", "--loglevel=error"],
 		installDir,
 	);
 }
@@ -152,24 +140,9 @@ function assertNothingUnresolved(command: string, stderr: string): void {
 	);
 }
 
-/**
- * Turns the alias's own structural failure into a sentence. Its shim reaches
- * the CLI through the published `exports` map, so dropping or repointing that
- * entry breaks every install still on the old name without touching a line the
- * compiler or the test suite reads.
- */
-function assertSubpathExported(command: string, stderr: string): void {
-	if (!stderr.includes("ERR_PACKAGE_PATH_NOT_EXPORTED")) return;
-	throw new Error(
-		`${stderr.trim()}\n\n` +
-			`\`${command}\` cannot import the CLI, so the deprecated alias is unusable. Keep the \`exports\` ` +
-			`entry in package.json that the shim imports pointing at the compiled bin ${binary} ships.`,
-	);
-}
-
 function cliRunner(binPath: string, cwd: string) {
 	// The bin's own name, so a failure names the command that was actually run
-	// rather than whichever of the two bins this helper was written for.
+	// without spelling the published name here as a literal.
 	const command = basename(binPath);
 	return async function runCli(args: string[]): Promise<CliResult> {
 		const invocation = `${command} ${args.join(" ")}`;
@@ -185,7 +158,6 @@ function cliRunner(binPath: string, cwd: string) {
 			assertNotTimedOut(error, invocation, CLI_TIMEOUT_MS);
 			const failure = error as CliResult & { code: number | null };
 			if (typeof failure.stderr !== "string") throw error;
-			assertSubpathExported(invocation, failure.stderr);
 			assertNothingUnresolved(invocation, failure.stderr);
 			return { code: failure.code ?? 1, stdout: failure.stdout, stderr: failure.stderr };
 		}
@@ -345,114 +317,32 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	assert.match(board.stderr, /needs an interactive terminal/);
 }
 
-/**
- * Requires the deprecated alias bin to be indistinguishable from the real one.
- *
- * The alias carries no implementation: it imports the published CLI entry point
- * and lets it parse `process.argv`. Nothing else in the repository executes that
- * path, so this is where the two properties the shim is easy to break get
- * pinned. Arguments and exit codes have to survive the extra process, and a
- * redirected stderr has to carry the `--json` failure envelope alone, because
- * the shim's rename notice also goes to stderr and would corrupt the envelope
- * for exactly the scripts still on the old name.
- */
-async function assertAliasMatchesRealBin(
-	realBin: string,
-	aliasBin: string,
-	workspace: string,
-): Promise<void> {
-	const runReal = cliRunner(realBin, workspace);
-	const runAlias = cliRunner(aliasBin, workspace);
-	// Reads and refusals only: both bins have to see the same worklist for the
-	// comparison to mean anything, and none of these mint a timestamp.
-	const invocations = [
-		["project", "list", "--json"],
-		["project", "show", "beta-goal", "--json"],
-		["project", "waves", "--json"],
-		["project", "show", "missing-goal", "--json"],
-		["project", "delete", "beta-goal", "--json"],
-		["project", "not-an-action", "--json"],
-	];
-	for (const args of invocations) {
-		const [real, alias] = await Promise.all([runReal(args), runAlias(args)]);
-		assert.deepEqual(
-			alias,
-			real,
-			`\`${basename(aliasBin)} ${args.join(" ")}\` must produce the same exit code, stdout, and stderr ` +
-				`as \`${basename(realBin)} ${args.join(" ")}\``,
-		);
-	}
-	step(`  ${invocations.length} invocations identical to the real bin`);
-}
-
-/**
- * Fails if the alias resolved its own nested copy of the package rather than
- * the tarball under test, which would leave this check green while the shim was
- * really running a release off the registry.
- */
-async function assertAliasSharesTheInstall(
-	installDir: string,
-	aliasName: string,
-	packageName: string,
-): Promise<void> {
-	const nested = join(installDir, "node_modules", aliasName, "node_modules", packageName);
-	const resolvedNested = await readdir(nested).then(
-		() => true,
-		() => false,
-	);
-	assert.equal(
-		resolvedNested,
-		false,
-		`${aliasName} must forward to the packed ${packageName}, not to a nested copy`,
-	);
-}
-
 const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));
 const packDir = join(scratch, "pack");
-const aliasPackDir = join(scratch, "pack-alias");
 const installDir = join(scratch, "install");
 const workspace = join(scratch, "workspace");
 let succeeded = false;
 try {
-	await Promise.all(
-		[packDir, aliasPackDir, installDir, workspace].map((dir) => mkdir(dir, { recursive: true })),
-	);
+	await Promise.all([packDir, installDir, workspace].map((dir) => mkdir(dir, { recursive: true })));
 
 	const { name, version } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
 		name: string;
 		version: string;
 	};
-	const aliasManifest = JSON.parse(await readFile(join(aliasRoot, "package.json"), "utf8")) as {
-		name: string;
-		bin: Record<string, string>;
-	};
-	const aliasBinNames = Object.keys(aliasManifest.bin);
-	assert.equal(
-		aliasBinNames.length,
-		1,
-		`expected the alias to ship one bin, got ${aliasBinNames.join(", ")}`,
-	);
-	const aliasBinName = aliasBinNames[0] as string;
 
-	step("Packing the publishable tarballs");
-	const tarball = await packTarball(repoRoot, packDir);
-	const aliasTarball = await packTarball(aliasRoot, aliasPackDir);
+	step("Packing the publishable tarball");
+	const tarball = await packTarball(packDir);
 
-	step(`Installing ${basename(tarball)} and ${basename(aliasTarball)} with no dev dependencies and no Pi`);
-	await installTarballs([tarball, aliasTarball], installDir);
+	step(`Installing ${basename(tarball)} with no dev dependencies and no Pi`);
+	await installTarball(tarball, installDir);
 	await assertNoPiPackages(installDir);
-	await assertAliasSharesTheInstall(installDir, aliasManifest.name, name);
 
 	step("Driving the installed bin");
 	await run("git", ["init", "-q", "."], workspace);
-	const realBin = join(installDir, "node_modules", ".bin", binary);
-	await exerciseCli(realBin, workspace, version);
-
-	step(`Driving the deprecated ${aliasManifest.name} bin`);
-	await assertAliasMatchesRealBin(realBin, join(installDir, "node_modules", ".bin", aliasBinName), workspace);
+	await exerciseCli(join(installDir, "node_modules", ".bin", binary), workspace, version);
 
 	succeeded = true;
-	step(`${name} ${version} runs from a Pi-free install, and ${aliasManifest.name} forwards to it.`);
+	step(`${name} ${version} runs from a Pi-free install.`);
 } catch (error) {
 	// The message is the finding; a stack through this script's own helpers only
 	// buries which part of the installed surface stopped working.
