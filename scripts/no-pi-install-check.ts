@@ -1,0 +1,319 @@
+/**
+ * Proves the published tarball runs with nothing installed but Node.
+ *
+ *   npm run no-pi-install:check
+ *
+ * This repository installs every Pi peer as a devDependency, so a Pi import
+ * that leaked into the CLI path resolves in this checkout and fails only for
+ * someone running `npx pi-worklist` without Pi - the install this package's own
+ * agent skill prescribes. So the check refuses to trust the local tree: it packs
+ * the real tarball, installs it into a scratch directory with no dev
+ * dependencies and no Pi packages, and drives the installed bin across the
+ * command surface, asserting exit codes and `--json` envelopes rather than only
+ * that the process started.
+ *
+ * scripts/cli-import-graph.ts catches the same regression from the sources in
+ * milliseconds; this is the slower proof that the tarball a user downloads
+ * actually works.
+ */
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+const repoRoot = resolve(import.meta.dirname, "..");
+
+interface CliResult {
+	code: number;
+	stdout: string;
+	stderr: string;
+}
+
+interface Envelope {
+	ok: boolean;
+	scope: string;
+	action: string;
+	result?: Record<string, unknown>;
+	error?: { code: string };
+	meta?: { cliVersion?: string; changed?: boolean };
+}
+
+/** An envelope the CLI reported as a success, so `result` and `meta` are there. */
+interface SuccessEnvelope extends Envelope {
+	result: Record<string, unknown>;
+	meta: { cliVersion?: string; changed?: boolean };
+}
+
+function step(message: string): void {
+	process.stdout.write(`${message}\n`);
+}
+
+async function run(command: string, args: string[], cwd: string): Promise<void> {
+	await execFileAsync(command, args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+}
+
+/** Packs the tarball the way publishing does, prepack build included. */
+async function packTarball(destination: string): Promise<string> {
+	await run("npm", ["pack", "--pack-destination", destination], repoRoot);
+	const packed = (await readdir(destination)).filter((entry) => entry.endsWith(".tgz"));
+	assert.equal(packed.length, 1, `expected exactly one packed tarball, got ${packed.join(", ") || "none"}`);
+	return join(destination, packed[0] as string);
+}
+
+/**
+ * Installs the tarball on its own. Every Pi peer is declared optional, so npm
+ * leaves them out unless something already depends on them, and `--omit=peer`
+ * keeps that true even if that ever changes.
+ */
+async function installTarball(tarball: string, installDir: string): Promise<void> {
+	const manifest = { name: "no-pi-install-fixture", version: "0.0.0", private: true };
+	await writeFile(join(installDir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+	await run(
+		"npm",
+		["install", tarball, "--omit=dev", "--omit=peer", "--no-audit", "--no-fund", "--loglevel=error"],
+		installDir,
+	);
+}
+
+/** Fails on a Pi package anywhere in the installed tree, hoisted or nested. */
+async function assertNoPiPackages(installDir: string): Promise<void> {
+	const modules = join(installDir, "node_modules");
+	const entries = await readdir(modules, { recursive: true });
+	const pi = entries.filter((entry) => entry.split(/[\\/]/).includes("@earendil-works"));
+	assert.deepEqual(pi, [], "the installed tree must contain no Pi packages");
+	step(
+		`  installed ${entries.filter((entry) => entry.endsWith("package.json")).length} packages, none from Pi`,
+	);
+}
+
+const UNRESOLVED_IMPORT = /Cannot find (?:package|module) '([^']+)'/;
+
+/**
+ * Turns the one failure this check exists to catch into a sentence. Without it
+ * a leaked Pi import surfaces as an exit code mismatch under a resolver stack,
+ * which reads as a broken test rather than as the shipped bin being unusable.
+ */
+function assertNothingUnresolved(args: string[], stderr: string): void {
+	if (!stderr.includes("ERR_MODULE_NOT_FOUND") && !stderr.includes("ERR_REQUIRE_ESM")) return;
+	// The resolver line names both the package and the compiled file that wanted
+	// it; the stack under it is all Node internals.
+	const detail =
+		stderr
+			.split("\n")
+			.find((line) => UNRESOLVED_IMPORT.test(line))
+			?.trim() ?? stderr.trim();
+	const missing = UNRESOLVED_IMPORT.exec(detail)?.[1] ?? "a package outside its dependencies";
+	throw new Error(
+		`${detail}\n\n` +
+			`\`pi-worklist ${args.join(" ")}\` cannot load ${missing} from a Pi-free install, which is how ` +
+			"everyone running `npx pi-worklist` has it. Something reachable from src/cli.ts imports it at " +
+			"runtime: run `npm run imports:check` to name the module, then make that import type-only or " +
+			"move it out of the CLI graph.",
+	);
+}
+
+function cliRunner(binPath: string, cwd: string) {
+	return async function runCli(args: string[]): Promise<CliResult> {
+		try {
+			const { stdout, stderr } = await execFileAsync(binPath, args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+			assertNothingUnresolved(args, stderr);
+			return { code: 0, stdout, stderr };
+		} catch (error) {
+			const failure = error as CliResult & { code: number | null };
+			if (typeof failure.stderr !== "string") throw error;
+			assertNothingUnresolved(args, failure.stderr);
+			return { code: failure.code ?? 1, stdout: failure.stdout, stderr: failure.stderr };
+		}
+	};
+}
+
+function parseEnvelope(text: string, label: string): Envelope {
+	try {
+		return JSON.parse(text) as Envelope;
+	} catch (error) {
+		throw new Error(`${label} did not print a JSON envelope:\n${text}`, { cause: error });
+	}
+}
+
+/**
+ * Reads a successful envelope off stdout. A Pi peer reaching the bin surfaces
+ * here as a module-not-found stack on stderr, so the stream check is what turns
+ * that into a clear failure instead of a confusing parse error.
+ */
+function okEnvelope(result: CliResult, action: string, version: string): SuccessEnvelope {
+	assert.equal(result.code, 0, `project ${action} exited ${result.code}\n${result.stderr}`);
+	const envelope = parseEnvelope(result.stdout, `project ${action}`);
+	assert.deepEqual(
+		{
+			ok: envelope.ok,
+			scope: envelope.scope,
+			action: envelope.action,
+			cliVersion: envelope.meta?.cliVersion,
+		},
+		{ ok: true, scope: "project", action, cliVersion: version },
+	);
+	assert.ok(envelope.result, `project ${action} reported success without a result`);
+	assert.ok(envelope.meta, `project ${action} reported success without meta`);
+	return envelope as SuccessEnvelope;
+}
+
+/** Reads a failure envelope off stderr, where the CLI contract puts it. */
+function failedEnvelope(result: CliResult, action: string, code: number, errorCode: string): Envelope {
+	assert.equal(result.code, code, `project ${action} exited ${result.code}, expected ${code}`);
+	assert.equal(result.stdout, "", `project ${action} must keep a failure off stdout`);
+	const envelope = parseEnvelope(result.stderr, `project ${action}`);
+	assert.deepEqual(
+		{ ok: envelope.ok, action: envelope.action, code: envelope.error?.code },
+		{ ok: false, action, code: errorCode },
+	);
+	return envelope;
+}
+
+function goalIds(envelope: SuccessEnvelope): string[] {
+	return (envelope.result.goals as Array<{ id: string }>).map((goal) => goal.id);
+}
+
+/** Drives the whole read, write, sequencing, and refusal surface of the bin. */
+async function exerciseCli(binPath: string, workspace: string, version: string): Promise<void> {
+	const runCli = cliRunner(binPath, workspace);
+	const worklistPath = join(workspace, ".pi", "worklist.json");
+
+	step("  list, add, show, find");
+	assert.deepEqual(goalIds(okEnvelope(await runCli(["project", "list", "--json"]), "list", version)), []);
+
+	const added = okEnvelope(
+		await runCli(["project", "add", "Alpha goal", "--description", "First goal", "--json"]),
+		"add",
+		version,
+	);
+	const { createdAt, updatedAt, ...storedGoal } = added.result.goal as Record<string, unknown>;
+	assert.deepEqual(storedGoal, {
+		id: "alpha-goal",
+		title: "Alpha goal",
+		description: "First goal",
+		status: "open",
+	});
+	for (const stamp of [createdAt, updatedAt]) assert.match(String(stamp), /^\d{4}-\d{2}-\d{2}T.*Z$/);
+	assert.equal(added.meta.changed, true);
+
+	okEnvelope(
+		await runCli(["project", "add", "Beta goal", "--depends-on", "alpha-goal", "--json"]),
+		"add",
+		version,
+	);
+	assert.deepEqual(goalIds(okEnvelope(await runCli(["project", "list", "--json"]), "list", version)), [
+		"alpha-goal",
+		"beta-goal",
+	]);
+
+	const shown = okEnvelope(await runCli(["project", "show", "alpha", "--json"]), "show", version);
+	assert.equal((shown.result.goal as { description: string }).description, "First goal");
+
+	assert.deepEqual(
+		goalIds(okEnvelope(await runCli(["project", "find", "Beta", "--json"]), "find", version)),
+		["beta-goal"],
+	);
+
+	step("  next, ready, waves");
+	const next = okEnvelope(await runCli(["project", "next", "--json"]), "next", version);
+	assert.equal((next.result.goal as { id: string }).id, "alpha-goal");
+	assert.deepEqual(goalIds(okEnvelope(await runCli(["project", "ready", "--json"]), "ready", version)), [
+		"alpha-goal",
+	]);
+	const waves = okEnvelope(await runCli(["project", "waves", "--json"]), "waves", version);
+	assert.deepEqual(
+		(waves.result.waves as Array<Array<{ id: string }>>).map((wave) => wave.map((goal) => goal.id)),
+		[["alpha-goal"], ["beta-goal"]],
+	);
+
+	step("  apply-plan --dry-run writes nothing");
+	const planPath = join(workspace, "plan.json");
+	const plan = [{ title: "Gamma goal", group: "Later", dependsOn: ["beta-goal"] }];
+	await writeFile(planPath, `${JSON.stringify(plan)}\n`, "utf8");
+	const beforePlan = await readFile(worklistPath, "utf8");
+	const previewed = okEnvelope(
+		await runCli(["project", "apply-plan", "plan.json", "--dry-run", "--json"]),
+		"apply-plan",
+		version,
+	);
+	assert.equal(previewed.result.dryRun, true);
+	assert.deepEqual(
+		(previewed.result.addedGoals as Array<{ id: string }>).map((goal) => goal.id),
+		["gamma-goal"],
+	);
+	assert.equal(previewed.meta.changed, false);
+	assert.equal(await readFile(worklistPath, "utf8"), beforePlan, "a dry run must not touch the worklist");
+
+	step("  guarded mutation refuses, then lands with --confirm");
+	failedEnvelope(
+		await runCli(["project", "complete", "alpha-goal", "--json"]),
+		"complete",
+		3,
+		"APPROVAL_REQUIRED",
+	);
+	assert.equal(
+		await readFile(worklistPath, "utf8"),
+		beforePlan,
+		"a refused mutation must not touch the worklist",
+	);
+
+	const completed = okEnvelope(
+		await runCli(["project", "complete", "alpha-goal", "--confirm", "--json"]),
+		"complete",
+		version,
+	);
+	assert.equal((completed.result.goal as { status: string }).status, "done");
+	assert.equal(completed.meta.changed, true);
+	assert.deepEqual(
+		goalIds(okEnvelope(await runCli(["project", "ready", "--json"]), "ready", version)),
+		["beta-goal"],
+		"completing a dependency must release what it blocked",
+	);
+
+	step("  typed failures instead of stack traces");
+	failedEnvelope(await runCli(["project", "show", "missing-goal", "--json"]), "show", 1, "NOT_FOUND");
+
+	// The board is the module most likely to reach for Pi's TUI, and the bin
+	// imports it eagerly, so a clean refusal here proves it loaded without Pi.
+	const board = await runCli(["project", "ui"]);
+	assert.equal(board.code, 1);
+	assert.match(board.stderr, /needs an interactive terminal/);
+}
+
+const scratch = await mkdtemp(join(tmpdir(), "pi-worklist-no-pi-install-"));
+const packDir = join(scratch, "pack");
+const installDir = join(scratch, "install");
+const workspace = join(scratch, "workspace");
+let succeeded = false;
+try {
+	await Promise.all([packDir, installDir, workspace].map((dir) => mkdir(dir, { recursive: true })));
+
+	step("Packing the publishable tarball");
+	const tarball = await packTarball(packDir);
+
+	step(`Installing ${basename(tarball)} with no dev dependencies and no Pi`);
+	await installTarball(tarball, installDir);
+	await assertNoPiPackages(installDir);
+
+	step("Driving the installed bin");
+	await run("git", ["init", "-q", "."], workspace);
+	const { version } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
+		version: string;
+	};
+	await exerciseCli(join(installDir, "node_modules", ".bin", "pi-worklist"), workspace, version);
+
+	succeeded = true;
+	step(`pi-worklist ${version} runs from a Pi-free install.`);
+} catch (error) {
+	// The message is the finding; a stack through this script's own helpers only
+	// buries which part of the installed surface stopped working.
+	process.exitCode = 1;
+	process.stderr.write(`\nno-pi-install check failed.\n\n${(error as Error).message}\n`);
+} finally {
+	// A failed run leaves the scratch tree behind so the install can be inspected.
+	if (succeeded) await rm(scratch, { recursive: true, force: true });
+	else process.stderr.write(`Left the failed install at ${scratch}\n`);
+}

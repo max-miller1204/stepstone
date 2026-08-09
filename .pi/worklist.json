@@ -285,9 +285,10 @@
       "title": "no-pi-install: CI proof the CLI runs with zero Pi peers",
       "description": "AGENTS.md asserts that nothing reachable from src/cli.ts, including the terminal board in src/tui/, may import @earendil-works/*, and that the compiled bin has to run with only Node and its declared runtime dependencies. That invariant is now the load-bearing promise of the whole product rather than a tidiness rule, and it is currently enforced by convention and code review rather than by a test. The repository's own node_modules has every Pi peer installed as a devDependency, so a stray import would pass locally and only fail for the users who matter most.\n\nAdd a CI job that packs the tarball, installs it into a scratch directory with no @earendil-works packages present and no dev dependencies, and exercises the real command surface end to end: list, add, show, find, next, ready, waves, apply-plan --dry-run, and a guarded mutation. Assert both the exit codes and the --json envelope shape, so a peer leaking into the CLI path fails the build with a clear message rather than a module-not-found stack. Pair it with a static check that no file in the CLI import graph references @earendil-works, which catches the regression at lint time before the slower install job runs.",
       "group": "Harness",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-08T23:53:23.024Z",
-      "updatedAt": "2026-08-09T16:16:22.347Z"
+      "updatedAt": "2026-08-09T16:37:05.571Z",
+      "completedAt": "2026-08-09T16:37:05.571Z"
     },
     {
       "id": "harness-identity-rename-off-the-pi",
@@ -577,5 +578,5 @@
       "group": "Pi"
     }
   ],
-  "revision": 227
+  "revision": 229
 }

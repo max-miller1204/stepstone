@@ -26,3 +26,21 @@ jobs:
       # npm-shrinkwrap.json, which is not fixable locally (earendil-works/pi#7090).
       - run: npm audit --omit=dev --omit=peer --audit-level=high
       - run: npm run pack:check
+
+  # The bin's promise is that `npx pi-worklist` works with nothing installed but
+  # Node, and this checkout cannot test that: it has every Pi peer present as a
+  # devDependency, so a leaked import resolves here and breaks only for users.
+  # This job packs the tarball, installs it alone, and drives the real command
+  # surface. It waits on `check`, whose fast source-level import scan reports the
+  # same regression in milliseconds and with a clearer message.
+  no-pi-install:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run no-pi-install:check

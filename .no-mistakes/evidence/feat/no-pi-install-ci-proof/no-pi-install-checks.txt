@@ -1,0 +1,97 @@
+pi-worklist: CI proof the CLI runs with zero Pi peers
+=====================================================
+
+Every `$ ...` line below was really run in this worktree, and the text under it
+is that command's real output followed by its real exit code.
+
+`npm run imports:check` reads the module graph behind src/cli.ts from the
+sources. `npm run no-pi-install:check` packs the publishable tarball, installs
+it into a scratch directory with no dev dependencies and no Pi packages, and
+drives the installed bin across list, add, show, find, next, ready, waves,
+apply-plan --dry-run, and a guarded mutation, asserting exit codes and --json
+envelopes throughout.
+
+Section 2 injects the exact regression the goal is about - a real value import
+of @earendil-works/pi-tui in the terminal board - and shows both checks refusing
+it. This checkout has every Pi peer installed as a devDependency, so `npm run
+check` stays green for that same tree: the leak is invisible to everything
+except these two checks.
+
+==============================================================
+ 1. A clean tree: both checks pass
+==============================================================
+
+$ npm run imports:check
+
+> pi-worklist@0.17.0 imports:check
+> node ./scripts/cli-import-graph.ts
+
+Checked 17 modules reachable from src/cli.ts: no Pi peers, no undeclared imports.
+(exit 0)
+
+$ npm run no-pi-install:check
+
+> pi-worklist@0.17.0 no-pi-install:check
+> node ./scripts/no-pi-install-check.ts
+
+Packing the publishable tarball
+Installing pi-worklist-0.17.0.tgz with no dev dependencies and no Pi
+  installed 5 packages, none from Pi
+Driving the installed bin
+  list, add, show, find
+  next, ready, waves
+  apply-plan --dry-run writes nothing
+  guarded mutation refuses, then lands with --confirm
+  typed failures instead of stack traces
+pi-worklist 0.17.0 runs from a Pi-free install.
+(exit 0)
+
+==============================================================
+ 2. A Pi peer leaks into the terminal board
+==============================================================
+
+$ head -2 src/tui/style.ts
+import { Key } from "@earendil-works/pi-tui";
+export const LEAKED_KEY = Key;
+(exit 0)
+
+$ npm run imports:check
+
+> pi-worklist@0.17.0 imports:check
+> node ./scripts/cli-import-graph.ts
+
+The CLI import graph no longer runs without Pi installed:
+  src/tui/style.ts imports @earendil-works/pi-tui: @earendil-works/pi-tui is a Pi peer, which is absent wherever the bin is installed on its own
+(exit 1)
+
+$ npm run no-pi-install:check
+
+> pi-worklist@0.17.0 no-pi-install:check
+> node ./scripts/no-pi-install-check.ts
+
+Packing the publishable tarball
+Installing pi-worklist-0.17.0.tgz with no dev dependencies and no Pi
+  installed 5 packages, none from Pi
+Driving the installed bin
+  list, add, show, find
+
+no-pi-install check failed.
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@earendil-works/pi-tui' imported from /tmp/pi-worklist-no-pi-install-kQdZ8f/install/node_modules/pi-worklist/dist/tui/style.js
+
+`pi-worklist project list --json` cannot load @earendil-works/pi-tui from a Pi-free install, which is how everyone running `npx pi-worklist` has it. Something reachable from src/cli.ts imports it at runtime: run `npm run imports:check` to name the module, then make that import type-only or move it out of the CLI graph.
+Left the failed install at /tmp/pi-worklist-no-pi-install-kQdZ8f
+(exit 1)
+
+==============================================================
+ 3. The leak reverted, the tree is clean again
+==============================================================
+
+$ npm run imports:check
+
+> pi-worklist@0.17.0 imports:check
+> node ./scripts/cli-import-graph.ts
+
+Checked 17 modules reachable from src/cli.ts: no Pi peers, no undeclared imports.
+(exit 0)
+

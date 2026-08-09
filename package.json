@@ -49,6 +49,8 @@
 		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
 		"docs": "node ./scripts/generate-docs.ts",
 		"docs:check": "node ./scripts/generate-docs.ts --check",
+		"imports:check": "node ./scripts/cli-import-graph.ts",
+		"no-pi-install:check": "node ./scripts/no-pi-install-check.ts",
 		"prepack": "npm run build",
 		"test": "vitest run",
 		"test:watch": "vitest",
@@ -57,7 +59,7 @@
 		"format:check": "biome format .",
 		"lint": "biome lint --write .",
 		"lint:check": "biome lint .",
-		"check": "npm run typecheck && biome check . && npm run test",
+		"check": "npm run typecheck && npm run imports:check && biome check . && npm run test",
 		"pack:check": "npm pack --dry-run",
 		"verify": "npm run check && npm run pack:check"
 	},
