@@ -12,9 +12,11 @@
  * the command surface, asserting exit codes and `--json` envelopes rather than
  * only that the process started.
  *
- * The deprecated alias in alias/ is packed and installed alongside, because it
- * is published from the same release and reaches the CLI through the `exports`
- * map rather than through anything the compiler or the test suite can see.
+ * The deprecated alias in alias/ is packed and installed alongside even though
+ * no release publishes it: it ships by hand exactly once, and nothing here or in
+ * release.yml should ever republish it. It is covered here because it reaches
+ * the CLI through the published `exports` map rather than through anything the
+ * compiler or the test suite can see, which leaves this gate as its only proof.
  *
  * scripts/cli-import-graph.ts catches the same regression from the sources in
  * milliseconds; this is the slower proof that the tarballs a user downloads
