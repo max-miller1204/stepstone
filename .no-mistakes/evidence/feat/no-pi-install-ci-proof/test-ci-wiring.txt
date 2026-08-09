@@ -1,0 +1,86 @@
+Test phase evidence: the CI wiring, parsed and executed
+=======================================================
+
+The workflow files are parsed into a job model with the same YAML parser
+Actions uses, rather than grepped, and then the new job's own run steps are
+executed locally. `npm ci` is skipped because node_modules here is already
+installed from the same lockfile.
+
+
+ci.yml: jobs and their order
+  - check
+      uses: actions/checkout@v5
+      uses: actions/setup-node@v5  [node 24]
+      run: npm ci
+      run: npm run check
+      run: npm audit --omit=dev --omit=peer --audit-level=high
+      run: npm run pack:check
+  - no-pi-install  (needs: check)
+      uses: actions/checkout@v5
+      uses: actions/setup-node@v5  [node 24]
+      run: npm ci
+      run: npm run no-pi-install:check
+
+release.yml: jobs and their order
+  - release
+      uses: actions/checkout@v5
+      uses: actions/setup-node@v5  [node 24]
+      run: npm install -g npm@latest
+      run: tag_version="${GITHUB_REF_NAME#v}"
+pkg_version="$(node -p "require('./package.json').version")"
+if [ "$tag_version" != "$pkg_version" ]; then
+  echo "::error::Tag $GITHUB_REF_NAME implies version $tag_version, but package.json is $pkg_version"
+  exit 1
+fi
+echo "Tag $GITHUB_REF_NAME matches package.json version $pkg_version"
+
+      run: npm ci
+      run: npm run verify
+      run: npm run no-pi-install:check
+      run: npm publish
+      run: gh release create "$GITHUB_REF_NAME" \
+  --title "$GITHUB_REF_NAME" \
+  --generate-notes \
+  --verify-tag
+
+
+What the parsed model says about the new job:
+  ci.yml no-pi-install waits on: check
+  ci.yml check runs: npm ci | npm run check | npm audit --omit=dev --omit=peer --audit-level=high | npm run pack:check
+  package.json check = npm run typecheck && npm run imports:check && biome check . && npm run test
+  release.yml release order: npm install -g npm@latest -> tag_version="${GITHUB_REF_NAME#v}"
+pkg_version="$(node -p "require('./package.json').version")"
+if [ "$tag_version" != "$pkg_version" ]; then
+  echo "::error::Tag $GITHUB_REF_NAME implies version $tag_version, but package.json is $pkg_version"
+  exit 1
+fi
+echo "Tag $GITHUB_REF_NAME matches package.json version $pkg_version"
+ -> npm ci -> npm run verify -> npm run no-pi-install:check -> npm publish -> gh release create "$GITHUB_REF_NAME" \
+  --title "$GITHUB_REF_NAME" \
+  --generate-notes \
+  --verify-tag
+
+
+Executing the job's run steps locally: npm ci, npm run no-pi-install:check
+
+$ npm ci
+  (skipped: node_modules is already installed from this same lockfile)
+
+$ npm run no-pi-install:check
+
+> pi-worklist@0.17.0 no-pi-install:check
+> node ./scripts/no-pi-install-check.ts
+
+Packing the publishable tarball
+Installing pi-worklist-0.17.0.tgz with no dev dependencies and no Pi
+  installed 5 packages, none from Pi
+Driving the installed bin
+  list, add, show, find
+  next, ready, waves
+  apply-plan --dry-run writes nothing
+  guarded mutation refuses, then lands with --confirm
+  typed failures instead of stack traces
+pi-worklist 0.17.0 runs from a Pi-free install.
+(exit 0)
+
+The no-pi-install job's own commands pass on this checkout.

@@ -1,0 +1,662 @@
+Test phase evidence: driving the installed, Pi-free bin by hand
+===============================================================
+
+This is a manual end-to-end reproduction of what a user gets from
+`npx pi-worklist`, run independently of scripts/no-pi-install-check.ts so the
+raw command surface is visible rather than the check script's step lines.
+
+It packs the real publishable tarball, installs it into a scratch directory
+with --omit=dev --omit=peer, shows that no @earendil-works package and no
+typebox exist anywhere in the installed tree, then drives
+node_modules/.bin/pi-worklist (the shipped bin shim) across list, add, show,
+find, next, ready, waves, apply-plan --dry-run, a refused mutation, the same
+mutation with --confirm, a typed NOT_FOUND failure, and the terminal board.
+
+worklist.json is hashed before and after the dry run and after the refused
+mutation to show both left it byte-identical.
+
+==============================================================
+ 1. Pack the publishable tarball (prepack build runs)
+==============================================================
+
+$ npm pack --pack-destination /tmp/no-pi-evidence/run-vn9y3u/pack
+
+> pi-worklist@0.17.0 prepack
+> npm run build
+
+
+> pi-worklist@0.17.0 build
+> node -e "fs.rmSync('dist',{recursive:true,force:true})" && tsc -p tsconfig.build.json
+
+pi-worklist-0.17.0.tgz
+(exit 0)
+
+==============================================================
+ 2. Install it alone: no dev dependencies, no Pi peers
+==============================================================
+
+$ npm install pi-worklist-0.17.0.tgz --omit=dev --omit=peer
+
+added 5 packages in 208ms
+(exit 0)
+
+$ npm ls --all --omit=dev --omit=peer
+no-pi-install-fixture@0.0.0 /tmp/no-pi-evidence/run-vn9y3u/install
+└─┬ pi-worklist@0.17.0
+  ├── UNMET OPTIONAL DEPENDENCY @earendil-works/pi-agent-core@*
+  ├── UNMET OPTIONAL DEPENDENCY @earendil-works/pi-ai@*
+  ├── UNMET OPTIONAL DEPENDENCY @earendil-works/pi-coding-agent@*
+  ├── UNMET OPTIONAL DEPENDENCY @earendil-works/pi-tui@*
+  ├─┬ proper-lockfile@4.1.2
+  │ ├── graceful-fs@4.2.11
+  │ ├── retry@0.12.0
+  │ └── signal-exit@3.0.7
+  └── UNMET OPTIONAL DEPENDENCY typebox@*
+
+(exit 0)
+
+$ find node_modules -name '@earendil-works' -o -name 'typebox' | sort
+(no output above means no Pi package and no typebox anywhere in the install)
+
+$ du -sh node_modules
+1.1M	node_modules
+
+==============================================================
+ 3. Drive the installed bin in a fresh git workspace
+==============================================================
+
+$ which pi-worklist -> /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist (the real bin shim, not 'node dist/cli.js')
+#!/usr/bin/env node
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project list --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "list",
+  "result": {
+    "scope": "project",
+    "action": "list",
+    "goals": []
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "0"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project add Alpha goal --description First goal --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "add",
+  "result": {
+    "scope": "project",
+    "action": "add",
+    "goal": {
+      "id": "alpha-goal",
+      "title": "Alpha goal",
+      "description": "First goal",
+      "status": "open",
+      "createdAt": "2026-08-09T17:36:28.913Z",
+      "updatedAt": "2026-08-09T17:36:28.913Z"
+    },
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Alpha goal",
+        "description": "First goal",
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.913Z",
+        "updatedAt": "2026-08-09T17:36:28.913Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "alpha-goal"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "1"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project add Beta goal --depends-on alpha-goal --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "add",
+  "result": {
+    "scope": "project",
+    "action": "add",
+    "goal": {
+      "id": "beta-goal",
+      "title": "Beta goal",
+      "dependsOn": [
+        "alpha-goal"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-09T17:36:28.977Z",
+      "updatedAt": "2026-08-09T17:36:28.977Z"
+    },
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Alpha goal",
+        "description": "First goal",
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.913Z",
+        "updatedAt": "2026-08-09T17:36:28.913Z"
+      },
+      {
+        "id": "beta-goal",
+        "title": "Beta goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.977Z",
+        "updatedAt": "2026-08-09T17:36:28.977Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "beta-goal"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project list --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "list",
+  "result": {
+    "scope": "project",
+    "action": "list",
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Alpha goal",
+        "description": "First goal",
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.913Z",
+        "updatedAt": "2026-08-09T17:36:28.913Z"
+      },
+      {
+        "id": "beta-goal",
+        "title": "Beta goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.977Z",
+        "updatedAt": "2026-08-09T17:36:28.977Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project show alpha --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "show",
+  "result": {
+    "scope": "project",
+    "action": "show",
+    "goal": {
+      "id": "alpha-goal",
+      "title": "Alpha goal",
+      "description": "First goal",
+      "status": "open",
+      "createdAt": "2026-08-09T17:36:28.913Z",
+      "updatedAt": "2026-08-09T17:36:28.913Z"
+    },
+    "blocked": false,
+    "blocks": [
+      "beta-goal"
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project find Beta --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "find",
+  "result": {
+    "scope": "project",
+    "action": "find",
+    "goals": [
+      {
+        "id": "beta-goal",
+        "title": "Beta goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.977Z",
+        "updatedAt": "2026-08-09T17:36:28.977Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project next --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "next",
+  "result": {
+    "scope": "project",
+    "action": "next",
+    "goal": {
+      "id": "alpha-goal",
+      "title": "Alpha goal",
+      "description": "First goal",
+      "status": "open",
+      "createdAt": "2026-08-09T17:36:28.913Z",
+      "updatedAt": "2026-08-09T17:36:28.913Z"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project ready --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "ready",
+  "result": {
+    "scope": "project",
+    "action": "ready",
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Alpha goal",
+        "description": "First goal",
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.913Z",
+        "updatedAt": "2026-08-09T17:36:28.913Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project waves --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "waves",
+  "result": {
+    "scope": "project",
+    "action": "waves",
+    "waves": [
+      [
+        {
+          "id": "alpha-goal",
+          "title": "Alpha goal",
+          "description": "First goal",
+          "status": "open",
+          "createdAt": "2026-08-09T17:36:28.913Z",
+          "updatedAt": "2026-08-09T17:36:28.913Z"
+        }
+      ],
+      [
+        {
+          "id": "beta-goal",
+          "title": "Beta goal",
+          "dependsOn": [
+            "alpha-goal"
+          ],
+          "status": "open",
+          "createdAt": "2026-08-09T17:36:28.977Z",
+          "updatedAt": "2026-08-09T17:36:28.977Z"
+        }
+      ]
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+--- apply-plan --dry-run must not touch worklist.json ---
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project apply-plan plan.json --dry-run --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "apply-plan",
+  "result": {
+    "scope": "project",
+    "action": "apply-plan",
+    "dryRun": true,
+    "addedGoals": [
+      {
+        "id": "gamma-goal",
+        "title": "Gamma goal",
+        "group": "Later",
+        "dependsOn": [
+          "beta-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:29.353Z",
+        "updatedAt": "2026-08-09T17:36:29.353Z"
+      }
+    ],
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Alpha goal",
+        "description": "First goal",
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.913Z",
+        "updatedAt": "2026-08-09T17:36:28.913Z"
+      },
+      {
+        "id": "beta-goal",
+        "title": "Beta goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.977Z",
+        "updatedAt": "2026-08-09T17:36:28.977Z"
+      },
+      {
+        "id": "gamma-goal",
+        "title": "Gamma goal",
+        "group": "Later",
+        "dependsOn": [
+          "beta-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:29.353Z",
+        "updatedAt": "2026-08-09T17:36:29.353Z"
+      }
+    ],
+    "warnings": []
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+worklist.json sha256 before=22037a1358a08add569788a181c9299fe597458ffa4d61a3ce1ba4df4bd80919 after=22037a1358a08add569788a181c9299fe597458ffa4d61a3ce1ba4df4bd80919
+UNCHANGED: the dry run wrote nothing
+
+--- a guarded mutation is refused without --confirm ---
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project complete alpha-goal --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "complete",
+  "error": {
+    "code": "APPROVAL_REQUIRED",
+    "message": "Project complete requires explicit confirmation.",
+    "retryable": false,
+    "details": {
+      "confirmation": "confirm=true",
+      "resolution": "request-explicit-user-confirmation"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 3)
+worklist.json sha256 after refusal=22037a1358a08add569788a181c9299fe597458ffa4d61a3ce1ba4df4bd80919
+UNCHANGED: the refused mutation wrote nothing
+
+--- ...and lands with --confirm, releasing what it blocked ---
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project complete alpha-goal --confirm --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "complete",
+  "result": {
+    "scope": "project",
+    "action": "complete",
+    "goal": {
+      "id": "alpha-goal",
+      "title": "Alpha goal",
+      "description": "First goal",
+      "status": "done",
+      "createdAt": "2026-08-09T17:36:28.913Z",
+      "updatedAt": "2026-08-09T17:36:29.461Z",
+      "completedAt": "2026-08-09T17:36:29.461Z"
+    },
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Alpha goal",
+        "description": "First goal",
+        "status": "done",
+        "createdAt": "2026-08-09T17:36:28.913Z",
+        "updatedAt": "2026-08-09T17:36:29.461Z",
+        "completedAt": "2026-08-09T17:36:29.461Z"
+      },
+      {
+        "id": "beta-goal",
+        "title": "Beta goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.977Z",
+        "updatedAt": "2026-08-09T17:36:28.977Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "alpha-goal"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "3"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project ready --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "ready",
+  "result": {
+    "scope": "project",
+    "action": "ready",
+    "goals": [
+      {
+        "id": "beta-goal",
+        "title": "Beta goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-09T17:36:28.977Z",
+        "updatedAt": "2026-08-09T17:36:28.977Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "3"
+    },
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 0)
+
+--- typed failure, not a stack trace ---
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project show missing-goal --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "show",
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Project goal missing-goal was not found.",
+    "retryable": false,
+    "details": {
+      "entity": "project-goal",
+      "id": "missing-goal",
+      "resolution": "refresh-and-select-existing"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.17.0"
+  }
+}
+(exit 1)
+
+--- the terminal board loads with no Pi TUI installed (non-TTY refusal) ---
+
+$ /tmp/no-pi-evidence/run-vn9y3u/install/node_modules/.bin/pi-worklist project ui
+project ui needs an interactive terminal. Use 'pi-worklist project list --json' in scripts and agents.
+(exit 1)
+
+--- the persisted worklist the Pi-free bin wrote ---
+
+$ cat .pi/worklist.json
+{
+  "version": 1,
+  "revision": 3,
+  "goals": [
+    {
+      "id": "alpha-goal",
+      "title": "Alpha goal",
+      "description": "First goal",
+      "status": "done",
+      "createdAt": "2026-08-09T17:36:28.913Z",
+      "updatedAt": "2026-08-09T17:36:29.461Z",
+      "completedAt": "2026-08-09T17:36:29.461Z"
+    },
+    {
+      "id": "beta-goal",
+      "title": "Beta goal",
+      "dependsOn": [
+        "alpha-goal"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-09T17:36:28.977Z",
+      "updatedAt": "2026-08-09T17:36:28.977Z"
+    }
+  ]
+}

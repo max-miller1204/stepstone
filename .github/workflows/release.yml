@@ -61,6 +61,11 @@ jobs:
       # green tag cannot outrun a red main.
       - run: npm run verify
 
+      # The tarball about to be published is packed, installed with no Pi peers
+      # and no dev dependencies, and driven end to end. `verify` cannot see this
+      # failure: it runs against a checkout where every peer is installed.
+      - run: npm run no-pi-install:check
+
       - run: npm publish
 
       - name: Create GitHub Release

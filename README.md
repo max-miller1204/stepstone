@@ -185,6 +185,9 @@ In a development checkout, `node src/cli.ts project <action>` runs the same CLI;
 On older Node versions, including the Node 20 floor of the package's `engines` range, the TypeScript entry point fails with an `Unknown file extension ".ts"` error, while the compiled bin has no such requirement.
 Session Tasks are intentionally unavailable here because they live inside a Pi session tree.
 
+Nothing the bin loads imports a Pi package, and every Pi peer is declared optional, so `npx -y pi-worklist@latest` installs under a megabyte and runs with no Pi installation at all.
+That is enforced rather than promised: `npm run imports:check` reads the module graph behind `src/cli.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`, and a CI job packs the tarball, installs it alone in a scratch directory, and drives the whole command surface against the installed bin.
+
 ## JSON goal plans
 
 `project apply-plan <plan.json>` adds an approved batch of Project Goals through one locked mutation, one atomic file replacement, and one revision increment.
@@ -365,10 +368,15 @@ cd pi-worklist
 npm install
 npm run check
 npm run pack:check
+npm run no-pi-install:check
 ```
 
 The test suite includes real Pi RPC load tests in temporary repositories.
 The package uses TypeScript source directly because Pi loads extensions through jiti.
+
+`npm run check` includes `npm run imports:check`, the source-level scan that keeps Pi out of the CLI's module graph.
+`npm run no-pi-install:check` is the slower proof behind it: it packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and asserts the exit codes and `--json` envelopes of the installed bin across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
+It runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 ## Publishing and the Pi gallery
 
@@ -387,11 +395,12 @@ git switch main
 git pull --ff-only
 ```
 
-Optionally run the release checks locally, which is the same `npm run verify` the release workflow runs but with faster feedback than waiting on CI:
+Optionally run the release checks locally, the same `npm run verify` and `npm run no-pi-install:check` the release workflow runs, but with faster feedback than waiting on CI:
 
 ```sh
 npm ci
 npm run verify
+npm run no-pi-install:check
 ```
 
 Create the release commit and tag with the appropriate semantic version bump:
@@ -407,7 +416,7 @@ Push the version commit and its tag, which is the step that publishes:
 git push origin main --follow-tags
 ```
 
-That tag push runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which re-runs `npm run verify` against the tagged commit, publishes to npm, and creates a GitHub Release with notes generated from the pull requests merged since the previous tag.
+That tag push runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which re-runs `npm run verify` and `npm run no-pi-install:check` against the tagged commit, publishes to npm, and creates a GitHub Release with notes generated from the pull requests merged since the previous tag.
 It refuses to publish when the tag disagrees with `package.json`, which is the mistake that would otherwise ship the wrong version under the right name.
 
 Authentication is npm Trusted Publishing over OIDC, so the repository stores no `NPM_TOKEN` and a release needs no local `npm login`.
