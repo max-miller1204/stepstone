@@ -97,7 +97,9 @@ const UNRESOLVED_IMPORT = /Cannot find (?:package|module) '([^']+)'/;
  * which reads as a broken test rather than as the shipped bin being unusable.
  */
 function assertNothingUnresolved(args: string[], stderr: string): void {
-	if (!stderr.includes("ERR_MODULE_NOT_FOUND") && !stderr.includes("ERR_REQUIRE_ESM")) return;
+	// `MODULE_NOT_FOUND` covers both spellings Node prints: the ESM
+	// `ERR_MODULE_NOT_FOUND` and the bare CJS code a `createRequire` call raises.
+	if (!stderr.includes("MODULE_NOT_FOUND") && !stderr.includes("ERR_REQUIRE_ESM")) return;
 	// The resolver line names both the package and the compiled file that wanted
 	// it; the stack under it is all Node internals.
 	const detail =

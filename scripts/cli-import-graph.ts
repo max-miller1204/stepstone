@@ -18,6 +18,7 @@
  * emitted shape depends on how the file is compiled, and the type-only form is
  * already this codebase's convention.
  */
+import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isBuiltin } from "node:module";
 import { dirname, relative, resolve } from "node:path";
@@ -43,12 +44,34 @@ export interface ScannedSource {
 	isCode: boolean[];
 }
 
+// A `/` opens a regex only where a value cannot have just ended: after an
+// identifier, a literal, or a closing bracket it is division instead. These are
+// the characters and the keywords a regex is allowed to follow.
+const BEFORE_REGEX = /[([{,;:=!&|?+\-*%^~<>]/;
+const KEYWORDS_BEFORE_REGEX = new Set([
+	"await",
+	"case",
+	"delete",
+	"do",
+	"else",
+	"in",
+	"instanceof",
+	"new",
+	"of",
+	"return",
+	"typeof",
+	"void",
+	"yield",
+]);
+
 /**
- * Separates code from the two places an import can only look like one: a
- * comment and the text of a string. Comments are blanked rather than removed so
- * the statement after a multi-line one still starts its own line, and the mask
- * lets a later match be rejected for starting inside a string, which is the only
- * way to tell `require("x")` in a template from a real call.
+ * Separates code from the three places an import can only look like one: a
+ * comment, the text of a string, and the body of a regex. Comments are blanked
+ * rather than removed so the statement after a multi-line one still starts its
+ * own line, and the mask lets a later match be rejected for starting inside a
+ * string, which is the only way to tell `require("x")` in a template from a real
+ * call. Nothing but a template spans a line, so a quote or a slash that turns out
+ * to open neither can only mislead the line it sits on.
  */
 export function scanSource(source: string): ScannedSource {
 	let code = "";
@@ -57,6 +80,20 @@ export function scanSource(source: string): ScannedSource {
 	function emit(text: string, executable: boolean): void {
 		code += text;
 		for (let offset = 0; offset < text.length; offset += 1) isCode.push(executable);
+	}
+
+	/** Whether a `/` here starts a regex, judged by the code emitted before it. */
+	function opensRegex(): boolean {
+		let offset = code.length - 1;
+		while (offset >= 0 && isCode[offset] && /\s/.test(code[offset] as string)) offset -= 1;
+		if (offset < 0) return true;
+		if (!isCode[offset]) return false;
+		const char = code[offset] as string;
+		if (BEFORE_REGEX.test(char)) return true;
+		if (!/[\w$]/.test(char)) return false;
+		const end = offset + 1;
+		while (offset >= 0 && isCode[offset] && /[\w$]/.test(code[offset] as string)) offset -= 1;
+		return KEYWORDS_BEFORE_REGEX.has(code.slice(offset + 1, end));
 	}
 
 	function emitStringLiteral(start: number): number {
@@ -74,12 +111,40 @@ export function scanSource(source: string): ScannedSource {
 				emit(char, true);
 				return index + 1;
 			}
+			// A quoted string cannot hold a raw newline, so one means this quote
+			// opened something else - a character class, an apostrophe in prose the
+			// comment blanker never saw - and the rest of the file is code again.
+			if (quote !== "`" && char === "\n") return index;
 			if (quote === "`" && char === "$" && source[index + 1] === "{") {
 				emit("${", true);
 				index = emitTemplateSpan(index + 2);
 				continue;
 			}
 			emit(char as string, false);
+			index += 1;
+		}
+		return source.length;
+	}
+
+	function emitRegexLiteral(start: number): number {
+		emit("/", true);
+		let index = start + 1;
+		let inCharacterClass = false;
+		while (index < source.length) {
+			const char = source[index] as string;
+			if (char === "\n") return index;
+			if (char === "\\") {
+				emit(source.slice(index, index + 2), false);
+				index += 2;
+				continue;
+			}
+			if (char === "[") inCharacterClass = true;
+			else if (char === "]") inCharacterClass = false;
+			else if (char === "/" && !inCharacterClass) {
+				emit(char, true);
+				return index + 1;
+			}
+			emit(char, false);
 			index += 1;
 		}
 		return source.length;
@@ -92,6 +157,10 @@ export function scanSource(source: string): ScannedSource {
 			const char = source[index];
 			if (char === '"' || char === "'" || char === "`") {
 				index = emitStringLiteral(index);
+				continue;
+			}
+			if (char === "/" && opensRegex()) {
+				index = emitRegexLiteral(index);
 				continue;
 			}
 			emit(char as string, true);
@@ -117,6 +186,10 @@ export function scanSource(source: string): ScannedSource {
 			// the leading whitespace a match anchors on is not itself masked out.
 			emit(source.slice(index, end).replace(/[^\n]/g, " "), true);
 			index = end;
+			continue;
+		}
+		if (char === "/" && opensRegex()) {
+			index = emitRegexLiteral(index);
 			continue;
 		}
 		emit(char as string, true);
@@ -201,14 +274,16 @@ function packageNameOf(specifier: string): string {
 }
 
 /** Every runtime import in the graph that a Pi-free install could not resolve. */
-export async function findDisallowedImports(): Promise<DisallowedImport[]> {
+export async function findDisallowedImports(
+	graph?: Map<string, ModuleImport[]>,
+): Promise<DisallowedImport[]> {
 	const manifest = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
 		dependencies?: Record<string, string>;
 	};
 	const declared = new Set(Object.keys(manifest.dependencies ?? {}));
-	const graph = await collectModuleGraph();
+	const modules = graph ?? (await collectModuleGraph());
 	const disallowed: DisallowedImport[] = [];
-	for (const [file, imports] of graph) {
+	for (const [file, imports] of modules) {
 		for (const { specifier, typeOnly } of imports) {
 			if (typeOnly || specifier.startsWith(".") || isBuiltin(specifier)) continue;
 			const packageName = packageNameOf(specifier);
@@ -225,14 +300,30 @@ export async function findDisallowedImports(): Promise<DisallowedImport[]> {
 	return disallowed;
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === import.meta.filename) {
-	const disallowed = await findDisallowedImports();
+/**
+ * Whether Node started this file rather than a test importing it. The module URL
+ * behind `import.meta.filename` has its symlinks resolved and `process.argv[1]`
+ * does not, so both sides have to be realpaths: comparing the raw path would
+ * make an invocation through a symlinked checkout exit 0 having checked nothing.
+ */
+function isEntryPoint(): boolean {
+	const invoked = process.argv[1];
+	if (invoked === undefined) return false;
+	try {
+		return realpathSync(resolve(invoked)) === import.meta.filename;
+	} catch {
+		return false;
+	}
+}
+
+if (isEntryPoint()) {
+	const graph = await collectModuleGraph();
+	const disallowed = await findDisallowedImports(graph);
 	if (disallowed.length > 0) {
 		const report = disallowed.map((entry) => `  ${entry.file} imports ${entry.specifier}: ${entry.reason}`);
 		process.stderr.write(`The CLI import graph no longer runs without Pi installed:\n${report.join("\n")}\n`);
 		process.exit(1);
 	}
-	const graph = await collectModuleGraph();
 	process.stdout.write(
 		`Checked ${graph.size} modules reachable from src/cli.ts: no Pi peers, no undeclared imports.\n`,
 	);

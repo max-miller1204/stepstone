@@ -1,5 +1,12 @@
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { collectModuleGraph, findDisallowedImports, moduleImports } from "../scripts/cli-import-graph.ts";
+
+const execFileAsync = promisify(execFile);
 
 function specifiers(source: string): string[] {
 	return moduleImports(source)
@@ -81,6 +88,32 @@ describe("CLI module scanner", () => {
 		expect(moduleImports(source)).toEqual([]);
 	});
 
+	it("reads the imports under a regex literal that holds a quote", () => {
+		// The quote in the character class must not open a string: everything from
+		// it to the next quote reads as text, so the imports below go unseen and the
+		// check reports a leaking file as clean.
+		const source = [
+			"const QUOTES = /[\"']/g;",
+			'const board = require("@earendil-works/pi-tui");',
+			'import { Model } from "@earendil-works/pi-ai";',
+		].join("\n");
+		expect(specifiers(source).sort()).toEqual(["@earendil-works/pi-ai", "@earendil-works/pi-tui"]);
+	});
+
+	it("reads a call that shares its line with a regex literal", () => {
+		const source = 'const lazy = /["\']/.test(raw) ? await import("./quoted.ts") : null;';
+		expect(specifiers(source)).toEqual(["./quoted.ts"]);
+	});
+
+	it("still reads a division that only looks like a regex", () => {
+		const source = [
+			"const half = total / 2;",
+			'const ratio = (a) / b["scale"] / c;',
+			'import "./after.ts";',
+		].join("\n");
+		expect(specifiers(source)).toEqual(["./after.ts"]);
+	});
+
 	it("still reads code inside a template placeholder", () => {
 		// The counterpart to the case above: a placeholder holds code, not text, so
 		// the scanner must not skip a whole template on sight.
@@ -103,4 +136,22 @@ describe("the module graph behind the CLI bin", () => {
 		// installs the tarball; this is the same invariant read off the sources.
 		expect(await findDisallowedImports()).toEqual([]);
 	});
+});
+
+describe("the imports:check command", () => {
+	it("runs the check when Node reaches the script through a symlinked path", async () => {
+		// Node realpaths the entry it is handed, so a script that recognises itself
+		// by comparing raw paths quietly does nothing here and still exits 0 - a
+		// pass that looks exactly like a clean graph in a CI log.
+		const scratch = await mkdtemp(join(tmpdir(), "pi-worklist-imports-check-"));
+		try {
+			await symlink(resolve("."), join(scratch, "repo"));
+			const { stdout } = await execFileAsync(process.execPath, [
+				join(scratch, "repo", "scripts", "cli-import-graph.ts"),
+			]);
+			expect(stdout).toMatch(/^Checked [1-9]\d* modules reachable from src\/cli\.ts/);
+		} finally {
+			await rm(scratch, { recursive: true, force: true });
+		}
+	}, 30_000);
 });
