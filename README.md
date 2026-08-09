@@ -7,6 +7,9 @@
 [![Release](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml/badge.svg)](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml)
 [![Pi package](https://img.shields.io/badge/Pi-package-8a76b5)](https://pi.dev/packages/stepstone)
 
+> Formerly published as `pi-worklist`, which is frozen at 0.17.0 and no longer updated.
+> Everything continues here, under a name that does not imply the tool only serves one coding agent.
+
 `stepstone` gives Pi two deliberately different lists.
 Session Tasks track the concrete work in the current coding session.
 Project Goals track the larger outcomes shared by every Pi session in a Git repository.
