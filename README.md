@@ -437,11 +437,18 @@ The Pi gallery may take a short time to refresh after npm accepts a release.
 
 ### One-time setup
 
-Before the very first release, two things have to be done outside the repository, and the tag push fails until both are.
-Neither is enforced by CI, and neither applies to any release after the first.
+Three things have to be done outside this repository, and none of them can be enforced from it.
+The first two block the very first release, so the tag push fails until both are done.
+The third is registry housekeeping on the old package name and can happen any time after that.
+None of them applies to any later release.
 
-- Point the GitHub repository at `max-miller1204/stepstone`, so the badges, clone URL, and `npx skills add` line in this README all resolve.
-- Publish `stepstone@0.1.0` once by hand, because Trusted Publishing cannot create a package that does not exist yet: npm has nothing to attach a publisher to until the name is claimed. Then add its Trusted Publishers entry naming this repository and `release.yml`, after which every later release runs entirely in CI.
+- Create the `max-miller1204/stepstone` repository on GitHub and push this checkout to it, so the badges, clone URL, and `npx skills add` line in this README all resolve.
+  This is a new repository rather than a rename, so nothing redirects: `max-miller1204/pi-worklist` stays published under its own name, carrying a pointer notice at the top of its README, and the two resolve independently.
+- Publish `stepstone@0.1.0` once by hand, because Trusted Publishing cannot create a package that does not exist yet: npm has nothing to attach a publisher to until the name is claimed.
+  Then add its Trusted Publishers entry naming this repository and `release.yml`, after which every later release runs entirely in CI.
+- Deprecate the old npm package: `npm deprecate pi-worklist "Renamed to stepstone. Install stepstone instead."`
+  `pi-worklist@0.17.0` stays published and keeps working, so `npx -y pi-worklist@latest` and `npm i pi-worklist` go on resolving that frozen build, including from every copy of the generated skill already installed elsewhere.
+  npm prints a deprecation notice at install time, which is the only channel that reaches someone invoking the old name non-interactively; a notice in the old repository's README never will.
 
 ## License
 
