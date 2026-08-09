@@ -30,12 +30,10 @@ jobs:
   # The bin's promise is that `npx stepstone` works with nothing installed but
   # Node, and this checkout cannot test that: it has every Pi peer present as a
   # devDependency, so a leaked import resolves here and breaks only for users.
-  # This job packs both publishable tarballs, installs them alone, and drives the
-  # real command surface through the released bin and through the deprecated
-  # alias shim, which reaches the CLI over the `exports` map and so is invisible
-  # to the typechecker and the test suite. It waits on `check`, whose fast
-  # source-level import scan reports the same regression in milliseconds and with
-  # a clearer message.
+  # This job packs the publishable tarball, installs it alone with no Pi present,
+  # and drives the released bin across the real command surface. It waits on
+  # `check`, whose fast source-level import scan reports the same regression in
+  # milliseconds and with a clearer message.
   no-pi-install:
     needs: check
     runs-on: ubuntu-latest

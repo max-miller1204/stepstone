@@ -423,14 +423,6 @@ Authentication is npm Trusted Publishing over OIDC, so the repository stores no 
 npm attaches build provenance to every tarball published this way, letting an installer verify the package was built from this repository at that commit.
 The trust relationship is configured once on npm, under the package's Trusted Publishers settings, naming this repository and the `release.yml` workflow filename; a workflow renamed or moved needs that entry updated or every publish will be rejected.
 
-### One-time setup
-
-The first release needs two things that cannot be done from the repository, and the tag push fails until both are done.
-Neither is enforced by CI.
-
-- Point the GitHub repository at `max-miller1204/stepstone`, so the badges, clone URL, and `npx skills add` line in this README all resolve.
-- Publish `stepstone@0.1.0` once by hand, because Trusted Publishing cannot create a package that does not exist yet: npm has nothing to attach a publisher to until the name is claimed. Then add its Trusted Publishers entry naming this repository and `release.yml`, after which every later release runs entirely in CI.
-
 Verify npm, Pi installation, and the gallery after the workflow finishes:
 
 ```sh
@@ -442,6 +434,14 @@ Each npm version is immutable, so bump the version before every subsequent publi
 A run that failed before `npm publish` published nothing, so delete the tag, fix the cause, and tag again.
 A run that failed after it cannot be retried on the same version, because npm already has it; finish the remaining steps by hand or release the fix as a new version.
 The Pi gallery may take a short time to refresh after npm accepts a release.
+
+### One-time setup
+
+Before the very first release, two things have to be done outside the repository, and the tag push fails until both are.
+Neither is enforced by CI, and neither applies to any release after the first.
+
+- Point the GitHub repository at `max-miller1204/stepstone`, so the badges, clone URL, and `npx skills add` line in this README all resolve.
+- Publish `stepstone@0.1.0` once by hand, because Trusted Publishing cannot create a package that does not exist yet: npm has nothing to attach a publisher to until the name is claimed. Then add its Trusted Publishers entry naming this repository and `release.yml`, after which every later release runs entirely in CI.
 
 ## License
 

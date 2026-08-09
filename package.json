@@ -39,7 +39,6 @@
 	"main": "./src/extension.ts",
 	"exports": {
 		".": "./src/extension.ts",
-		"./cli": "./dist/cli.js",
 		"./src/*": "./src/*",
 		"./package.json": "./package.json"
 	},
