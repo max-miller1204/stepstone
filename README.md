@@ -438,6 +438,7 @@ It refuses to publish when the tag disagrees with `package.json`, which is the m
 The same run then publishes the deprecated `pi-worklist` alias in [`alias/pi-worklist`](alias/pi-worklist), after `stepstone` itself, so the dependency it declares already resolves.
 That package holds no implementation, only a bin shim and a re-exported extension entry point, so it needs no build.
 Its version and its pin on `stepstone` are rewritten by the `version` lifecycle script during `npm version` and staged into the same commit, and `npm run alias:check`, inside `npm run check`, fails the build if they ever drift; neither can be bumped alone.
+`npm run no-pi-install:check` installs it beside the packed release and requires its bin to produce the same exit code, stdout, and stderr as the real one, so the `exports` entry the shim imports cannot be dropped, and the shim's rename notice cannot leak into a redirected stderr, without failing the build.
 
 Authentication is npm Trusted Publishing over OIDC, so the repository stores no `NPM_TOKEN` and a release needs no local `npm login`.
 npm attaches build provenance to every tarball published this way, letting an installer verify the package was built from this repository at that commit.
