@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
+import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 import worklistExtension from "../src/extension.ts";
 import { formatSessionTasks } from "../src/format.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
@@ -542,7 +543,7 @@ describe("session state and tool", () => {
 	});
 
 	it("warns in project activation text while keeping blocked activation successful", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "pi-worklist-tool-blocked-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-blocked-")), ".pi", "worklist.json");
 		const blocker = await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
 			projectPath: path,
 		});
@@ -580,8 +581,62 @@ describe("session state and tool", () => {
 		expect(statusAlias.details.goal?.status).toBe("active");
 	});
 
+	it("fills and clears one session widget slot, named for the published package", async () => {
+		// Pi keys a widget by the id the extension passes, so filling the slot under
+		// one name and clearing it under another strands the widget on screen for the
+		// rest of the session. Both calls therefore have to agree, and on the name the
+		// package actually ships under.
+		const root = await mkdtemp(join(tmpdir(), "stepstone-widget-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const projectPath = join(root, ".pi", "worklist.json");
+		const added = await executeWorklist(
+			{ scope: "project", action: "add", title: "Cross the first stone" },
+			ctx,
+			{ projectPath },
+		);
+		const goalId = added.details.goal?.id;
+		if (!goalId) throw new Error("Goal was not created");
+		await executeWorklist({ scope: "project", action: "set_active", id: goalId }, ctx, { projectPath });
+
+		const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => Promise<void>>();
+		const api = {
+			appendEntry: () => {},
+			registerTool: () => {},
+			registerCommand: () => {},
+			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void>) => {
+				handlers.set(event, handler);
+			},
+			events: { emit: () => {}, on: () => () => {} },
+		} as unknown as ExtensionAPI;
+		worklistExtension(api);
+		const start = handlers.get("session_start");
+		const shutdown = handlers.get("session_shutdown");
+		if (!start || !shutdown) throw new Error("Session lifecycle handlers were not registered");
+
+		const widgetCalls: Array<{ id: string; value: unknown }> = [];
+		const context = {
+			cwd: root,
+			mode: "cli",
+			sessionManager: { getBranch: () => [] },
+			ui: {
+				setWidget: (id: string, value: unknown) => widgetCalls.push({ id, value }),
+				custom: async () => undefined,
+				notify: () => {},
+			},
+		} as unknown as ExtensionContext;
+
+		await start({}, context);
+		const goalLines = ["Goal: Cross the first stone"];
+		expect(widgetCalls).toEqual([{ id: CLI_COMMAND_CONTRACT.binary, value: goalLines }]);
+
+		await shutdown({}, context);
+		expect(widgetCalls.at(-1)).toEqual({ id: CLI_COMMAND_CONTRACT.binary, value: undefined });
+		const slots = new Set(widgetCalls.map((call) => call.id));
+		expect(slots).toEqual(new Set([CLI_COMMAND_CONTRACT.binary]));
+	});
+
 	it("surfaces blocked activation warnings from the Pi dashboard", async () => {
-		const root = await mkdtemp(join(tmpdir(), "pi-worklist-dashboard-blocked-"));
+		const root = await mkdtemp(join(tmpdir(), "stepstone-dashboard-blocked-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		const projectPath = join(root, ".pi", "worklist.json");
 		await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
@@ -645,7 +700,7 @@ describe("session state and tool", () => {
 	});
 
 	it("previews and applies an atomic project plan through the model tool", async () => {
-		const projectPath = join(await mkdtemp(join(tmpdir(), "pi-worklist-tool-plan-")), ".pi", "worklist.json");
+		const projectPath = join(await mkdtemp(join(tmpdir(), "stepstone-tool-plan-")), ".pi", "worklist.json");
 		await executeWorklist({ scope: "project", action: "add", title: "Shared goal" }, ctx, {
 			projectPath,
 		});
@@ -674,7 +729,7 @@ describe("session state and tool", () => {
 	});
 
 	it("guards every destructive project lifecycle path", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "pi-worklist-tool-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-")), ".pi", "worklist.json");
 		const { api } = fakePi();
 		const store = new SessionStore(api);
 		const added = await executeWorklist({ scope: "project", action: "add", title: "Ship" }, ctx, {

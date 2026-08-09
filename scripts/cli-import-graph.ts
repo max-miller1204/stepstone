@@ -4,7 +4,7 @@
  *
  *   npm run imports:check
  *
- * The compiled bin ships to people who run `npx pi-worklist` with no Pi
+ * The compiled bin ships to people who run `npx stepstone` with no Pi
  * installation, so every runtime import it reaches has to resolve from Node's
  * builtins or the package's own `dependencies`. This repository installs every
  * Pi peer as a devDependency, so a stray `@earendil-works/*` import resolves

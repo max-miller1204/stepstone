@@ -5,12 +5,12 @@
  *
  * This repository installs every Pi peer as a devDependency, so a Pi import
  * that leaked into the CLI path resolves in this checkout and fails only for
- * someone running `npx pi-worklist` without Pi - the install this package's own
- * agent skill prescribes. So the check refuses to trust the local tree: it packs
- * the real tarball, installs it into a scratch directory with no dev
- * dependencies and no Pi packages, and drives the installed bin across the
- * command surface, asserting exit codes and `--json` envelopes rather than only
- * that the process started.
+ * someone running `npx` on the published name without Pi - the install this
+ * package's own agent skill prescribes. So the check refuses to trust the local
+ * tree: it packs the real tarball, installs it into a scratch directory with
+ * no dev dependencies and no Pi packages, and drives the installed bin across
+ * the command surface, asserting exit codes and `--json` envelopes rather than
+ * only that the process started.
  *
  * scripts/cli-import-graph.ts catches the same regression from the sources in
  * milliseconds; this is the slower proof that the tarball a user downloads
@@ -22,9 +22,11 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
+const { binary } = CLI_COMMAND_CONTRACT;
 
 interface CliResult {
 	code: number;
@@ -117,7 +119,7 @@ const UNRESOLVED_IMPORT = /Cannot find (?:package|module) '([^']+)'/;
  * a leaked Pi import surfaces as an exit code mismatch under a resolver stack,
  * which reads as a broken test rather than as the shipped bin being unusable.
  */
-function assertNothingUnresolved(args: string[], stderr: string): void {
+function assertNothingUnresolved(command: string, stderr: string): void {
 	// `MODULE_NOT_FOUND` covers both spellings Node prints: the ESM
 	// `ERR_MODULE_NOT_FOUND` and the bare CJS code a `createRequire` call raises.
 	if (!stderr.includes("MODULE_NOT_FOUND") && !stderr.includes("ERR_REQUIRE_ESM")) return;
@@ -131,28 +133,32 @@ function assertNothingUnresolved(args: string[], stderr: string): void {
 	const missing = UNRESOLVED_IMPORT.exec(detail)?.[1] ?? "a package outside its dependencies";
 	throw new Error(
 		`${detail}\n\n` +
-			`\`pi-worklist ${args.join(" ")}\` cannot load ${missing} from a Pi-free install, which is how ` +
-			"everyone running `npx pi-worklist` has it. Something reachable from src/cli.ts imports it at " +
+			`\`${command}\` cannot load ${missing} from a Pi-free install, which is how ` +
+			`everyone running \`npx ${binary}\` has it. Something reachable from src/cli.ts imports it at ` +
 			"runtime: run `npm run imports:check` to name the module, then make that import type-only or " +
 			"move it out of the CLI graph.",
 	);
 }
 
 function cliRunner(binPath: string, cwd: string) {
+	// The bin's own name, so a failure names the command that was actually run
+	// without spelling the published name here as a literal.
+	const command = basename(binPath);
 	return async function runCli(args: string[]): Promise<CliResult> {
+		const invocation = `${command} ${args.join(" ")}`;
 		try {
 			const { stdout, stderr } = await execFileAsync(binPath, args, {
 				cwd,
 				maxBuffer: 32 * 1024 * 1024,
 				timeout: CLI_TIMEOUT_MS,
 			});
-			assertNothingUnresolved(args, stderr);
+			assertNothingUnresolved(invocation, stderr);
 			return { code: 0, stdout, stderr };
 		} catch (error) {
-			assertNotTimedOut(error, `pi-worklist ${args.join(" ")}`, CLI_TIMEOUT_MS);
+			assertNotTimedOut(error, invocation, CLI_TIMEOUT_MS);
 			const failure = error as CliResult & { code: number | null };
 			if (typeof failure.stderr !== "string") throw error;
-			assertNothingUnresolved(args, failure.stderr);
+			assertNothingUnresolved(invocation, failure.stderr);
 			return { code: failure.code ?? 1, stdout: failure.stdout, stderr: failure.stderr };
 		}
 	};
@@ -311,13 +317,18 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	assert.match(board.stderr, /needs an interactive terminal/);
 }
 
-const scratch = await mkdtemp(join(tmpdir(), "pi-worklist-no-pi-install-"));
+const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));
 const packDir = join(scratch, "pack");
 const installDir = join(scratch, "install");
 const workspace = join(scratch, "workspace");
 let succeeded = false;
 try {
 	await Promise.all([packDir, installDir, workspace].map((dir) => mkdir(dir, { recursive: true })));
+
+	const { name, version } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
+		name: string;
+		version: string;
+	};
 
 	step("Packing the publishable tarball");
 	const tarball = await packTarball(packDir);
@@ -328,13 +339,10 @@ try {
 
 	step("Driving the installed bin");
 	await run("git", ["init", "-q", "."], workspace);
-	const { version } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
-		version: string;
-	};
-	await exerciseCli(join(installDir, "node_modules", ".bin", "pi-worklist"), workspace, version);
+	await exerciseCli(join(installDir, "node_modules", ".bin", binary), workspace, version);
 
 	succeeded = true;
-	step(`pi-worklist ${version} runs from a Pi-free install.`);
+	step(`${name} ${version} runs from a Pi-free install.`);
 } catch (error) {
 	// The message is the finding; a stack through this script's own helpers only
 	// buries which part of the installed surface stopped working.

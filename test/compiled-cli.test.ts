@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
+import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
 const compiledCliPath = resolve("dist/cli.js");
@@ -49,7 +50,7 @@ function packedPackages(stdout: string): PackedPackage[] {
 	return Array.isArray(parsed) ? parsed : Object.values(parsed);
 }
 
-describe("compiled pi-worklist CLI bin", () => {
+describe("compiled stepstone CLI bin", () => {
 	beforeAll(async () => {
 		await execFileAsync("npm", ["run", "build"], { cwd: resolve(".") });
 	}, 60_000);
@@ -63,7 +64,7 @@ describe("compiled pi-worklist CLI bin", () => {
 	});
 
 	it("imports only declared dependencies, never a Pi peer", async () => {
-		// `npx -y pi-worklist@latest` installs the package's own dependencies and nothing
+		// `npx -y stepstone@latest` installs the package's own dependencies and nothing
 		// else, so every module the bin reaches at runtime, including the terminal
 		// board, must resolve without a Pi installation present.
 		const manifest = parseJson<{
@@ -97,7 +98,7 @@ describe("compiled pi-worklist CLI bin", () => {
 
 	it("declares every Pi peer optional so installing the CLI stays small", async () => {
 		// npm auto-installs non-optional peers, so a peer the bin never loads is
-		// still downloaded by everyone: `npx -y pi-worklist@latest`, the invocation
+		// still downloaded by everyone: `npx -y stepstone@latest`, the invocation
 		// this package's own agent skill prescribes, pulled the entire Pi toolchain
 		// (~329 MB) to run a CLI whose real dependency tree is under 1 MB. The bin
 		// resolves without a Pi installation, asserted directly above, so nothing is
@@ -113,7 +114,7 @@ describe("compiled pi-worklist CLI bin", () => {
 	});
 
 	it("runs the full goal lifecycle from the compiled bin", async () => {
-		const root = await mkdtemp(join(tmpdir(), "pi-worklist-compiled-cli-"));
+		const root = await mkdtemp(join(tmpdir(), "stepstone-compiled-cli-"));
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
 
 		const added = await runCompiledCli(root, ["project", "add", "Compiled goal", "--", "Full detail"]);
@@ -201,10 +202,16 @@ describe("compiled pi-worklist CLI bin", () => {
 		expect(paths).toContain("src/extension.ts");
 
 		const packageJson = parseJson<{
+			name?: string;
 			bin?: Record<string, string>;
 			files: string[];
 		}>(await readFile(resolve("package.json"), "utf8"));
-		expect(packageJson.bin).toEqual({ "pi-worklist": "dist/cli.js" });
+		// Both are keyed off the contract, because the generated docs lean on both:
+		// `npx -y <binary>@latest` resolves the published package name, while the
+		// command it then runs is the bin key. Pinning only one lets a rename ship
+		// docs that name a package nobody published.
+		expect(packageJson.name).toBe(CLI_COMMAND_CONTRACT.binary);
+		expect(packageJson.bin).toEqual({ [CLI_COMMAND_CONTRACT.binary]: "dist/cli.js" });
 		expect(packageJson.files).toContain("dist");
 	}, 60_000);
 });

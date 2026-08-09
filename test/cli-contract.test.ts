@@ -61,7 +61,7 @@ describe("single CLI command contract", () => {
 		for (const action of CLI_COMMAND_CONTRACT.actions) {
 			expect(usage).toContain(action.usage);
 			expect(usage).toContain(action.summary);
-			expect(commands).toContain(`\`npx -y pi-worklist@latest project ${action.usage}\``);
+			expect(commands).toContain(`\`npx -y ${CLI_COMMAND_CONTRACT.binary}@latest project ${action.usage}\``);
 		}
 		for (const flag of CLI_COMMAND_CONTRACT.flags) {
 			expect(usage).toContain(flag.usage);
@@ -94,7 +94,7 @@ describe("single CLI command contract", () => {
 		const guide = renderCliGuide();
 		const tables = {
 			Commands: CLI_COMMAND_CONTRACT.actions.map(
-				(action) => `\`npx -y pi-worklist@latest project ${action.usage}\``,
+				(action) => `\`npx -y ${CLI_COMMAND_CONTRACT.binary}@latest project ${action.usage}\``,
 			),
 			Flags: CLI_COMMAND_CONTRACT.flags.map((flag) => `\`${flag.usage}\``),
 			"Exit codes": CLI_COMMAND_CONTRACT.exitCodes.map((exitCode) => `\`${exitCode.code}\``),
@@ -260,7 +260,7 @@ describe("single CLI command contract", () => {
 	});
 
 	it("prints the contract-rendered help from the CLI itself", async () => {
-		const root = await mkdtemp(join(tmpdir(), "pi-worklist-cli-help-"));
+		const root = await mkdtemp(join(tmpdir(), "stepstone-cli-help-"));
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
 		const { stdout } = await execFileAsync(process.execPath, [resolve("src/cli.ts"), "project", "help"], {
 			cwd: root,
@@ -269,7 +269,7 @@ describe("single CLI command contract", () => {
 	});
 
 	it("documents every implemented action and implements every documented action", async () => {
-		const root = await mkdtemp(join(tmpdir(), "pi-worklist-cli-surface-"));
+		const root = await mkdtemp(join(tmpdir(), "stepstone-cli-surface-"));
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
 		const documented = CLI_COMMAND_CONTRACT.actions.map((action) => action.name);
 		expect(documented).toEqual([

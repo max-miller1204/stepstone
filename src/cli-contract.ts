@@ -1,5 +1,5 @@
 /**
- * The single command contract for the pi-worklist CLI.
+ * The single command contract for the stepstone CLI.
  *
  * CLI usage text, the command reference in docs/cli.md, the installable agent
  * skill in .claude/skills/worklist/SKILL.md, and agent guidance are all
@@ -39,8 +39,20 @@ export const DOCS_PATH = "docs/cli.md";
 /** Repository-relative path of the generated agent skill. */
 export const SKILL_PATH = ".claude/skills/worklist/SKILL.md";
 
+/**
+ * The published package name, which is also the bin it installs.
+ *
+ * The only place the source spells it out. Every other surface reads it back
+ * through `CLI_COMMAND_CONTRACT.binary` or interpolates it from here, so a
+ * rename cannot leave one generated line naming the package differently from
+ * the commands printed beside it. package.json cannot import this, so its
+ * `name` and `bin` key hold the one unavoidable copy, and
+ * test/compiled-cli.test.ts pins both to this constant.
+ */
+const BINARY = "stepstone";
+
 export const CLI_COMMAND_CONTRACT = {
-	binary: "pi-worklist",
+	binary: BINARY,
 	scope: "project",
 	intro:
 		"Manage repository-wide Project Goals in <git-root>/.pi/worklist.json through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.",
@@ -49,8 +61,7 @@ export const CLI_COMMAND_CONTRACT = {
 	 * repository-neutral: one skill file serves every checkout, so it must never
 	 * assume it was installed alongside this source tree.
 	 */
-	skillDescription:
-		"Manage pi-worklist Project Goals (the shared roadmap in a repo's .pi/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.",
+	skillDescription: `Manage ${BINARY} Project Goals (the shared roadmap in a repo's .pi/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
 	runtime: {
 		/** Node floor for the published compiled bin. Asserted against package.json engines.node. */
 		binaryNodeFloor: "20",
@@ -460,7 +471,7 @@ export function renderSkillMarkdown(): string {
 		"",
 		`<!-- Generated from src/cli-contract.ts by ${GENERATOR_PATH}. Do not edit manually. -->`,
 		"",
-		"# Managing pi-worklist Project Goals",
+		`# Managing ${contract.binary} Project Goals`,
 		"",
 		"Project Goals are a repository-wide roadmap stored in `<git-root>/.pi/worklist.json` and shared with Pi sessions.",
 		"Never edit that file directly: a concurrent Pi session may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.",
@@ -569,7 +580,7 @@ export function renderCliGuide(): string {
 	return [
 		`<!-- Generated from src/cli-contract.ts by ${GENERATOR_PATH}. Do not edit manually. -->`,
 		"",
-		"# pi-worklist CLI",
+		`# ${contract.binary} CLI`,
 		"",
 		contract.intro,
 		"",

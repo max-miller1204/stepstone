@@ -1,4 +1,4 @@
-# pi-worklist agent notes
+# stepstone agent notes
 
 - Read Pi's installed `docs/extensions.md`, `docs/tui.md`, `docs/packages.md`, and `docs/session-format.md` before changing extension APIs.
 - Session Tasks are canonical versioned custom-entry snapshots and must remain branch-aware.
@@ -11,6 +11,7 @@
 - Keep the widget compact and width-safe.
 - Keep the model-facing schema compatible with Google providers by using `StringEnum` for string enums.
 - Run `npm run check`, `npm audit`, `npm run pack:check`, `npm run no-pi-install:check`, and the real Pi RPC test before release.
-- Releases are published by CI from a `v*.*.*` tag push, never by hand: run `npm version <bump>` and `git push --follow-tags`, and never `npm publish`. The tag must agree with `package.json`, `.github/workflows/release.yml` re-runs `npm run verify` against the tagged commit, and npm authenticates that workflow by filename over OIDC, so renaming or moving it breaks publishing until the package's Trusted Publishers entry is updated to match.
+- Releases are published by CI from a `v*.*.*` tag push, never by hand: run `npm version <bump>` and `git push --follow-tags`, and never `npm publish`. Exactly one publish is exempt, and only while the condition holds: the first publish of a package name that does not exist on npm yet, because Trusted Publishing has no package to authorize the workflow against until the name is claimed. That is a single bootstrap step with its own procedure under "One-time setup" in the README; once the name resolves on the registry the exemption is spent, and every release after it goes through CI like any other. The tag must agree with `package.json`, `.github/workflows/release.yml` re-runs `npm run verify` against the tagged commit, and npm authenticates that workflow by filename over OIDC, so renaming or moving it breaks publishing until the package's Trusted Publishers entry is updated to match.
 - `docs/cli.md` and `.claude/skills/worklist/SKILL.md` are generated from `src/cli-contract.ts`; never hand-edit them, run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
+- The published name lives in exactly one place, `CLI_COMMAND_CONTRACT.binary` in `src/cli-contract.ts`, which feeds every generated document, the CLI's own diagnostics, and the `name` and `bin` keys asserted from that contract in `test/compiled-cli.test.ts`. Read it from the contract wherever the published identity is what is meant - generated docs, user-facing diagnostics, the manifest name and bin key, and anything else a rename has to move - so a rename stays a one-line change. Incidental strings that merely happen to spell it, such as the `stepstone-*` temporary-directory prefixes throughout `test/`, are not covered by this rule and need no sweep.
 - Do not manually add a changelog.

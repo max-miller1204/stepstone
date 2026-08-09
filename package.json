@@ -1,25 +1,28 @@
 {
-	"name": "pi-worklist",
-	"version": "0.17.0",
-	"description": "A Pi extension for session tasks and project goals.",
+	"name": "stepstone",
+	"version": "0.1.0",
+	"description": "A shared roadmap of project goals for coding agents and the humans working beside them.",
 	"type": "module",
 	"keywords": [
+		"worklist",
+		"roadmap",
+		"goals",
+		"tasks",
+		"cli",
+		"agent",
 		"pi-package",
 		"pi",
-		"extension",
-		"worklist",
-		"tasks",
-		"goals"
+		"extension"
 	],
 	"author": "Max Miller",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/max-miller1204/pi-worklist.git"
+		"url": "git+https://github.com/max-miller1204/stepstone.git"
 	},
-	"homepage": "https://github.com/max-miller1204/pi-worklist#readme",
+	"homepage": "https://github.com/max-miller1204/stepstone#readme",
 	"bugs": {
-		"url": "https://github.com/max-miller1204/pi-worklist/issues"
+		"url": "https://github.com/max-miller1204/stepstone/issues"
 	},
 	"files": [
 		"src",
@@ -31,7 +34,7 @@
 		"package.json"
 	],
 	"bin": {
-		"pi-worklist": "dist/cli.js"
+		"stepstone": "dist/cli.js"
 	},
 	"main": "./src/extension.ts",
 	"exports": {

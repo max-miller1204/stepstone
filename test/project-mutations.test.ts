@@ -21,7 +21,7 @@ import {
 import { readProjectWorklist } from "../src/project-store.ts";
 
 async function tempPath() {
-	const root = await mkdtemp(join(tmpdir(), "pi-worklist-mutations-"));
+	const root = await mkdtemp(join(tmpdir(), "stepstone-mutations-"));
 	return join(root, ".pi", "worklist.json");
 }
 

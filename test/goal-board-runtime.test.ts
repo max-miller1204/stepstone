@@ -73,7 +73,7 @@ interface Harness {
 }
 
 async function tempGitRepo(): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), "pi-worklist-board-"));
+	const root = await mkdtemp(join(tmpdir(), "stepstone-board-"));
 	await execFileAsync("git", ["init", "-q"], { cwd: root });
 	return root;
 }
@@ -462,7 +462,7 @@ describe("project ui command guards", () => {
 	});
 
 	it("still requires a git repository", async () => {
-		const outside = await mkdtemp(join(tmpdir(), "pi-worklist-not-a-repo-"));
+		const outside = await mkdtemp(join(tmpdir(), "stepstone-not-a-repo-"));
 		const result = await runCli(outside, ["project", "ui"]);
 		expect(result.code).not.toBe(0);
 		expect(result.stderr).toContain("git repository");

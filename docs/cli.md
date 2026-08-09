@@ -1,6 +1,6 @@
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
 
-# pi-worklist CLI
+# stepstone CLI
 
 Manage repository-wide Project Goals in <git-root>/.pi/worklist.json through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.
 
@@ -9,7 +9,7 @@ Manage repository-wide Project Goals in <git-root>/.pi/worklist.json through the
 Use the explicit `@latest` package specifier so a stale local npx cache cannot select an older CLI build:
 
 ```sh
-npx -y pi-worklist@latest project <action> [arguments] [flags]
+npx -y stepstone@latest project <action> [arguments] [flags]
 ```
 
 Every `--json` result envelope reports the running package version as `meta.cliVersion`.
@@ -18,24 +18,24 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 
 | Command | Description |
 | --- | --- |
-| `npx -y pi-worklist@latest project list` | Show a compact bounded list of project goals |
-| `npx -y pi-worklist@latest project show <id>` | Show one goal with its full description |
-| `npx -y pi-worklist@latest project find <text...>` | List the goals whose title or description contains the text |
-| `npx -y pi-worklist@latest project next` | Show the one goal to start next, the first ready goal in file order |
-| `npx -y pi-worklist@latest project ready` | List every unblocked, unclaimed open goal: the whole parallel frontier |
-| `npx -y pi-worklist@latest project waves` | Print unfinished goals in dependency layers, earliest first |
-| `npx -y pi-worklist@latest project ui` | Open the interactive goal board for a human at the keyboard. Requires a terminal; not for scripts or agents |
-| `npx -y pi-worklist@latest project add <title...> [--description <text> \| -- <description...>]` | Add an open goal |
-| `npx -y pi-worklist@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
-| `npx -y pi-worklist@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |
-| `npx -y pi-worklist@latest project move <id> up\|down\|before <id>\|after <id>` | Reorder a goal in the roadmap's canonical file order |
-| `npx -y pi-worklist@latest project set_active <id>` | Make a goal the single active goal |
-| `npx -y pi-worklist@latest project complete <id> --confirm` | Mark a goal done. Requires explicit user confirmation |
-| `npx -y pi-worklist@latest project reopen <id> --confirm` | Reopen a done or archived goal. Requires explicit user confirmation |
-| `npx -y pi-worklist@latest project archive <id> --confirm` | Archive a goal. Requires explicit user confirmation |
-| `npx -y pi-worklist@latest project delete <id> --confirm` | Delete a goal permanently. Requires explicit user confirmation |
-| `npx -y pi-worklist@latest project migrate_ids --confirm` | Rewrite randomly generated goal IDs as title-derived ones. Requires explicit user confirmation |
-| `npx -y pi-worklist@latest project help` | Print this help |
+| `npx -y stepstone@latest project list` | Show a compact bounded list of project goals |
+| `npx -y stepstone@latest project show <id>` | Show one goal with its full description |
+| `npx -y stepstone@latest project find <text...>` | List the goals whose title or description contains the text |
+| `npx -y stepstone@latest project next` | Show the one goal to start next, the first ready goal in file order |
+| `npx -y stepstone@latest project ready` | List every unblocked, unclaimed open goal: the whole parallel frontier |
+| `npx -y stepstone@latest project waves` | Print unfinished goals in dependency layers, earliest first |
+| `npx -y stepstone@latest project ui` | Open the interactive goal board for a human at the keyboard. Requires a terminal; not for scripts or agents |
+| `npx -y stepstone@latest project add <title...> [--description <text> \| -- <description...>]` | Add an open goal |
+| `npx -y stepstone@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
+| `npx -y stepstone@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |
+| `npx -y stepstone@latest project move <id> up\|down\|before <id>\|after <id>` | Reorder a goal in the roadmap's canonical file order |
+| `npx -y stepstone@latest project set_active <id>` | Make a goal the single active goal |
+| `npx -y stepstone@latest project complete <id> --confirm` | Mark a goal done. Requires explicit user confirmation |
+| `npx -y stepstone@latest project reopen <id> --confirm` | Reopen a done or archived goal. Requires explicit user confirmation |
+| `npx -y stepstone@latest project archive <id> --confirm` | Archive a goal. Requires explicit user confirmation |
+| `npx -y stepstone@latest project delete <id> --confirm` | Delete a goal permanently. Requires explicit user confirmation |
+| `npx -y stepstone@latest project migrate_ids --confirm` | Rewrite randomly generated goal IDs as title-derived ones. Requires explicit user confirmation |
+| `npx -y stepstone@latest project help` | Print this help |
 
 ## Flags
 
