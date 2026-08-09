@@ -202,11 +202,15 @@ describe("compiled stepstone CLI bin", () => {
 		expect(paths).toContain("src/extension.ts");
 
 		const packageJson = parseJson<{
+			name?: string;
 			bin?: Record<string, string>;
 			files: string[];
 		}>(await readFile(resolve("package.json"), "utf8"));
-		// Keyed off the contract so the published bin name and the name every
-		// generated doc tells people to run can never drift apart.
+		// Both are keyed off the contract, because the generated docs lean on both:
+		// `npx -y <binary>@latest` resolves the published package name, while the
+		// command it then runs is the bin key. Pinning only one lets a rename ship
+		// docs that name a package nobody published.
+		expect(packageJson.name).toBe(CLI_COMMAND_CONTRACT.binary);
 		expect(packageJson.bin).toEqual({ [CLI_COMMAND_CONTRACT.binary]: "dist/cli.js" });
 		expect(packageJson.files).toContain("dist");
 	}, 60_000);

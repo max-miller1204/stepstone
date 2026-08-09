@@ -56,12 +56,13 @@ pi -e ./src/extension.ts
 
 ### Renamed from pi-worklist
 
-This package was published as `pi-worklist` through 0.17.0.
+The real implementation was published as `pi-worklist` through 0.17.0.
 The tool never required Pi for anything but the session-scoped features, so the name told everyone driving it from another coding agent that it was not for them.
 
-`pi-worklist` remains on npm as a deprecated alias, published once at 0.17.0 and never republished.
+`pi-worklist` remains on npm as a deprecated alias, published once at 0.17.1 and never republished.
 It forwards exactly two surfaces to `stepstone`: the `pi-worklist` bin and the Pi extension entry point.
 Its own version never moves, but it depends on `stepstone` by range rather than by pin, so an install of the old name still resolves the current release.
+The two version lines are independent from here on, and deliberately do not match: `stepstone` starts at 0.17.0 and climbs, while the alias sits forever at 0.17.1, one above the last real `pi-worklist` release it has to outrank to become `latest`.
 Deep subpath imports are not forwarded: `pi-worklist/src/types.ts`, and anything else under `pi-worklist/src/`, stops resolving and has to move to `stepstone`.
 Move over when convenient:
 
@@ -454,7 +455,7 @@ None of it is in the repository, so none of it is enforced by CI.
 
 - Rename the GitHub repository to `stepstone`. GitHub redirects the old path, so existing clones and links keep working.
 - Publish `stepstone@0.17.0` once by hand, because Trusted Publishing cannot create a package that does not exist yet: npm has nothing to attach a publisher to until the name is claimed. Then add its Trusted Publishers entry naming this repository and `release.yml`, after which every later release runs entirely in CI.
-- Publish the alias once by hand, with `npm publish` from `alias/pi-worklist`, after `stepstone@0.17.0` is on npm so the dependency it declares already resolves. Nothing republishes it afterwards, so this is the only time it ships.
+- Publish the alias once by hand, with `npm publish` from `alias/pi-worklist`, after `stepstone@0.17.0` is on npm so the dependency it declares already resolves. Nothing republishes it afterwards, so this is the only time it ships. Its version is 0.17.1 and must stay there: `pi-worklist@0.17.0` is the real pre-rename package and is already published, so npm rejects a republish at that number, and 0.17.1 is the smallest value that both clears it and takes over `latest`. Do not realign it to whatever version `stepstone` is on - the two are unrelated.
 - Run `npm deprecate pi-worklist "Renamed to stepstone. Install stepstone instead."` so the old name warns on install rather than only in its README. A deprecation applies per published version, so doing this after the alias's only publish is what makes it stick.
 - Confirm the forwarded extension still loads: `pi install npm:pi-worklist` in a scratch project, start a session, and check the worklist widget appears. No CI job can cover this, because the Pi-free install gate deliberately installs without Pi.
 

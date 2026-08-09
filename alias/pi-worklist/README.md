@@ -8,7 +8,7 @@ This package was renamed to [`stepstone`](https://www.npmjs.com/package/stepston
 It forwards exactly two surfaces to `stepstone`: the `pi-worklist` bin and the Pi extension entry point.
 Deep subpath imports are not forwarded: `pi-worklist/src/types.ts`, and anything else under `pi-worklist/src/`, no longer resolves and has to move to `stepstone`.
 
-This is the last version of this package. It is published once and never republished, so it will not receive further development, but it depends on `stepstone` by range rather than by pin, so it keeps resolving the current release rather than pinning you to an old one.
+0.17.1 is the last version of this package, and the only one that forwards: 0.17.0 and everything before it are the real pre-rename implementation. It is published once and never republished, so it will not receive further development, but it depends on `stepstone` by range rather than by pin, so it keeps resolving the current release rather than pinning you to an old one. Its version number is unrelated to `stepstone`'s and will not track it.
 
 ## Moving over
 

@@ -1,6 +1,6 @@
 {
 	"name": "pi-worklist",
-	"version": "0.17.0",
+	"version": "0.17.1",
 	"description": "Deprecated alias for stepstone. Install stepstone instead; this package only forwards to it.",
 	"type": "module",
 	"keywords": [
