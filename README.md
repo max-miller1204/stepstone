@@ -10,30 +10,37 @@
 > Formerly published as `pi-worklist`, which is frozen at 0.17.0 and no longer updated.
 > Everything continues here, under a name that does not imply the tool only serves one coding agent.
 
-`stepstone` gives Pi two deliberately different lists.
-Session Tasks track the concrete work in the current coding session.
-Project Goals track the larger outcomes shared by every Pi session in a Git repository.
+`stepstone` keeps a repository's roadmap inside the repository.
+Project Goals are a list committed alongside the code, which any coding agent or any human at a terminal can read and change.
+Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to start, what can run in parallel, and what each finished goal unblocks.
+Drive them from a dependency-free CLI, an installable agent skill, or a full-screen terminal board, none of which need Pi installed.
+
+Pi additionally gets a second, deliberately different list: Session Tasks, a branch-aware queue of the concrete chunks in the session at hand.
+It is kept separate from the roadmap because a session's next steps and a repository's outcomes are not the same thing.
 
 ## Features
 
-- Branch-aware Session Tasks survive `/resume` and follow `/tree`, `/fork`, and `/clone`.
-- Session Tasks stay intentionally small and title-only, so they represent executable chunks rather than broad outcomes.
-- Session Task array order is a canonical queue that supports stable-ID insertion and movement.
-- A new Pi session starts with an empty Session Task list.
 - Project Goals persist at `<git-root>/.pi/worklist.json` and can be committed with the repository.
 - Goal IDs are readable slugs derived from the title and frozen afterwards, and every Project Goal ID argument accepts a unique prefix or a former ID.
 - Project Goal file order is canonical: goals are appended and rearranged only by an explicit move, so a roadmap reads in the sequence someone chose for it.
 - Project Goals carry optional `group`, `completedAt`, `links`, `branch`, and `dependsOn` fields alongside the description.
 - Project Goal dependencies are stored in one direction and checked for cycles at mutation time, so blocked work is derived rather than tracked by hand.
 - `next`, `ready`, and `waves` read that graph for humans and dispatch loops: the one goal to start, the whole parallel frontier, and the layers behind it.
-- `/tasks` opens an interactive two-section dashboard.
-- A compact widget shows the active Project Goal and up to three unfinished Session Tasks.
-- The `worklist` model tool manages both scopes through one consistent API.
-- A Pi-free external CLI lets scripts and other agents manage Project Goals without a running Pi session.
-- `npx -y stepstone@latest project ui` opens a dependency-free terminal board for browsing and editing Project Goals outside Pi.
+- The CLI manages Project Goals from any shell, script, or coding agent, and needs nothing installed but Node.
+- `npx -y stepstone@latest project ui` opens a dependency-free terminal board for browsing and editing Project Goals.
 - An installable agent skill, generated from the same command contract as the CLI, teaches coding agents to drive that CLI in any repository.
 - Project Goal completion, reopening, archival, and deletion require explicit user intent.
 - Cross-process locking and atomic replacement serialize writes and prevent project-file corruption; optional goal baselines detect stale mutations.
+
+In a Pi session, stepstone adds:
+
+- Branch-aware Session Tasks survive `/resume` and follow `/tree`, `/fork`, and `/clone`.
+- Session Tasks stay intentionally small and title-only, so they represent executable chunks rather than broad outcomes.
+- Session Task array order is a canonical queue that supports stable-ID insertion and movement.
+- A new Pi session starts with an empty Session Task list.
+- `/tasks` opens an interactive two-section dashboard.
+- A compact widget shows the active Project Goal and up to three unfinished Session Tasks.
+- The `worklist` model tool manages both scopes through one consistent API.
 
 ## Install
 
