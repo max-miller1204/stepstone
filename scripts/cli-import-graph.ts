@@ -211,8 +211,8 @@ function blockCommentEnd(source: string, start: number): number {
 // An import or export clause is only identifiers, braces, commas, stars, and
 // whitespace, so refusing every other character stops a statement without a
 // `from` - `export const x = 1;` - from reaching forward into the next one.
-const FROM_STATEMENT = /^[ \t]*(?:import|export)(\s[\w$*,{}\s]*?)\bfrom\s*["']([^"'\s]+)["']/gm;
-const SIDE_EFFECT_IMPORT = /^[ \t]*import\s*["']([^"'\s]+)["']/gm;
+const FROM_STATEMENT = /\b(?:import|export)(\s[\w$*,{}\s]*?)\bfrom\s*["']([^"'\s]+)["']/g;
+const SIDE_EFFECT_IMPORT = /\bimport\s*["']([^"'\s]+)["']/g;
 // Any callee whose name ends in `require` loads a module, so an alias such as
 // `nodeRequire("x")` counts too. `createRequire` is the one exception: its own
 // argument is the referrer's URL, and the specifier sits in the call of the

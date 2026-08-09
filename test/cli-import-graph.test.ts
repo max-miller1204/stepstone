@@ -114,6 +114,16 @@ describe("CLI module scanner", () => {
 		expect(specifiers(source)).toEqual(["./after.ts"]);
 	});
 
+	it("reads an import declaration that does not start its own line", () => {
+		// A declaration is hoisted from wherever it sits at the top level, so this is
+		// legal ESM and the peer it names really does load.
+		const source = [
+			'const ready = true; import { Key } from "@earendil-works/pi-tui";',
+			'const armed = true; import "@earendil-works/pi-ai";',
+		].join("\n");
+		expect(specifiers(source).sort()).toEqual(["@earendil-works/pi-ai", "@earendil-works/pi-tui"]);
+	});
+
 	it("reads a specifier loaded through a require the file made itself", () => {
 		// `createRequire(import.meta.url)(...)` is how src/cli.ts reads package.json,
 		// so a Pi peer pulled in that way, or through the require it hands back, has
@@ -205,7 +215,7 @@ describe("the imports:check command", () => {
 		// pass that looks exactly like a clean graph in a CI log.
 		const scratch = await mkdtemp(join(tmpdir(), "pi-worklist-imports-check-"));
 		try {
-			await symlink(resolve("."), join(scratch, "repo"));
+			await symlink(resolve(import.meta.dirname, ".."), join(scratch, "repo"));
 			const { stdout } = await execFileAsync(process.execPath, [
 				join(scratch, "repo", "scripts", "cli-import-graph.ts"),
 			]);
