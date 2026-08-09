@@ -162,7 +162,7 @@ describe("the module graph behind the CLI bin", () => {
 
 describe("the walk behind the graph", () => {
 	async function fixtureTree(files: Record<string, string>): Promise<string> {
-		const dir = await mkdtemp(join(tmpdir(), "pi-worklist-graph-"));
+		const dir = await mkdtemp(join(tmpdir(), "stepstone-graph-"));
 		await Promise.all(Object.entries(files).map(([name, body]) => writeFile(join(dir, name), body, "utf8")));
 		return dir;
 	}
@@ -213,7 +213,7 @@ describe("the imports:check command", () => {
 		// Node realpaths the entry it is handed, so a script that recognises itself
 		// by comparing raw paths quietly does nothing here and still exits 0 - a
 		// pass that looks exactly like a clean graph in a CI log.
-		const scratch = await mkdtemp(join(tmpdir(), "pi-worklist-imports-check-"));
+		const scratch = await mkdtemp(join(tmpdir(), "stepstone-imports-check-"));
 		try {
 			await symlink(resolve(import.meta.dirname, ".."), join(scratch, "repo"));
 			const { stdout } = await execFileAsync(process.execPath, [

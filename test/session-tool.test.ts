@@ -542,7 +542,7 @@ describe("session state and tool", () => {
 	});
 
 	it("warns in project activation text while keeping blocked activation successful", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "pi-worklist-tool-blocked-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-blocked-")), ".pi", "worklist.json");
 		const blocker = await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
 			projectPath: path,
 		});
@@ -581,7 +581,7 @@ describe("session state and tool", () => {
 	});
 
 	it("surfaces blocked activation warnings from the Pi dashboard", async () => {
-		const root = await mkdtemp(join(tmpdir(), "pi-worklist-dashboard-blocked-"));
+		const root = await mkdtemp(join(tmpdir(), "stepstone-dashboard-blocked-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		const projectPath = join(root, ".pi", "worklist.json");
 		await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
@@ -645,7 +645,7 @@ describe("session state and tool", () => {
 	});
 
 	it("previews and applies an atomic project plan through the model tool", async () => {
-		const projectPath = join(await mkdtemp(join(tmpdir(), "pi-worklist-tool-plan-")), ".pi", "worklist.json");
+		const projectPath = join(await mkdtemp(join(tmpdir(), "stepstone-tool-plan-")), ".pi", "worklist.json");
 		await executeWorklist({ scope: "project", action: "add", title: "Shared goal" }, ctx, {
 			projectPath,
 		});
@@ -674,7 +674,7 @@ describe("session state and tool", () => {
 	});
 
 	it("guards every destructive project lifecycle path", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "pi-worklist-tool-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-")), ".pi", "worklist.json");
 		const { api } = fakePi();
 		const store = new SessionStore(api);
 		const added = await executeWorklist({ scope: "project", action: "add", title: "Ship" }, ctx, {

@@ -174,7 +174,7 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 			board.setMessage("Set $EDITOR or $VISUAL to edit descriptions.", "error");
 			return;
 		}
-		const directory = await mkdtemp(join(tmpdir(), "pi-worklist-goal-"));
+		const directory = await mkdtemp(join(tmpdir(), "stepstone-goal-"));
 		const file = join(directory, "description.md");
 		const original = goal.description ?? "";
 		try {

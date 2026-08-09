@@ -1,7 +1,7 @@
 /**
  * Terminal text measurement, truncation, and wrapping.
  *
- * The standalone Project Goal board runs from the compiled `pi-worklist` bin,
+ * The standalone Project Goal board runs from the compiled `stepstone` bin,
  * which must work with nothing installed but Node. Pi's `@earendil-works/pi-tui`
  * helpers are therefore unavailable here, so this module re-implements the small
  * subset the board needs with no dependencies.

@@ -1,26 +1,26 @@
 ---
 name: worklist
-description: "Manage pi-worklist Project Goals (the shared roadmap in a repo's .pi/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
+description: "Manage stepstone Project Goals (the shared roadmap in a repo's .pi/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
 ---
 
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
 
-# Managing pi-worklist Project Goals
+# Managing stepstone Project Goals
 
 Project Goals are a repository-wide roadmap stored in `<git-root>/.pi/worklist.json` and shared with Pi sessions.
 Never edit that file directly: a concurrent Pi session may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.
-Always go through the pi-worklist CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as a live Pi session.
+Always go through the stepstone CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as a live Pi session.
 
 ## Invoking the CLI
 
-The published package ships a compiled `pi-worklist` bin (Node 20 or newer), usable from any repository without installing anything first:
+The published package ships a compiled `stepstone` bin (Node 20 or newer), usable from any repository without installing anything first:
 
 ```sh
-npx -y pi-worklist@latest project <action> [arguments] [flags]
+npx -y stepstone@latest project <action> [arguments] [flags]
 ```
 
 Run it from inside the target repository, or pass `--cwd <repo-root>` to target another one.
-Inside a pi-worklist development checkout, prefer the TypeScript entry point so unreleased changes apply: `node <checkout>/src/cli.ts project <action>` (needs Node 22.18 or newer for native type stripping).
+Inside a stepstone development checkout, prefer the TypeScript entry point so unreleased changes apply: `node <checkout>/src/cli.ts project <action>` (needs Node 22.18 or newer for native type stripping).
 
 Actions:
 
@@ -72,26 +72,26 @@ Pass it on every change you make to a goal you did not just create: without it, 
 Examples:
 
 ```sh
-npx -y pi-worklist@latest project list --json
-npx -y pi-worklist@latest project add Support goal templates --description "Let teams share reusable goal outlines"
-npx -y pi-worklist@latest project apply-plan plan.json --dry-run --json
-npx -y pi-worklist@latest project apply-plan plan.json --json
-npx -y pi-worklist@latest project find templates --json
-npx -y pi-worklist@latest project next --json
-npx -y pi-worklist@latest project ready --json
-npx -y pi-worklist@latest project waves --json
-npx -y pi-worklist@latest project show support-goal-templates --json
-npx -y pi-worklist@latest project update support-goal-templates --description "Replace only the description"
-npx -y pi-worklist@latest project update support-goal-templates Support shared goal templates
-npx -y pi-worklist@latest project update support-goal-templates --append-description "Blocked on the template schema until it lands"
-npx -y pi-worklist@latest project update support-goal-templates --expect-updated-at 2026-05-04T09:12:31.004Z --append-description "Reviewed and still current"
-npx -y pi-worklist@latest project update support-goal-templates --group Foundation
-npx -y pi-worklist@latest project add Retire the legacy importer --depends-on support-goal-templates --depends-on ship-the-new-parser
-npx -y pi-worklist@latest project update retire-the-legacy-importer --depends-on support-goal-templates
-npx -y pi-worklist@latest project update retire-the-legacy-importer --depends-on ''
-npx -y pi-worklist@latest project move support-goal-templates up
-npx -y pi-worklist@latest project move support-goal-templates before retire-the-legacy-importer
-npx -y pi-worklist@latest project set_active support-goal-templates
+npx -y stepstone@latest project list --json
+npx -y stepstone@latest project add Support goal templates --description "Let teams share reusable goal outlines"
+npx -y stepstone@latest project apply-plan plan.json --dry-run --json
+npx -y stepstone@latest project apply-plan plan.json --json
+npx -y stepstone@latest project find templates --json
+npx -y stepstone@latest project next --json
+npx -y stepstone@latest project ready --json
+npx -y stepstone@latest project waves --json
+npx -y stepstone@latest project show support-goal-templates --json
+npx -y stepstone@latest project update support-goal-templates --description "Replace only the description"
+npx -y stepstone@latest project update support-goal-templates Support shared goal templates
+npx -y stepstone@latest project update support-goal-templates --append-description "Blocked on the template schema until it lands"
+npx -y stepstone@latest project update support-goal-templates --expect-updated-at 2026-05-04T09:12:31.004Z --append-description "Reviewed and still current"
+npx -y stepstone@latest project update support-goal-templates --group Foundation
+npx -y stepstone@latest project add Retire the legacy importer --depends-on support-goal-templates --depends-on ship-the-new-parser
+npx -y stepstone@latest project update retire-the-legacy-importer --depends-on support-goal-templates
+npx -y stepstone@latest project update retire-the-legacy-importer --depends-on ''
+npx -y stepstone@latest project move support-goal-templates up
+npx -y stepstone@latest project move support-goal-templates before retire-the-legacy-importer
+npx -y stepstone@latest project set_active support-goal-templates
 ```
 
 The full generated command reference lives in the package's `docs/cli.md`, rendered from the same contract as this skill.
@@ -162,7 +162,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `apply-plan`, `update`, `move`, and `set_active` are safe to run whenever they serve the user's request.
 - `ui` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.
-  Suggest `npx -y pi-worklist@latest project ui` when the user wants to browse or edit goals themselves; read state with `list` and `show` instead.
+  Suggest `npx -y stepstone@latest project ui` when the user wants to browse or edit goals themselves; read state with `list` and `show` instead.
 - Session Tasks cannot be managed from outside a Pi session; the CLI intentionally rejects `session` scope.
   For your own in-session tracking, use your normal task tools instead.
 
@@ -172,6 +172,6 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - Exit code 1 with a "git repository" message means the working directory is outside a repo; rerun with `--cwd <repo-root>`.
   With `--json`, that failure also arrives as the deterministic result envelope on stderr.
 - Exit code 2 (usage error) means the action or its flags were not recognized; re-read the action list above instead of guessing.
-- If `npx -y pi-worklist@latest` cannot resolve the package, check network access to the npm registry; a local development checkout remains a fallback.
+- If `npx -y stepstone@latest` cannot resolve the package, check network access to the npm registry; a local development checkout remains a fallback.
 - Read `meta.cliVersion` from any `--json` result envelope when you need to verify which published build ran.
   This reports the package's runtime version directly instead of requiring inspection of the npx cache.

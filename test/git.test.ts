@@ -7,7 +7,7 @@ import { resolveGitRoot } from "../src/git.ts";
 
 describe("git root", () => {
 	it("returns a canonical root through a symlink", async () => {
-		const root = await mkdtemp(join(tmpdir(), "pi-worklist-git-"));
+		const root = await mkdtemp(join(tmpdir(), "stepstone-git-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		const link = `${root}-link`;
 		await symlink(root, link);
@@ -17,7 +17,7 @@ describe("git root", () => {
 	});
 
 	it("degrades cleanly outside git", async () => {
-		const root = await mkdtemp(join(tmpdir(), "pi-worklist-no-git-"));
+		const root = await mkdtemp(join(tmpdir(), "stepstone-no-git-"));
 		expect(resolveGitRoot(root).isGit).toBe(false);
 	});
 });

@@ -1,13 +1,13 @@
 <!-- markdownlint-disable MD013 -->
 
-# pi-worklist
+# stepstone
 
-[![npm version](https://img.shields.io/npm/v/pi-worklist.svg)](https://www.npmjs.com/package/pi-worklist)
-[![CI](https://github.com/max-miller1204/pi-worklist/actions/workflows/ci.yml/badge.svg)](https://github.com/max-miller1204/pi-worklist/actions/workflows/ci.yml)
-[![Release](https://github.com/max-miller1204/pi-worklist/actions/workflows/release.yml/badge.svg)](https://github.com/max-miller1204/pi-worklist/actions/workflows/release.yml)
-[![Pi package](https://img.shields.io/badge/Pi-package-8a76b5)](https://pi.dev/packages/pi-worklist)
+[![npm version](https://img.shields.io/npm/v/stepstone.svg)](https://www.npmjs.com/package/stepstone)
+[![CI](https://github.com/max-miller1204/stepstone/actions/workflows/ci.yml/badge.svg)](https://github.com/max-miller1204/stepstone/actions/workflows/ci.yml)
+[![Release](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml/badge.svg)](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml)
+[![Pi package](https://img.shields.io/badge/Pi-package-8a76b5)](https://pi.dev/packages/stepstone)
 
-`pi-worklist` gives Pi two deliberately different lists.
+`stepstone` gives Pi two deliberately different lists.
 Session Tasks track the concrete work in the current coding session.
 Project Goals track the larger outcomes shared by every Pi session in a Git repository.
 
@@ -27,7 +27,7 @@ Project Goals track the larger outcomes shared by every Pi session in a Git repo
 - A compact widget shows the active Project Goal and up to three unfinished Session Tasks.
 - The `worklist` model tool manages both scopes through one consistent API.
 - A Pi-free external CLI lets scripts and other agents manage Project Goals without a running Pi session.
-- `npx -y pi-worklist@latest project ui` opens a dependency-free terminal board for browsing and editing Project Goals outside Pi.
+- `npx -y stepstone@latest project ui` opens a dependency-free terminal board for browsing and editing Project Goals outside Pi.
 - An installable agent skill, generated from the same command contract as the CLI, teaches coding agents to drive that CLI in any repository.
 - Project Goal completion, reopening, archival, and deletion require explicit user intent.
 - Cross-process locking and atomic replacement serialize writes and prevent project-file corruption; optional goal baselines detect stale mutations.
@@ -37,15 +37,15 @@ Project Goals track the larger outcomes shared by every Pi session in a Git repo
 Install the published package from npm:
 
 ```sh
-pi install npm:pi-worklist
+pi install npm:stepstone
 ```
 
-View it in the [Pi package gallery](https://pi.dev/packages/pi-worklist) or on [npm](https://www.npmjs.com/package/pi-worklist).
+View it in the [Pi package gallery](https://pi.dev/packages/stepstone) or on [npm](https://www.npmjs.com/package/stepstone).
 
 Install directly from GitHub:
 
 ```sh
-pi install git:github.com/max-miller1204/pi-worklist
+pi install git:github.com/max-miller1204/stepstone
 ```
 
 Try a checkout without installing it:
@@ -53,6 +53,22 @@ Try a checkout without installing it:
 ```sh
 pi -e ./src/extension.ts
 ```
+
+### Renamed from pi-worklist
+
+This package was published as `pi-worklist` through 0.17.0.
+The tool never required Pi for anything but the session-scoped features, so the name told everyone driving it from another coding agent that it was not for them.
+
+`pi-worklist` remains on npm as a deprecated alias that depends on `stepstone` and forwards both the bin and the Pi extension entry point, so nothing installed today stops working.
+It is frozen at parity and will not gain new releases indefinitely, so move to `stepstone` when convenient:
+
+```sh
+pi install npm:stepstone
+```
+
+Anything invoking the CLI by name changes from `npx -y pi-worklist@latest` to `npx -y stepstone@latest`.
+Reinstall the agent skill to pick up the new invocation, since the copy already on disk still names the old package.
+Nothing about the goal file changes: `<git-root>/.pi/worklist.json` is read and written exactly as before, so a repository's roadmap survives the rename untouched.
 
 ## Usage
 
@@ -138,29 +154,29 @@ Only activation is a non-destructive direct Project Goal status change.
 ## External CLI
 
 External agents and scripts can manage Project Goals without a running Pi session.
-The published package ships a compiled `pi-worklist` bin, so no development checkout is needed:
+The published package ships a compiled `stepstone` bin, so no development checkout is needed:
 
 ```sh
-npx -y pi-worklist@latest project list
-npx -y pi-worklist@latest project find templates
-npx -y pi-worklist@latest project show <id>
-npx -y pi-worklist@latest project next
-npx -y pi-worklist@latest project ready
-npx -y pi-worklist@latest project waves
-npx -y pi-worklist@latest project add Support goal templates --description "Let teams share reusable goal outlines"
-npx -y pi-worklist@latest project apply-plan plan.json --dry-run --json
-npx -y pi-worklist@latest project apply-plan plan.json --json
-npx -y pi-worklist@latest project update <id> Replace the title --description "Replace the description"
-npx -y pi-worklist@latest project update <id> --description "Replace only the description"
-npx -y pi-worklist@latest project update <id> Replace the title -- Replace the description
-npx -y pi-worklist@latest project update <id> --append-description "Add a note as a new paragraph"
-npx -y pi-worklist@latest project update <id> --expect-updated-at <updatedAt> --append-description "Add it only if nobody edited first"
-npx -y pi-worklist@latest project update <id> --group Foundation
-npx -y pi-worklist@latest project update <id> --depends-on <other-id> --depends-on <third-id>
-npx -y pi-worklist@latest project move <id> up
-npx -y pi-worklist@latest project move <id> before <anchor-id>
-npx -y pi-worklist@latest project set_active <id>
-npx -y pi-worklist@latest project complete <id> --confirm
+npx -y stepstone@latest project list
+npx -y stepstone@latest project find templates
+npx -y stepstone@latest project show <id>
+npx -y stepstone@latest project next
+npx -y stepstone@latest project ready
+npx -y stepstone@latest project waves
+npx -y stepstone@latest project add Support goal templates --description "Let teams share reusable goal outlines"
+npx -y stepstone@latest project apply-plan plan.json --dry-run --json
+npx -y stepstone@latest project apply-plan plan.json --json
+npx -y stepstone@latest project update <id> Replace the title --description "Replace the description"
+npx -y stepstone@latest project update <id> --description "Replace only the description"
+npx -y stepstone@latest project update <id> Replace the title -- Replace the description
+npx -y stepstone@latest project update <id> --append-description "Add a note as a new paragraph"
+npx -y stepstone@latest project update <id> --expect-updated-at <updatedAt> --append-description "Add it only if nobody edited first"
+npx -y stepstone@latest project update <id> --group Foundation
+npx -y stepstone@latest project update <id> --depends-on <other-id> --depends-on <third-id>
+npx -y stepstone@latest project move <id> up
+npx -y stepstone@latest project move <id> before <anchor-id>
+npx -y stepstone@latest project set_active <id>
+npx -y stepstone@latest project complete <id> --confirm
 ```
 
 The CLI routes every mutation through the same service, cross-process lock, and atomic replacement as a live Pi session, so physical writes are serialized and atomic.
@@ -185,7 +201,7 @@ In a development checkout, `node src/cli.ts project <action>` runs the same CLI;
 On older Node versions, including the Node 20 floor of the package's `engines` range, the TypeScript entry point fails with an `Unknown file extension ".ts"` error, while the compiled bin has no such requirement.
 Session Tasks are intentionally unavailable here because they live inside a Pi session tree.
 
-Nothing the bin loads imports a Pi package, and every Pi peer is declared optional, so `npx -y pi-worklist@latest` installs under a megabyte and runs with no Pi installation at all.
+Nothing the bin loads imports a Pi package, and every Pi peer is declared optional, so `npx -y stepstone@latest` installs under a megabyte and runs with no Pi installation at all.
 That is enforced rather than promised: `npm run imports:check` reads the module graph behind `src/cli.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`, and a CI job packs the tarball, installs it alone in a scratch directory, and drives the whole command surface against the installed bin.
 
 ## JSON goal plans
@@ -230,7 +246,7 @@ Every Project Goal `<id>` argument, in the CLI and in the model tool, accepts a 
 An exact match always beats a prefix, so `support-goal-templates` still names its own goal once `support-goal-templates-2` exists.
 An ambiguous prefix is refused with the goals it matched rather than resolved by guesswork, because a guess a caller cannot see is a change applied to a goal they did not mean.
 
-`npx -y pi-worklist@latest project migrate_ids --confirm` rewrites the randomly generated IDs in an existing worklist.
+`npx -y stepstone@latest project migrate_ids --confirm` rewrites the randomly generated IDs in an existing worklist.
 Only generated IDs are rewritten: new slugs cannot use the legacy generator's shape, so migration can classify IDs without comparing them to a title that may have changed.
 Each rewritten goal records its old ID in `previousIds`, which keeps that ID both resolvable and reserved.
 That is what makes migrating a done or archived goal safe rather than a judgment call: a Session Task's `goalId`, an evidence file, and an old PR description all keep resolving to the same goal, and no later goal can claim a name still in use.
@@ -243,9 +259,9 @@ Those IDs no longer resolve, but a later goal cannot claim one and silently inhe
 A Project Goal may record the goals that must land before it:
 
 ```sh
-npx -y pi-worklist@latest project add Add the dependency graph --depends-on slug-ids --depends-on schema-fields
-npx -y pi-worklist@latest project update <id> --depends-on <other-id>
-npx -y pi-worklist@latest project update <id> --depends-on ''
+npx -y stepstone@latest project add Add the dependency graph --depends-on slug-ids --depends-on schema-fields
+npx -y stepstone@latest project update <id> --depends-on <other-id>
+npx -y stepstone@latest project update <id> --depends-on ''
 ```
 
 An edge means must-land-before, whatever its reason.
@@ -276,9 +292,9 @@ Neither should be edited to mirror the other: re-sorting the file to match the e
 Three read commands answer what to work on, reading the same edges everything else derives `blocked` from:
 
 ```sh
-npx -y pi-worklist@latest project next
-npx -y pi-worklist@latest project ready
-npx -y pi-worklist@latest project waves
+npx -y stepstone@latest project next
+npx -y stepstone@latest project ready
+npx -y stepstone@latest project waves
 ```
 
 `ready` is the parallel frontier: every open goal whose dependencies have all landed and that nobody has claimed, in canonical file order.
@@ -297,10 +313,10 @@ Nothing to start is an answer rather than a failure, so read `result.goal` or `r
 
 ## Terminal goal board
 
-`npx -y pi-worklist@latest project ui` opens an interactive board over the same Project Goals, so the roadmap can be read and edited from a shell without starting a Pi session:
+`npx -y stepstone@latest project ui` opens an interactive board over the same Project Goals, so the roadmap can be read and edited from a shell without starting a Pi session:
 
 ```sh
-npx -y pi-worklist@latest project ui
+npx -y stepstone@latest project ui
 ```
 
 The board is a split view: the goal list on the left, the selected goal's status, timestamps, identifier, and complete description on the right.
@@ -348,7 +364,7 @@ A skill in `.claude/skills/worklist/` teaches coding agents to drive the CLI und
 Install it for every project:
 
 ```sh
-npx skills add max-miller1204/pi-worklist --skill worklist -g
+npx skills add max-miller1204/stepstone --skill worklist -g
 ```
 
 Drop `-g` to install it for the current project only, or add `-a claude-code` to target one agent instead of choosing interactively.
@@ -357,14 +373,14 @@ Installing the npm package does not install the skill: the tarball carries `.cla
 
 `SKILL.md` is generated from `src/cli-contract.ts` by `scripts/generate-docs.ts`, the same contract that renders the CLI help and [docs/cli.md](docs/cli.md).
 Never hand-edit it; run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
-The generated skill is deliberately repository-neutral and invokes the CLI as `npx -y pi-worklist@latest`, so a single file serves every checkout without letting a stale npx cache select an older build.
+The generated skill is deliberately repository-neutral and invokes the CLI as `npx -y stepstone@latest`, so a single file serves every checkout without letting a stale npx cache select an older build.
 Working on the skill itself is the one case for symlinking `.claude/skills/worklist` into `~/.claude/skills/`, which makes the installed skill track your working tree.
 
 ## Development
 
 ```sh
-git clone https://github.com/max-miller1204/pi-worklist.git
-cd pi-worklist
+git clone https://github.com/max-miller1204/stepstone.git
+cd stepstone
 npm install
 npm run check
 npm run pack:check
@@ -380,7 +396,7 @@ It runs as its own CI job and again before publishing, because this checkout ins
 
 ## Publishing and the Pi gallery
 
-The package is published to npm and listed in the [Pi package gallery](https://pi.dev/packages/pi-worklist).
+The package is published to npm and listed in the [Pi package gallery](https://pi.dev/packages/stepstone).
 The `pi-package` npm keyword and `pi.extensions` manifest let the gallery discover releases automatically without a separate submission process.
 
 ### Future releases
@@ -419,15 +435,29 @@ git push origin main --follow-tags
 That tag push runs [`.github/workflows/release.yml`](.github/workflows/release.yml), which re-runs `npm run verify` and `npm run no-pi-install:check` against the tagged commit, publishes to npm, and creates a GitHub Release with notes generated from the pull requests merged since the previous tag.
 It refuses to publish when the tag disagrees with `package.json`, which is the mistake that would otherwise ship the wrong version under the right name.
 
+The same run then publishes the deprecated `pi-worklist` alias in [`alias/pi-worklist`](alias/pi-worklist), after `stepstone` itself, so the dependency it declares already resolves.
+That package holds no implementation, only a bin shim and a re-exported extension entry point, so it needs no build.
+Its version and its pin on `stepstone` are rewritten by the `version` lifecycle script during `npm version` and staged into the same commit, and `npm run alias:check`, inside `npm run check`, fails the build if they ever drift; neither can be bumped alone.
+
 Authentication is npm Trusted Publishing over OIDC, so the repository stores no `NPM_TOKEN` and a release needs no local `npm login`.
 npm attaches build provenance to every tarball published this way, letting an installer verify the package was built from this repository at that commit.
 The trust relationship is configured once on npm, under the package's Trusted Publishers settings, naming this repository and the `release.yml` workflow filename; a workflow renamed or moved needs that entry updated or every publish will be rejected.
 
+### One-time setup after the rename
+
+The rename from `pi-worklist` to `stepstone` invalidates the existing publish configuration, and the next tag push fails until all of this is done.
+None of it is in the repository, so none of it is enforced by CI.
+
+- Rename the GitHub repository to `stepstone`. GitHub redirects the old path, so existing clones and links keep working.
+- Update the `pi-worklist` package's Trusted Publishers entry on npm to the renamed repository, or the alias publish is rejected.
+- Publish `stepstone@0.17.0` once by hand, because Trusted Publishing cannot create a package that does not exist yet: npm has nothing to attach a publisher to until the name is claimed. Then add its Trusted Publishers entry naming this repository and `release.yml`, after which every later release runs entirely in CI.
+- Run `npm deprecate pi-worklist "Renamed to stepstone. Install stepstone instead."` so the old name warns on install rather than only in its README.
+
 Verify npm, Pi installation, and the gallery after the workflow finishes:
 
 ```sh
-npm view pi-worklist version
-pi update npm:pi-worklist
+npm view stepstone version
+pi update npm:stepstone
 ```
 
 Each npm version is immutable, so bump the version before every subsequent publication.

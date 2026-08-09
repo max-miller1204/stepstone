@@ -68,6 +68,18 @@ jobs:
 
       - run: npm publish
 
+      # The deprecated `pi-worklist` name forwards to this release. It carries no
+      # implementation and no build, so it is published straight from its source
+      # directory, and only after the package it depends on exists at this
+      # version - publishing it first would leave an unresolvable dependency on
+      # the registry for as long as the main publish takes.
+      #
+      # `npm run check` already failed the build if this manifest's version or
+      # its pin on the main package had drifted, so nothing is rewritten here.
+      - name: Publish the deprecated pi-worklist alias
+        working-directory: alias/pi-worklist
+        run: npm publish
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

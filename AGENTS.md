@@ -1,4 +1,4 @@
-# pi-worklist agent notes
+# stepstone agent notes
 
 - Read Pi's installed `docs/extensions.md`, `docs/tui.md`, `docs/packages.md`, and `docs/session-format.md` before changing extension APIs.
 - Session Tasks are canonical versioned custom-entry snapshots and must remain branch-aware.
@@ -13,4 +13,6 @@
 - Run `npm run check`, `npm audit`, `npm run pack:check`, `npm run no-pi-install:check`, and the real Pi RPC test before release.
 - Releases are published by CI from a `v*.*.*` tag push, never by hand: run `npm version <bump>` and `git push --follow-tags`, and never `npm publish`. The tag must agree with `package.json`, `.github/workflows/release.yml` re-runs `npm run verify` against the tagged commit, and npm authenticates that workflow by filename over OIDC, so renaming or moving it breaks publishing until the package's Trusted Publishers entry is updated to match.
 - `docs/cli.md` and `.claude/skills/worklist/SKILL.md` are generated from `src/cli-contract.ts`; never hand-edit them, run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
+- The published name lives in exactly one place, `CLI_COMMAND_CONTRACT.binary` in `src/cli-contract.ts`, which feeds every generated document, the CLI's own diagnostics, and the `bin` key asserted from that contract in `test/compiled-cli.test.ts`. Never write the package name as a literal in source, tests, or generated output; read it from the contract so a rename stays a one-line change.
+- `alias/pi-worklist` is the deprecated pre-rename name: a bin shim plus a re-exported extension entry point, with no implementation and no build. Add behavior to `src/`, never there. It is published by `release.yml` after the main package, and `npm run alias:check` (inside `npm run check`) fails the build if its version or its pin on the main package drifts; `npm version` resyncs both through the `version` lifecycle script.
 - Do not manually add a changelog.

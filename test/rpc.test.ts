@@ -56,7 +56,7 @@ function rpc(child: ChildProcessWithoutNullStreams, request: object): Promise<Re
 
 describe("real Pi load", () => {
 	it("loads the package and registers /tasks", async () => {
-		const cwd = await mkdtemp(join(tmpdir(), "pi-worklist-rpc-"));
+		const cwd = await mkdtemp(join(tmpdir(), "stepstone-rpc-"));
 		execFileSync("git", ["init", "-q"], { cwd });
 		const child = spawn(
 			"pi",

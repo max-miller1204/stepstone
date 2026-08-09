@@ -22,7 +22,7 @@ function createSessionStore() {
 describe("worklist application service", () => {
 	it("projects and applies JSON plans through the canonical service boundary", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-plan-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-plan-")),
 			".pi",
 			"worklist.json",
 		);
@@ -110,7 +110,7 @@ describe("worklist application service", () => {
 
 	it("rejects stale Project Goal mutations with the current persisted revision", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-revision-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-revision-")),
 			".pi",
 			"worklist.json",
 		);
@@ -177,7 +177,7 @@ describe("worklist application service", () => {
 
 	it("guards one goal's baseline and appends to it without replaying the stored text", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-goal-baseline-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-goal-baseline-")),
 			".pi",
 			"worklist.json",
 		);
@@ -262,7 +262,7 @@ describe("worklist application service", () => {
 
 	it("guards readable legacy timestamps by exact value", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-legacy-baseline-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-legacy-baseline-")),
 			".pi",
 			"worklist.json",
 		);
@@ -332,7 +332,7 @@ describe("worklist application service", () => {
 
 	it("rejects description and baseline options that would lose or ignore stored text", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-goal-options-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-goal-options-")),
 			".pi",
 			"worklist.json",
 		);
@@ -404,7 +404,7 @@ describe("worklist application service", () => {
 
 	it("preserves Project Goal files, revisions, and timestamps for semantic no-ops", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-no-op-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-no-op-")),
 			".pi",
 			"worklist.json",
 		);
@@ -665,7 +665,7 @@ describe("worklist application service", () => {
 
 	it("returns actionable not-found and approval errors without rejecting", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-errors-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-errors-")),
 			".pi",
 			"worklist.json",
 		);
@@ -713,7 +713,7 @@ describe("worklist application service", () => {
 
 	it("classifies malformed persistence deterministically without exposing raw exceptions", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-persistence-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-persistence-")),
 			".pi",
 			"worklist.json",
 		);
@@ -751,7 +751,7 @@ describe("worklist application service", () => {
 
 	it("applies one operation contract for tool, command, dashboard, and CLI callers", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-service-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-service-")),
 			".pi",
 			"worklist.json",
 		);
@@ -806,7 +806,7 @@ describe("worklist application service", () => {
 
 	it("resolves goal selectors for every interface and refuses ambiguous ones", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-selector-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-selector-")),
 			".pi",
 			"worklist.json",
 		);
@@ -887,7 +887,7 @@ describe("worklist application service", () => {
 
 	it("migrates generated goal IDs only on explicit confirmation", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-migrate-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-migrate-")),
 			".pi",
 			"worklist.json",
 		);
@@ -983,7 +983,7 @@ describe("worklist application service", () => {
 
 	it("reorders Project Goals without confirmation and reports the move as one change", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-move-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-move-")),
 			".pi",
 			"worklist.json",
 		);
@@ -1058,7 +1058,7 @@ describe("worklist application service", () => {
 
 	it("resolves dependency edges the same way as every other goal reference", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-dependencies-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-dependencies-")),
 			".pi",
 			"worklist.json",
 		);
@@ -1147,7 +1147,7 @@ describe("worklist application service", () => {
 
 	it("reports a refused cycle with the goals on it, and writes nothing", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-cycle-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-cycle-")),
 			".pi",
 			"worklist.json",
 		);
@@ -1183,7 +1183,7 @@ describe("worklist application service", () => {
 
 	it("warns about a blocked activation instead of refusing it", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-blocked-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-blocked-")),
 			".pi",
 			"worklist.json",
 		);
@@ -1215,7 +1215,7 @@ describe("worklist application service", () => {
 
 	it("reports the goals that lost an edge to a deleted goal", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-strip-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-strip-")),
 			".pi",
 			"worklist.json",
 		);
@@ -1240,7 +1240,7 @@ describe("worklist application service", () => {
 
 	it("enforces shared validation and explicit confirmation regardless of caller", async () => {
 		const projectPath = join(
-			await mkdtemp(join(tmpdir(), "pi-worklist-application-validation-")),
+			await mkdtemp(join(tmpdir(), "stepstone-application-validation-")),
 			".pi",
 			"worklist.json",
 		);

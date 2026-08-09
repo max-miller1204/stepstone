@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 import type { ProjectGoal, ProjectWorklist } from "../src/types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -34,7 +35,7 @@ async function runCli(cwd: string, args: string[]): Promise<CliResult> {
 }
 
 async function tempGitRepo(): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), "pi-worklist-cli-"));
+	const root = await mkdtemp(join(tmpdir(), "stepstone-cli-"));
 	await execFileAsync("git", ["init"], { cwd: root });
 	return root;
 }
@@ -377,7 +378,7 @@ describe("project goal CLI", () => {
 		const blocked = await runCli(root, ["project", "set_active", goal.id]);
 		expect(blocked.code).toBe(1);
 		expect(blocked.stderr).toContain("must be reopened");
-		expect(blocked.stderr).toContain(`pi-worklist project reopen ${goal.id} --confirm`);
+		expect(blocked.stderr).toContain(`${CLI_COMMAND_CONTRACT.binary} project reopen ${goal.id} --confirm`);
 
 		const blockedJson = await runCli(root, ["project", "set_active", goal.id, "--json"]);
 		expect(blockedJson.code).toBe(1);
@@ -899,10 +900,10 @@ describe("project goal CLI", () => {
 	});
 
 	it("fails cleanly outside a git repository and honors --cwd", async () => {
-		const bare = await mkdtemp(join(tmpdir(), "pi-worklist-nogit-"));
+		const bare = await mkdtemp(join(tmpdir(), "stepstone-nogit-"));
 		const helpOutside = await runCli(bare, ["project", "help"]);
 		expect(helpOutside.code).toBe(0);
-		expect(helpOutside.stdout).toContain("Usage: pi-worklist project");
+		expect(helpOutside.stdout).toContain(`Usage: ${CLI_COMMAND_CONTRACT.binary} project`);
 
 		const outside = await runCli(bare, ["project", "list"]);
 		expect(outside.code).toBe(1);

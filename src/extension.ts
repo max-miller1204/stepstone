@@ -18,6 +18,9 @@ import {
 	type DashboardState,
 } from "./ui.ts";
 
+/** Widget slot this extension owns in Pi's session UI. */
+const WIDGET_ID = "stepstone";
+
 export interface ParsedCommand {
 	scope: "session" | "project";
 	action: string;
@@ -134,10 +137,10 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 		latestContext = ctx;
 		await refreshProject();
 		const lines = buildWidgetLines(applicationService.getSessionTasks(), projectGoals);
-		if (!lines.length) ctx.ui.setWidget("pi-worklist", undefined);
+		if (!lines.length) ctx.ui.setWidget(WIDGET_ID, undefined);
 		else if (ctx.mode === "tui") {
 			ctx.ui.setWidget(
-				"pi-worklist",
+				WIDGET_ID,
 				(_tui, theme) =>
 					new Text(
 						lines.map((line, index) => (index === 0 ? theme.fg("accent", line) : line)).join("\n"),
@@ -145,7 +148,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 						0,
 					),
 			);
-		} else ctx.ui.setWidget("pi-worklist", lines);
+		} else ctx.ui.setWidget(WIDGET_ID, lines);
 	}
 
 	async function execute(params: ParsedCommand, ctx: ExtensionContext, source: WorklistOperationSource) {
@@ -439,7 +442,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 		return { systemPrompt: `${event.systemPrompt}\n\n${summary}` };
 	});
 	pi.on("session_shutdown", () => {
-		latestContext?.ui.setWidget("pi-worklist", undefined);
+		latestContext?.ui.setWidget(WIDGET_ID, undefined);
 		latestContext = undefined;
 	});
 }

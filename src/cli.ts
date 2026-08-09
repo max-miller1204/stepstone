@@ -780,7 +780,7 @@ async function runSetActive(invocation: CliInvocation, service: WorklistApplicat
 			!invocation.json
 		) {
 			fail(
-				`${error.message} Reopen it first: pi-worklist project reopen ${id} --confirm`,
+				`${error.message} Reopen it first: ${CLI_COMMAND_CONTRACT.binary} project reopen ${id} --confirm`,
 				exitCodeForError(error.envelope.error.code),
 			);
 		}
@@ -805,7 +805,7 @@ async function runInteractiveBoard(
 	}
 	if (!process.stdin.isTTY || !process.stdout.isTTY) {
 		fail(
-			"project ui needs an interactive terminal. Use 'pi-worklist project list --json' in scripts and agents.",
+			`project ui needs an interactive terminal. Use '${CLI_COMMAND_CONTRACT.binary} project list --json' in scripts and agents.`,
 			1,
 		);
 	}

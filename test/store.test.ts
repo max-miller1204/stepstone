@@ -15,7 +15,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 async function tempPath() {
-	const root = await mkdtemp(join(tmpdir(), "pi-worklist-"));
+	const root = await mkdtemp(join(tmpdir(), "stepstone-"));
 	return join(root, ".pi", "worklist.json");
 }
 
