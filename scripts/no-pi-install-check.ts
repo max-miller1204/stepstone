@@ -47,12 +47,33 @@ interface SuccessEnvelope extends Envelope {
 	meta: { cliVersion?: string; changed?: boolean };
 }
 
+// `execFile` hands the child a stdin pipe nothing ever ends, so a bin that reads
+// stdin instead of exiting would leave this job hanging until the CI runner's
+// own timeout. Bounding every child turns that back into a failed assertion.
+const SETUP_TIMEOUT_MS = 10 * 60_000;
+const CLI_TIMEOUT_MS = 60_000;
+
 function step(message: string): void {
 	process.stdout.write(`${message}\n`);
 }
 
+/** Reports a child killed for outlasting its budget as the failure it is. */
+function assertNotTimedOut(error: unknown, command: string, timeoutMs: number): void {
+	const failure = error as { killed?: boolean; code?: unknown };
+	if (failure.killed !== true && failure.code !== "ETIMEDOUT") return;
+	throw new Error(
+		`\`${command}\` was killed after ${Math.round(timeoutMs / 1000)}s without exiting. The installed bin has ` +
+			"to run to completion with no input, so something on this path is waiting on stdin or blocked.",
+	);
+}
+
 async function run(command: string, args: string[], cwd: string): Promise<void> {
-	await execFileAsync(command, args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+	try {
+		await execFileAsync(command, args, { cwd, maxBuffer: 32 * 1024 * 1024, timeout: SETUP_TIMEOUT_MS });
+	} catch (error) {
+		assertNotTimedOut(error, `${command} ${args.join(" ")}`, SETUP_TIMEOUT_MS);
+		throw error;
+	}
 }
 
 /** Packs the tarball the way publishing does, prepack build included. */
@@ -120,10 +141,15 @@ function assertNothingUnresolved(args: string[], stderr: string): void {
 function cliRunner(binPath: string, cwd: string) {
 	return async function runCli(args: string[]): Promise<CliResult> {
 		try {
-			const { stdout, stderr } = await execFileAsync(binPath, args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+			const { stdout, stderr } = await execFileAsync(binPath, args, {
+				cwd,
+				maxBuffer: 32 * 1024 * 1024,
+				timeout: CLI_TIMEOUT_MS,
+			});
 			assertNothingUnresolved(args, stderr);
 			return { code: 0, stdout, stderr };
 		} catch (error) {
+			assertNotTimedOut(error, `pi-worklist ${args.join(" ")}`, CLI_TIMEOUT_MS);
 			const failure = error as CliResult & { code: number | null };
 			if (typeof failure.stderr !== "string") throw error;
 			assertNothingUnresolved(args, failure.stderr);

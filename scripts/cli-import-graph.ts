@@ -18,10 +18,10 @@
  * emitted shape depends on how the file is compiled, and the type-only form is
  * already this codebase's convention.
  */
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isBuiltin } from "node:module";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, extname, relative, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const entryPoint = resolve(repoRoot, "src/cli.ts");
@@ -213,7 +213,12 @@ function blockCommentEnd(source: string, start: number): number {
 // `from` - `export const x = 1;` - from reaching forward into the next one.
 const FROM_STATEMENT = /^[ \t]*(?:import|export)(\s[\w$*,{}\s]*?)\bfrom\s*["']([^"'\s]+)["']/gm;
 const SIDE_EFFECT_IMPORT = /^[ \t]*import\s*["']([^"'\s]+)["']/gm;
-const CALLED_IMPORT = /\b(?:import|require)\s*\(\s*["']([^"'\s]+)["']\s*\)/g;
+// Any callee whose name ends in `require` loads a module, so an alias such as
+// `nodeRequire("x")` counts too. `createRequire` is the one exception: its own
+// argument is the referrer's URL, and the specifier sits in the call of the
+// require it returns - the form src/cli.ts already uses to read package.json.
+const CALLED_IMPORT = /\b(?!createRequire\b)(?:import|[\w$]*[Rr]equire)\s*\(\s*["']([^"'\s]+)["']\s*\)/g;
+const INVOKED_REQUIRE = /\b[\w$]*[Rr]equire\s*\((?:[^()]|\([^()]*\))*\)\s*\(\s*["']([^"'\s]+)["']\s*\)/g;
 
 /** Every module specifier the source loads, with the erasable ones marked. */
 export function moduleImports(source: string): ModuleImport[] {
@@ -223,7 +228,7 @@ export function moduleImports(source: string): ModuleImport[] {
 		if (!isCode[match.index]) continue;
 		imports.push({ specifier: match[2] as string, typeOnly: /^\s*type\b/.test(match[1] as string) });
 	}
-	for (const pattern of [SIDE_EFFECT_IMPORT, CALLED_IMPORT]) {
+	for (const pattern of [SIDE_EFFECT_IMPORT, CALLED_IMPORT, INVOKED_REQUIRE]) {
 		for (const match of code.matchAll(pattern)) {
 			if (!isCode[match.index]) continue;
 			imports.push({ specifier: match[1] as string, typeOnly: false });
@@ -232,16 +237,42 @@ export function moduleImports(source: string): ModuleImport[] {
 	return imports;
 }
 
+// What a relative specifier can name: data, which nothing is imported from, or
+// a module, whose compiled extension has to be read back to the source it was
+// emitted from. Nothing else may be skipped, because an edge the walk drops
+// takes its whole subtree - and any Pi peer inside it - out of the check.
+const DATA_EXTENSIONS = new Set([".json", ".node", ".wasm"]);
+const MODULE_SOURCES = new Map<string, string[]>([
+	[".ts", [".ts"]],
+	[".tsx", [".tsx"]],
+	[".mts", [".mts"]],
+	[".cts", [".cts"]],
+	[".js", [".ts", ".js"]],
+	[".jsx", [".tsx", ".jsx"]],
+	[".mjs", [".mts", ".mjs"]],
+	[".cjs", [".cts", ".cjs"]],
+]);
+
 /**
  * Resolves a relative specifier to the source file behind it, or null when it
- * names something other than a module, such as `../package.json`.
+ * names data rather than a module, such as `../package.json`. Anything else
+ * throws: this check is only a gate while every module edge is walked.
  */
 function resolveRelative(fromFile: string, specifier: string): string | null {
 	if (!specifier.startsWith(".")) return null;
 	const target = resolve(dirname(fromFile), specifier);
-	if (target.endsWith(".ts")) return target;
-	if (target.endsWith(".js")) return `${target.slice(0, -".js".length)}.ts`;
-	return null;
+	const suffix = extname(target);
+	if (DATA_EXTENSIONS.has(suffix)) return null;
+	const stem = target.slice(0, target.length - suffix.length);
+	const source = MODULE_SOURCES.get(suffix)
+		?.map((extension) => `${stem}${extension}`)
+		.find((candidate) => existsSync(candidate));
+	if (source !== undefined) return source;
+	throw new Error(
+		`${relative(repoRoot, fromFile)} imports ${specifier}, which does not resolve to a source file this ` +
+			"check can read. An import it cannot follow is an import it cannot check, so teach " +
+			"resolveRelative in scripts/cli-import-graph.ts how to reach it.",
+	);
 }
 
 /**
@@ -317,14 +348,21 @@ function isEntryPoint(): boolean {
 }
 
 if (isEntryPoint()) {
-	const graph = await collectModuleGraph();
-	const disallowed = await findDisallowedImports(graph);
-	if (disallowed.length > 0) {
-		const report = disallowed.map((entry) => `  ${entry.file} imports ${entry.specifier}: ${entry.reason}`);
-		process.stderr.write(`The CLI import graph no longer runs without Pi installed:\n${report.join("\n")}\n`);
+	try {
+		const graph = await collectModuleGraph();
+		const disallowed = await findDisallowedImports(graph);
+		if (disallowed.length > 0) {
+			const report = disallowed.map((entry) => `  ${entry.file} imports ${entry.specifier}: ${entry.reason}`);
+			process.stderr.write(
+				`The CLI import graph no longer runs without Pi installed:\n${report.join("\n")}\n`,
+			);
+			process.exit(1);
+		}
+		process.stdout.write(
+			`Checked ${graph.size} modules reachable from src/cli.ts: no Pi peers, no undeclared imports.\n`,
+		);
+	} catch (error) {
+		process.stderr.write(`The CLI import graph could not be walked:\n  ${(error as Error).message}\n`);
 		process.exit(1);
 	}
-	process.stdout.write(
-		`Checked ${graph.size} modules reachable from src/cli.ts: no Pi peers, no undeclared imports.\n`,
-	);
 }

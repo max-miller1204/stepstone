@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -114,6 +114,18 @@ describe("CLI module scanner", () => {
 		expect(specifiers(source)).toEqual(["./after.ts"]);
 	});
 
+	it("reads a specifier loaded through a require the file made itself", () => {
+		// `createRequire(import.meta.url)(...)` is how src/cli.ts reads package.json,
+		// so a Pi peer pulled in that way, or through the require it hands back, has
+		// to be as visible as a plain `require` call.
+		const source = [
+			'const board = createRequire(import.meta.url)("@earendil-works/pi-tui");',
+			"const nodeRequire = createRequire(import.meta.url);",
+			'const ai = nodeRequire("@earendil-works/pi-ai");',
+		].join("\n");
+		expect(specifiers(source).sort()).toEqual(["@earendil-works/pi-ai", "@earendil-works/pi-tui"]);
+	});
+
 	it("still reads code inside a template placeholder", () => {
 		// The counterpart to the case above: a placeholder holds code, not text, so
 		// the scanner must not skip a whole template on sight.
@@ -135,6 +147,54 @@ describe("the module graph behind the CLI bin", () => {
 		// The slow proof lives in scripts/no-pi-install-check.ts, which packs and
 		// installs the tarball; this is the same invariant read off the sources.
 		expect(await findDisallowedImports()).toEqual([]);
+	});
+});
+
+describe("the walk behind the graph", () => {
+	async function fixtureTree(files: Record<string, string>): Promise<string> {
+		const dir = await mkdtemp(join(tmpdir(), "pi-worklist-graph-"));
+		await Promise.all(Object.entries(files).map(([name, body]) => writeFile(join(dir, name), body, "utf8")));
+		return dir;
+	}
+
+	it("follows a module edge whose specifier is not a .ts path", async () => {
+		// An edge the walk cannot follow takes its whole subtree out of the check,
+		// and the peer hiding in there is reported as a clean graph.
+		const dir = await fixtureTree({
+			"entry.ts": 'import { helper } from "./codec.mjs";\nexport const main = helper;\n',
+			"codec.mts": 'import { Key } from "@earendil-works/pi-tui";\nexport const helper = Key;\n',
+		});
+		try {
+			const graph = await collectModuleGraph(join(dir, "entry.ts"));
+			expect([...graph.keys()]).toContain(join(dir, "codec.mts"));
+			expect(await findDisallowedImports(graph)).toEqual([
+				expect.objectContaining({ specifier: "@earendil-works/pi-tui" }),
+			]);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses an edge it cannot resolve rather than dropping it", async () => {
+		const dir = await fixtureTree({ "entry.ts": 'import { gone } from "./gone.js";\n' });
+		try {
+			await expect(collectModuleGraph(join(dir, "entry.ts"))).rejects.toThrow(/gone\.js/);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("walks past data a module reads without importing it", async () => {
+		const dir = await fixtureTree({
+			"entry.ts":
+				'const manifest = createRequire(import.meta.url)("./package.json");\nexport default manifest;\n',
+			"package.json": '{ "version": "0.0.0" }\n',
+		});
+		try {
+			expect([...(await collectModuleGraph(join(dir, "entry.ts"))).keys()]).toEqual([join(dir, "entry.ts")]);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
 	});
 });
 
