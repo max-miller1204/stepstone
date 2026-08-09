@@ -42,10 +42,12 @@ export const SKILL_PATH = ".claude/skills/worklist/SKILL.md";
 /**
  * The published package name, which is also the bin it installs.
  *
- * The only place it is spelled out. Every other surface reads it back through
- * `CLI_COMMAND_CONTRACT.binary` or interpolates it from here, so a rename
- * cannot leave one generated line naming the package differently from the
- * commands printed beside it.
+ * The only place the source spells it out. Every other surface reads it back
+ * through `CLI_COMMAND_CONTRACT.binary` or interpolates it from here, so a
+ * rename cannot leave one generated line naming the package differently from
+ * the commands printed beside it. package.json cannot import this, so its
+ * `name` and `bin` key hold the one unavoidable copy, and
+ * test/compiled-cli.test.ts pins both to this constant.
  */
 const BINARY = "stepstone";
 
