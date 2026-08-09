@@ -7,6 +7,10 @@
  * lifecycle script rewrites both fields during `npm version` and stages the
  * result into the version commit, and `--check` fails the build if they ever
  * disagree, so neither can be bumped alone.
+ *
+ * That one package is also the alias's whole dependency set. A second entry
+ * could only name a package the alias no longer forwards to, and publishing it
+ * would install the release the rename retired alongside the current one.
  */
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -27,12 +31,14 @@ async function readManifest(path: string): Promise<Manifest> {
 const root = await readManifest(join(repoRoot, "package.json"));
 const alias = await readManifest(ALIAS_MANIFEST);
 const pinned = alias.dependencies?.[root.name];
+const strays = Object.keys(alias.dependencies ?? {}).filter((name) => name !== root.name);
 
 const drift = [
 	alias.version === root.version ? "" : `version is ${alias.version}, expected ${root.version}`,
 	pinned === root.version
 		? ""
 		: `dependency on ${root.name} is ${pinned ?? "missing"}, expected ${root.version}`,
+	strays.length === 0 ? "" : `also depends on ${strays.join(", ")}, which it does not forward to`,
 ].filter(Boolean);
 
 if (process.argv.includes("--check")) {
@@ -52,6 +58,6 @@ if (drift.length === 0) {
 }
 
 alias.version = root.version;
-alias.dependencies = { ...alias.dependencies, [root.name]: root.version };
+alias.dependencies = { [root.name]: root.version };
 await writeFile(ALIAS_MANIFEST, `${JSON.stringify(alias, null, "\t")}\n`, "utf8");
 console.log(`Pinned alias/pi-worklist to ${root.name} ${root.version}.`);
