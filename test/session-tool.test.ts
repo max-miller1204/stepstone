@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -822,7 +822,9 @@ describe("registered model tool", () => {
 	}
 
 	it("resolves the same goal file a terminal in the repository would", async () => {
-		const root = await mkdtemp(join(tmpdir(), "stepstone-tool-path-"));
+		// Canonical, because the resolver reports the canonical root back and a
+		// temporary directory reaches it through a symlink on macOS.
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-path-")));
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		expect(getProjectLocation(root)).toMatchObject({
 			path: join(root, ".worklist", "worklist.json"),

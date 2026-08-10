@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -35,8 +35,16 @@ async function runCli(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Pro
 	}
 }
 
+/**
+ * A repository named the way the CLI names it back.
+ *
+ * `resolveGitRoot` canonicalises the root, so every path the CLI prints or puts
+ * in an envelope is symlink-free. The temporary directory is not: on macOS it
+ * sits under `/var`, a symlink to `/private/var`. Canonicalising here keeps a
+ * path assertion comparing the two paths rather than the two spellings.
+ */
 async function tempGitRepo(): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), "stepstone-cli-"));
+	const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-")));
 	await execFileAsync("git", ["init"], { cwd: root });
 	return root;
 }
