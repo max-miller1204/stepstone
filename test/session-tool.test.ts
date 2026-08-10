@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -9,7 +9,7 @@ import worklistExtension from "../src/extension.ts";
 import { formatSessionTasks } from "../src/format.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SESSION_SNAPSHOT_TYPE, SessionStore } from "../src/session-store.ts";
-import { executeWorklist } from "../src/tool.ts";
+import { executeWorklist, getProjectLocation } from "../src/tool.ts";
 import type { DashboardResult } from "../src/ui.ts";
 
 function fakePi(entries: unknown[] = []) {
@@ -543,7 +543,7 @@ describe("session state and tool", () => {
 	});
 
 	it("warns in project activation text while keeping blocked activation successful", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-blocked-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-blocked-")), ".worklist", "worklist.json");
 		const blocker = await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
 			projectPath: path,
 		});
@@ -588,7 +588,7 @@ describe("session state and tool", () => {
 		// package actually ships under.
 		const root = await mkdtemp(join(tmpdir(), "stepstone-widget-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
-		const projectPath = join(root, ".pi", "worklist.json");
+		const projectPath = join(root, ".worklist", "worklist.json");
 		const added = await executeWorklist(
 			{ scope: "project", action: "add", title: "Cross the first stone" },
 			ctx,
@@ -638,7 +638,7 @@ describe("session state and tool", () => {
 	it("surfaces blocked activation warnings from the Pi dashboard", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-dashboard-blocked-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
-		const projectPath = join(root, ".pi", "worklist.json");
+		const projectPath = join(root, ".worklist", "worklist.json");
 		await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
 			projectPath,
 		});
@@ -700,7 +700,11 @@ describe("session state and tool", () => {
 	});
 
 	it("previews and applies an atomic project plan through the model tool", async () => {
-		const projectPath = join(await mkdtemp(join(tmpdir(), "stepstone-tool-plan-")), ".pi", "worklist.json");
+		const projectPath = join(
+			await mkdtemp(join(tmpdir(), "stepstone-tool-plan-")),
+			".worklist",
+			"worklist.json",
+		);
 		await executeWorklist({ scope: "project", action: "add", title: "Shared goal" }, ctx, {
 			projectPath,
 		});
@@ -729,7 +733,7 @@ describe("session state and tool", () => {
 	});
 
 	it("guards every destructive project lifecycle path", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-")), ".worklist", "worklist.json");
 		const { api } = fakePi();
 		const store = new SessionStore(api);
 		const added = await executeWorklist({ scope: "project", action: "add", title: "Ship" }, ctx, {
@@ -785,6 +789,26 @@ describe("registered model tool", () => {
 		if (!tool) throw new Error("worklist tool was not registered");
 		return tool;
 	}
+
+	it("resolves the same goal file a terminal in the repository would", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-tool-path-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		expect(getProjectLocation(root)).toMatchObject({
+			path: join(root, ".worklist", "worklist.json"),
+			source: "default",
+		});
+
+		// A Pi session in a repository an older release wrote keeps reading the file
+		// that is actually there, which is what makes the move need no migration.
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(join(root, ".pi", "worklist.json"), `${JSON.stringify({ version: 1, goals: [] })}\n`);
+		expect(getProjectLocation(root)).toMatchObject({
+			path: join(root, ".pi", "worklist.json"),
+			source: "legacy",
+		});
+
+		expect(getProjectLocation(await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-")))).toBeNull();
+	});
 
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {
 		expect(registerExtension().executionMode).toBe("sequential");

@@ -18,7 +18,7 @@ import { fitToWidth, singleLine, truncateToWidth, visibleWidth, wrapText } from 
  *
  * Mutating intents carry a ready-made `WorklistOperation` so the runtime can
  * hand it straight to `WorklistApplicationService`, which is the only path
- * allowed to write `.pi/worklist.json`.
+ * allowed to write the goal file.
  */
 
 export const GOAL_FILTERS = ["open", "done", "archived", "all"] as const;

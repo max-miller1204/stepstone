@@ -42,6 +42,40 @@ export interface CliExitCodeContract {
  */
 const BINARY = "stepstone";
 
+/**
+ * Directory holding the goal file, and later whatever local state grows beside
+ * it: dispatch claims, per-worktree focus, ephemeral board state.
+ *
+ * A directory rather than a bare dotfile precisely so those have somewhere to
+ * live that is not the committed goal file.
+ */
+export const WORKLIST_DIRECTORY = ".worklist";
+
+/** The goal file's name, the same in the current and the legacy directory. */
+export const WORKLIST_FILENAME = "worklist.json";
+
+/**
+ * Where the goal file lived when this package was Pi-only.
+ *
+ * Still read, and still written when it is the only file a repository has, so a
+ * Pi checkout keeps working with no migration step. Nothing creates it.
+ */
+export const LEGACY_WORKLIST_DIRECTORY = ".pi";
+
+/** Repository-relative canonical path, as every generated document spells it. */
+export const WORKLIST_RELATIVE_PATH = `${WORKLIST_DIRECTORY}/${WORKLIST_FILENAME}`;
+
+/** Repository-relative legacy path, still read and still documented. */
+export const LEGACY_WORKLIST_RELATIVE_PATH = `${LEGACY_WORKLIST_DIRECTORY}/${WORKLIST_FILENAME}`;
+
+/**
+ * Environment override naming the goal file outright.
+ *
+ * Derived from the published binary, like everything else a rename has to move,
+ * so the variable cannot come to name a package that no longer exists.
+ */
+export const WORKLIST_PATH_ENV = `${BINARY.toUpperCase().replaceAll("-", "_")}_WORKLIST`;
+
 /** Repository-relative path of the script that writes every generated artifact. */
 export const GENERATOR_PATH = "scripts/generate-docs.ts";
 
@@ -59,14 +93,13 @@ export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
 	scope: "project",
-	intro:
-		"Manage repository-wide Project Goals in <git-root>/.pi/worklist.json through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.",
+	intro: `Manage repository-wide Project Goals in <git-root>/${WORKLIST_RELATIVE_PATH} through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.`,
 	/**
 	 * Trigger text agents match against to auto-load the skill. Deliberately
 	 * repository-neutral: one skill file serves every checkout, so it must never
 	 * assume it was installed alongside this source tree.
 	 */
-	skillDescription: `Manage ${BINARY} Project Goals (the shared roadmap in a repo's .pi/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
+	skillDescription: `Manage ${BINARY} Project Goals (the shared roadmap in a repo's ${WORKLIST_RELATIVE_PATH}) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
 	runtime: {
 		/** Node floor for the published compiled bin. Asserted against package.json engines.node. */
 		binaryNodeFloor: "20",
@@ -166,6 +199,12 @@ export const CLI_COMMAND_CONTRACT = {
 			confirmRequired: true,
 		},
 		{
+			name: "migrate_path",
+			usage: "migrate_path --confirm",
+			summary: `Move the goal file from the legacy path to ${WORKLIST_RELATIVE_PATH}`,
+			confirmRequired: true,
+		},
+		{
 			name: "help",
 			usage: "help",
 			summary: "Print this help",
@@ -186,6 +225,11 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "--cwd",
 			usage: "--cwd <dir>",
 			summary: "Resolve the git root from this directory instead of the working directory",
+		},
+		{
+			name: "--file",
+			usage: "--file <path>",
+			summary: `Read and write this goal file instead of the one the repository resolves to, overriding $${WORKLIST_PATH_ENV}`,
 		},
 		{
 			name: "--description",
@@ -230,10 +274,28 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "--dry-run",
 			usage: "--dry-run",
-			summary: "Validate and report an apply-plan projection or ID migration without writing",
-			actions: ["apply-plan", "migrate_ids"],
+			summary:
+				"Validate and report an apply-plan projection, ID migration, or path migration without writing",
+			actions: ["apply-plan", "migrate_ids", "migrate_path"],
 		},
 	] satisfies CliFlagContract[],
+	/**
+	 * Where the goal file is, and how every interface agrees on that.
+	 *
+	 * Stated on every surface because resolution is the one rule a caller cannot
+	 * discover from a command's output: a repository that answers from the legacy
+	 * path looks exactly like one that answers from the current path until
+	 * somebody writes the other file and splits the roadmap in two.
+	 */
+	pathRules: [
+		`The goal file is \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.`,
+		`One resolution order applies everywhere, in the CLI, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
+		`Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only \`${LEGACY_WORKLIST_RELATIVE_PATH}\` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes \`${WORKLIST_RELATIVE_PATH}\`.`,
+		`When both files exist the current path wins and every command warns, because quietly ignoring a populated \`${LEGACY_WORKLIST_RELATIVE_PATH}\` would look exactly like data loss. Merge them by hand; no command picks a winner for you.`,
+		`\`--file\` and \`$${WORKLIST_PATH_ENV}\` are resolved from the process working directory, independently of \`--cwd\`, which only selects the target Git repository.`,
+		`\`migrate_path\` moves a legacy file to \`${WORKLIST_RELATIVE_PATH}\` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.`,
+		"`migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.",
+	],
 	/** Description input rules rendered onto every generated caller surface. */
 	descriptionRules: [
 		"Programmatic callers and agents must use `--description <text>` for a replacement, passing the whole value in one argv token. The flag is order-independent, and its value may itself look like a known flag.",
@@ -332,7 +394,7 @@ export const CLI_COMMAND_CONTRACT = {
 		"Use --description <text> and --append-description <text> for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
 		"Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.",
-		"Never pass --confirm for complete, reopen, archive, delete, or migrate_ids unless the user explicitly requested that exact action.",
+		"Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.",
 		"Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.",
 		"Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.",
 		"Use list for orientation, find <text> to locate a goal by wording, and show <id> when you need a goal's complete description.",
@@ -340,6 +402,8 @@ export const CLI_COMMAND_CONTRACT = {
 		"Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.",
 		"Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.",
 		"Run migrate_ids only when the user explicitly asks for it; it rewrites stored IDs, though every old ID keeps resolving afterwards.",
+		`Leave the goal file where it is unless the user asks to move it: a repository still on \`${LEGACY_WORKLIST_RELATIVE_PATH}\` works untouched, and migrate_path is theirs to request.`,
+		`Report the two-worklist warning to the user rather than working around it; only ${BINARY} reads the file it names, and merging them is a decision about which goals survive.`,
 		"Add a note with --append-description instead of resending a description you did not write, so nothing in the existing text can be lost in transcription.",
 		"Group related goals with --group <name> on add or update, and leave the file order alone unless the user asked for a different sequence.",
 		"Record a real must-land-before relationship with --depends-on <id>, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.",
@@ -478,7 +542,7 @@ export function renderSkillMarkdown(): string {
 		"",
 		`# Managing ${contract.binary} Project Goals`,
 		"",
-		"Project Goals are a repository-wide roadmap stored in `<git-root>/.pi/worklist.json` and shared with Pi sessions.",
+		`Project Goals are a repository-wide roadmap stored in \`<git-root>/${WORKLIST_RELATIVE_PATH}\` and shared with Pi sessions.`,
 		"Never edit that file directly: a concurrent Pi session may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.",
 		`Always go through the ${contract.binary} CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as a live Pi session.`,
 		"",
@@ -517,6 +581,10 @@ export function renderSkillMarkdown(): string {
 		"",
 		`The full generated command reference lives in the package's \`${DOCS_PATH}\`, rendered from the same contract as this skill.`,
 		"",
+		"## Where the goal file lives",
+		"",
+		...contract.pathRules.map((rule) => `- ${rule}`),
+		"",
 		"## JSON plans",
 		"",
 		...contract.planRules.map((rule) => `- ${rule}`),
@@ -545,6 +613,7 @@ export function renderSkillMarkdown(): string {
 		"  Never pass it because a goal merely looks finished or stale.",
 		"- `migrate_ids` names no goal and rewrites every generated ID in the repository at once, so it needs an explicit request of its own.",
 		"  `--dry-run` reports the rewrites it would make without writing them and without `--confirm`; prefer it when you are showing the user what would change.",
+		"- `migrate_path` names no goal either and moves the whole repository's goal file, so it needs its own explicit request and has the same `--dry-run`.",
 		`- Exit code 3 (${exitCodeMeaning(3)}) means the command needs \`--confirm\`; stop and ask the user instead of retrying with the flag.`,
 		`- Exit code 4 (${exitCodeMeaning(4)}) means a concurrent change conflicted with yours; re-read current state with \`list\` or \`show\` before retrying.`,
 		"  A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.",
@@ -557,7 +626,7 @@ export function renderSkillMarkdown(): string {
 		"",
 		"## Failure modes",
 		"",
-		`- Exit code 1 (${exitCodeMeaning(1)}) with a "Malformed" message means the target \`.pi/worklist.json\` is corrupt; report it to the user and never rewrite the file by hand.`,
+		`- Exit code 1 (${exitCodeMeaning(1)}) with a "Malformed" message means the goal file the repository resolved to is corrupt; the message names it, so report it to the user and never rewrite the file by hand.`,
 		'- Exit code 1 with a "git repository" message means the working directory is outside a repo; rerun with `--cwd <repo-root>`.',
 		"  With `--json`, that failure also arrives as the deterministic result envelope on stderr.",
 		`- Exit code 2 (${exitCodeMeaning(2)}) means the action or its flags were not recognized; re-read the action list above instead of guessing.`,
@@ -598,6 +667,10 @@ export function renderCliGuide(): string {
 		"```",
 		"",
 		"Every `--json` result envelope reports the running package version as `meta.cliVersion`.",
+		"",
+		"## Where the goal file lives",
+		"",
+		...contract.pathRules.map((rule) => `- ${rule}`),
 		"",
 		"## Commands",
 		"",

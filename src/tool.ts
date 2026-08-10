@@ -6,7 +6,7 @@ import {
 	type WorklistOperationSource,
 } from "./application-service.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
-import { getWorklistPath, resolveGitRoot } from "./git.ts";
+import { resolveGitRoot, resolveWorklistLocation, type WorklistLocation } from "./git.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { WorklistOperationResult, WorklistToolDetails } from "./types.ts";
 
@@ -16,10 +16,15 @@ export interface ToolDeps {
 	projectPath?: string | null;
 }
 
-export function getProjectPath(cwd: string): string | null {
+/**
+ * The goal file a Pi session works with, resolved the same way the CLI resolves
+ * it so a session and a terminal in the same repository can never disagree
+ * about which roadmap they are looking at.
+ */
+export function getProjectLocation(cwd: string): WorklistLocation | null {
 	const result = resolveGitRoot(cwd);
 	if (!result.isGit || !result.root) return null;
-	return getWorklistPath(result.root);
+	return resolveWorklistLocation(result.root, { env: process.env, overrideBase: cwd });
 }
 
 function getApplicationService(deps: ToolDeps): WorklistApplicationService {

@@ -40,7 +40,7 @@ const ESC = "\u001b";
 
 /**
  * End-to-end coverage for the board as a user drives it: real keystrokes in,
- * real `.pi/worklist.json` out, through the same application service, lock, and
+ * real goal file out, through the same application service, lock, and
  * atomic replacement a live Pi session uses.
  */
 
@@ -92,7 +92,7 @@ function parseJson<T>(text: string): T {
 
 async function readGoals(root: string): Promise<ProjectGoal[]> {
 	try {
-		const raw = await readFile(join(root, ".pi", "worklist.json"), "utf8");
+		const raw = await readFile(join(root, ".worklist", "worklist.json"), "utf8");
 		return parseJson<ProjectWorklist>(raw).goals;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
@@ -101,7 +101,7 @@ async function readGoals(root: string): Promise<ProjectGoal[]> {
 }
 
 async function openBoard(root: string, env: NodeJS.ProcessEnv = {}): Promise<Harness> {
-	const projectPath = join(root, ".pi", "worklist.json");
+	const projectPath = join(root, ".worklist", "worklist.json");
 	const service = new WorklistApplicationService({ projectPath });
 	const input = new PassThrough();
 	const output = new FakeOutput();
@@ -320,7 +320,7 @@ describe("goal board runtime", () => {
 		await board.done;
 	});
 
-	it("starts live reload when another process creates the missing .pi directory", async () => {
+	it("starts live reload when another process creates the missing worklist directory", async () => {
 		const root = await tempGitRepo();
 		const board = await openBoard(root);
 

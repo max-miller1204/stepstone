@@ -308,9 +308,10 @@
       "dependsOn": [
         "harness-identity-rename-off-the-pi"
       ],
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-08T23:53:23.024Z",
-      "updatedAt": "2026-08-08T23:53:23.024Z"
+      "updatedAt": "2026-08-10T17:39:09.599Z",
+      "completedAt": "2026-08-10T17:39:09.599Z"
     },
     {
       "id": "positioning-rewrite-the-docs-around-the",
@@ -588,5 +589,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 238
+  "revision": 240
 }

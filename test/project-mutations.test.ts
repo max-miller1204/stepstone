@@ -22,7 +22,7 @@ import { readProjectWorklist } from "../src/project-store.ts";
 
 async function tempPath() {
 	const root = await mkdtemp(join(tmpdir(), "stepstone-mutations-"));
-	return join(root, ".pi", "worklist.json");
+	return join(root, ".worklist", "worklist.json");
 }
 
 describe("project mutation service", () => {

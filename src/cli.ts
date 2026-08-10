@@ -9,7 +9,12 @@ import {
 	WorklistApplicationService,
 	type WorklistOperation,
 } from "./application-service.ts";
-import { CLI_COMMAND_CONTRACT, type CliFlagContract, renderCliUsage } from "./cli-contract.ts";
+import {
+	CLI_COMMAND_CONTRACT,
+	type CliFlagContract,
+	renderCliUsage,
+	WORKLIST_PATH_ENV,
+} from "./cli-contract.ts";
 import {
 	dependencyWaves,
 	dependentGoals,
@@ -20,7 +25,12 @@ import {
 	resolveDependencies,
 	unfinishedGoals,
 } from "./dependencies.ts";
-import { getWorklistPath, resolveGitRoot } from "./git.ts";
+import {
+	resolveGitRoot,
+	resolveWorklistLocation,
+	shadowedWorklistWarning,
+	type WorklistLocation,
+} from "./git.ts";
 import {
 	matchesGoalQuery,
 	planGoalIdMigration,
@@ -40,8 +50,11 @@ import type {
 
 /**
  * Pi-free command line for Project Goals, so external agents and scripts can
- * manage `<git-root>/.pi/worklist.json` through the same mutation service,
+ * manage the repository's goal file through the same mutation service,
  * cross-process lock, and atomic replacement as a live Pi session.
+ *
+ * Which file that is comes from `resolveWorklistLocation`, the one resolution
+ * order every interface shares, rather than from anything decided here.
  *
  * Session Tasks are deliberately out of scope: they live inside a Pi session
  * tree and have no meaning outside one.
@@ -75,6 +88,8 @@ interface CliInvocation {
 	json: boolean;
 	confirm: boolean;
 	cwd: string;
+	/** An explicit goal file from --file, which outranks every other resolution rule. */
+	file?: string;
 	/** Flag names as written, so action-scoped flags can be refused where they would be ignored. */
 	flagsUsed: ReadonlySet<string>;
 	/** Positionals written after the --description value, which a title must not be built from. */
@@ -203,6 +218,7 @@ interface ParsedCliHead {
 	json: boolean;
 	confirm: boolean;
 	cwd: string;
+	file?: string;
 }
 
 function parseCliHead(head: readonly string[]): ParsedCliHead {
@@ -218,6 +234,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	let group: string | undefined;
 	let expectedUpdatedAt: string | undefined;
 	let cwd = process.cwd();
+	let file: string | undefined;
 	const positionalsBeforeFlag = new Map<string, number>();
 	for (let index = 0; index < head.length; index++) {
 		const part = head[index];
@@ -255,6 +272,10 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 				break;
 			case "--cwd":
 				cwd = readFlagValue(head, index, part, "a directory");
+				index++;
+				break;
+			case "--file":
+				file = readFlagValue(head, index, part, "a goal file path");
 				index++;
 				break;
 			case "--group":
@@ -299,6 +320,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		json,
 		confirm,
 		cwd,
+		file,
 	};
 }
 
@@ -349,8 +371,8 @@ function parseArgs(argv: string[]): CliInvocation {
 interface ProjectLocation {
 	/** Canonical git root, whose basename names the repository in the board header. */
 	root: string;
-	/** Absolute path of `<git-root>/.pi/worklist.json`. */
-	path: string;
+	/** The goal file this invocation reads and writes, and how it was chosen. */
+	worklist: WorklistLocation;
 }
 
 function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
@@ -369,7 +391,13 @@ function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
 	}
-	return { root: result.root, path: getWorklistPath(result.root) };
+	const worklist = resolveWorklistLocation(result.root, { override: invocation.file, env: process.env });
+	// Every command, including a `--json` one: two roadmaps in a repository is a
+	// standing condition rather than one command's outcome, and it goes to stderr
+	// so the envelope on stdout stays exactly what a caller parses.
+	const warning = shadowedWorklistWarning(worklist);
+	if (warning) process.stderr.write(`${warning}\n`);
+	return { root: result.root, worklist };
 }
 
 function requireId(invocation: CliInvocation): string {
@@ -752,6 +780,86 @@ async function runGoalIdMigration(
 	report(invocation, envelope, formatMigrations(migrations, `Migrated ${migrations.length} goal ID(s):`));
 }
 
+/** What a path migration did, or would do, in one line. */
+function formatPathMigration(from: string | undefined, to: string, dryRun: boolean): string {
+	if (from === undefined) return `Project worklist is already at ${to}.`;
+	return dryRun
+		? `Would move project worklist ${from} to ${to}.`
+		: `Moved project worklist ${from} to ${to}.`;
+}
+
+/**
+ * Move the goal file to the path it should live at, or report the move.
+ *
+ * The destination is the canonical path rather than anything the caller names,
+ * because this exists to retire the legacy location, not to relocate a worklist
+ * anywhere someone fancies; `--file` covers naming a file outright.
+ */
+async function runPathMigration(
+	invocation: CliInvocation,
+	service: WorklistApplicationService,
+	worklist: WorklistLocation,
+): Promise<void> {
+	// Both flags at once asks to write and not to write, the same contradiction
+	// migrate_ids refuses rather than honoring one of them silently.
+	if (invocation.dryRun && invocation.confirm) {
+		fail(`project migrate_path cannot combine --dry-run with --confirm\n\n${USAGE}`, 2);
+	}
+	if (worklist.source === "override") {
+		fail(
+			`project migrate_path moves the file a repository resolves to, and this run named one outright.\n` +
+				`Drop --file and $${WORKLIST_PATH_ENV} to migrate the repository's own goal file.\n\n${USAGE}`,
+			2,
+		);
+	}
+	// Two files are two roadmaps. Moving one onto the other is the data loss the
+	// warning on every command is there to prevent, and merging them is a
+	// decision about which goals survive that only their owner can make.
+	if (worklist.shadowedPath) {
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "migrate_path",
+			error: {
+				code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+				message: `Project worklist ${worklist.path} already exists. Merge the goals you want to keep into it and delete ${worklist.shadowedPath}.`,
+				retryable: false,
+				details: {
+					path: worklist.path,
+					conflictingPath: worklist.shadowedPath,
+					resolution: "merge-worklists-by-hand",
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+	const from = worklist.path === worklist.currentPath ? undefined : worklist.path;
+	if (invocation.dryRun) {
+		const { meta } = await readProjectSnapshot(service, "migrate_path");
+		const result = {
+			scope: "project",
+			action: "migrate_path",
+			dryRun: true,
+			worklistPath: worklist.currentPath,
+			...(from !== undefined ? { previousWorklistPath: from } : {}),
+		} as const;
+		report(
+			invocation,
+			readEnvelope("migrate_path", result, meta),
+			formatPathMigration(from, worklist.currentPath, true),
+		);
+		return;
+	}
+	const envelope = await executeCliOperation(service, {
+		scope: "project",
+		action: "migrate_path",
+		targetPath: worklist.currentPath,
+		confirm: invocation.confirm,
+	});
+	const moved = envelope.ok ? envelope.result.previousWorklistPath : undefined;
+	report(invocation, envelope, formatPathMigration(moved, worklist.currentPath, false));
+}
+
 async function runSetActive(invocation: CliInvocation, service: WorklistApplicationService): Promise<void> {
 	const id = requireId(invocation);
 	try {
@@ -814,7 +922,7 @@ async function runInteractiveBoard(
 	const envelope = await executeCliOperation(service, { scope: "project", action: "list" });
 	await runGoalBoard({
 		service,
-		projectPath: location.path,
+		projectPath: location.worklist.path,
 		repositoryLabel: basename(location.root),
 		initialGoals: (envelope.ok ? envelope.result.goals : undefined) ?? [],
 		input: process.stdin,
@@ -836,7 +944,7 @@ async function run(invocation: CliInvocation): Promise<void> {
 		return;
 	}
 	const location = resolveProjectLocation(invocation);
-	const service = new WorklistApplicationService({ projectPath: location.path });
+	const service = new WorklistApplicationService({ projectPath: location.worklist.path });
 
 	switch (invocation.action) {
 		case "ui":
@@ -908,6 +1016,10 @@ async function run(invocation: CliInvocation): Promise<void> {
 		}
 		case "migrate_ids": {
 			await runGoalIdMigration(invocation, service);
+			return;
+		}
+		case "migrate_path": {
+			await runPathMigration(invocation, service, location.worklist);
 			return;
 		}
 		case "add": {

@@ -3,10 +3,11 @@ import { Text } from "@earendil-works/pi-tui";
 import { WorklistApplicationService, type WorklistOperationSource } from "./application-service.ts";
 import { CLI_COMMAND_CONTRACT } from "./cli-contract.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
+import { shadowedWorklistWarning } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import { WorklistParamsSchema } from "./schema.ts";
 import { SessionStore } from "./session-store.ts";
-import { executeWorklist, getProjectPath, WORKLIST_EXECUTION_MODE } from "./tool.ts";
+import { executeWorklist, getProjectLocation, WORKLIST_EXECUTION_MODE } from "./tool.ts";
 import type { ProjectGoal, ProjectGoalStatus, SessionTaskStatus } from "./types.ts";
 import {
 	buildPromptSummary,
@@ -421,8 +422,13 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionStore.reconstruct(ctx);
-		projectPath = getProjectPath(ctx.cwd);
+		const location = getProjectLocation(ctx.cwd);
+		projectPath = location?.path ?? null;
 		applicationService.setProjectPath(projectPath);
+		// The session's one chance to say which of two roadmaps it is reading,
+		// before anything it shows can be mistaken for all the goals there are.
+		const warning = location ? shadowedWorklistWarning(location) : undefined;
+		if (warning) ctx.ui.notify(warning, "warning");
 		try {
 			await updateUi(ctx);
 		} catch (error) {

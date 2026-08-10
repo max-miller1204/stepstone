@@ -1,13 +1,13 @@
 ---
 name: stepstone
-description: "Manage stepstone Project Goals (the shared roadmap in a repo's .pi/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
+description: "Manage stepstone Project Goals (the shared roadmap in a repo's .worklist/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
 ---
 
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
 
 # Managing stepstone Project Goals
 
-Project Goals are a repository-wide roadmap stored in `<git-root>/.pi/worklist.json` and shared with Pi sessions.
+Project Goals are a repository-wide roadmap stored in `<git-root>/.worklist/worklist.json` and shared with Pi sessions.
 Never edit that file directly: a concurrent Pi session may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.
 Always go through the stepstone CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as a live Pi session.
 
@@ -42,6 +42,7 @@ reopen <id> --confirm
 archive <id> --confirm
 delete <id> --confirm
 migrate_ids --confirm
+migrate_path --confirm
 help
 ```
 
@@ -50,13 +51,14 @@ Flags:
 - `--json` - Print the deterministic result envelope as JSON (stdout on success, stderr on failure).
 - `--confirm` - Acknowledge an action that requires confirmation; pass it only for an explicit user request.
 - `--cwd <dir>` - Resolve the git root from this directory instead of the working directory.
+- `--file <path>` - Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST.
 - `--description <text>` - Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update.
 - `--append-description <text>` - Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update.
 - `--append` - Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update.
 - `--group <name>` - Put the goal in a free-form section, such as Foundation; an empty name clears it; only for project add and update.
 - `--depends-on <id>` - Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update.
 - `--expect-updated-at <timestamp>` - Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, set_active, complete, reopen, archive, and delete.
-- `--dry-run` - Validate and report an apply-plan projection or ID migration without writing; only for project apply-plan and migrate_ids.
+- `--dry-run` - Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path.
 
 Prefer `--json` whenever you need to read IDs, statuses, or errors back rather than parsing human output.
 `list` output is compact and omits descriptions; use `show <id>` when you need a goal's complete description.
@@ -95,6 +97,16 @@ npx -y stepstone@latest project set_active support-goal-templates
 ```
 
 The full generated command reference lives in the package's `docs/cli.md`, rendered from the same contract as this skill.
+
+## Where the goal file lives
+
+- The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
+- One resolution order applies everywhere, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
+- When both files exist the current path wins and every command warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
+- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, which only selects the target Git repository.
+- `migrate_path` moves a legacy file to `.worklist/worklist.json` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.
+- `migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.
 
 ## JSON plans
 
@@ -151,11 +163,12 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 
 ## Guardrails
 
-- `complete`, `reopen`, `archive`, `delete`, and `migrate_ids` are reserved for explicit user intent.
+- `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` are reserved for explicit user intent.
   Pass `--confirm` only for the exact action the user requested and, when the action names a goal, only for that exact goal.
   Never pass it because a goal merely looks finished or stale.
 - `migrate_ids` names no goal and rewrites every generated ID in the repository at once, so it needs an explicit request of its own.
   `--dry-run` reports the rewrites it would make without writing them and without `--confirm`; prefer it when you are showing the user what would change.
+- `migrate_path` names no goal either and moves the whole repository's goal file, so it needs its own explicit request and has the same `--dry-run`.
 - Exit code 3 (confirmation required) means the command needs `--confirm`; stop and ask the user instead of retrying with the flag.
 - Exit code 4 (conflict) means a concurrent change conflicted with yours; re-read current state with `list` or `show` before retrying.
   A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.
@@ -168,7 +181,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 
 ## Failure modes
 
-- Exit code 1 (error) with a "Malformed" message means the target `.pi/worklist.json` is corrupt; report it to the user and never rewrite the file by hand.
+- Exit code 1 (error) with a "Malformed" message means the goal file the repository resolved to is corrupt; the message names it, so report it to the user and never rewrite the file by hand.
 - Exit code 1 with a "git repository" message means the working directory is outside a repo; rerun with `--cwd <repo-root>`.
   With `--json`, that failure also arrives as the deterministic result envelope on stderr.
 - Exit code 2 (usage error) means the action or its flags were not recognized; re-read the action list above instead of guessing.

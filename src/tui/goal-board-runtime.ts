@@ -35,7 +35,7 @@ const FALLBACK_EDITORS = ["nano", "vim", "vi"] as const;
 
 export interface GoalBoardRuntimeOptions {
 	service: WorklistApplicationService;
-	/** Absolute path of `<git-root>/.pi/worklist.json`. */
+	/** Absolute path of the goal file, as the shared resolution order chose it. */
 	projectPath: string;
 	/** Repository name shown in the header. */
 	repositoryLabel: string;
