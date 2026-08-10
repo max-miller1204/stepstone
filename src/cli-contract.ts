@@ -2,7 +2,7 @@
  * The single command contract for the stepstone CLI.
  *
  * CLI usage text, the command reference in docs/cli.md, the installable agent
- * skill in .claude/skills/worklist/SKILL.md, and agent guidance are all
+ * skill in .claude/skills/stepstone/SKILL.md, and agent guidance are all
  * rendered from this structure so they cannot drift from each other or from
  * the implemented command surface.
  */
@@ -30,15 +30,6 @@ export interface CliExitCodeContract {
 	meaning: string;
 }
 
-/** Repository-relative path of the script that writes every generated artifact. */
-export const GENERATOR_PATH = "scripts/generate-docs.ts";
-
-/** Repository-relative path of the generated command reference. */
-export const DOCS_PATH = "docs/cli.md";
-
-/** Repository-relative path of the generated agent skill. */
-export const SKILL_PATH = ".claude/skills/worklist/SKILL.md";
-
 /**
  * The published package name, which is also the bin it installs.
  *
@@ -50,6 +41,20 @@ export const SKILL_PATH = ".claude/skills/worklist/SKILL.md";
  * test/compiled-cli.test.ts pins both to this constant.
  */
 const BINARY = "stepstone";
+
+/** Repository-relative path of the script that writes every generated artifact. */
+export const GENERATOR_PATH = "scripts/generate-docs.ts";
+
+/** Repository-relative path of the generated command reference. */
+export const DOCS_PATH = "docs/cli.md";
+
+/**
+ * Repository-relative path of the generated agent skill.
+ *
+ * The directory name is the name agents load the skill by, so it tracks the
+ * package rather than being spelled out separately.
+ */
+export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
@@ -418,7 +423,7 @@ export function renderCliUsage(): string {
 }
 
 /**
- * The installable agent skill, written to .claude/skills/worklist/SKILL.md.
+ * The installable agent skill, written to .claude/skills/stepstone/SKILL.md.
  *
  * Every published invocation is the non-interactive `npx -y <binary>@latest`
  * form so the same file works from any repository without stale-cache selection;
@@ -465,7 +470,7 @@ export function renderSkillMarkdown(): string {
 	];
 	return [
 		"---",
-		"name: worklist",
+		`name: ${contract.binary}`,
 		`description: ${JSON.stringify(contract.skillDescription)}`,
 		"---",
 		"",
