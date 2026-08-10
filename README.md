@@ -5,7 +5,6 @@
 [![npm version](https://img.shields.io/npm/v/stepstone.svg)](https://www.npmjs.com/package/stepstone)
 [![CI](https://github.com/max-miller1204/stepstone/actions/workflows/ci.yml/badge.svg)](https://github.com/max-miller1204/stepstone/actions/workflows/ci.yml)
 [![Release](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml/badge.svg)](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml)
-[![Pi package](https://img.shields.io/badge/Pi-package-8a76b5)](https://pi.dev/packages/stepstone)
 
 > Formerly published as `pi-worklist`, which is frozen at 0.17.0 and no longer updated.
 > Everything continues here, under a name that does not imply the tool only serves one coding agent.
@@ -13,10 +12,7 @@
 `stepstone` keeps a repository's roadmap inside the repository.
 Project Goals are a list committed alongside the code, which any coding agent or any human at a terminal can read and change.
 Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to start, what can run in parallel, and what each finished goal unblocks.
-Drive them from a dependency-free CLI, an installable agent skill, or a full-screen terminal board, none of which need Pi installed.
-
-Pi additionally gets a second, deliberately different list: Session Tasks, a branch-aware queue of the concrete chunks in the session at hand.
-It is kept separate from the roadmap because a session's next steps and a repository's outcomes are not the same thing.
+Drive them from a dependency-free CLI, an installable agent skill, or a full-screen terminal board, none of which need anything installed but Node.
 
 ## Features
 
@@ -32,7 +28,7 @@ It is kept separate from the roadmap because a session's next steps and a reposi
 - Project Goal completion, reopening, archival, and deletion require explicit user intent.
 - Cross-process locking and atomic replacement serialize writes and prevent project-file corruption; optional goal baselines detect stale mutations.
 
-In a Pi session, stepstone adds:
+In a Pi session, stepstone adds Session Tasks: a branch-aware queue of the concrete chunks in the session at hand, kept separate from the roadmap because a session's next steps and a repository's outcomes are not the same thing.
 
 - Branch-aware Session Tasks survive `/resume` and follow `/tree`, `/fork`, and `/clone`.
 - Session Tasks stay intentionally small and title-only, so they represent executable chunks rather than broad outcomes.
