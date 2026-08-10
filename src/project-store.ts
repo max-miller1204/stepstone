@@ -180,10 +180,7 @@ export function createEmptyWorklist(): RevisionedProjectWorklist {
  * read reaches the schema through here, which is what keeps a move accepting
  * exactly the files a read does, down to the message a malformed one earns.
  */
-function parseProjectWorklist(
-	text: string,
-	path: string,
-): ProjectStoreResult<RevisionedProjectWorklist> {
+function parseProjectWorklist(text: string, path: string): ProjectStoreResult<RevisionedProjectWorklist> {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(text);

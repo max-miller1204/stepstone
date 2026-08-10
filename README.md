@@ -323,6 +323,7 @@ Reordering is refused outside file order, where the rows are not where the file 
 Status and recent are views over that same order, which stays their tiebreak, so an arrangement survives a trip through them.
 Those two views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
 The status line names the active goal in full in every order, which keeps it readable while the list is filtered to something else or scrolled past it.
+When a repository holds two worklists, that warning takes the line instead for as long as the board is open, because the board owns the whole screen and a warning printed before it opened sits on a buffer nobody can see.
 In the all view, done and archived rows recede so live work stays legible beside them, and a goal waiting on work that has not landed recedes in every view for the same reason; the selected row always keeps full contrast.
 A goal still in play that has gone untouched for 30 days or more carries its age at the right edge of its row when at least 12 cells remain for the title, and the detail pane spells that age out under `UPDATED`.
 Settled goals are never aged: a done or archived goal is finished rather than neglected.
