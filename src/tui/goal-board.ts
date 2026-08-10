@@ -143,6 +143,16 @@ export interface GoalBoardOptions {
 	palette: Palette;
 	/** Shown in the header so a board opened with `--cwd` names its repository. */
 	repositoryLabel: string;
+	/**
+	 * A standing condition about the file behind the board, shown whenever the
+	 * status line is otherwise idle.
+	 *
+	 * The board owns the whole screen, so a warning written before it opened is
+	 * on a buffer the user cannot see; anything they have to know while the board
+	 * is up has to be part of a frame. It is composed by the caller so no two
+	 * interfaces word the same condition differently.
+	 */
+	notice?: string;
 	goals?: ProjectGoal[];
 	/**
 	 * Current time in epoch milliseconds, read only to age goals.
@@ -244,6 +254,7 @@ function toCellArray(value: string): string[] {
 export class GoalBoard {
 	private readonly palette: Palette;
 	private readonly repositoryLabel: string;
+	private readonly notice: string | undefined;
 	private readonly now: () => number;
 	private goals: ProjectGoal[];
 	private filter: GoalFilter = "open";
@@ -262,6 +273,7 @@ export class GoalBoard {
 	constructor(options: GoalBoardOptions) {
 		this.palette = options.palette;
 		this.repositoryLabel = options.repositoryLabel;
+		this.notice = options.notice;
 		this.now = options.now ?? (() => Date.now());
 		this.goals = options.goals ? [...options.goals] : [];
 		this.selectedId = this.visibleGoals()[0]?.id;
@@ -1127,6 +1139,12 @@ export class GoalBoard {
 			const style =
 				this.message.tone === "error" ? danger : this.message.tone === "success" ? success : muted;
 			return { line: ` ${style(truncateToWidth(this.message.text, Math.max(1, width - 2)))}` };
+		}
+		// A standing condition outranks the idle summary: the summary describes the
+		// roadmap on screen, and the notice is the reason that roadmap may not be
+		// all of them.
+		if (this.notice !== undefined) {
+			return { line: ` ${warning(truncateToWidth(this.notice, Math.max(1, width - 2)))}` };
 		}
 		return { line: ` ${dim(truncateToWidth(this.idleSummary(), Math.max(1, width - 2)))}` };
 	}

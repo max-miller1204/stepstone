@@ -7,7 +7,7 @@ import { shadowedWorklistWarning } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import { WorklistParamsSchema } from "./schema.ts";
 import { SessionStore } from "./session-store.ts";
-import { executeWorklist, getProjectLocation, WORKLIST_EXECUTION_MODE } from "./tool.ts";
+import { createProjectLocator, executeWorklist, WORKLIST_EXECUTION_MODE } from "./tool.ts";
 import type { ProjectGoal, ProjectGoalStatus, SessionTaskStatus } from "./types.ts";
 import {
 	buildPromptSummary,
@@ -123,15 +123,10 @@ export function parseTasksCommand(args: string): ParsedCommand | null {
 export default function worklistExtension(pi: ExtensionAPI): void {
 	const sessionStore = new SessionStore(pi);
 	const applicationService = new WorklistApplicationService({ sessionStore });
-	let projectPath: string | null = null;
 	let projectGoals: ProjectGoal[] = [];
 	let latestContext: ExtensionContext | undefined;
 
 	async function refreshProject(): Promise<void> {
-		if (!projectPath) {
-			projectGoals = [];
-			return;
-		}
 		projectGoals = await applicationService.getProjectGoals();
 	}
 
@@ -422,9 +417,9 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionStore.reconstruct(ctx);
-		const location = getProjectLocation(ctx.cwd);
-		projectPath = location?.path ?? null;
-		applicationService.setProjectPath(projectPath);
+		const locateProject = createProjectLocator(ctx.cwd);
+		applicationService.setProjectPathResolver(() => locateProject()?.path ?? null);
+		const location = locateProject();
 		// The session's one chance to say which of two roadmaps it is reading,
 		// before anything it shows can be mistaken for all the goals there are.
 		const warning = location ? shadowedWorklistWarning(location) : undefined;

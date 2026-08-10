@@ -141,6 +141,15 @@ export interface WorklistApplicationServiceOptions {
 	projectPath?: string | null;
 }
 
+/**
+ * How the service finds the goal file, asked once per project operation.
+ *
+ * The resolution order lives outside the service so every interface shares it,
+ * and it is a question rather than an answer so a host that outlives a
+ * `migrate_path` never writes to the path it was told about at startup.
+ */
+export type ProjectPathResolver = () => string | null;
+
 type ProjectLifecycleAction = keyof typeof PROJECT_LIFECYCLE_TARGET_STATUS;
 
 const EMPTY_RESULT_META: WorklistResultMeta = {
@@ -794,15 +803,30 @@ async function deleteSessionTask(
  */
 export class WorklistApplicationService {
 	private readonly options: WorklistApplicationServiceOptions;
-	private projectPath: string | null;
+	private resolveProjectPath: ProjectPathResolver;
 
 	constructor(options: WorklistApplicationServiceOptions) {
 		this.options = options;
-		this.projectPath = options.projectPath ?? null;
+		const configured = options.projectPath ?? null;
+		this.resolveProjectPath = () => configured;
 	}
 
 	setProjectPath(projectPath: string | null): void {
-		this.projectPath = projectPath;
+		this.resolveProjectPath = () => projectPath;
+	}
+
+	/**
+	 * Hand over the resolution instead of an answer, for a host that outlives it.
+	 *
+	 * A CLI process resolves once and exits, so the path it was handed cannot go
+	 * stale underneath it. A session or a board stays open across a `migrate_path`
+	 * run in another terminal, and a goal file that moved is exactly the state
+	 * where writing to the remembered path splits one roadmap into two. Every
+	 * project operation asks again, so the answer is never older than the
+	 * operation it decides.
+	 */
+	setProjectPathResolver(resolve: ProjectPathResolver): void {
+		this.resolveProjectPath = resolve;
 	}
 
 	getSessionTasks(): SessionTask[] {
@@ -812,20 +836,22 @@ export class WorklistApplicationService {
 	}
 
 	async getProjectGoals(): Promise<ProjectGoal[]> {
-		if (!this.projectPath) return [];
+		const projectPath = this.resolveProjectPath();
+		if (!projectPath) return [];
 		try {
-			return await listProjectGoals(this.projectPath);
+			return await listProjectGoals(projectPath);
 		} catch (error) {
 			throw new WorklistApplicationError(
-				persistenceError({ scope: "project", action: "list" }, error, this.projectPath),
+				persistenceError({ scope: "project", action: "list" }, error, projectPath),
 			);
 		}
 	}
 
 	async readProjectSnapshot(action: string): Promise<WorklistApplicationResult> {
 		const operation: WorklistOperation = { scope: "project", action };
+		const resolved = this.resolveProjectPath();
 		try {
-			const projectPath = this.requireProjectPath();
+			const projectPath = this.requireProjectPath(resolved);
 			const { goals, retiredIds, revision } = await readProjectGoals(projectPath);
 			return {
 				ok: true,
@@ -838,7 +864,7 @@ export class WorklistApplicationService {
 			const typedError =
 				error instanceof WorklistApplicationError
 					? error.toResultError()
-					: persistenceError(operation, error, this.projectPath);
+					: persistenceError(operation, error, resolved);
 			return {
 				ok: false,
 				scope: "project",
@@ -853,6 +879,7 @@ export class WorklistApplicationService {
 		operation: WorklistOperation,
 		_context: WorklistOperationContext,
 	): Promise<WorklistApplicationResult> {
+		const resolvedProjectPath = operation.scope === "project" ? this.resolveProjectPath() : null;
 		try {
 			const placement = normalizePlacement(operation);
 			let result: WorklistOperationResult;
@@ -869,7 +896,7 @@ export class WorklistApplicationService {
 				projectRevision = sessionExecution.projectRevision;
 				changedTaskIds = sessionExecution.changedTaskIds;
 			} else if (operation.scope === "project") {
-				const projectExecution = await this.executeProject(operation);
+				const projectExecution = await this.executeProject(operation, resolvedProjectPath);
 				result = projectExecution.result;
 				changed = projectExecution.changed;
 				projectRevision = projectExecution.revision;
@@ -981,7 +1008,7 @@ export class WorklistApplicationService {
 			} else if (isSessionTaskAnchorNotFoundError(error)) {
 				typedError = notFoundError("session-task-anchor", error.anchorId).toResultError();
 			} else {
-				typedError = persistenceError(operation, error, this.projectPath);
+				typedError = persistenceError(operation, error, resolvedProjectPath);
 			}
 			return {
 				ok: false,
@@ -1029,8 +1056,11 @@ export class WorklistApplicationService {
 		}
 	}
 
-	private async executeProject(rawOperation: WorklistOperation): Promise<ProjectExecutionResult> {
-		const projectPath = this.requireProjectPath();
+	private async executeProject(
+		rawOperation: WorklistOperation,
+		resolvedProjectPath: string | null,
+	): Promise<ProjectExecutionResult> {
+		const projectPath = this.requireProjectPath(resolvedProjectPath);
 		rejectUnsupportedProjectOptions(rawOperation);
 		// Selectors resolve before the placement is read, so `move x before y`
 		// anchors on the goal `y` names rather than on the caller's shorthand.
@@ -1403,14 +1433,14 @@ export class WorklistApplicationService {
 		return this.options.sessionStore;
 	}
 
-	private requireProjectPath(): string {
-		if (!this.projectPath) {
+	private requireProjectPath(projectPath: string | null = this.resolveProjectPath()): string {
+		if (!projectPath) {
 			throw createApplicationError(
 				WORKLIST_ERROR_CODES.UNAVAILABLE,
 				"Project goals require a git repository. Session tasks are still available outside git.",
 				{ resolution: "run-inside-git-repository" },
 			);
 		}
-		return this.projectPath;
+		return projectPath;
 	}
 }

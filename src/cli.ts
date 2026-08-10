@@ -67,6 +67,15 @@ type LifecycleAction = (typeof LIFECYCLE_ACTIONS)[number];
 const COMPACT_TITLE_LIMIT = 96;
 
 const packageVersion = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
+
+/**
+ * The second worklist this invocation resolved past, once resolution has run.
+ *
+ * It sits beside the version rather than being threaded through every command,
+ * because it belongs to every envelope this process emits - including the
+ * failure envelope thrown from a call site that never saw the location.
+ */
+let shadowedWorklistPath: string | undefined;
 const USAGE = renderCliUsage();
 
 interface CliInvocation {
@@ -101,6 +110,17 @@ interface CliInvocation {
 
 interface CliResultMeta extends WorklistResultMeta {
 	cliVersion: string;
+	/**
+	 * A populated worklist this invocation passed over, present only when both
+	 * files exist.
+	 *
+	 * A human is told on stderr, which a `--json` caller cannot be: that stream
+	 * carries the failure envelope, and a sentence in front of it would leave
+	 * nothing to parse. So the condition rides in the envelope every command
+	 * emits, success or failure, which is also the only place a machine can read
+	 * it without matching on prose.
+	 */
+	shadowedWorklistPath?: string;
 }
 
 type CliResultEnvelope = WorklistApplicationResult & {
@@ -393,11 +413,14 @@ function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
 		});
 	}
 	const worklist = resolveWorklistLocation(result.root, { override: invocation.file, env: process.env });
-	// Every command, including a `--json` one: two roadmaps in a repository is a
-	// standing condition rather than one command's outcome, and it goes to stderr
-	// so the envelope on stdout stays exactly what a caller parses.
+	// Every command reports it, because two roadmaps in a repository is a standing
+	// condition rather than one command's outcome. A human reads it on stderr; a
+	// `--json` caller reads it in `meta.shadowedWorklistPath`, because stderr is
+	// where the failure envelope goes and a sentence in front of it would leave
+	// that caller with nothing it can parse.
+	shadowedWorklistPath = worklist.shadowedPath;
 	const warning = shadowedWorklistWarning(worklist);
-	if (warning) process.stderr.write(`${warning}\n`);
+	if (warning && !invocation.json) process.stderr.write(`${warning}\n`);
 	return { root: result.root, worklist };
 }
 
@@ -693,7 +716,11 @@ function report(invocation: CliInvocation, envelope: WorklistApplicationResult, 
 function withCliMetadata(envelope: WorklistApplicationResult): CliResultEnvelope {
 	return {
 		...envelope,
-		meta: { ...envelope.meta, cliVersion: packageVersion },
+		meta: {
+			...envelope.meta,
+			cliVersion: packageVersion,
+			...(shadowedWorklistPath ? { shadowedWorklistPath } : {}),
+		},
 	};
 }
 
@@ -912,10 +939,14 @@ async function runInteractiveBoard(
 	// Surface a malformed or unreadable worklist through the normal failure path
 	// rather than opening an empty board over a file that could not be read.
 	const envelope = await executeCliOperation(service, { scope: "project", action: "list" });
+	// The board takes the whole screen, so the warning already written to stderr
+	// is on a buffer the user will not see again until they quit.
+	const notice = shadowedWorklistWarning(location.worklist);
 	await runGoalBoard({
 		service,
 		projectPath: location.worklist.path,
 		repositoryLabel: basename(location.root),
+		...(notice !== undefined ? { notice } : {}),
 		initialGoals: (envelope.ok ? envelope.result.goals : undefined) ?? [],
 		input: process.stdin,
 		output: process.stdout,

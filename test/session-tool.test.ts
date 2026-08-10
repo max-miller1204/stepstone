@@ -1,15 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
+import { WorklistApplicationService } from "../src/application-service.ts";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 import worklistExtension from "../src/extension.ts";
 import { formatSessionTasks } from "../src/format.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SESSION_SNAPSHOT_TYPE, SessionStore } from "../src/session-store.ts";
 import { executeWorklist, getProjectLocation } from "../src/tool.ts";
+import type { ProjectWorklist } from "../src/types.ts";
 import type { DashboardResult } from "../src/ui.ts";
 
 function fakePi(entries: unknown[] = []) {
@@ -774,20 +776,49 @@ describe("session state and tool", () => {
 });
 
 describe("registered model tool", () => {
+	type SessionHandler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
+
 	function registerExtension() {
 		let tool: Record<string, unknown> | undefined;
+		const handlers = new Map<string, SessionHandler>();
 		const api = {
 			appendEntry: () => {},
 			registerTool: (config: Record<string, unknown>) => {
 				tool = config;
 			},
 			registerCommand: () => {},
-			on: () => {},
+			on: (event: string, handler: SessionHandler) => {
+				handlers.set(event, handler);
+			},
 			events: { emit: () => {}, on: () => () => {} },
 		} as unknown as ExtensionAPI;
 		worklistExtension(api);
 		if (!tool) throw new Error("worklist tool was not registered");
-		return tool;
+		return { tool, handlers };
+	}
+
+	type ToolExecute = (
+		id: string,
+		params: Record<string, unknown>,
+		signal: undefined,
+		onUpdate: undefined,
+		ctx: ExtensionContext,
+	) => Promise<unknown>;
+
+	/** A live session on a repository, left exactly as `session_start` leaves one. */
+	async function startSession(cwd: string): Promise<(params: Record<string, unknown>) => Promise<unknown>> {
+		const { tool, handlers } = registerExtension();
+		const sessionContext = {
+			cwd,
+			mode: "cli",
+			sessionManager: { getBranch: () => [] },
+			ui: { notify: () => {}, setWidget: () => {} },
+		} as unknown as ExtensionContext;
+		const sessionStart = handlers.get("session_start");
+		if (!sessionStart) throw new Error("session_start handler was not registered");
+		await sessionStart({}, sessionContext);
+		const execute = tool.execute as ToolExecute;
+		return (params) => execute("call", params, undefined, undefined, sessionContext);
 	}
 
 	it("resolves the same goal file a terminal in the repository would", async () => {
@@ -810,12 +841,54 @@ describe("registered model tool", () => {
 		expect(getProjectLocation(await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-")))).toBeNull();
 	});
 
+	it("writes where the goal file is now, not where it was when the session started", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-tool-migrated-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const legacy = join(root, ".pi", "worklist.json");
+		const migrated = join(root, ".worklist", "worklist.json");
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(
+			legacy,
+			`${JSON.stringify({
+				version: 1,
+				revision: 1,
+				goals: [
+					{
+						id: "carried",
+						title: "Carried across",
+						status: "open",
+						createdAt: "2026-01-01T00:00:00.000Z",
+						updatedAt: "2026-01-01T00:00:00.000Z",
+					},
+				],
+			})}\n`,
+		);
+		const execute = await startSession(root);
+
+		// migrate_path, run in a terminal while the session stays open on the file
+		// it moved.
+		const migration = await new WorklistApplicationService({ projectPath: legacy }).execute(
+			{ scope: "project", action: "migrate_path", targetPath: migrated, confirm: true },
+			{ source: "cli" },
+		);
+		expect(migration.ok).toBe(true);
+
+		await execute({ scope: "project", action: "add", title: "Added after the move" });
+
+		// The goal joins the roadmap that moved. Writing to the remembered path
+		// would recreate the legacy file holding only this goal, which is the split
+		// roadmap the whole resolution order exists to prevent.
+		const worklist = JSON.parse(await readFile(migrated, "utf8")) as ProjectWorklist;
+		expect(worklist.goals.map((goal) => goal.id)).toEqual(["carried", "added-after-the-move"]);
+		await expect(readFile(legacy, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {
-		expect(registerExtension().executionMode).toBe("sequential");
+		expect(registerExtension().tool.executionMode).toBe("sequential");
 	});
 
 	it("exposes the session ordering surface to the model", () => {
-		const tool = registerExtension();
+		const { tool } = registerExtension();
 		const parameters = tool.parameters as {
 			properties: Record<string, { enum?: string[]; description?: string }>;
 		};

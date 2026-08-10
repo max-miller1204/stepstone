@@ -215,6 +215,28 @@ describe("goal board presentation", () => {
 		expect(statusLine([])).toBe("No project goals yet. Press a to add one.");
 	});
 
+	it("holds a standing notice on the status line, which the alternate screen would otherwise swallow", () => {
+		const notice = "Warning: two project worklists exist. /repo/.pi/worklist.json is ignored.";
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+		const statusLine = () => plainFrame(board, 120, 20).at(-2)?.trim();
+
+		// It outranks the idle summary, which describes only the roadmap on screen.
+		expect(statusLine()).toBe(notice);
+
+		// A message takes the line while it has something to say, and the standing
+		// condition comes back rather than being reported once and lost.
+		board.setMessage("Added goal.", "success");
+		expect(statusLine()).toBe("Added goal.");
+		press(board, "j");
+		expect(statusLine()).toBe(notice);
+	});
+
 	it("dims settled rows only where they sit alongside live work", () => {
 		const board = createBoard(GOALS, true);
 		press(board, "fff");

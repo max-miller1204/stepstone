@@ -172,27 +172,42 @@ export function createEmptyWorklist(): RevisionedProjectWorklist {
 	return { version: PROJECT_WORKLIST_VERSION, revision: 0, goals: [] };
 }
 
+/**
+ * One worklist, read out of text a caller already holds.
+ *
+ * A move has to write the same bytes it validated, so the check cannot be a
+ * second read of a file another process may have replaced in between. Every
+ * read reaches the schema through here, which is what keeps a move accepting
+ * exactly the files a read does, down to the message a malformed one earns.
+ */
+function parseProjectWorklist(
+	text: string,
+	path: string,
+): ProjectStoreResult<RevisionedProjectWorklist> {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return {
+			data: createEmptyWorklist(),
+			error: `Malformed project file ${path}: invalid JSON`,
+		};
+	}
+	if (!isProjectWorklist(parsed)) {
+		return {
+			data: createEmptyWorklist(),
+			error: `Malformed or unsupported schema in ${path}. Fix the file manually; it will not be overwritten.`,
+		};
+	}
+	return { data: { ...parsed, revision: parsed.revision ?? 0 } };
+}
+
 export async function readProjectWorklist(
 	path: string,
 ): Promise<ProjectStoreResult<RevisionedProjectWorklist>> {
 	try {
 		const text = await readFile(path, "utf8");
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(text);
-		} catch {
-			return {
-				data: createEmptyWorklist(),
-				error: `Malformed project file ${path}: invalid JSON`,
-			};
-		}
-		if (!isProjectWorklist(parsed)) {
-			return {
-				data: createEmptyWorklist(),
-				error: `Malformed or unsupported schema in ${path}. Fix the file manually; it will not be overwritten.`,
-			};
-		}
-		return { data: { ...parsed, revision: parsed.revision ?? 0 } };
+		return parseProjectWorklist(text, path);
 	} catch (err) {
 		const code = (err as NodeJS.ErrnoException).code;
 		if (code === "ENOENT") {
@@ -263,10 +278,11 @@ export async function moveProjectWorklist(
 			throw err;
 		}
 		// Validating before the move keeps a corrupt file where the user last saw
-		// it, named by the path their editor already has open. It re-reads through
-		// the store's own reader rather than parsing `contents` here, so a move
-		// accepts exactly the files every other read does.
-		const readResult = await readProjectWorklist(fromPath);
+		// it, named by the path their editor already has open. It validates the
+		// bytes already in hand rather than reading the file a second time, so the
+		// content that lands at the destination is the content that passed, and
+		// the revision reported back is the revision that travelled.
+		const readResult = parseProjectWorklist(contents, fromPath);
 		if (readResult.error)
 			return { data: undefined as unknown as ProjectWorklistMove, error: readResult.error };
 		// Checked under both locks, so nothing can create the destination between

@@ -17,14 +17,26 @@ export interface ToolDeps {
 }
 
 /**
- * The goal file a Pi session works with, resolved the same way the CLI resolves
- * it so a session and a terminal in the same repository can never disagree
- * about which roadmap they are looking at.
+ * Ask again, rather than remember: the goal file a Pi session works with, on
+ * demand and resolved the same way the CLI resolves it, so a session and a
+ * terminal in the same repository can never disagree about which roadmap they
+ * are looking at.
+ *
+ * The repository a session runs in cannot change under it, so the git root is
+ * found once; which file inside it holds the goals can change, because
+ * `migrate_path` in another terminal moves it, so that part is re-read every
+ * time it is asked for.
  */
-export function getProjectLocation(cwd: string): WorklistLocation | null {
+export function createProjectLocator(cwd: string): () => WorklistLocation | null {
 	const result = resolveGitRoot(cwd);
-	if (!result.isGit || !result.root) return null;
-	return resolveWorklistLocation(result.root, { env: process.env, overrideBase: cwd });
+	if (!result.isGit || !result.root) return () => null;
+	const root = result.root;
+	return () => resolveWorklistLocation(root, { env: process.env, overrideBase: cwd });
+}
+
+/** The goal file a Pi session works with, as it stands right now. */
+export function getProjectLocation(cwd: string): WorklistLocation | null {
+	return createProjectLocator(cwd)();
 }
 
 function getApplicationService(deps: ToolDeps): WorklistApplicationService {

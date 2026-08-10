@@ -1510,7 +1510,7 @@ describe("project goal file resolution", () => {
 		});
 	});
 
-	it("warns on every command, including a --json one, while a populated legacy file is passed over", async () => {
+	it("warns on every command while a populated legacy file is passed over, in prose or in the envelope", async () => {
 		const root = await tempGitRepo();
 		await seedWorklistAt(root, ".pi", "in-the-old-file");
 		await seedWorklistAt(root, ".worklist", "in-the-new-file");
@@ -1522,10 +1522,23 @@ describe("project goal file resolution", () => {
 		expect(listed.stderr).toContain(join(root, ".pi", "worklist.json"));
 		expect(listed.stderr).toContain("is ignored");
 
-		// The warning goes to stderr, so the envelope a caller parses stays JSON.
+		// A --json caller is told in the envelope instead of in prose, because the
+		// failure envelope goes to stderr too and a sentence in front of it would
+		// leave that caller nothing it can parse.
 		const json = await runCli(root, ["project", "list", "--json"]);
-		expect(json.stderr).toContain("is ignored");
-		expect(parseJson(json.stdout)).toMatchObject({ ok: true });
+		expect(json.stderr).toBe("");
+		expect(parseJson(json.stdout)).toMatchObject({
+			ok: true,
+			meta: { shadowedWorklistPath: join(root, ".pi", "worklist.json") },
+		});
+
+		const failed = await runCli(root, ["project", "show", "nope", "--json"]);
+		expect(failed.code).toBe(1);
+		expect(parseJson(failed.stderr)).toMatchObject({
+			ok: false,
+			error: { code: "NOT_FOUND" },
+			meta: { shadowedWorklistPath: join(root, ".pi", "worklist.json") },
+		});
 	});
 
 	it("lets --file and the environment name a goal file outright, with --file winning", async () => {

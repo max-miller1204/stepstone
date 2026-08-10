@@ -39,6 +39,8 @@ export interface GoalBoardRuntimeOptions {
 	projectPath: string;
 	/** Repository name shown in the header. */
 	repositoryLabel: string;
+	/** A standing condition about the goal file, shown while the board is open. */
+	notice?: string;
 	initialGoals: ProjectGoal[];
 	input: TerminalInput;
 	output: TerminalOutput;
@@ -114,6 +116,7 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 	const board = new GoalBoard({
 		palette,
 		repositoryLabel: options.repositoryLabel,
+		...(options.notice !== undefined ? { notice: options.notice } : {}),
 		goals: options.initialGoals,
 	});
 	const terminal = new Terminal({ input: options.input, output: options.output });
