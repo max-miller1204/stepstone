@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { basename } from "node:path";
 import {
 	projectGoalSelectionError,
+	projectWorklistMergeRequiredError,
 	type WorklistApplicationFailure,
 	type WorklistApplicationResult,
 	WorklistApplicationService,
@@ -820,16 +821,7 @@ async function runPathMigration(
 			ok: false,
 			scope: "project",
 			action: "migrate_path",
-			error: {
-				code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
-				message: `Project worklist ${worklist.path} already exists. Merge the goals you want to keep into it and delete ${worklist.shadowedPath}.`,
-				retryable: false,
-				details: {
-					path: worklist.path,
-					conflictingPath: worklist.shadowedPath,
-					resolution: "merge-worklists-by-hand",
-				},
-			},
+			error: projectWorklistMergeRequiredError(worklist.path, worklist.shadowedPath).toResultError(),
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
 	}

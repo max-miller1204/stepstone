@@ -220,6 +220,29 @@ export function projectGoalSelectionError(
 	);
 }
 
+/**
+ * The typed refusal for a repository holding two worklists at once.
+ *
+ * Which goals survive a merge is a decision only their owner can make, so no
+ * interface picks a file: the one that resolved is named as the keeper and the
+ * one being passed over is named for deletion. The condition is caught both
+ * before a migration starts and again under the lock, and a caller reading the
+ * message or the details cannot tell which noticed.
+ */
+export function projectWorklistMergeRequiredError(
+	currentPath: string,
+	conflictingPath: string,
+): WorklistApplicationError {
+	return validationError(
+		`Project worklist ${currentPath} already exists. Merge the goals you want to keep into it and delete ${conflictingPath}.`,
+		{
+			path: currentPath,
+			conflictingPath,
+			resolution: "merge-worklists-by-hand",
+		},
+	);
+}
+
 /** The explicit-intent gate every irreversible or bulk Project Goal action passes through. */
 function requireConfirmation(operation: WorklistOperation): void {
 	if (operation.confirm === true) return;
@@ -945,14 +968,7 @@ export class WorklistApplicationService {
 								path: error.fromPath,
 								resolution: "refresh-and-retry",
 							}).toResultError()
-						: validationError(
-								`${error.message} Merge the goals you want to keep into it and delete ${error.fromPath}.`,
-								{
-									path: error.toPath,
-									conflictingPath: error.fromPath,
-									resolution: "merge-worklists-by-hand",
-								},
-							).toResultError();
+						: projectWorklistMergeRequiredError(error.toPath, error.fromPath).toResultError();
 			} else if (error instanceof ProjectGoalActivationBlockedError) {
 				typedError = validationError(
 					"A done or archived Project Goal must be reopened with confirm=true before activation.",
