@@ -357,7 +357,7 @@ A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI un
 Install it for every project:
 
 ```sh
-npx skills add max-miller1204/stepstone --skill worklist -g
+npx skills add max-miller1204/stepstone --skill stepstone -g
 ```
 
 Drop `-g` to install it for the current project only, or add `-a claude-code` to target one agent instead of choosing interactively.

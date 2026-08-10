@@ -248,10 +248,11 @@ export async function moveProjectWorklist(
 	const fromDir = dirname(fromPath);
 	const toDir = dirname(toPath);
 	const releaseDestination = await lockWorklistDirectory(toDir);
-	const releaseSource = fromDir === toDir ? undefined : await lockWorklistDirectory(fromDir);
+	let releaseSource: (() => Promise<void>) | undefined;
 	let tempName: string | undefined;
 
 	try {
+		if (fromDir !== toDir) releaseSource = await lockWorklistDirectory(fromDir);
 		let contents: string;
 		try {
 			contents = await readFile(fromPath, "utf8");
@@ -287,8 +288,11 @@ export async function moveProjectWorklist(
 		};
 	} finally {
 		if (tempName) await rm(tempName, { force: true });
-		await releaseSource?.();
-		await releaseDestination();
+		try {
+			await releaseSource?.();
+		} finally {
+			await releaseDestination();
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import lockfile from "proper-lockfile";
 import { describe, expect, it } from "vitest";
 import {
 	createEmptyWorklist,
@@ -268,6 +269,29 @@ describe("project worklist move", () => {
 		expect(result.error).toContain("Malformed");
 		expect(await readFile(from, "utf8")).toBe("not json\n");
 		await expect(readFile(to, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	it("releases the destination lock when the source lock cannot be taken", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-move-contended-"));
+		const from = join(root, ".pi", "worklist.json");
+		const to = join(root, ".worklist", "worklist.json");
+		const contents = await seed(from);
+		const sourceDir = join(from, "..");
+		const holder = await lockfile.lock(sourceDir, {
+			lockfilePath: join(sourceDir, ".worklist.lock"),
+			stale: 10000,
+		});
+
+		const blocked = await moveProjectWorklist(from, to);
+		await holder();
+
+		expect(blocked.error).toMatch(/already being held/);
+		expect(await readFile(from, "utf8")).toBe(contents);
+		await expect(readFile(to, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		// The refused move must not strand the destination lock it took first: the
+		// next writer there has to be able to take it.
+		const after = await mutateProjectWorklist(to, (worklist) => ({ worklist, result: "unblocked" }));
+		expect(after).toEqual({ data: "unblocked", revision: 1 });
 	});
 
 	it("holds the source lock across the move, so a concurrent writer cannot append to a file that is leaving", async () => {
