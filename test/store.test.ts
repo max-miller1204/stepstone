@@ -307,9 +307,11 @@ describe("project worklist move", () => {
 		]);
 
 		expect(moved.error).toBeUndefined();
-		// Whichever order the two took, exactly one file exists afterwards and it
-		// carries every goal that was accepted: the writer either landed before the
-		// move and travelled with it, or recreated the source and kept its own goal.
+		// The source lock serializes the two, so whichever order they took, no
+		// accepted goal is lost: the writer either landed before the move and
+		// travelled with it, leaving one file, or took the freed source lock
+		// afterwards and recreated the source holding its own goal, leaving the
+		// two-worklist state the resolver warns about on the next command.
 		const [movedGoals, sourceGoals] = await Promise.all([readProjectWorklist(to), readProjectWorklist(from)]);
 		const ids = [...movedGoals.data.goals, ...sourceGoals.data.goals].map((goal) => goal.id);
 		expect(ids).toContain("carried");
