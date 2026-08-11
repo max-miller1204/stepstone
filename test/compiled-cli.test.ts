@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
+import { packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
 const compiledCliPath = resolve("dist/cli.js");
@@ -31,23 +32,6 @@ function parseJson<T>(text: string): T {
 	} catch (error) {
 		throw new Error("Expected valid JSON in compiled CLI test", { cause: error });
 	}
-}
-
-interface PackedPackage {
-	files: Array<{ path: string }>;
-}
-
-/**
- * The packed packages reported by `npm pack --json`.
- *
- * npm has emitted two shapes for this payload: an array of results through
- * npm 11, and an object keyed by package name from npm 12. Both describe the
- * same tarball, and this test only asserts what that tarball contains, so it
- * reads either rather than failing on whichever npm happens to be installed.
- */
-function packedPackages(stdout: string): PackedPackage[] {
-	const parsed = parseJson<PackedPackage[] | Record<string, PackedPackage>>(stdout);
-	return Array.isArray(parsed) ? parsed : Object.values(parsed);
 }
 
 describe("compiled stepstone CLI bin", () => {
@@ -189,15 +173,7 @@ describe("compiled stepstone CLI bin", () => {
 	});
 
 	it("ships the compiled bin in the published package", async () => {
-		const { stdout } = await execFileAsync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
-			cwd: resolve("."),
-			maxBuffer: 10 * 1024 * 1024,
-		});
-		const packs = packedPackages(stdout);
-		// One package is packed, so an empty list means the payload was read wrong
-		// rather than that the tarball is missing files.
-		expect(packs).toHaveLength(1);
-		const paths = packs[0].files.map((file) => file.path);
+		const paths = await packedFilePaths();
 		expect(paths).toContain("dist/cli.js");
 		expect(paths).toContain("src/extension.ts");
 

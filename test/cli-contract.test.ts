@@ -17,6 +17,7 @@ import {
 	WORKLIST_PATH_ENV,
 } from "../src/cli-contract.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
+import { packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -593,9 +594,7 @@ describe("single CLI command contract", () => {
 		// that array is a set of patterns, and whether one of them actually keeps a
 		// file out of the tarball is npm's answer to give rather than something a
 		// reader of the declaration can tell.
-		const { stdout } = await execFileAsync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"]);
-		const [packed] = JSON.parse(stdout) as [{ files: { path: string }[] }];
-		const paths = new Set(packed.files.map((file) => file.path));
+		const paths = await packedFilePaths();
 		for (const path of DEVELOPMENT_ONLY_FILES) {
 			expect(paths, `${path} is written for this checkout and must not be packaged`).not.toContain(path);
 		}
@@ -613,7 +612,7 @@ describe("single CLI command contract", () => {
 		for (const path of published) {
 			expect(paths, `${path} documents the package and must be packaged`).toContain(path);
 		}
-	});
+	}, 60_000);
 
 	it("prints the contract-rendered help from the CLI itself", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-cli-help-"));
