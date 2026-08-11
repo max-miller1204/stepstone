@@ -126,7 +126,7 @@ describe("compiled stepstone CLI bin", () => {
 		expect(listed.stdout).toContain("Compiled goal");
 
 		const worklist = parseJson<{ goals: Array<{ id: string }> }>(
-			await readFile(join(root, ".pi", "worklist.json"), "utf8"),
+			await readFile(join(root, ".worklist", "worklist.json"), "utf8"),
 		);
 		const goalId = worklist.goals[0]?.id;
 		expect(goalId).toBeTruthy();
@@ -150,7 +150,7 @@ describe("compiled stepstone CLI bin", () => {
 			])}\n`,
 			"utf8",
 		);
-		const beforePlan = await readFile(join(root, ".pi", "worklist.json"), "utf8");
+		const beforePlan = await readFile(join(root, ".worklist", "worklist.json"), "utf8");
 		const previewedPlan = await runCompiledCli(root, [
 			"project",
 			"apply-plan",
@@ -165,7 +165,7 @@ describe("compiled stepstone CLI bin", () => {
 			result: { dryRun: true, addedGoals: [{ id: "compiled-foundation" }, { id: "compiled-batch-goal" }] },
 			meta: { changed: false, semanticNoOp: false },
 		});
-		expect(await readFile(join(root, ".pi", "worklist.json"), "utf8")).toBe(beforePlan);
+		expect(await readFile(join(root, ".worklist", "worklist.json"), "utf8")).toBe(beforePlan);
 
 		const appliedPlan = await runCompiledCli(root, ["project", "apply-plan", planPath, "--json"]);
 		expect(appliedPlan.code).toBe(0);

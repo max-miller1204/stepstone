@@ -2,7 +2,7 @@
 
 # stepstone CLI
 
-Manage repository-wide Project Goals in <git-root>/.pi/worklist.json through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.
+Manage repository-wide Project Goals in <git-root>/.worklist/worklist.json through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.
 
 ## Invocation
 
@@ -13,6 +13,17 @@ npx -y stepstone@latest project <action> [arguments] [flags]
 ```
 
 Every `--json` result envelope reports the running package version as `meta.cliVersion`.
+
+## Where the goal file lives
+
+- The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
+- One resolution order applies everywhere, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
+- When both files exist the current path wins and every command warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
+- With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
+- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, which only selects the target Git repository.
+- `migrate_path` moves a legacy file to `.worklist/worklist.json` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.
+- `migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.
 
 ## Commands
 
@@ -35,6 +46,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 | `npx -y stepstone@latest project archive <id> --confirm` | Archive a goal. Requires explicit user confirmation |
 | `npx -y stepstone@latest project delete <id> --confirm` | Delete a goal permanently. Requires explicit user confirmation |
 | `npx -y stepstone@latest project migrate_ids --confirm` | Rewrite randomly generated goal IDs as title-derived ones. Requires explicit user confirmation |
+| `npx -y stepstone@latest project migrate_path --confirm` | Move the goal file from the legacy path to .worklist/worklist.json. Requires explicit user confirmation |
 | `npx -y stepstone@latest project help` | Print this help |
 
 ## Flags
@@ -44,13 +56,14 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 | `--json` | Print the deterministic result envelope as JSON (stdout on success, stderr on failure) |
 | `--confirm` | Acknowledge an action that requires confirmation; pass it only for an explicit user request |
 | `--cwd <dir>` | Resolve the git root from this directory instead of the working directory |
+| `--file <path>` | Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST |
 | `--description <text>` | Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update |
 | `--append-description <text>` | Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update |
 | `--append` | Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update |
 | `--group <name>` | Put the goal in a free-form section, such as Foundation; an empty name clears it; only for project add and update |
 | `--depends-on <id>` | Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update |
 | `--expect-updated-at <timestamp>` | Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, set_active, complete, reopen, archive, and delete |
-| `--dry-run` | Validate and report an apply-plan projection or ID migration without writing; only for project apply-plan and migrate_ids |
+| `--dry-run` | Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path |
 
 ## Description input
 
@@ -130,7 +143,7 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - Use --description <text> and --append-description <text> for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.
 - Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.
-- Never pass --confirm for complete, reopen, archive, delete, or migrate_ids unless the user explicitly requested that exact action.
+- Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.
 - Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.
 - Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.
 - Use list for orientation, find <text> to locate a goal by wording, and show <id> when you need a goal's complete description.
@@ -138,6 +151,8 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.
 - Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.
 - Run migrate_ids only when the user explicitly asks for it; it rewrites stored IDs, though every old ID keeps resolving afterwards.
+- Leave the goal file where it is unless the user asks to move it: a repository still on `.pi/worklist.json` works untouched, and migrate_path is theirs to request.
+- Report the two-worklist warning to the user rather than working around it; only stepstone reads the file it names, and merging them is a decision about which goals survive.
 - Add a note with --append-description instead of resending a description you did not write, so nothing in the existing text can be lost in transcription.
 - Group related goals with --group <name> on add or update, and leave the file order alone unless the user asked for a different sequence.
 - Record a real must-land-before relationship with --depends-on <id>, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.

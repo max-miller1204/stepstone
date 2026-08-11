@@ -4,12 +4,18 @@ import { createRequire } from "node:module";
 import { basename } from "node:path";
 import {
 	projectGoalSelectionError,
+	projectWorklistMergeRequiredError,
 	type WorklistApplicationFailure,
 	type WorklistApplicationResult,
 	WorklistApplicationService,
 	type WorklistOperation,
 } from "./application-service.ts";
-import { CLI_COMMAND_CONTRACT, type CliFlagContract, renderCliUsage } from "./cli-contract.ts";
+import {
+	CLI_COMMAND_CONTRACT,
+	type CliFlagContract,
+	renderCliUsage,
+	WORKLIST_PATH_ENV,
+} from "./cli-contract.ts";
 import {
 	dependencyWaves,
 	dependentGoals,
@@ -20,7 +26,13 @@ import {
 	resolveDependencies,
 	unfinishedGoals,
 } from "./dependencies.ts";
-import { getWorklistPath, resolveGitRoot } from "./git.ts";
+import {
+	createWorklistLocator,
+	resolveGitRoot,
+	resolveWorklistLocation,
+	shadowedWorklistWarning,
+	type WorklistLocation,
+} from "./git.ts";
 import {
 	matchesGoalQuery,
 	planGoalIdMigration,
@@ -40,8 +52,11 @@ import type {
 
 /**
  * Pi-free command line for Project Goals, so external agents and scripts can
- * manage `<git-root>/.pi/worklist.json` through the same mutation service,
+ * manage the repository's goal file through the same mutation service,
  * cross-process lock, and atomic replacement as a live Pi session.
+ *
+ * Which file that is comes from `resolveWorklistLocation`, the one resolution
+ * order every interface shares, rather than from anything decided here.
  *
  * Session Tasks are deliberately out of scope: they live inside a Pi session
  * tree and have no meaning outside one.
@@ -53,6 +68,15 @@ type LifecycleAction = (typeof LIFECYCLE_ACTIONS)[number];
 const COMPACT_TITLE_LIMIT = 96;
 
 const packageVersion = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
+
+/**
+ * The second worklist this invocation resolved past, once resolution has run.
+ *
+ * It sits beside the version rather than being threaded through every command,
+ * because it belongs to every envelope this process emits - including the
+ * failure envelope thrown from a call site that never saw the location.
+ */
+let shadowedWorklistPath: string | undefined;
 const USAGE = renderCliUsage();
 
 interface CliInvocation {
@@ -75,6 +99,8 @@ interface CliInvocation {
 	json: boolean;
 	confirm: boolean;
 	cwd: string;
+	/** An explicit goal file from --file, which outranks every other resolution rule. */
+	file?: string;
 	/** Flag names as written, so action-scoped flags can be refused where they would be ignored. */
 	flagsUsed: ReadonlySet<string>;
 	/** Positionals written after the --description value, which a title must not be built from. */
@@ -85,6 +111,17 @@ interface CliInvocation {
 
 interface CliResultMeta extends WorklistResultMeta {
 	cliVersion: string;
+	/**
+	 * A worklist this invocation passed over, present whenever both files exist,
+	 * whether or not the passed-over one holds any goals.
+	 *
+	 * A human is told on stderr, which a `--json` caller cannot be: that stream
+	 * carries the failure envelope, and a sentence in front of it would leave
+	 * nothing to parse. So the condition rides in the envelope every command
+	 * emits, success or failure, which is also the only place a machine can read
+	 * it without matching on prose.
+	 */
+	shadowedWorklistPath?: string;
 }
 
 type CliResultEnvelope = WorklistApplicationResult & {
@@ -203,6 +240,7 @@ interface ParsedCliHead {
 	json: boolean;
 	confirm: boolean;
 	cwd: string;
+	file?: string;
 }
 
 function parseCliHead(head: readonly string[]): ParsedCliHead {
@@ -218,6 +256,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	let group: string | undefined;
 	let expectedUpdatedAt: string | undefined;
 	let cwd = process.cwd();
+	let file: string | undefined;
 	const positionalsBeforeFlag = new Map<string, number>();
 	for (let index = 0; index < head.length; index++) {
 		const part = head[index];
@@ -255,6 +294,10 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 				break;
 			case "--cwd":
 				cwd = readFlagValue(head, index, part, "a directory");
+				index++;
+				break;
+			case "--file":
+				file = readFlagValue(head, index, part, "a goal file path");
 				index++;
 				break;
 			case "--group":
@@ -299,6 +342,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		json,
 		confirm,
 		cwd,
+		file,
 	};
 }
 
@@ -349,8 +393,8 @@ function parseArgs(argv: string[]): CliInvocation {
 interface ProjectLocation {
 	/** Canonical git root, whose basename names the repository in the board header. */
 	root: string;
-	/** Absolute path of `<git-root>/.pi/worklist.json`. */
-	path: string;
+	/** The goal file this invocation reads and writes, and how it was chosen. */
+	worklist: WorklistLocation;
 }
 
 function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
@@ -369,7 +413,16 @@ function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
 	}
-	return { root: result.root, path: getWorklistPath(result.root) };
+	const worklist = resolveWorklistLocation(result.root, { override: invocation.file, env: process.env });
+	// Every command reports it, because two roadmaps in a repository is a standing
+	// condition rather than one command's outcome. A human reads it on stderr; a
+	// `--json` caller reads it in `meta.shadowedWorklistPath`, because stderr is
+	// where the failure envelope goes and a sentence in front of it would leave
+	// that caller with nothing it can parse.
+	shadowedWorklistPath = worklist.shadowedPath;
+	const warning = shadowedWorklistWarning(worklist);
+	if (warning && !invocation.json) process.stderr.write(`${warning}\n`);
+	return { root: result.root, worklist };
 }
 
 function requireId(invocation: CliInvocation): string {
@@ -664,7 +717,11 @@ function report(invocation: CliInvocation, envelope: WorklistApplicationResult, 
 function withCliMetadata(envelope: WorklistApplicationResult): CliResultEnvelope {
 	return {
 		...envelope,
-		meta: { ...envelope.meta, cliVersion: packageVersion },
+		meta: {
+			...envelope.meta,
+			cliVersion: packageVersion,
+			...(shadowedWorklistPath ? { shadowedWorklistPath } : {}),
+		},
 	};
 }
 
@@ -752,6 +809,77 @@ async function runGoalIdMigration(
 	report(invocation, envelope, formatMigrations(migrations, `Migrated ${migrations.length} goal ID(s):`));
 }
 
+/** What a path migration did, or would do, in one line. */
+function formatPathMigration(from: string | undefined, to: string, dryRun: boolean): string {
+	if (from === undefined) return `Project worklist is already at ${to}.`;
+	return dryRun
+		? `Would move project worklist ${from} to ${to}.`
+		: `Moved project worklist ${from} to ${to}.`;
+}
+
+/**
+ * Move the goal file to the path it should live at, or report the move.
+ *
+ * The destination is the canonical path rather than anything the caller names,
+ * because this exists to retire the legacy location, not to relocate a worklist
+ * anywhere someone fancies; `--file` covers naming a file outright.
+ */
+async function runPathMigration(
+	invocation: CliInvocation,
+	service: WorklistApplicationService,
+	worklist: WorklistLocation,
+): Promise<void> {
+	// Both flags at once asks to write and not to write, the same contradiction
+	// migrate_ids refuses rather than honoring one of them silently.
+	if (invocation.dryRun && invocation.confirm) {
+		fail(`project migrate_path cannot combine --dry-run with --confirm\n\n${USAGE}`, 2);
+	}
+	if (worklist.source === "override") {
+		fail(
+			`project migrate_path moves the file a repository resolves to, and this run named one outright.\n` +
+				`Drop --file and $${WORKLIST_PATH_ENV} to migrate the repository's own goal file.\n\n${USAGE}`,
+			2,
+		);
+	}
+	// Two files are two roadmaps. Moving one onto the other is the data loss the
+	// warning on every command is there to prevent, and merging them is a
+	// decision about which goals survive that only their owner can make.
+	if (worklist.shadowedPath) {
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "migrate_path",
+			error: projectWorklistMergeRequiredError(worklist.path, worklist.shadowedPath).toResultError(),
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+	const from = worklist.path === worklist.currentPath ? undefined : worklist.path;
+	if (invocation.dryRun) {
+		const { meta } = await readProjectSnapshot(service, "migrate_path");
+		const result = {
+			scope: "project",
+			action: "migrate_path",
+			dryRun: true,
+			worklistPath: worklist.currentPath,
+			...(from !== undefined ? { previousWorklistPath: from } : {}),
+		} as const;
+		report(
+			invocation,
+			readEnvelope("migrate_path", result, meta),
+			formatPathMigration(from, worklist.currentPath, true),
+		);
+		return;
+	}
+	const envelope = await executeCliOperation(service, {
+		scope: "project",
+		action: "migrate_path",
+		targetPath: worklist.currentPath,
+		confirm: invocation.confirm,
+	});
+	const moved = envelope.ok ? envelope.result.previousWorklistPath : undefined;
+	report(invocation, envelope, formatPathMigration(moved, worklist.currentPath, false));
+}
+
 async function runSetActive(invocation: CliInvocation, service: WorklistApplicationService): Promise<void> {
 	const id = requireId(invocation);
 	try {
@@ -812,9 +940,20 @@ async function runInteractiveBoard(
 	// Surface a malformed or unreadable worklist through the normal failure path
 	// rather than opening an empty board over a file that could not be read.
 	const envelope = await executeCliOperation(service, { scope: "project", action: "list" });
+	// Every other command resolves once and exits before the answer can go stale.
+	// The board holds the terminal until the user quits, so it is handed the
+	// resolution instead: a `migrate_path` in another terminal moves the goal
+	// file, and a board still writing to the old path would recreate it beside
+	// the migrated one. The board takes the whole screen, so the warning already
+	// written to stderr is on a buffer the user will not see again until they
+	// quit; it travels with the path. `runGoalBoard` points the service at this
+	// same locator, so what the board shows and what it writes cannot come apart.
 	await runGoalBoard({
 		service,
-		projectPath: location.path,
+		resolveLocation: createWorklistLocator(location.root, {
+			override: invocation.file,
+			env: process.env,
+		}),
 		repositoryLabel: basename(location.root),
 		initialGoals: (envelope.ok ? envelope.result.goals : undefined) ?? [],
 		input: process.stdin,
@@ -836,7 +975,7 @@ async function run(invocation: CliInvocation): Promise<void> {
 		return;
 	}
 	const location = resolveProjectLocation(invocation);
-	const service = new WorklistApplicationService({ projectPath: location.path });
+	const service = new WorklistApplicationService({ projectPath: location.worklist.path });
 
 	switch (invocation.action) {
 		case "ui":
@@ -908,6 +1047,10 @@ async function run(invocation: CliInvocation): Promise<void> {
 		}
 		case "migrate_ids": {
 			await runGoalIdMigration(invocation, service);
+			return;
+		}
+		case "migrate_path": {
+			await runPathMigration(invocation, service, location.worklist);
 			return;
 		}
 		case "add": {

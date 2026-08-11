@@ -3,10 +3,11 @@ import { Text } from "@earendil-works/pi-tui";
 import { WorklistApplicationService, type WorklistOperationSource } from "./application-service.ts";
 import { CLI_COMMAND_CONTRACT } from "./cli-contract.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
+import type { LocatedWorklist } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import { WorklistParamsSchema } from "./schema.ts";
 import { SessionStore } from "./session-store.ts";
-import { executeWorklist, getProjectPath, WORKLIST_EXECUTION_MODE } from "./tool.ts";
+import { createProjectLocator, executeWorklist, WORKLIST_EXECUTION_MODE } from "./tool.ts";
 import type { ProjectGoal, ProjectGoalStatus, SessionTaskStatus } from "./types.ts";
 import {
 	buildPromptSummary,
@@ -122,20 +123,39 @@ export function parseTasksCommand(args: string): ParsedCommand | null {
 export default function worklistExtension(pi: ExtensionAPI): void {
 	const sessionStore = new SessionStore(pi);
 	const applicationService = new WorklistApplicationService({ sessionStore });
-	let projectPath: string | null = null;
 	let projectGoals: ProjectGoal[] = [];
 	let latestContext: ExtensionContext | undefined;
+	let locateProject: (() => LocatedWorklist | null) | undefined;
+	let announcedNotice: string | undefined;
 
 	async function refreshProject(): Promise<void> {
-		if (!projectPath) {
-			projectGoals = [];
-			return;
-		}
 		projectGoals = await applicationService.getProjectGoals();
+	}
+
+	/**
+	 * Say which of two roadmaps the session is reading, whenever that answer
+	 * changes.
+	 *
+	 * The session re-resolves the goal file on every operation, so a second
+	 * worklist arriving mid-session - a branch checkout, a merge, a colleague's
+	 * older release - silently switches which file every later read and write
+	 * lands in. The notice is derived from the same resolution that chooses the
+	 * path, so it can never describe a file the session is not using, and it is
+	 * raised only when the condition newly appears, so a widget refresh on every
+	 * turn does not repeat it. What counts as newly appeared is scoped to one
+	 * session: pi reuses this extension across `/new`, `/resume`, `/fork` and
+	 * `/clone`, and every session has to be told which of two roadmaps it reads.
+	 */
+	function announceLocationNotice(ctx: ExtensionContext): void {
+		const notice = locateProject?.()?.notice;
+		if (notice === announcedNotice) return;
+		announcedNotice = notice;
+		if (notice) ctx.ui.notify(notice, "warning");
 	}
 
 	async function updateUi(ctx: ExtensionContext): Promise<void> {
 		latestContext = ctx;
+		announceLocationNotice(ctx);
 		await refreshProject();
 		const lines = buildWidgetLines(applicationService.getSessionTasks(), projectGoals);
 		if (!lines.length) ctx.ui.setWidget(WIDGET_ID, undefined);
@@ -421,8 +441,10 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionStore.reconstruct(ctx);
-		projectPath = getProjectPath(ctx.cwd);
-		applicationService.setProjectPath(projectPath);
+		const locate = createProjectLocator(ctx.cwd);
+		locateProject = locate;
+		announcedNotice = undefined;
+		applicationService.setProjectPathResolver(() => locate()?.path ?? null);
 		try {
 			await updateUi(ctx);
 		} catch (error) {

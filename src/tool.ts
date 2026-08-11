@@ -6,7 +6,7 @@ import {
 	type WorklistOperationSource,
 } from "./application-service.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
-import { getWorklistPath, resolveGitRoot } from "./git.ts";
+import { createWorklistLocator, type LocatedWorklist, resolveGitRoot } from "./git.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { WorklistOperationResult, WorklistToolDetails } from "./types.ts";
 
@@ -16,10 +16,23 @@ export interface ToolDeps {
 	projectPath?: string | null;
 }
 
-export function getProjectPath(cwd: string): string | null {
+/**
+ * Ask again, rather than remember: the goal file a Pi session works with, on
+ * demand and resolved the same way the CLI resolves it, so a session and a
+ * terminal in the same repository can never disagree about which roadmap they
+ * are looking at.
+ *
+ * The repository a session runs in cannot change under it, so the git root is
+ * found once; which file inside it holds the goals can change, because
+ * `migrate_path` in another terminal moves it or a branch checkout lands a
+ * second worklist beside it, so that part is re-read every time it is asked
+ * for. The standing warning travels with the path it describes, so a session
+ * cannot report one file while reading another.
+ */
+export function createProjectLocator(cwd: string): () => LocatedWorklist | null {
 	const result = resolveGitRoot(cwd);
-	if (!result.isGit || !result.root) return null;
-	return getWorklistPath(result.root);
+	if (!result.isGit || !result.root) return () => null;
+	return createWorklistLocator(result.root, { env: process.env, overrideBase: cwd });
 }
 
 function getApplicationService(deps: ToolDeps): WorklistApplicationService {

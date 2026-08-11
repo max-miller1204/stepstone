@@ -3,12 +3,15 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import lockfile from "proper-lockfile";
 import { describe, expect, it } from "vitest";
 import {
 	createEmptyWorklist,
 	isProjectWorklist,
+	moveProjectWorklist,
 	mutateProjectWorklist,
 	ProjectGoalConflictError,
+	ProjectWorklistMoveRefusedError,
 	readProjectWorklist,
 } from "../src/project-store.ts";
 
@@ -16,7 +19,7 @@ const execFileAsync = promisify(execFile);
 
 async function tempPath() {
 	const root = await mkdtemp(join(tmpdir(), "stepstone-"));
-	return join(root, ".pi", "worklist.json");
+	return join(root, ".worklist", "worklist.json");
 }
 
 describe("project store", () => {
@@ -189,5 +192,129 @@ describe("project store", () => {
 		const result = await readProjectWorklist(path);
 		expect(result.data.revision).toBe(1);
 		expect(result.data.goals).toHaveLength(1);
+	});
+});
+
+describe("project worklist move", () => {
+	/** A worklist with one goal on it, so a move can be shown to carry content. */
+	async function seed(path: string): Promise<string> {
+		await mkdir(join(path, ".."), { recursive: true });
+		const contents = `${JSON.stringify(
+			{
+				version: 1,
+				revision: 4,
+				goals: [
+					{
+						id: "carried",
+						title: "Carried across",
+						status: "open",
+						createdAt: "2026-01-01T00:00:00.000Z",
+						updatedAt: "2026-01-01T00:00:00.000Z",
+					},
+				],
+			},
+			null,
+			2,
+		)}\n`;
+		await writeFile(path, contents);
+		return contents;
+	}
+
+	it("lands the file at the new path byte for byte and leaves nothing behind", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-move-"));
+		const from = join(root, ".pi", "worklist.json");
+		const to = join(root, ".worklist", "worklist.json");
+		const contents = await seed(from);
+
+		const result = await moveProjectWorklist(from, to);
+
+		expect(result).toEqual({ data: { fromPath: from, toPath: to }, revision: 4 });
+		expect(await readFile(to, "utf8")).toBe(contents);
+		await expect(readFile(from, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		// A location change, not an edit: the revision the goals were written at is
+		// the revision they are read back at.
+		expect((await readProjectWorklist(to)).data.revision).toBe(4);
+	});
+
+	it("refuses a destination that already holds a worklist rather than overwriting it", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-move-existing-"));
+		const from = join(root, ".pi", "worklist.json");
+		const to = join(root, ".worklist", "worklist.json");
+		await seed(from);
+		const destination = await seed(to);
+
+		await expect(moveProjectWorklist(from, to)).rejects.toThrow(ProjectWorklistMoveRefusedError);
+		expect(await readFile(to, "utf8")).toBe(destination);
+		expect(await readFile(from, "utf8")).toBe(destination);
+	});
+
+	it("refuses a source that is not there", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-move-missing-"));
+		const from = join(root, ".pi", "worklist.json");
+		await expect(moveProjectWorklist(from, join(root, ".worklist", "worklist.json"))).rejects.toMatchObject({
+			name: "ProjectWorklistMoveRefusedError",
+			reason: "source-missing",
+		});
+	});
+
+	it("leaves a malformed worklist where its owner last saw it", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-move-malformed-"));
+		const from = join(root, ".pi", "worklist.json");
+		const to = join(root, ".worklist", "worklist.json");
+		await mkdir(join(from, ".."), { recursive: true });
+		await writeFile(from, "not json\n");
+
+		const result = await moveProjectWorklist(from, to);
+
+		expect(result.error).toContain("Malformed");
+		expect(await readFile(from, "utf8")).toBe("not json\n");
+		await expect(readFile(to, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	it("releases the destination lock when the source lock cannot be taken", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-move-contended-"));
+		const from = join(root, ".pi", "worklist.json");
+		const to = join(root, ".worklist", "worklist.json");
+		const contents = await seed(from);
+		const sourceDir = join(from, "..");
+		const holder = await lockfile.lock(sourceDir, {
+			lockfilePath: join(sourceDir, ".worklist.lock"),
+			stale: 10000,
+		});
+
+		const blocked = await moveProjectWorklist(from, to);
+		await holder();
+
+		expect(blocked.error).toMatch(/already being held/);
+		expect(await readFile(from, "utf8")).toBe(contents);
+		await expect(readFile(to, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		// The refused move must not strand the destination lock it took first: the
+		// next writer there has to be able to take it.
+		const after = await mutateProjectWorklist(to, (worklist) => ({ worklist, result: "unblocked" }));
+		expect(after).toEqual({ data: "unblocked", revision: 1 });
+	});
+
+	it("holds the source lock across the move, so a concurrent writer cannot append to a file that is leaving", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-move-locked-"));
+		const from = join(root, ".pi", "worklist.json");
+		const to = join(root, ".worklist", "worklist.json");
+		await seed(from);
+		const fixture = resolve("test/fixtures/mutate.ts");
+
+		const [moved] = await Promise.all([
+			moveProjectWorklist(from, to),
+			execFileAsync(process.execPath, [fixture, from, "written-during-move"]),
+		]);
+
+		expect(moved.error).toBeUndefined();
+		// The source lock serializes the two, so whichever order they took, no
+		// accepted goal is lost: the writer either landed before the move and
+		// travelled with it, leaving one file, or took the freed source lock
+		// afterwards and recreated the source holding its own goal, leaving the
+		// two-worklist state the resolver warns about on the next command.
+		const [movedGoals, sourceGoals] = await Promise.all([readProjectWorklist(to), readProjectWorklist(from)]);
+		const ids = [...movedGoals.data.goals, ...sourceGoals.data.goals].map((goal) => goal.id);
+		expect(ids).toContain("carried");
+		expect(ids).toContain("written-during-move");
 	});
 });

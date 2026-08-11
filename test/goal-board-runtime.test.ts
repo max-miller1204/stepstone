@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorklistApplicationService } from "../src/application-service.ts";
+import { createWorklistLocator } from "../src/git.ts";
 import { parseEditorCommand, resolveEditorCommand, runGoalBoard } from "../src/tui/goal-board-runtime.ts";
 import type { ProjectGoal, ProjectWorklist } from "../src/types.ts";
 
@@ -40,7 +41,7 @@ const ESC = "\u001b";
 
 /**
  * End-to-end coverage for the board as a user drives it: real keystrokes in,
- * real `.pi/worklist.json` out, through the same application service, lock, and
+ * real goal file out, through the same application service, lock, and
  * atomic replacement a live Pi session uses.
  */
 
@@ -92,7 +93,7 @@ function parseJson<T>(text: string): T {
 
 async function readGoals(root: string): Promise<ProjectGoal[]> {
 	try {
-		const raw = await readFile(join(root, ".pi", "worklist.json"), "utf8");
+		const raw = await readFile(join(root, ".worklist", "worklist.json"), "utf8");
 		return parseJson<ProjectWorklist>(raw).goals;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
@@ -100,15 +101,26 @@ async function readGoals(root: string): Promise<ProjectGoal[]> {
 	}
 }
 
+/**
+ * The board over a repository, driven the way `project ui` drives it: through
+ * the shared resolution order rather than a path fixed when the board opened,
+ * so a goal file that moves under it moves the test's board too.
+ */
 async function openBoard(root: string, env: NodeJS.ProcessEnv = {}): Promise<Harness> {
-	const projectPath = join(root, ".pi", "worklist.json");
-	const service = new WorklistApplicationService({ projectPath });
+	const projectPath = join(root, ".worklist", "worklist.json");
+	// The same locator `project ui` hands the board, not a copy of it, so a board
+	// wired to a frozen path fails here rather than passing against the harness.
+	const resolveLocation = createWorklistLocator(root, { env: {} });
+	const service = new WorklistApplicationService({ projectPath: resolveLocation().path });
 	const input = new PassThrough();
 	const output = new FakeOutput();
-	const initialGoals = await readGoals(root);
+	// From the service's own resolved list, the way `runInteractiveBoard` opens
+	// the board, rather than from a helper that names the current path itself.
+	const opening = await service.execute({ scope: "project", action: "list" }, { source: "cli" });
+	const initialGoals = (opening.ok ? opening.result.goals : undefined) ?? [];
 	const done = runGoalBoard({
 		service,
-		projectPath,
+		resolveLocation,
 		repositoryLabel: "fixture",
 		initialGoals,
 		input,
@@ -320,7 +332,7 @@ describe("goal board runtime", () => {
 		await board.done;
 	});
 
-	it("starts live reload when another process creates the missing .pi directory", async () => {
+	it("starts live reload when another process creates the missing worklist directory", async () => {
 		const root = await tempGitRepo();
 		const board = await openBoard(root);
 
@@ -328,6 +340,60 @@ describe("goal board runtime", () => {
 		await waitFor(
 			() => board.output.text.includes("Created after the board opened"),
 			"the first externally added goal to appear",
+		);
+
+		board.send("q");
+		await board.done;
+	});
+
+	it("follows the goal file a migrate_path moves out from under it, instead of splitting the roadmap", async () => {
+		const root = await tempGitRepo();
+		// A repository an older release wrote: the board opens on the legacy file,
+		// which is the only state where the file can move while the board is up.
+		const legacyPath = join(root, ".pi", "worklist.json");
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(legacyPath, `${JSON.stringify({ version: 1, goals: [] })}\n`);
+		await seed(root, ["add", "Written before the move"]);
+		expect(parseJson<ProjectWorklist>(await readFile(legacyPath, "utf8")).goals).toHaveLength(1);
+
+		const board = await openBoard(root);
+		await waitFor(() => board.output.text.includes("Written before the move"), "the initial render");
+
+		await seed(root, ["migrate_path", "--confirm"]);
+		// A goal written to the migrated file appears on screen only if the board
+		// is reading the path the repository resolves to now.
+		await seed(root, ["add", "Added to the migrated file"]);
+		await waitFor(
+			() => board.output.text.includes("Added to the migrated file"),
+			"the board to read the migrated file",
+		);
+
+		board.send("aAdded from the board\rq");
+		await board.done;
+
+		// And it wrote there too, so the repository still has exactly one roadmap.
+		expect((await board.goals()).map((goal) => goal.title)).toEqual([
+			"Written before the move",
+			"Added to the migrated file",
+			"Added from the board",
+		]);
+		await expect(readFile(legacyPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	it("raises the two-worklist notice that appears while it is open", async () => {
+		const root = await tempGitRepo();
+		await seed(root, ["add", "On the current file"]);
+		const board = await openBoard(root);
+		await waitFor(() => board.output.text.includes("On the current file"), "the initial render");
+		expect(board.output.text).not.toContain("two project worklists exist");
+
+		// A second roadmap can appear at any moment: a branch checkout, a merge, or
+		// a colleague's older release writing the legacy path.
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(join(root, ".pi", "worklist.json"), `${JSON.stringify({ version: 1, goals: [] })}\n`);
+		await waitFor(
+			() => board.output.text.includes("two project worklists exist"),
+			"the notice to appear without reopening the board",
 		);
 
 		board.send("q");

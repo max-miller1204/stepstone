@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
+import { CLI_COMMAND_CONTRACT, WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import type { ProjectGoal, ProjectWorklist } from "../src/types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -24,9 +24,10 @@ function parseJson(text: string): ReturnType<typeof JSON.parse> {
 	}
 }
 
-async function runCli(cwd: string, args: string[]): Promise<CliResult> {
+async function runCli(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<CliResult> {
+	const options = { cwd, ...(env ? { env: { ...process.env, ...env } } : {}) };
 	try {
-		const { stdout, stderr } = await execFileAsync(process.execPath, [cliPath, ...args], { cwd });
+		const { stdout, stderr } = await execFileAsync(process.execPath, [cliPath, ...args], options);
 		return { code: 0, stdout, stderr };
 	} catch (error) {
 		const failure = error as CliResult & { code: number | null };
@@ -34,8 +35,16 @@ async function runCli(cwd: string, args: string[]): Promise<CliResult> {
 	}
 }
 
+/**
+ * A repository named the way the CLI names it back.
+ *
+ * `resolveGitRoot` canonicalises the root, so every path the CLI prints or puts
+ * in an envelope is symlink-free. The temporary directory is not: on macOS it
+ * sits under `/var`, a symlink to `/private/var`. Canonicalising here keeps a
+ * path assertion comparing the two paths rather than the two spellings.
+ */
 async function tempGitRepo(): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), "stepstone-cli-"));
+	const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-")));
 	await execFileAsync("git", ["init"], { cwd: root });
 	return root;
 }
@@ -50,7 +59,7 @@ function diagnostic(stderr: string): string {
 }
 
 async function readGoals(root: string): Promise<ProjectGoal[]> {
-	const raw = await readFile(join(root, ".pi", "worklist.json"), "utf8");
+	const raw = await readFile(join(root, ".worklist", "worklist.json"), "utf8");
 	return (parseJson(raw) as ProjectWorklist).goals;
 }
 
@@ -63,7 +72,7 @@ async function readGoals(root: string): Promise<ProjectGoal[]> {
  * only reach a real file this way. Sequencing has to read them regardless.
  */
 async function editGoalByHand(root: string, id: string, changes: Partial<ProjectGoal>): Promise<void> {
-	const path = join(root, ".pi", "worklist.json");
+	const path = join(root, ".worklist", "worklist.json");
 	const worklist = parseJson(await readFile(path, "utf8")) as ProjectWorklist;
 	const goal = worklist.goals.find((entry) => entry.id === id);
 	if (!goal) throw new Error(`No project goal ${id} to edit by hand`);
@@ -657,7 +666,7 @@ describe("project goal CLI", () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Add focus mode"]);
 		await runCli(root, ["project", "add", "Shared runtime"]);
-		const before = await readFile(join(root, ".pi", "worklist.json"), "utf8");
+		const before = await readFile(join(root, ".worklist", "worklist.json"), "utf8");
 		const beforeRevision = (parseJson(before) as ProjectWorklist).revision;
 		const planPath = join(root, "plan.json");
 		await writeFile(
@@ -680,7 +689,7 @@ describe("project goal CLI", () => {
 		expect(humanPreview.stderr).toContain(
 			"batch dependency add-focus-mode resolves to new goal add-focus-mode-2",
 		);
-		expect(await readFile(join(root, ".pi", "worklist.json"), "utf8")).toBe(before);
+		expect(await readFile(join(root, ".worklist", "worklist.json"), "utf8")).toBe(before);
 
 		const planned = await runCli(root, ["project", "apply-plan", planPath, "--dry-run", "--json"]);
 		expect(planned.code).toBe(0);
@@ -712,7 +721,7 @@ describe("project goal CLI", () => {
 			semanticNoOp: false,
 			revisions: { project: String(beforeRevision) },
 		});
-		expect(await readFile(join(root, ".pi", "worklist.json"), "utf8")).toBe(before);
+		expect(await readFile(join(root, ".worklist", "worklist.json"), "utf8")).toBe(before);
 
 		const applied = await runCli(root, ["project", "apply-plan", planPath, "--json"]);
 		expect(applied.code).toBe(0);
@@ -739,7 +748,7 @@ describe("project goal CLI", () => {
 	it("rejects an invalid JSON plan without changing the worklist", async () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Existing goal"]);
-		const worklistPath = join(root, ".pi", "worklist.json");
+		const worklistPath = join(root, ".worklist", "worklist.json");
 		const before = await readFile(worklistPath, "utf8");
 		const cases = [
 			{
@@ -804,9 +813,9 @@ describe("project goal CLI", () => {
 
 	it("migrates generated goal IDs on request and keeps the old ones resolvable", async () => {
 		const root = await tempGitRepo();
-		await mkdir(join(root, ".pi"), { recursive: true });
+		await mkdir(join(root, ".worklist"), { recursive: true });
 		await writeFile(
-			join(root, ".pi", "worklist.json"),
+			join(root, ".worklist", "worklist.json"),
 			`${JSON.stringify({
 				version: 1,
 				revision: 2,
@@ -1277,7 +1286,7 @@ describe("project goal CLI", () => {
 	it("reports malformed files without overwriting them", async () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Existing"]);
-		const path = join(root, ".pi", "worklist.json");
+		const path = join(root, ".worklist", "worklist.json");
 		const { writeFile } = await import("node:fs/promises");
 		await writeFile(path, "not json\n");
 		const result = await runCli(root, ["project", "add", "Another"]);
@@ -1462,5 +1471,196 @@ describe("project goal CLI", () => {
 		// A goal that can never start is not on offer either, so no driver picks it up.
 		const ready = await runCli(root, ["project", "ready"]);
 		expect(ready.stdout.trimEnd()).toBe("[open] startable: Startable");
+	});
+});
+
+/** A worklist written straight to a named directory, as an older release left it. */
+async function seedWorklistAt(root: string, directory: string, goalId: string): Promise<string> {
+	const path = join(root, directory, "worklist.json");
+	await mkdir(join(root, directory), { recursive: true });
+	const worklist: ProjectWorklist = {
+		version: 1,
+		revision: 2,
+		goals: [
+			{
+				id: goalId,
+				title: goalId,
+				status: "open",
+				createdAt: "2026-01-01T00:00:00.000Z",
+				updatedAt: "2026-01-01T00:00:00.000Z",
+			},
+		],
+	};
+	await writeFile(path, `${JSON.stringify(worklist, null, 2)}\n`);
+	return path;
+}
+
+describe("project goal file resolution", () => {
+	it("writes the current path in a repository that has neither file", async () => {
+		const root = await tempGitRepo();
+		expect((await runCli(root, ["project", "add", "First"])).code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["first"]);
+	});
+
+	it("reads and writes a legacy file rather than splitting the roadmap in two", async () => {
+		const root = await tempGitRepo();
+		const legacy = await seedWorklistAt(root, ".pi", "already-here");
+
+		const listed = await runCli(root, ["project", "list"]);
+		expect(listed.code).toBe(0);
+		expect(listed.stdout).toContain("already-here");
+
+		expect((await runCli(root, ["project", "add", "Added later"])).code).toBe(0);
+		const worklist = parseJson(await readFile(legacy, "utf8")) as ProjectWorklist;
+		expect(worklist.goals.map((goal) => goal.id)).toEqual(["already-here", "added-later"]);
+		await expect(readFile(join(root, ".worklist", "worklist.json"), "utf8")).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+
+	it("warns on every command while a populated legacy file is passed over, in prose or in the envelope", async () => {
+		const root = await tempGitRepo();
+		await seedWorklistAt(root, ".pi", "in-the-old-file");
+		await seedWorklistAt(root, ".worklist", "in-the-new-file");
+
+		const listed = await runCli(root, ["project", "list"]);
+		expect(listed.code).toBe(0);
+		expect(listed.stdout).toContain("in-the-new-file");
+		expect(listed.stdout).not.toContain("in-the-old-file");
+		expect(listed.stderr).toContain(join(root, ".pi", "worklist.json"));
+		expect(listed.stderr).toContain("is ignored");
+
+		// A --json caller is told in the envelope instead of in prose, because the
+		// failure envelope goes to stderr too and a sentence in front of it would
+		// leave that caller nothing it can parse.
+		const json = await runCli(root, ["project", "list", "--json"]);
+		expect(json.stderr).toBe("");
+		expect(parseJson(json.stdout)).toMatchObject({
+			ok: true,
+			meta: { shadowedWorklistPath: join(root, ".pi", "worklist.json") },
+		});
+
+		const failed = await runCli(root, ["project", "show", "nope", "--json"]);
+		expect(failed.code).toBe(1);
+		expect(parseJson(failed.stderr)).toMatchObject({
+			ok: false,
+			error: { code: "NOT_FOUND" },
+			meta: { shadowedWorklistPath: join(root, ".pi", "worklist.json") },
+		});
+	});
+
+	it("lets --file and the environment name a goal file outright, with --file winning", async () => {
+		const root = await tempGitRepo();
+		await seedWorklistAt(root, ".worklist", "the-repository-one");
+		const named = await seedWorklistAt(root, "elsewhere", "the-named-one");
+		const other = await seedWorklistAt(root, "another", "the-environment-one");
+
+		const byFlag = await runCli(root, ["project", "list", "--file", named]);
+		expect(byFlag.stdout).toContain("the-named-one");
+
+		const byEnv = await runCli(root, ["project", "list"], { [WORKLIST_PATH_ENV]: other });
+		expect(byEnv.stdout).toContain("the-environment-one");
+
+		const both = await runCli(root, ["project", "list", "--file", named], { [WORKLIST_PATH_ENV]: other });
+		expect(both.stdout).toContain("the-named-one");
+
+		// --cwd selects the repository; a relative --file is still the caller's own
+		// directory, the same rule apply-plan reads its plan path by.
+		const relative = await runCli(root, ["project", "list", "--file", "elsewhere/worklist.json"]);
+		expect(relative.stdout).toContain("the-named-one");
+	});
+});
+
+describe("project goal file migration", () => {
+	it("moves a legacy file to the current path and reports both", async () => {
+		const root = await tempGitRepo();
+		const legacy = await seedWorklistAt(root, ".pi", "carried-across");
+		const current = join(root, ".worklist", "worklist.json");
+
+		const preview = await runCli(root, ["project", "migrate_path", "--dry-run"]);
+		expect(preview.code).toBe(0);
+		expect(preview.stdout.trimEnd()).toBe(`Would move project worklist ${legacy} to ${current}.`);
+		expect(await readFile(legacy, "utf8")).toContain("carried-across");
+
+		const unconfirmed = await runCli(root, ["project", "migrate_path"]);
+		expect(unconfirmed.code).toBe(3);
+		expect(diagnostic(unconfirmed.stderr)).toContain("requires explicit confirmation");
+
+		const migrated = await runCli(root, ["project", "migrate_path", "--confirm", "--json"]);
+		expect(migrated.code).toBe(0);
+		expect(parseJson(migrated.stdout)).toMatchObject({
+			ok: true,
+			action: "migrate_path",
+			result: { worklistPath: current, previousWorklistPath: legacy },
+			meta: {
+				changed: true,
+				semanticNoOp: false,
+				changedFields: ["/worklistPath"],
+				revisions: { project: "2" },
+			},
+		});
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["carried-across"]);
+		await expect(readFile(legacy, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+		// The goals came across untouched, so the next write continues the same
+		// roadmap rather than starting a second one.
+		expect((await runCli(root, ["project", "add", "Added after the move"])).code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual([
+			"carried-across",
+			"added-after-the-move",
+		]);
+	});
+
+	it("reports a repository already at the current path as nothing to do", async () => {
+		const root = await tempGitRepo();
+		await runCli(root, ["project", "add", "Already home"]);
+		const current = join(root, ".worklist", "worklist.json");
+
+		const migrated = await runCli(root, ["project", "migrate_path", "--confirm", "--json"]);
+		expect(migrated.code).toBe(0);
+		expect(parseJson(migrated.stdout)).toMatchObject({
+			ok: true,
+			result: { worklistPath: current },
+			meta: { changed: false, semanticNoOp: true, changedFields: [] },
+		});
+		expect(parseJson(migrated.stdout).result.previousWorklistPath).toBeUndefined();
+
+		const human = await runCli(root, ["project", "migrate_path", "--dry-run"]);
+		expect(human.stdout.trimEnd()).toBe(`Project worklist is already at ${current}.`);
+	});
+
+	it("refuses to merge two worklists, and leaves both exactly as they were", async () => {
+		const root = await tempGitRepo();
+		const legacy = await seedWorklistAt(root, ".pi", "in-the-old-file");
+		const current = await seedWorklistAt(root, ".worklist", "in-the-new-file");
+		const before = await Promise.all([readFile(legacy, "utf8"), readFile(current, "utf8")]);
+
+		const refused = await runCli(root, ["project", "migrate_path", "--confirm"]);
+		expect(refused.code).toBe(1);
+		expect(refused.stderr).toContain(`Project worklist ${current} already exists.`);
+		expect(refused.stderr).toContain(`delete ${legacy}`);
+		expect(await Promise.all([readFile(legacy, "utf8"), readFile(current, "utf8")])).toEqual(before);
+	});
+
+	it("refuses an explicitly named file, which is not a repository to migrate", async () => {
+		const root = await tempGitRepo();
+		const named = await seedWorklistAt(root, "elsewhere", "the-named-one");
+
+		const byFlag = await runCli(root, ["project", "migrate_path", "--confirm", "--file", named]);
+		expect(byFlag.code).toBe(2);
+		expect(diagnostic(byFlag.stderr)).toContain("named one outright");
+
+		const byEnv = await runCli(root, ["project", "migrate_path", "--confirm"], {
+			[WORKLIST_PATH_ENV]: named,
+		});
+		expect(byEnv.code).toBe(2);
+		expect(await readFile(named, "utf8")).toContain("the-named-one");
+	});
+
+	it("refuses to both write and not write", async () => {
+		const root = await tempGitRepo();
+		const refused = await runCli(root, ["project", "migrate_path", "--dry-run", "--confirm"]);
+		expect(refused.code).toBe(2);
+		expect(diagnostic(refused.stderr)).toBe("project migrate_path cannot combine --dry-run with --confirm");
 	});
 });

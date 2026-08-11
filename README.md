@@ -16,7 +16,8 @@ Drive them from a dependency-free CLI, an installable agent skill, or a full-scr
 
 ## Features
 
-- Project Goals persist at `<git-root>/.pi/worklist.json` and can be committed with the repository.
+- Project Goals persist at `<git-root>/.worklist/worklist.json` and can be committed with the repository.
+- One resolution order picks that file everywhere: `--file <path>` or `$STEPSTONE_WORKLIST`, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`, so a repository written by an older release keeps working untouched and `migrate_path` moves it when its owner asks.
 - Goal IDs are readable slugs derived from the title and frozen afterwards, and every Project Goal ID argument accepts a unique prefix or a former ID.
 - Project Goal file order is canonical: goals are appended and rearranged only by an explicit move, so a roadmap reads in the sequence someone chose for it.
 - Project Goals carry optional `group`, `completedAt`, `links`, `branch`, and `dependsOn` fields alongside the description.
@@ -112,7 +113,10 @@ A branch without a snapshot uses the opaque baseline token `0`.
 Completed tasks remain in canonical queue order.
 Only the active goal and an intentionally bounded list of incomplete task titles and statuses are added to the current turn's system prompt, preserving their relative queue order.
 
-Project Goals use a schema-versioned JSON file at `.pi/worklist.json` in the canonical Git root.
+Project Goals use a schema-versioned JSON file at `.worklist/worklist.json` in the canonical Git root, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
+Reads fall back to the legacy `.pi/worklist.json`, and writes go to whichever path resolved, so a repository holding only the legacy file keeps using it rather than splitting into two roadmaps; when both exist the current path wins and every command warns, because quietly ignoring a populated legacy file would look exactly like data loss.
+Nothing remembers where that resolution landed: every operation asks again, so a second worklist arriving mid-session, from a branch checkout, a merge, or a colleague on an older release, is picked up rather than missed, and a Pi session warns about it the first time it appears rather than on every turn.
+`migrate_path` moves the file under the same cross-process lock and atomic replacement as any other write, and changes nothing but its location: the goals, their IDs, and the schema version are carried across untouched.
 The goal array order is canonical rather than incidental: `add` appends, `move` is the only action that rearranges it, and every reader displays that order unless it was explicitly asked for another one.
 A move rewrites the order without touching any goal's `updatedAt`, so rearranging the roadmap never reads as editing the goals on it and never invalidates a baseline nobody's edit conflicts with.
 Beyond the description, a goal may carry an optional free-form `group`, a `completedAt` stamped by `complete` and cleared by `reopen`, an informational `links` array, a `branch` naming where the work is happening, and a `dependsOn` array of goals that must land first.
@@ -320,6 +324,9 @@ Reordering is refused outside file order, where the rows are not where the file 
 Status and recent are views over that same order, which stays their tiebreak, so an arrangement survives a trip through them.
 Those two views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
 The status line names the active goal in full in every order, which keeps it readable while the list is filtered to something else or scrolled past it.
+When a repository holds two worklists, the warning about them stands above that line for as long as that stays true, because the board owns the whole screen and a warning printed before it opened sits on a buffer nobody can see.
+It wraps on word boundaries across up to four rows of its own, because the file being ignored and the merge that resolves it both sit past one line's worth of an absolute path.
+Those rows stay reserved while the condition holds, so a passing message takes the status line without clearing the warning off the screen and without shifting the list and detail panes; a terminal with no rows to spare falls back to the warning taking that line itself, truncated.
 In the all view, done and archived rows recede so live work stays legible beside them, and a goal waiting on work that has not landed recedes in every view for the same reason; the selected row always keeps full contrast.
 A goal still in play that has gone untouched for 30 days or more carries its age at the right edge of its row when at least 12 cells remain for the title, and the detail pane spells that age out under `UPDATED`.
 Settled goals are never aged: a done or archived goal is finished rather than neglected.
@@ -344,27 +351,29 @@ The key map scrolls, so a short terminal cannot hide the binding that closes it;
 
 Every change routes through the same application service, cross-process lock, and atomic replacement as `/tasks` and the rest of the CLI, so a Pi session may be open on the same repository at the same time.
 The board reloads automatically when another process writes the file, and a low-frequency re-read keeps that true where filesystem watches cannot be created or silently drop events.
+Every reload also asks again where the goal file is and retargets those watches when it moved, so a `migrate_path` run in another terminal leaves the board reading and writing the migrated file instead of the path it opened on.
+The two-worklist warning is re-derived by the same reload, so it appears when a second worklist shows up while the board is open and clears once the files are merged.
 Completing, reopening, archiving, and deleting each ask for confirmation first, and only an explicit `y` proceeds; that answer is the explicit user intent the application service requires.
 The board is drawn with no runtime dependencies, so the compiled bin needs nothing installed but Node.
 It requires a terminal and refuses to start without one, which keeps `list` and `--json` the read path for scripts and agents.
 
 ## Agent skill
 
-A skill in `.claude/skills/worklist/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
+A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
 Install it for every project:
 
 ```sh
-npx skills add max-miller1204/stepstone --skill worklist -g
+npx skills add max-miller1204/stepstone --skill stepstone -g
 ```
 
 Drop `-g` to install it for the current project only, or add `-a claude-code` to target one agent instead of choosing interactively.
 The [`skills` CLI](https://github.com/vercel-labs/skills) reads `.claude/skills/` directly from this repository, symlinks it into each agent's skill directory, and refreshes it later with `npx skills update`.
-Installing the npm package does not install the skill: the tarball carries `.claude/skills/worklist/SKILL.md` so the published package stays self-describing, but `node_modules` is not a directory agents scan for skills.
+Installing the npm package does not install the skill: the tarball carries `.claude/skills/stepstone/SKILL.md` so the published package stays self-describing, but `node_modules` is not a directory agents scan for skills.
 
 `SKILL.md` is generated from `src/cli-contract.ts` by `scripts/generate-docs.ts`, the same contract that renders the CLI help and [docs/cli.md](docs/cli.md).
 Never hand-edit it; run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
 The generated skill is deliberately repository-neutral and invokes the CLI as `npx -y stepstone@latest`, so a single file serves every checkout without letting a stale npx cache select an older build.
-Working on the skill itself is the one case for symlinking `.claude/skills/worklist` into `~/.claude/skills/`, which makes the installed skill track your working tree.
+Working on the skill itself is the one case for symlinking `.claude/skills/stepstone` into `~/.claude/skills/`, which makes the installed skill track your working tree.
 
 ## Development
 

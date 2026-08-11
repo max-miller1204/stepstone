@@ -141,6 +141,15 @@ export interface WorklistOperationResult {
 	retiredIds?: string[];
 	/** Project Goal ID rewrites, applied or planned, from an ID migration. */
 	migrations?: GoalIdMigration[];
+	/** Absolute path the goal file is read from and written to after this operation. */
+	worklistPath?: string;
+	/**
+	 * Absolute path a path migration moved the goal file away from.
+	 *
+	 * Absent when the file was already where it belongs, which is how a caller
+	 * tells a migration that moved something from one that had nothing to move.
+	 */
+	previousWorklistPath?: string;
 	/** Whether an apply-plan result is a projection rather than a persisted batch. */
 	dryRun?: boolean;
 	/** Goals added or proposed by one atomic plan application, in plan order. */

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { findGoalByStoredId } from "./goal-selection.ts";
@@ -53,6 +53,32 @@ export class ProjectRevisionConflictError extends ProjectMutationRefusedError {
 		this.name = "ProjectRevisionConflictError";
 		this.expectedRevision = expectedRevision;
 		this.actualRevision = actualRevision;
+	}
+}
+
+/**
+ * A path migration refused before it moved anything.
+ *
+ * Both reasons are answers rather than failures to persist: a source that is
+ * gone names no worklist to move, and a destination that already exists holds a
+ * second roadmap that only a person can reconcile. Overwriting it would be the
+ * data loss the migration exists to avoid.
+ */
+export class ProjectWorklistMoveRefusedError extends ProjectMutationRefusedError {
+	readonly reason: "source-missing" | "destination-exists";
+	readonly fromPath: string;
+	readonly toPath: string;
+
+	constructor(reason: "source-missing" | "destination-exists", fromPath: string, toPath: string) {
+		super(
+			reason === "source-missing"
+				? `Project worklist ${fromPath} no longer exists.`
+				: `Project worklist ${toPath} already exists.`,
+		);
+		this.name = "ProjectWorklistMoveRefusedError";
+		this.reason = reason;
+		this.fromPath = fromPath;
+		this.toPath = toPath;
 	}
 }
 
@@ -146,27 +172,39 @@ export function createEmptyWorklist(): RevisionedProjectWorklist {
 	return { version: PROJECT_WORKLIST_VERSION, revision: 0, goals: [] };
 }
 
+/**
+ * One worklist, read out of text a caller already holds.
+ *
+ * A move has to write the same bytes it validated, so the check cannot be a
+ * second read of a file another process may have replaced in between. Every
+ * read reaches the schema through here, which is what keeps a move accepting
+ * exactly the files a read does, down to the message a malformed one earns.
+ */
+function parseProjectWorklist(text: string, path: string): ProjectStoreResult<RevisionedProjectWorklist> {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return {
+			data: createEmptyWorklist(),
+			error: `Malformed project file ${path}: invalid JSON`,
+		};
+	}
+	if (!isProjectWorklist(parsed)) {
+		return {
+			data: createEmptyWorklist(),
+			error: `Malformed or unsupported schema in ${path}. Fix the file manually; it will not be overwritten.`,
+		};
+	}
+	return { data: { ...parsed, revision: parsed.revision ?? 0 } };
+}
+
 export async function readProjectWorklist(
 	path: string,
 ): Promise<ProjectStoreResult<RevisionedProjectWorklist>> {
 	try {
 		const text = await readFile(path, "utf8");
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(text);
-		} catch {
-			return {
-				data: createEmptyWorklist(),
-				error: `Malformed project file ${path}: invalid JSON`,
-			};
-		}
-		if (!isProjectWorklist(parsed)) {
-			return {
-				data: createEmptyWorklist(),
-				error: `Malformed or unsupported schema in ${path}. Fix the file manually; it will not be overwritten.`,
-			};
-		}
-		return { data: { ...parsed, revision: parsed.revision ?? 0 } };
+		return parseProjectWorklist(text, path);
 	} catch (err) {
 		const code = (err as NodeJS.ErrnoException).code;
 		if (code === "ENOENT") {
@@ -179,19 +217,104 @@ export async function readProjectWorklist(
 	}
 }
 
+/** Name of the cross-process lock every writer to one worklist directory takes. */
+const LOCK_FILENAME = ".worklist.lock";
+
+/**
+ * Take the cross-process lock guarding one worklist directory.
+ *
+ * Every writer, in this process or another, agrees on the lock only by agreeing
+ * on where it lives, so the convention is spelled out once here rather than at
+ * each call site.
+ */
+async function lockWorklistDirectory(dir: string): Promise<() => Promise<void>> {
+	await mkdir(dir, { recursive: true });
+	return lockfile.lock(dir, {
+		lockfilePath: resolve(dir, LOCK_FILENAME),
+		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
+		stale: 10000,
+	});
+}
+
+/** Both absolute paths a migration moves the worklist between. */
+export interface ProjectWorklistMove {
+	fromPath: string;
+	toPath: string;
+}
+
+/**
+ * Move the worklist to another path without ever leaving it in two places.
+ *
+ * The file lands at the destination the same way every other write does, by
+ * renaming a temporary file over it, and only then is the source removed, so a
+ * crash mid-migration leaves a repository with either the old file or the new
+ * one and never a half-written third. Both directory locks are held across the
+ * whole move, taken destination-first so two concurrent migrations queue rather
+ * than deadlock, which keeps a writer in another process from appending a goal
+ * to a file that is about to disappear.
+ */
+export async function moveProjectWorklist(
+	fromPath: string,
+	toPath: string,
+): Promise<ProjectStoreResult<ProjectWorklistMove>> {
+	const fromDir = dirname(fromPath);
+	const toDir = dirname(toPath);
+	const releaseDestination = await lockWorklistDirectory(toDir);
+	let releaseSource: (() => Promise<void>) | undefined;
+	let tempName: string | undefined;
+
+	try {
+		if (fromDir !== toDir) releaseSource = await lockWorklistDirectory(fromDir);
+		let contents: string;
+		try {
+			contents = await readFile(fromPath, "utf8");
+		} catch (err) {
+			if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+				throw new ProjectWorklistMoveRefusedError("source-missing", fromPath, toPath);
+			}
+			throw err;
+		}
+		// Validating before the move keeps a corrupt file where the user last saw
+		// it, named by the path their editor already has open. It validates the
+		// bytes already in hand rather than reading the file a second time, so the
+		// content that lands at the destination is the content that passed, and
+		// the revision reported back is the revision that travelled.
+		const readResult = parseProjectWorklist(contents, fromPath);
+		if (readResult.error) return { data: { fromPath, toPath }, error: readResult.error };
+		// Checked under both locks, so nothing can create the destination between
+		// the look and the rename that would otherwise overwrite it.
+		const destination = await stat(toPath).catch(() => undefined);
+		if (destination) throw new ProjectWorklistMoveRefusedError("destination-exists", fromPath, toPath);
+
+		tempName = resolve(toDir, `.worklist-${randomBytes(8).toString("hex")}.tmp`);
+		await writeFile(tempName, contents, "utf8");
+		await rename(tempName, toPath);
+		tempName = undefined;
+		await rm(fromPath, { force: true });
+		return { data: { fromPath, toPath }, revision: readResult.data.revision };
+	} catch (err) {
+		if (err instanceof ProjectMutationRefusedError) throw err;
+		return {
+			data: { fromPath, toPath },
+			error: `Project worklist move failed: ${String(err)}`,
+		};
+	} finally {
+		if (tempName) await rm(tempName, { force: true });
+		try {
+			await releaseSource?.();
+		} finally {
+			await releaseDestination();
+		}
+	}
+}
+
 export async function mutateProjectWorklist<T>(
 	path: string,
 	mutate: ProjectMutation<T>,
 	options: ProjectMutationOptions = {},
 ): Promise<ProjectStoreResult<T>> {
 	const dir = dirname(path);
-	await mkdir(dir, { recursive: true });
-
-	const release = await lockfile.lock(dir, {
-		lockfilePath: resolve(dir, ".worklist.lock"),
-		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
-		stale: 10000,
-	});
+	const release = await lockWorklistDirectory(dir);
 	let tempName: string | undefined;
 
 	try {

@@ -191,7 +191,7 @@ describe("real Pi load", () => {
 			).success,
 		).toBe(true);
 		const project = parseJson<{ goals: Array<{ title: string; description?: string }> }>(
-			await readFile(join(cwd, ".pi", "worklist.json"), "utf8"),
+			await readFile(join(cwd, ".worklist", "worklist.json"), "utf8"),
 		);
 		expect(project.goals).toContainEqual(
 			expect.objectContaining({ title: "RPC goal", description: "Repository-wide outcome" }),
@@ -205,7 +205,7 @@ describe("real Pi load", () => {
 			false,
 		);
 		expect(
-			parseJson<{ goals: unknown[] }>(await readFile(join(cwd, ".pi", "worklist.json"), "utf8")).goals,
+			parseJson<{ goals: unknown[] }>(await readFile(join(cwd, ".worklist", "worklist.json"), "utf8")).goals,
 		).toHaveLength(1);
 	});
 });

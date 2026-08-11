@@ -6,7 +6,7 @@ import type { KeyEvent } from "./keys.ts";
 import { isInterrupt } from "./keys.ts";
 import type { Palette, Style } from "./style.ts";
 import type { Frame } from "./terminal.ts";
-import { fitToWidth, singleLine, truncateToWidth, visibleWidth, wrapText } from "./text.ts";
+import { fitToWidth, singleLine, truncateToWidth, visibleWidth, wrapText, wrapToLines } from "./text.ts";
 
 /**
  * The Project Goal board: all state and rendering, no input or output.
@@ -18,11 +18,25 @@ import { fitToWidth, singleLine, truncateToWidth, visibleWidth, wrapText } from 
  *
  * Mutating intents carry a ready-made `WorklistOperation` so the runtime can
  * hand it straight to `WorklistApplicationService`, which is the only path
- * allowed to write `.pi/worklist.json`.
+ * allowed to write the goal file.
  */
 
 export const GOAL_FILTERS = ["open", "done", "archived", "all"] as const;
 export type GoalFilter = (typeof GOAL_FILTERS)[number];
+
+/** Rows the panes are never squeezed below, however much else wants the space. */
+const BODY_MIN_ROWS = 3;
+
+/**
+ * Rows the standing notice may take.
+ *
+ * Four holds the two-worklist warning whole at eighty columns for an ordinary
+ * repository path. A deep one - a cloud-synced folder, a checkout nested a few
+ * levels down - still runs past four rows and is cut at the last of them. The
+ * ceiling stays here anyway, because every row above it is a goal row taken
+ * from the list, and this is a rare condition that one merge clears for good.
+ */
+const NOTICE_MAX_ROWS = 4;
 
 const FILTER_LABELS: Readonly<Record<GoalFilter, string>> = {
 	open: "Open",
@@ -143,6 +157,16 @@ export interface GoalBoardOptions {
 	palette: Palette;
 	/** Shown in the header so a board opened with `--cwd` names its repository. */
 	repositoryLabel: string;
+	/**
+	 * A standing condition about the file behind the board, shown whenever the
+	 * status line is otherwise idle.
+	 *
+	 * The board owns the whole screen, so a warning written before it opened is
+	 * on a buffer the user cannot see; anything they have to know while the board
+	 * is up has to be part of a frame. It is composed by the caller so no two
+	 * interfaces word the same condition differently.
+	 */
+	notice?: string;
 	goals?: ProjectGoal[];
 	/**
 	 * Current time in epoch milliseconds, read only to age goals.
@@ -244,6 +268,7 @@ function toCellArray(value: string): string[] {
 export class GoalBoard {
 	private readonly palette: Palette;
 	private readonly repositoryLabel: string;
+	private notice: string | undefined;
 	private readonly now: () => number;
 	private goals: ProjectGoal[];
 	private filter: GoalFilter = "open";
@@ -262,9 +287,21 @@ export class GoalBoard {
 	constructor(options: GoalBoardOptions) {
 		this.palette = options.palette;
 		this.repositoryLabel = options.repositoryLabel;
+		this.notice = options.notice;
 		this.now = options.now ?? (() => Date.now());
 		this.goals = options.goals ? [...options.goals] : [];
 		this.selectedId = this.visibleGoals()[0]?.id;
+	}
+
+	/**
+	 * Replace the standing notice, or clear it.
+	 *
+	 * The condition it describes is about the file behind the board, and that
+	 * file can move or be merged while the board is open, so the notice is state
+	 * the runtime re-derives rather than a fact fixed when the board opened.
+	 */
+	setNotice(notice: string | undefined): void {
+		this.notice = notice;
 	}
 
 	/** Replace the goal set, keeping the selection on the same goal when it survives. */
@@ -770,15 +807,23 @@ export class GoalBoard {
 	// ----------------------------------------------------------------- render
 
 	render(width: number, rows: number): Frame {
-		const bodyRows = Math.max(3, rows - 3);
+		const statusRows = this.reservedStatusRows(width, rows);
+		const bodyRows = Math.max(BODY_MIN_ROWS, rows - 2 - statusRows);
 		const body =
 			this.mode.kind === "help" ? this.renderHelp(width, bodyRows) : this.renderPanes(width, bodyRows);
-		const status = this.renderStatus(width);
-		const lines = [this.renderHeader(width), ...body, status.line, this.renderKeyBar(width)];
+		const status = this.renderStatus(width, statusRows);
+		// Anything shorter than the reservation sits at the bottom of it, so a prompt
+		// and its cursor stay on the row directly above the key bar.
+		const statusBlock = [
+			...new Array<string>(Math.max(0, statusRows - status.lines.length)).fill(""),
+			...status.lines,
+		];
+		const lines = [this.renderHeader(width), ...body, ...statusBlock, this.renderKeyBar(width)];
 		// The frame is exactly the size it was asked for, whatever the panes produced,
-		// so the status line and key bar always land on the last two rows.
-		while (lines.length < rows) lines.splice(lines.length - 2, 0, "");
-		if (lines.length > rows) lines.splice(rows - 2, lines.length - rows);
+		// so the status lines and key bar always land on the last rows.
+		const tail = statusBlock.length + 1;
+		while (lines.length < rows) lines.splice(lines.length - tail, 0, "");
+		if (lines.length > rows) lines.splice(rows - tail, lines.length - rows);
 		return {
 			lines,
 			...(status.cursorColumn === undefined
@@ -1109,9 +1154,66 @@ export class GoalBoard {
 		return lines;
 	}
 
-	/** The prompt line, which also carries the cursor column when input is open. */
-	private renderStatus(width: number): { line: string; cursorColumn?: number } {
+	/**
+	 * Rows the status area holds while the standing notice is up.
+	 *
+	 * Budgeted from the condition rather than from whatever is on the line this
+	 * frame, so a passing message cannot reflow the list and detail panes on the
+	 * keystroke that raises it and again on the one that clears it. The notice
+	 * gets rows of its own above the status line rather than sharing it, which is
+	 * what lets a message take that line without wiping the warning off a screen
+	 * that has no scrollback to recover it. A frame with nothing to spare falls
+	 * back to one row, and there the notice shares the line as it used to.
+	 */
+	private reservedStatusRows(width: number, rows: number): number {
+		if (this.notice === undefined) return 1;
+		const spare = rows - 1 - BODY_MIN_ROWS - 1 - 1;
+		if (spare < 1) return 1;
+		const budget = Math.min(NOTICE_MAX_ROWS, spare);
+		return wrapToLines(this.notice, Math.max(1, width - 2), budget).length + 1;
+	}
+
+	/**
+	 * The whole status block: the standing notice, and whatever needs the line.
+	 *
+	 * A message, a prompt, or a confirmation keeps the bottom row, so what the
+	 * board is asking or reporting stays where the eye already looks. The notice
+	 * takes the reserved rows above it rather than pushing it aside, because the
+	 * board owns the screen and a warning cleared by a passing message would have
+	 * nowhere to be read again.
+	 */
+	private renderStatus(width: number, statusRows: number): { lines: string[]; cursorColumn?: number } {
+		const noticeRows = statusRows - 1;
+		const line = this.renderStatusLine(width, noticeRows < 1);
+		return {
+			lines: [...this.renderNoticeRows(width, noticeRows), line.line],
+			...(line.cursorColumn === undefined ? {} : { cursorColumn: line.cursorColumn }),
+		};
+	}
+
+	/**
+	 * The standing notice, wrapped into the rows it was given.
+	 *
+	 * It wraps rather than being cut at the first line, because the two things it
+	 * exists to convey - which file is being ignored, and that the fix is to merge
+	 * by hand and delete - both sit past one line's worth of an absolute path.
+	 */
+	private renderNoticeRows(width: number, rows: number): string[] {
+		if (this.notice === undefined || rows <= 0) return [];
+		const { warning } = this.palette;
+		return wrapToLines(this.notice, Math.max(1, width - 2), rows).map((line) => ` ${warning(line)}`);
+	}
+
+	/**
+	 * The bottom row of the status block.
+	 *
+	 * Carries the cursor column when input is open, which is why it stays the last
+	 * row of the block. `mayHoldNotice` is set only on a frame too short to give
+	 * the notice a row of its own, where it falls back to taking this one.
+	 */
+	private renderStatusLine(width: number, mayHoldNotice: boolean): { line: string; cursorColumn?: number } {
 		const { accent, muted, dim, success, danger, warning, bold } = this.palette;
+		const inner = Math.max(1, width - 2);
 		if (this.mode.kind === "prompt") {
 			return this.renderInputLine(`${this.mode.prompt.label}: `, this.mode.prompt, width, accent);
 		}
@@ -1126,9 +1228,15 @@ export class GoalBoard {
 		if (this.message) {
 			const style =
 				this.message.tone === "error" ? danger : this.message.tone === "success" ? success : muted;
-			return { line: ` ${style(truncateToWidth(this.message.text, Math.max(1, width - 2)))}` };
+			return { line: ` ${style(truncateToWidth(this.message.text, inner))}` };
 		}
-		return { line: ` ${dim(truncateToWidth(this.idleSummary(), Math.max(1, width - 2)))}` };
+		// With no row of its own, a standing condition outranks the idle summary: the
+		// summary describes the roadmap on screen, and the notice is the reason that
+		// roadmap may not be all of them.
+		if (mayHoldNotice && this.notice !== undefined) {
+			return { line: ` ${warning(truncateToWidth(this.notice, inner))}` };
+		}
+		return { line: ` ${dim(truncateToWidth(this.idleSummary(), inner))}` };
 	}
 
 	/**

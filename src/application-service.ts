@@ -11,6 +11,7 @@ import {
 	deleteProjectGoal,
 	listProjectGoals,
 	migrateProjectGoalIds,
+	migrateProjectWorklistPath,
 	moveProjectGoal,
 	PROJECT_LIFECYCLE_TARGET_STATUS,
 	ProjectGoalActivationBlockedError,
@@ -29,6 +30,7 @@ import {
 	type ProjectGoalPrecondition,
 	type ProjectMutationOptions,
 	ProjectRevisionConflictError,
+	ProjectWorklistMoveRefusedError,
 } from "./project-store.ts";
 import {
 	canonicalChangedFields,
@@ -79,6 +81,14 @@ export interface WorklistOperation {
 	plan?: unknown;
 	/** Project apply-plan only: validate and project without writing. */
 	dryRun?: boolean;
+	/**
+	 * Project migrate_path only: the path the goal file should end up at.
+	 *
+	 * Named by the caller, like the path the service reads from, because the
+	 * resolution order that decides both lives in one place outside the service
+	 * and is shared by every interface.
+	 */
+	targetPath?: string;
 	status?: SessionTaskStatus | ProjectGoalStatus;
 	goalId?: string;
 	beforeId?: string;
@@ -130,6 +140,15 @@ export interface WorklistApplicationServiceOptions {
 	sessionStore?: SessionStore;
 	projectPath?: string | null;
 }
+
+/**
+ * How the service finds the goal file, asked once per project operation.
+ *
+ * The resolution order lives outside the service so every interface shares it,
+ * and it is a question rather than an answer so a host that outlives a
+ * `migrate_path` never writes to the path it was told about at startup.
+ */
+export type ProjectPathResolver = () => string | null;
 
 type ProjectLifecycleAction = keyof typeof PROJECT_LIFECYCLE_TARGET_STATUS;
 
@@ -206,6 +225,29 @@ export function projectGoalSelectionError(
 			resolution: "provide-unambiguous-goal-id",
 			candidateCount: resolution.candidates.length,
 			candidates: reported.map((goal) => ({ id: goal.id, title: goal.title })),
+		},
+	);
+}
+
+/**
+ * The typed refusal for a repository holding two worklists at once.
+ *
+ * Which goals survive a merge is a decision only their owner can make, so no
+ * interface picks a file: the one that resolved is named as the keeper and the
+ * one being passed over is named for deletion. The condition is caught both
+ * before a migration starts and again under the lock, and a caller reading the
+ * message or the details cannot tell which noticed.
+ */
+export function projectWorklistMergeRequiredError(
+	currentPath: string,
+	conflictingPath: string,
+): WorklistApplicationError {
+	return validationError(
+		`Project worklist ${currentPath} already exists. Merge the goals you want to keep into it and delete ${conflictingPath}.`,
+		{
+			path: currentPath,
+			conflictingPath,
+			resolution: "merge-worklists-by-hand",
 		},
 	);
 }
@@ -329,6 +371,7 @@ const PROJECT_ONLY_FIELDS = [
 	{ field: "dependsOn", resolution: "remove-depends-on" },
 	{ field: "plan", resolution: "use-project-apply-plan" },
 	{ field: "dryRun", resolution: "use-project-apply-plan" },
+	{ field: "targetPath", resolution: "use-project-migrate-path" },
 	{ field: "expectedUpdatedAt", resolution: "remove-expected-updated-at" },
 ] as const;
 
@@ -432,6 +475,12 @@ function rejectUnsupportedProjectOptions(operation: WorklistOperation): void {
 			resolution: "use-project-apply-plan",
 		});
 	}
+	if (operation.targetPath !== undefined && operation.action !== "migrate_path") {
+		throw validationError("targetPath is only supported for project migrate_path.", {
+			fields: ["targetPath"],
+			resolution: "use-project-migrate-path",
+		});
+	}
 	if (operation.appendDescription !== undefined && operation.action !== "update") {
 		throw validationError("appendDescription is only supported for project update.", {
 			fields: ["appendDescription"],
@@ -506,7 +555,11 @@ function metadataForSuccess(input: SuccessMetadataInput): WorklistResultMeta {
 		projectGoalIds: canonicalIds(input.changedGoalIds),
 		sessionTaskIds: canonicalIds(input.changedTaskIds),
 	};
-	const changedRoot = operation.scope === "session" ? "/tasks" : "/goals";
+	// A path migration relocates the goals without editing one, so it reports the
+	// location as what changed. Naming `/goals` instead would send a reader
+	// watching for edits looking for a change it will never find.
+	const projectRoot = operation.action === "migrate_path" ? "/worklistPath" : "/goals";
+	const changedRoot = operation.scope === "session" ? "/tasks" : projectRoot;
 	return {
 		changed,
 		semanticNoOp: !changed,
@@ -535,18 +588,25 @@ function isSessionRevisionConflictError(
 	);
 }
 
-function persistenceError(operation: WorklistOperation, error: unknown): WorklistError {
+function persistenceError(
+	operation: WorklistOperation,
+	error: unknown,
+	projectPath?: string | null,
+): WorklistError {
 	const rawMessage = error instanceof Error ? error.message : String(error);
 	if (
 		operation.scope === "project" &&
 		(rawMessage.startsWith("Malformed project file") ||
 			rawMessage.startsWith("Malformed or unsupported schema"))
 	) {
+		// The file is named rather than described, because which of the resolvable
+		// paths answered is exactly what the person repairing it needs to know.
+		const target = projectPath ?? "the project worklist";
 		return {
 			code: WORKLIST_ERROR_CODES.PERSISTENCE_FAILED,
-			message: "Malformed project worklist or unsupported schema. Repair .pi/worklist.json before retrying.",
+			message: `Malformed project worklist or unsupported schema. Repair ${target} before retrying.`,
 			retryable: false,
-			details: { resolution: "repair-project-file" },
+			details: { resolution: "repair-project-file", ...(projectPath ? { path: projectPath } : {}) },
 		};
 	}
 	let message = "Session task persistence failed. Retry in the active Pi session.";
@@ -743,15 +803,26 @@ async function deleteSessionTask(
  */
 export class WorklistApplicationService {
 	private readonly options: WorklistApplicationServiceOptions;
-	private projectPath: string | null;
+	private resolveProjectPath: ProjectPathResolver;
 
 	constructor(options: WorklistApplicationServiceOptions) {
 		this.options = options;
-		this.projectPath = options.projectPath ?? null;
+		const configured = options.projectPath ?? null;
+		this.resolveProjectPath = () => configured;
 	}
 
-	setProjectPath(projectPath: string | null): void {
-		this.projectPath = projectPath;
+	/**
+	 * Hand over the resolution instead of an answer, for a host that outlives it.
+	 *
+	 * A CLI process resolves once and exits, so the path it was handed cannot go
+	 * stale underneath it. A session or a board stays open across a `migrate_path`
+	 * run in another terminal, and a goal file that moved is exactly the state
+	 * where writing to the remembered path splits one roadmap into two. Every
+	 * project operation asks again, so the answer is never older than the
+	 * operation it decides.
+	 */
+	setProjectPathResolver(resolve: ProjectPathResolver): void {
+		this.resolveProjectPath = resolve;
 	}
 
 	getSessionTasks(): SessionTask[] {
@@ -761,18 +832,22 @@ export class WorklistApplicationService {
 	}
 
 	async getProjectGoals(): Promise<ProjectGoal[]> {
-		if (!this.projectPath) return [];
+		const projectPath = this.resolveProjectPath();
+		if (!projectPath) return [];
 		try {
-			return await listProjectGoals(this.projectPath);
+			return await listProjectGoals(projectPath);
 		} catch (error) {
-			throw new WorklistApplicationError(persistenceError({ scope: "project", action: "list" }, error));
+			throw new WorklistApplicationError(
+				persistenceError({ scope: "project", action: "list" }, error, projectPath),
+			);
 		}
 	}
 
 	async readProjectSnapshot(action: string): Promise<WorklistApplicationResult> {
 		const operation: WorklistOperation = { scope: "project", action };
+		const resolved = this.resolveProjectPath();
 		try {
-			const projectPath = this.requireProjectPath();
+			const projectPath = this.requireProjectPath(resolved);
 			const { goals, retiredIds, revision } = await readProjectGoals(projectPath);
 			return {
 				ok: true,
@@ -785,7 +860,7 @@ export class WorklistApplicationService {
 			const typedError =
 				error instanceof WorklistApplicationError
 					? error.toResultError()
-					: persistenceError(operation, error);
+					: persistenceError(operation, error, resolved);
 			return {
 				ok: false,
 				scope: "project",
@@ -800,6 +875,7 @@ export class WorklistApplicationService {
 		operation: WorklistOperation,
 		_context: WorklistOperationContext,
 	): Promise<WorklistApplicationResult> {
+		const resolvedProjectPath = operation.scope === "project" ? this.resolveProjectPath() : null;
 		try {
 			const placement = normalizePlacement(operation);
 			let result: WorklistOperationResult;
@@ -816,7 +892,7 @@ export class WorklistApplicationService {
 				projectRevision = sessionExecution.projectRevision;
 				changedTaskIds = sessionExecution.changedTaskIds;
 			} else if (operation.scope === "project") {
-				const projectExecution = await this.executeProject(operation);
+				const projectExecution = await this.executeProject(operation, resolvedProjectPath);
 				result = projectExecution.result;
 				changed = projectExecution.changed;
 				projectRevision = projectExecution.revision;
@@ -905,6 +981,17 @@ export class WorklistApplicationService {
 					},
 				};
 				failureMeta = { ...failureMeta, revisions: { session: error.actualRevision } };
+			} else if (error instanceof ProjectWorklistMoveRefusedError) {
+				// Neither reason is retryable and neither is a stale baseline: one names
+				// a file that is gone, the other a second roadmap only a person can
+				// reconcile, and both leave every worklist exactly as it was.
+				typedError =
+					error.reason === "source-missing"
+						? createApplicationError(WORKLIST_ERROR_CODES.NOT_FOUND, error.message, {
+								path: error.fromPath,
+								resolution: "refresh-and-retry",
+							}).toResultError()
+						: projectWorklistMergeRequiredError(error.toPath, error.fromPath).toResultError();
 			} else if (error instanceof ProjectGoalActivationBlockedError) {
 				typedError = validationError(
 					"A done or archived Project Goal must be reopened with confirm=true before activation.",
@@ -917,7 +1004,7 @@ export class WorklistApplicationService {
 			} else if (isSessionTaskAnchorNotFoundError(error)) {
 				typedError = notFoundError("session-task-anchor", error.anchorId).toResultError();
 			} else {
-				typedError = persistenceError(operation, error);
+				typedError = persistenceError(operation, error, resolvedProjectPath);
 			}
 			return {
 				ok: false,
@@ -965,8 +1052,11 @@ export class WorklistApplicationService {
 		}
 	}
 
-	private async executeProject(rawOperation: WorklistOperation): Promise<ProjectExecutionResult> {
-		const projectPath = this.requireProjectPath();
+	private async executeProject(
+		rawOperation: WorklistOperation,
+		resolvedProjectPath: string | null,
+	): Promise<ProjectExecutionResult> {
+		const projectPath = this.requireProjectPath(resolvedProjectPath);
 		rejectUnsupportedProjectOptions(rawOperation);
 		// Selectors resolve before the placement is read, so `move x before y`
 		// anchors on the goal `y` names rather than on the caller's shorthand.
@@ -1077,6 +1167,8 @@ export class WorklistApplicationService {
 				return this.transitionProjectGoal(projectPath, operation, options);
 			case "migrate_ids":
 				return this.runGoalIdMigration(projectPath, operation, options);
+			case "migrate_path":
+				return this.runWorklistPathMigration(projectPath, operation);
 			default:
 				throw createApplicationError(
 					WORKLIST_ERROR_CODES.INVALID_REQUEST,
@@ -1090,6 +1182,7 @@ export class WorklistApplicationService {
 							"delete",
 							"list",
 							"migrate_ids",
+							"migrate_path",
 							"move",
 							"reopen",
 							"set_active",
@@ -1195,6 +1288,53 @@ export class WorklistApplicationService {
 		};
 	}
 
+	/**
+	 * Moves the whole repository's goal file to the path it should live at.
+	 *
+	 * A goal-free mutation, so it carries no baseline: `expectedUpdatedAt` guards
+	 * one goal and the store revision guards content, while this changes neither.
+	 * Already being at the target is success with nothing changed, the same
+	 * answer an ID migration gives when no ID needs rewriting.
+	 */
+	private async runWorklistPathMigration(
+		projectPath: string,
+		operation: WorklistOperation,
+	): Promise<ProjectExecutionResult> {
+		requireConfirmation(operation);
+		const targetPath = operation.targetPath?.trim();
+		if (!targetPath) {
+			throw validationError("targetPath is required for project migrate_path.", {
+				fields: ["targetPath"],
+				resolution: "provide-target-worklist-path",
+			});
+		}
+		if (targetPath === projectPath) {
+			const { goals, revision } = await readProjectGoals(projectPath);
+			return {
+				result: { scope: "project", action: "migrate_path", goals, worklistPath: projectPath },
+				revision,
+				changed: false,
+				changedGoalIds: [],
+			};
+		}
+		const { fromPath, toPath, revision } = await migrateProjectWorklistPath(projectPath, targetPath);
+		const { goals } = await readProjectGoals(toPath);
+		return {
+			result: {
+				scope: "project",
+				action: "migrate_path",
+				goals,
+				worklistPath: toPath,
+				previousWorklistPath: fromPath,
+			},
+			revision,
+			// The move relocates every goal without editing one, so no goal ID is
+			// reported as changed: a reader watching for edits should see none.
+			changed: true,
+			changedGoalIds: [],
+		};
+	}
+
 	private async activateProjectGoal(
 		projectPath: string,
 		operation: WorklistOperation,
@@ -1289,14 +1429,14 @@ export class WorklistApplicationService {
 		return this.options.sessionStore;
 	}
 
-	private requireProjectPath(): string {
-		if (!this.projectPath) {
+	private requireProjectPath(projectPath: string | null = this.resolveProjectPath()): string {
+		if (!projectPath) {
 			throw createApplicationError(
 				WORKLIST_ERROR_CODES.UNAVAILABLE,
 				"Project goals require a git repository. Session tasks are still available outside git.",
 				{ resolution: "run-inside-git-repository" },
 			);
 		}
-		return this.projectPath;
+		return projectPath;
 	}
 }

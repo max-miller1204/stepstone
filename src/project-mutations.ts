@@ -7,9 +7,11 @@ import {
 	takenGoalIds,
 } from "./goal-selection.ts";
 import {
+	moveProjectWorklist,
 	mutateProjectWorklist,
 	type ProjectMutationOptions,
 	ProjectMutationRefusedError,
+	type ProjectWorklistMove,
 	readProjectWorklist,
 } from "./project-store.ts";
 import type {
@@ -917,4 +919,27 @@ export async function migrateProjectGoalIds(
 	if (result.error) throw new Error(result.error);
 	if (result.revision === undefined) throw new Error("Project mutation did not return a revision");
 	return { ...result.data, revision: String(result.revision), changed: result.changed !== false };
+}
+
+export interface ProjectWorklistPathMigration extends ProjectWorklistMove {
+	revision: string;
+}
+
+/**
+ * Moves the goal file to another path, leaving every goal on it untouched.
+ *
+ * A location change rather than a schema or content change: the bytes are
+ * carried across verbatim, the revision does not move, and the worklist version
+ * is the same on both sides. Validation still happens first, so a corrupt file
+ * stays where its owner last saw it instead of being relocated out from under
+ * the editor they have it open in.
+ */
+export async function migrateProjectWorklistPath(
+	fromPath: string,
+	toPath: string,
+): Promise<ProjectWorklistPathMigration> {
+	const result = await moveProjectWorklist(fromPath, toPath);
+	if (result.error) throw new Error(result.error);
+	if (result.revision === undefined) throw new Error("Project worklist move did not return a revision");
+	return { ...result.data, revision: String(result.revision) };
 }

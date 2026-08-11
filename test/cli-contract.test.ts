@@ -290,6 +290,7 @@ describe("single CLI command contract", () => {
 			"archive",
 			"delete",
 			"migrate_ids",
+			"migrate_path",
 			"help",
 		]);
 

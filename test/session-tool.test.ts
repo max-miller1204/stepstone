@@ -1,15 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
+import { WorklistApplicationService } from "../src/application-service.ts";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 import worklistExtension from "../src/extension.ts";
 import { formatSessionTasks } from "../src/format.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SESSION_SNAPSHOT_TYPE, SessionStore } from "../src/session-store.ts";
-import { executeWorklist } from "../src/tool.ts";
+import { createProjectLocator, executeWorklist } from "../src/tool.ts";
+import type { ProjectWorklist } from "../src/types.ts";
 import type { DashboardResult } from "../src/ui.ts";
 
 function fakePi(entries: unknown[] = []) {
@@ -543,7 +545,7 @@ describe("session state and tool", () => {
 	});
 
 	it("warns in project activation text while keeping blocked activation successful", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-blocked-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-blocked-")), ".worklist", "worklist.json");
 		const blocker = await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
 			projectPath: path,
 		});
@@ -588,7 +590,7 @@ describe("session state and tool", () => {
 		// package actually ships under.
 		const root = await mkdtemp(join(tmpdir(), "stepstone-widget-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
-		const projectPath = join(root, ".pi", "worklist.json");
+		const projectPath = join(root, ".worklist", "worklist.json");
 		const added = await executeWorklist(
 			{ scope: "project", action: "add", title: "Cross the first stone" },
 			ctx,
@@ -638,7 +640,7 @@ describe("session state and tool", () => {
 	it("surfaces blocked activation warnings from the Pi dashboard", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-dashboard-blocked-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
-		const projectPath = join(root, ".pi", "worklist.json");
+		const projectPath = join(root, ".worklist", "worklist.json");
 		await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {
 			projectPath,
 		});
@@ -700,7 +702,11 @@ describe("session state and tool", () => {
 	});
 
 	it("previews and applies an atomic project plan through the model tool", async () => {
-		const projectPath = join(await mkdtemp(join(tmpdir(), "stepstone-tool-plan-")), ".pi", "worklist.json");
+		const projectPath = join(
+			await mkdtemp(join(tmpdir(), "stepstone-tool-plan-")),
+			".worklist",
+			"worklist.json",
+		);
 		await executeWorklist({ scope: "project", action: "add", title: "Shared goal" }, ctx, {
 			projectPath,
 		});
@@ -729,7 +735,7 @@ describe("session state and tool", () => {
 	});
 
 	it("guards every destructive project lifecycle path", async () => {
-		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-")), ".pi", "worklist.json");
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-")), ".worklist", "worklist.json");
 		const { api } = fakePi();
 		const store = new SessionStore(api);
 		const added = await executeWorklist({ scope: "project", action: "add", title: "Ship" }, ctx, {
@@ -770,28 +776,182 @@ describe("session state and tool", () => {
 });
 
 describe("registered model tool", () => {
+	type SessionHandler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
+
 	function registerExtension() {
 		let tool: Record<string, unknown> | undefined;
+		const handlers = new Map<string, SessionHandler>();
 		const api = {
 			appendEntry: () => {},
 			registerTool: (config: Record<string, unknown>) => {
 				tool = config;
 			},
 			registerCommand: () => {},
-			on: () => {},
+			on: (event: string, handler: SessionHandler) => {
+				handlers.set(event, handler);
+			},
 			events: { emit: () => {}, on: () => () => {} },
 		} as unknown as ExtensionAPI;
 		worklistExtension(api);
 		if (!tool) throw new Error("worklist tool was not registered");
-		return tool;
+		return { tool, handlers };
 	}
 
+	type ToolExecute = (
+		id: string,
+		params: Record<string, unknown>,
+		signal: undefined,
+		onUpdate: undefined,
+		ctx: ExtensionContext,
+	) => Promise<unknown>;
+
+	interface LiveSession {
+		call: (params: Record<string, unknown>) => Promise<unknown>;
+		/** Everything the session has put in front of the user, newest last. */
+		notifications: string[];
+		/**
+		 * What pi does for `/new`, `/resume`, `/fork` and `/clone`: shut the session
+		 * down and start the next one on the same extension instance, which is
+		 * registered once per process rather than once per session.
+		 */
+		restart: (reason: "new" | "resume" | "fork") => Promise<void>;
+	}
+
+	/** A live session on a repository, left exactly as `session_start` leaves one. */
+	async function startSession(cwd: string): Promise<LiveSession> {
+		const { tool, handlers } = registerExtension();
+		const notifications: string[] = [];
+		const sessionContext = {
+			cwd,
+			mode: "cli",
+			sessionManager: { getBranch: () => [] },
+			ui: { notify: (message: string) => notifications.push(message), setWidget: () => {} },
+		} as unknown as ExtensionContext;
+		const sessionStart = handlers.get("session_start");
+		if (!sessionStart) throw new Error("session_start handler was not registered");
+		await sessionStart({ reason: "new" }, sessionContext);
+		const execute = tool.execute as ToolExecute;
+		return {
+			call: (params) => execute("call", params, undefined, undefined, sessionContext),
+			notifications,
+			restart: async (reason) => {
+				await handlers.get("session_shutdown")?.({}, sessionContext);
+				await sessionStart({ reason }, sessionContext);
+			},
+		};
+	}
+
+	it("resolves the same goal file a terminal in the repository would", async () => {
+		// Canonical, because the resolver reports the canonical root back and a
+		// temporary directory reaches it through a symlink on macOS.
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-path-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		expect(createProjectLocator(root)()).toMatchObject({
+			path: join(root, ".worklist", "worklist.json"),
+			source: "default",
+		});
+
+		// A Pi session in a repository an older release wrote keeps reading the file
+		// that is actually there, which is what makes the move need no migration.
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(join(root, ".pi", "worklist.json"), `${JSON.stringify({ version: 1, goals: [] })}\n`);
+		expect(createProjectLocator(root)()).toMatchObject({
+			path: join(root, ".pi", "worklist.json"),
+			source: "legacy",
+		});
+
+		expect(createProjectLocator(await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-")))()).toBeNull();
+	});
+
+	it("writes where the goal file is now, not where it was when the session started", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-tool-migrated-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const legacy = join(root, ".pi", "worklist.json");
+		const migrated = join(root, ".worklist", "worklist.json");
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(
+			legacy,
+			`${JSON.stringify({
+				version: 1,
+				revision: 1,
+				goals: [
+					{
+						id: "carried",
+						title: "Carried across",
+						status: "open",
+						createdAt: "2026-01-01T00:00:00.000Z",
+						updatedAt: "2026-01-01T00:00:00.000Z",
+					},
+				],
+			})}\n`,
+		);
+		const session = await startSession(root);
+
+		// migrate_path, run in a terminal while the session stays open on the file
+		// it moved.
+		const migration = await new WorklistApplicationService({ projectPath: legacy }).execute(
+			{ scope: "project", action: "migrate_path", targetPath: migrated, confirm: true },
+			{ source: "cli" },
+		);
+		expect(migration.ok).toBe(true);
+
+		await session.call({ scope: "project", action: "add", title: "Added after the move" });
+
+		// The goal joins the roadmap that moved. Writing to the remembered path
+		// would recreate the legacy file holding only this goal, which is the split
+		// roadmap the whole resolution order exists to prevent.
+		const worklist = JSON.parse(await readFile(migrated, "utf8")) as ProjectWorklist;
+		expect(worklist.goals.map((goal) => goal.id)).toEqual(["carried", "added-after-the-move"]);
+		await expect(readFile(legacy, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	it("announces a second worklist that appears while the session is already running", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-shadowed-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const legacy = join(root, ".pi", "worklist.json");
+		const current = join(root, ".worklist", "worklist.json");
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(legacy, `${JSON.stringify({ version: 1, goals: [] })}\n`);
+
+		// A repository an older release wrote: one roadmap, so nothing to warn about.
+		const session = await startSession(root);
+		expect(session.notifications).toEqual([]);
+
+		// A branch checkout, a merge, or a colleague's older release lands the second
+		// file. From here every read and write the session makes silently moves to it.
+		await mkdir(join(root, ".worklist"), { recursive: true });
+		await writeFile(current, `${JSON.stringify({ version: 1, goals: [] })}\n`);
+
+		await session.call({ scope: "project", action: "list" });
+
+		const warnings = session.notifications.filter((message) =>
+			message.includes("two project worklists exist"),
+		);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain(`Reading and writing ${current}`);
+		expect(warnings[0]).toContain(`${legacy} is ignored`);
+
+		// Said when it becomes true, not on every turn after.
+		await session.call({ scope: "project", action: "list" });
+		expect(
+			session.notifications.filter((message) => message.includes("two project worklists exist")),
+		).toHaveLength(1);
+
+		// The next session is told too. pi registers this extension once per process
+		// and reuses it across /new, /resume and /fork, so a session that inherited
+		// the previous one's dedupe would show one roadmap and never name the other.
+		await session.restart("new");
+		expect(
+			session.notifications.filter((message) => message.includes("two project worklists exist")),
+		).toHaveLength(2);
+	});
+
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {
-		expect(registerExtension().executionMode).toBe("sequential");
+		expect(registerExtension().tool.executionMode).toBe("sequential");
 	});
 
 	it("exposes the session ordering surface to the model", () => {
-		const tool = registerExtension();
+		const { tool } = registerExtension();
 		const parameters = tool.parameters as {
 			properties: Record<string, { enum?: string[]; description?: string }>;
 		};

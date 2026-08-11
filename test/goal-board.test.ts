@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { shadowedWorklistWarning } from "../src/git.ts";
 import type { BoardIntent } from "../src/tui/goal-board.ts";
 import { GoalBoard } from "../src/tui/goal-board.ts";
 import { decodeKeys } from "../src/tui/keys.ts";
 import { createPalette } from "../src/tui/style.ts";
-import { visibleWidth } from "../src/tui/text.ts";
+import { truncateToWidth, visibleWidth } from "../src/tui/text.ts";
 import type { ProjectGoal } from "../src/types.ts";
 
 const ESC = "\u001b";
@@ -213,6 +214,132 @@ describe("goal board presentation", () => {
 		expect(statusLine(GOALS)).toBe("Active: Replace legacy authentication");
 		expect(statusLine(nothingActive)).toBe("No active goal. Press s to make one active.");
 		expect(statusLine([])).toBe("No project goals yet. Press a to add one.");
+	});
+
+	it("holds a standing notice above the status line, which the alternate screen would otherwise swallow", () => {
+		const notice = "Warning: two project worklists exist. /repo/.pi/worklist.json is ignored.";
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+		const statusLine = () => plainFrame(board, 120, 20).at(-2)?.trim();
+		const noticeRow = () => plainFrame(board, 120, 20).at(-3)?.trim();
+
+		// The notice gets a row of its own, so it does not have to displace the idle
+		// summary to be seen.
+		expect(noticeRow()).toBe(notice);
+		expect(statusLine()).toBe("Active: Replace legacy authentication");
+
+		// A message takes the line while it has something to say, and the standing
+		// condition stays put above it rather than being reported once and lost.
+		board.setMessage("Added goal.", "success");
+		expect(statusLine()).toBe("Added goal.");
+		expect(noticeRow()).toBe(notice);
+		press(board, "j");
+		expect(statusLine()).toBe("Active: Replace legacy authentication");
+		expect(noticeRow()).toBe(notice);
+	});
+
+	it("wraps the real two-worklist warning so the ignored file and the fix survive 80 columns", () => {
+		const currentPath = "/home/dev/service-api/.worklist/worklist.json";
+		const legacyPath = "/home/dev/service-api/.pi/worklist.json";
+		// The wording every interface shares, composed by its one helper rather than
+		// fabricated short here: the board has to hold whatever that helper says.
+		const notice = shadowedWorklistWarning({
+			path: currentPath,
+			source: "current",
+			currentPath,
+			legacyPath,
+			shadowedPath: legacyPath,
+		});
+		if (notice === undefined) throw new Error("a shadowed worklist must earn a notice");
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+
+		const frame = plainFrame(board, 80, 20);
+		const shown = frame.join(" ").replace(/\s+/g, " ");
+
+		// Both halves the notice exists for, not just the prefix and half a path.
+		expect(shown).toContain(notice);
+		expect(shown).toContain(`${legacyPath} is ignored`);
+		expect(shown).toContain("Merge the goals you want to keep into the first file and delete the second.");
+
+		// And it stays inside the terminal, without taking the roadmap off screen.
+		expect(frame.every((line) => visibleWidth(line) <= 80)).toBe(true);
+		expect(frame.length).toBe(20);
+		expect(frame.some((line) => line.includes("Replace legacy authentication"))).toBe(true);
+	});
+
+	it("holds the notice's rows while it stands, so a passing message does not reflow the panes", () => {
+		const currentPath = "/home/dev/service-api/.worklist/worklist.json";
+		const legacyPath = "/home/dev/service-api/.pi/worklist.json";
+		const notice = shadowedWorklistWarning({
+			path: currentPath,
+			source: "current",
+			currentPath,
+			legacyPath,
+			shadowedPath: legacyPath,
+		});
+		if (notice === undefined) throw new Error("a shadowed worklist must earn a notice");
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+
+		// The notice holds rows of its own above the status line, so a status area
+		// budgeted per frame would hand them back the moment a message arrived.
+		const standing = plainFrame(board, 80, 20);
+		const goalRows = listedRows(board, 80, 20);
+		const detail = detailLines(board, 80, 20);
+		expect(goalRows.length).toBeGreaterThan(0);
+
+		board.setMessage("Added goal.", "success");
+		const withMessage = plainFrame(board, 80, 20);
+
+		// The message keeps the bottom row, and the whole notice keeps the rows above
+		// it rather than being wiped off a screen with no scrollback to recover it.
+		expect(withMessage.at(-2)?.trim()).toBe("Added goal.");
+		const shown = withMessage.join(" ").replace(/\s+/g, " ");
+		expect(shown).toContain(notice);
+		expect(shown).toContain(`${legacyPath} is ignored`);
+		expect(shown).toContain("Merge the goals you want to keep into the first file and delete the second.");
+
+		// Same list, same detail, same geometry: only the bottom row changed.
+		expect(listedRows(board, 80, 20)).toEqual(goalRows);
+		expect(detailLines(board, 80, 20)).toEqual(detail);
+		expect(withMessage).toHaveLength(standing.length);
+		expect(withMessage.slice(0, -2)).toEqual(standing.slice(0, -2));
+		expect(withMessage.every((line) => visibleWidth(line) <= 80)).toBe(true);
+	});
+
+	it("falls back to one truncated notice line on a terminal too short to wrap it", () => {
+		const notice =
+			"Warning: two project worklists exist. Reading and writing /a/.worklist/worklist.json; /a/.pi/worklist.json is ignored. Merge the goals you want to keep into the first file and delete the second.";
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+
+		// Six rows leave nothing to spare once the header, the pane minimum, and the
+		// key bar are paid for, so the goal rows keep the space.
+		const frame = plainFrame(board, 80, 6);
+		expect(frame.length).toBe(6);
+		expect(frame.at(-2)?.trim()).toBe(truncateToWidth(notice, 78));
+		expect(frame.every((line) => visibleWidth(line) <= 80)).toBe(true);
 	});
 
 	it("dims settled rows only where they sit alongside live work", () => {

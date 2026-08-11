@@ -213,7 +213,7 @@ function goalIds(envelope: SuccessEnvelope): string[] {
 /** Drives the whole read, write, sequencing, and refusal surface of the bin. */
 async function exerciseCli(binPath: string, workspace: string, version: string): Promise<void> {
 	const runCli = cliRunner(binPath, workspace);
-	const worklistPath = join(workspace, ".pi", "worklist.json");
+	const worklistPath = join(workspace, ".worklist", "worklist.json");
 
 	step("  list, add, show, find");
 	assert.deepEqual(goalIds(okEnvelope(await runCli(["project", "list", "--json"]), "list", version)), []);

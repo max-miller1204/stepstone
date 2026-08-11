@@ -23,7 +23,7 @@ describe("worklist application service", () => {
 	it("projects and applies JSON plans through the canonical service boundary", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-plan-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -111,7 +111,7 @@ describe("worklist application service", () => {
 	it("rejects stale Project Goal mutations with the current persisted revision", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-revision-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const firstClient = new WorklistApplicationService({ projectPath });
@@ -178,7 +178,7 @@ describe("worklist application service", () => {
 	it("guards one goal's baseline and appends to it without replaying the stored text", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-goal-baseline-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -263,7 +263,7 @@ describe("worklist application service", () => {
 	it("guards readable legacy timestamps by exact value", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-legacy-baseline-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		await mkdir(join(projectPath, ".."), { recursive: true });
@@ -333,7 +333,7 @@ describe("worklist application service", () => {
 	it("rejects description and baseline options that would lose or ignore stored text", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-goal-options-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -405,7 +405,7 @@ describe("worklist application service", () => {
 	it("preserves Project Goal files, revisions, and timestamps for semantic no-ops", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-no-op-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -666,7 +666,7 @@ describe("worklist application service", () => {
 	it("returns actionable not-found and approval errors without rejecting", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-errors-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const { store } = createSessionStore();
@@ -714,7 +714,7 @@ describe("worklist application service", () => {
 	it("classifies malformed persistence deterministically without exposing raw exceptions", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-persistence-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		await mkdir(join(projectPath, ".."), { recursive: true });
@@ -727,10 +727,9 @@ describe("worklist application service", () => {
 			action: "list",
 			error: {
 				code: WORKLIST_ERROR_CODES.PERSISTENCE_FAILED,
-				message:
-					"Malformed project worklist or unsupported schema. Repair .pi/worklist.json before retrying.",
+				message: `Malformed project worklist or unsupported schema. Repair ${projectPath} before retrying.`,
 				retryable: false,
-				details: { resolution: "repair-project-file" },
+				details: { resolution: "repair-project-file", path: projectPath },
 			},
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
@@ -740,10 +739,9 @@ describe("worklist application service", () => {
 			action: "migrate_ids",
 			error: {
 				code: WORKLIST_ERROR_CODES.PERSISTENCE_FAILED,
-				message:
-					"Malformed project worklist or unsupported schema. Repair .pi/worklist.json before retrying.",
+				message: `Malformed project worklist or unsupported schema. Repair ${projectPath} before retrying.`,
 				retryable: false,
-				details: { resolution: "repair-project-file" },
+				details: { resolution: "repair-project-file", path: projectPath },
 			},
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
@@ -752,7 +750,7 @@ describe("worklist application service", () => {
 	it("applies one operation contract for tool, command, dashboard, and CLI callers", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-service-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const { entries, store } = createSessionStore();
@@ -807,7 +805,7 @@ describe("worklist application service", () => {
 	it("resolves goal selectors for every interface and refuses ambiguous ones", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-selector-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -888,7 +886,7 @@ describe("worklist application service", () => {
 	it("migrates generated goal IDs only on explicit confirmation", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-migrate-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		await mkdir(dirname(projectPath), { recursive: true });
@@ -981,10 +979,130 @@ describe("worklist application service", () => {
 		});
 	});
 
+	it("moves the goal file only on explicit confirmation, and reports the location as what changed", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-application-migrate-path-"));
+		const legacyPath = join(root, ".pi", "worklist.json");
+		const currentPath = join(root, ".worklist", "worklist.json");
+		await mkdir(dirname(legacyPath), { recursive: true });
+		await writeFile(
+			legacyPath,
+			`${JSON.stringify({
+				version: 1,
+				revision: 7,
+				goals: [
+					{
+						id: "carried-across",
+						title: "Carried across",
+						status: "open",
+						createdAt: "2026-05-04T09:12:31.004Z",
+						updatedAt: "2026-05-04T09:12:31.004Z",
+					},
+				],
+			})}\n`,
+			"utf8",
+		);
+		const service = new WorklistApplicationService({ projectPath: legacyPath });
+
+		const refused = await service.execute(
+			{ scope: "project", action: "migrate_path", targetPath: currentPath },
+			{ source: "cli" },
+		);
+		expect(refused).toMatchObject({
+			ok: false,
+			error: { code: WORKLIST_ERROR_CODES.APPROVAL_REQUIRED, retryable: false },
+		});
+		expect(await readFile(legacyPath, "utf8")).toContain("carried-across");
+
+		const migrated = await service.execute(
+			{ scope: "project", action: "migrate_path", targetPath: currentPath, confirm: true },
+			{ source: "cli" },
+		);
+		expect(migrated).toMatchObject({
+			ok: true,
+			action: "migrate_path",
+			result: {
+				goals: [{ id: "carried-across" }],
+				worklistPath: currentPath,
+				previousWorklistPath: legacyPath,
+			},
+			meta: {
+				changed: true,
+				semanticNoOp: false,
+				// Every goal moved and none was edited, so no goal is reported as changed.
+				changedFields: ["/worklistPath"],
+				changedEntities: { projectGoalIds: [], sessionTaskIds: [] },
+				revisions: { project: "7" },
+			},
+		});
+		expect(await readFile(currentPath, "utf8")).toContain("carried-across");
+
+		// The service now answers from the file it moved, and asking again is the
+		// no-op an ID migration reports when no ID needs rewriting.
+		service.setProjectPathResolver(() => currentPath);
+		await expect(
+			service.execute(
+				{ scope: "project", action: "migrate_path", targetPath: currentPath, confirm: true },
+				{ source: "cli" },
+			),
+		).resolves.toMatchObject({
+			ok: true,
+			result: { worklistPath: currentPath, goals: [{ id: "carried-across" }] },
+			meta: { changed: false, semanticNoOp: true, changedFields: [] },
+		});
+	});
+
+	it("refuses to move a goal file onto one that already exists", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-application-migrate-clash-"));
+		const legacyPath = join(root, ".pi", "worklist.json");
+		const currentPath = join(root, ".worklist", "worklist.json");
+		const contents = `${JSON.stringify({ version: 1, revision: 0, goals: [] })}\n`;
+		await mkdir(dirname(legacyPath), { recursive: true });
+		await mkdir(dirname(currentPath), { recursive: true });
+		await writeFile(legacyPath, contents, "utf8");
+		await writeFile(currentPath, contents, "utf8");
+		const service = new WorklistApplicationService({ projectPath: legacyPath });
+
+		await expect(
+			service.execute(
+				{ scope: "project", action: "migrate_path", targetPath: currentPath, confirm: true },
+				{ source: "cli" },
+			),
+		).resolves.toMatchObject({
+			ok: false,
+			error: {
+				code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+				retryable: false,
+				details: { path: currentPath, conflictingPath: legacyPath, resolution: "merge-worklists-by-hand" },
+			},
+		});
+		expect(await readFile(legacyPath, "utf8")).toBe(contents);
+	});
+
+	it("refuses a target path on any action that would ignore it", async () => {
+		const projectPath = join(
+			await mkdtemp(join(tmpdir(), "stepstone-application-target-path-")),
+			".worklist",
+			"worklist.json",
+		);
+		const service = new WorklistApplicationService({ projectPath });
+		await expect(
+			service.execute(
+				{ scope: "project", action: "add", title: "Somewhere else", targetPath: "/tmp/elsewhere.json" },
+				{ source: "tool" },
+			),
+		).resolves.toMatchObject({
+			ok: false,
+			error: {
+				code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+				message: "targetPath is only supported for project migrate_path.",
+			},
+		});
+	});
+
 	it("reorders Project Goals without confirmation and reports the move as one change", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-move-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -1059,7 +1177,7 @@ describe("worklist application service", () => {
 	it("resolves dependency edges the same way as every other goal reference", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-dependencies-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -1148,7 +1266,7 @@ describe("worklist application service", () => {
 	it("reports a refused cycle with the goals on it, and writes nothing", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-cycle-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -1184,7 +1302,7 @@ describe("worklist application service", () => {
 	it("warns about a blocked activation instead of refusing it", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-blocked-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -1216,7 +1334,7 @@ describe("worklist application service", () => {
 	it("reports the goals that lost an edge to a deleted goal", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-strip-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const service = new WorklistApplicationService({ projectPath });
@@ -1241,7 +1359,7 @@ describe("worklist application service", () => {
 	it("enforces shared validation and explicit confirmation regardless of caller", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-validation-")),
-			".pi",
+			".worklist",
 			"worklist.json",
 		);
 		const { store } = createSessionStore();
