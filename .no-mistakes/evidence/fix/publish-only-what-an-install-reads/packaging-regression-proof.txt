@@ -1,0 +1,49 @@
+The two packaging tests are real regression tests, not restatements of package.json
+===================================================================================
+
+Both tests ask `npm pack --dry-run --json --ignore-scripts` what the tarball holds,
+so every case below changes packaging or a shipped page and reads the packer's
+answer back. Each case was applied to the branch, run, and reverted.
+
+Selector: npx vitest run test/cli-contract.test.ts -t "packs what an install reads"
+-----------------------------------------------------------------------------------
+
+1. Unmodified branch
+     Tests  1 passed | 17 skipped (18)
+
+2. The docs/ROADMAP.md exclusion removed from package.json (the trigger, undone)
+     AssertionError: docs/ROADMAP.md is written for this checkout and must not be
+     packaged: expected [ ...(54) ] to not include 'docs/ROADMAP.md'
+     Tests  1 failed | 17 skipped (18)
+
+3. A page an install needs, docs/usage.md, excluded by mistake
+     AssertionError: docs/usage.md documents the package and must be packaged:
+     expected [ ...(52) ] to include 'docs/usage.md'
+     Tests  1 failed | 17 skipped (18)
+
+4. A docs page added after the exclusion list was written, held out of the tarball
+     AssertionError: docs/tmp-newpage.md documents the package and must be packaged:
+     expected [ ...(53) ] to include 'docs/tmp-newpage.md'
+     Tests  1 failed | 17 skipped (18)
+
+5. The same new page, shipping by default: covered the day it lands, no list to update
+     Tests  1 passed | 17 skipped (18)
+
+Selector: npx vitest run test/cli-contract.test.ts -t "links only to pages an install carries"
+----------------------------------------------------------------------------------------------
+
+6. Unmodified branch
+     Tests  1 passed | 17 skipped (18)
+
+7. The link fix undone: docs/usage.md links development.md relatively again,
+   exactly the dead link a reader of the installed page would have hit
+     AssertionError: packaged pages link to files an install does not carry:
+     docs/usage.md links to development.md: expected [ Array(1) ] to deeply equal []
+     Tests  1 failed | 17 skipped (18)
+
+8. The guard is general, not a fix for those two links: hold docs/storage.md back
+   and the two shipped pages that still link to it are both named
+     AssertionError: packaged pages link to files an install does not carry:
+     docs/pi.md links to storage.md; docs/usage.md links to storage.md:
+     expected [ ...(2) ] to deeply equal []
+     Tests  1 failed | 17 skipped (18)

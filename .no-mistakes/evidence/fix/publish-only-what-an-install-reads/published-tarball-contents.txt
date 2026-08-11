@@ -1,0 +1,84 @@
+What the published tarball carries after 'publish only what an install reads'
+============================================================================
+
+Repository: stepstone @ 0.2.2   node v24.18.1   npm 11.16.0
+Command:    npm pack --dry-run --ignore-scripts
+
+BEFORE (the base commit's files array, packed from this tree)
+-------------------------------------------------------------
+  ships: 8.9kB AGENTS.md
+  ships: 6.1kB docs/development.md
+  ships: 2.7kB docs/releasing.md
+  ships: 51.0kB docs/ROADMAP.md
+  package size:  226.1 kB
+  unpacked size: 824.7 kB
+  total files:   57
+
+AFTER (this branch)
+-------------------
+  the same four paths, searched for in the tarball listing:
+  absent:  AGENTS.md
+  absent:  docs/ROADMAP.md
+  absent:  docs/development.md
+  absent:  docs/releasing.md
+  package size:  203.0 kB
+  unpacked size: 756.1 kB
+  total files:   53
+
+The 51 kB roadmap that triggered the change is the single largest saving.
+
+Full tarball listing after the change (53 files)
+------------------------------------------------
+  18.3kB .claude/skills/stepstone/SKILL.md
+  1.1kB LICENSE
+  7.2kB README.md
+  48.2kB dist/application-service.js
+  40.7kB dist/cli-contract.js
+  43.0kB dist/cli.js
+  8.6kB dist/dependencies.js
+  2.6kB dist/format.js
+  3.9kB dist/git.js
+  7.0kB dist/goal-selection.js
+  32.0kB dist/project-mutations.js
+  13.1kB dist/project-store.js
+  971B dist/result-envelope.js
+  8.9kB dist/session-store.js
+  13.4kB dist/tui/goal-board-runtime.js
+  53.3kB dist/tui/goal-board.js
+  9.0kB dist/tui/keys.js
+  1.9kB dist/tui/style.js
+  8.4kB dist/tui/terminal.js
+  10.1kB dist/tui/text.js
+  147B dist/types.js
+  5.5kB docs/board.md
+  17.6kB docs/cli.md
+  5.5kB docs/dependencies.md
+  7.5kB docs/goals.md
+  9.0kB docs/pi.md
+  2.1kB docs/skill.md
+  4.7kB docs/storage.md
+  7.8kB docs/usage.md
+  2.7kB package.json
+  48.8kB src/application-service.ts
+  38.3kB src/cli-contract.ts
+  44.0kB src/cli.ts
+  9.8kB src/dependencies.ts
+  17.5kB src/extension.ts
+  3.0kB src/format.ts
+  5.4kB src/git.ts
+  7.5kB src/goal-selection.ts
+  33.8kB src/project-mutations.ts
+  13.9kB src/project-store.ts
+  2.4kB src/result-envelope.ts
+  7.0kB src/roadmap.ts
+  4.6kB src/schema.ts
+  9.1kB src/session-store.ts
+  5.2kB src/tool.ts
+  13.6kB src/tui/goal-board-runtime.ts
+  51.0kB src/tui/goal-board.ts
+  8.9kB src/tui/keys.ts
+  2.2kB src/tui/style.ts
+  8.7kB src/tui/terminal.ts
+  9.5kB src/tui/text.ts
+  6.5kB src/types.ts
+  11.0kB src/ui.ts

@@ -29,7 +29,7 @@ pi -e ./src/extension.ts
 ```
 
 Every Pi peer dependency is declared optional, which is what lets the same package serve as a dependency-free CLI elsewhere.
-How a release reaches npm and the gallery is in [docs/releasing.md](releasing.md).
+How a release reaches npm and the gallery is in [docs/releasing.md](https://github.com/max-miller1204/stepstone/blob/main/docs/releasing.md).
 
 ## The dashboard
 

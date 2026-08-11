@@ -1,0 +1,66 @@
+What a consumer has on disk after installing the tarball, and the CLI still running
+==================================================================================
+
+Built:     npm pack --pack-destination /tmp/stepstone-e2e/pack   (prepack build ran)
+Installed: npm install ../pack/stepstone-0.2.2.tgz  ->  added 5 packages
+
+Every Markdown file the install carries
+---------------------------------------
+  .claude/skills/stepstone/SKILL.md
+  docs/board.md
+  docs/cli.md
+  docs/dependencies.md
+  docs/goals.md
+  docs/pi.md
+  docs/skill.md
+  docs/storage.md
+  docs/usage.md
+  README.md
+
+The four development-facing paths, looked for in the installed tree
+-------------------------------------------------------------------
+  absent:  AGENTS.md
+  absent:  docs/ROADMAP.md
+  absent:  docs/development.md
+  absent:  docs/releasing.md
+
+The installed package still works: bin from dist/, in a scratch git repository
+-----------------------------------------------------------------------------
+  $ stepstone project add "Trim the published tarball"
+  Added project goal trim-the-published-tarball: Trim the published tarball
+  $ stepstone project add "Keep shipped docs links resolving" --depends-on trim-the-published-tarball
+  Added project goal keep-shipped-docs-links-resolving: Keep shipped docs links resolving
+  $ stepstone project list
+  [open] trim-the-published-tarball: Trim the published tarball
+  [open] keep-shipped-docs-links-resolving: Keep shipped docs links resolving
+  $ stepstone project next --json
+  {
+    "ok": true,
+    "scope": "project",
+    "action": "next",
+    "result": {
+      "scope": "project",
+      "action": "next",
+      "goal": {
+        "id": "trim-the-published-tarball",
+        "title": "Trim the published tarball",
+        "status": "open",
+        "createdAt": "2026-08-11T20:51:05.906Z",
+        "updatedAt": "2026-08-11T20:51:05.906Z"
+      }
+    },
+    "meta": {
+      "changed": false,
+      "semanticNoOp": false,
+      "changedFields": [],
+      "revisions": {
+        "project": "2"
+      },
+      "cliVersion": "0.2.2"
+    }
+  }
+
+Both halves of the package are present, which is why src/ and dist/ both stay:
+  17498 bytes  src/extension.ts   (Pi loads the TypeScript source through jiti)
+  42956 bytes  dist/cli.js        (the published bin runs the compiled output)
+  18319 bytes  .claude/skills/stepstone/SKILL.md   (the generated skill an agent reads)
