@@ -811,10 +811,6 @@ export class WorklistApplicationService {
 		this.resolveProjectPath = () => configured;
 	}
 
-	setProjectPath(projectPath: string | null): void {
-		this.resolveProjectPath = () => projectPath;
-	}
-
 	/**
 	 * Hand over the resolution instead of an answer, for a host that outlives it.
 	 *

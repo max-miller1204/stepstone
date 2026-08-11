@@ -254,7 +254,7 @@ function toCellArray(value: string): string[] {
 export class GoalBoard {
 	private readonly palette: Palette;
 	private readonly repositoryLabel: string;
-	private readonly notice: string | undefined;
+	private notice: string | undefined;
 	private readonly now: () => number;
 	private goals: ProjectGoal[];
 	private filter: GoalFilter = "open";
@@ -277,6 +277,17 @@ export class GoalBoard {
 		this.now = options.now ?? (() => Date.now());
 		this.goals = options.goals ? [...options.goals] : [];
 		this.selectedId = this.visibleGoals()[0]?.id;
+	}
+
+	/**
+	 * Replace the standing notice, or clear it.
+	 *
+	 * The condition it describes is about the file behind the board, and that
+	 * file can move or be merged while the board is open, so the notice is state
+	 * the runtime re-derives rather than a fact fixed when the board opened.
+	 */
+	setNotice(notice: string | undefined): void {
+		this.notice = notice;
 	}
 
 	/** Replace the goal set, keeping the selection on the same goal when it survives. */

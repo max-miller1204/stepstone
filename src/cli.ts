@@ -939,14 +939,25 @@ async function runInteractiveBoard(
 	// Surface a malformed or unreadable worklist through the normal failure path
 	// rather than opening an empty board over a file that could not be read.
 	const envelope = await executeCliOperation(service, { scope: "project", action: "list" });
-	// The board takes the whole screen, so the warning already written to stderr
-	// is on a buffer the user will not see again until they quit.
-	const notice = shadowedWorklistWarning(location.worklist);
+	// Every other command resolves once and exits before the answer can go stale.
+	// The board holds the terminal until the user quits, so it is handed the
+	// resolution instead: a `migrate_path` in another terminal moves the goal
+	// file, and a board still writing to the old path would recreate it beside
+	// the migrated one. The service and the board ask the same locator, so what
+	// the board shows and what it writes cannot come apart. The board takes the
+	// whole screen, so the warning already written to stderr is on a buffer the
+	// user will not see again until they quit; it travels with the path.
+	const locate = (): WorklistLocation =>
+		resolveWorklistLocation(location.root, { override: invocation.file, env: process.env });
+	service.setProjectPathResolver(() => locate().path);
 	await runGoalBoard({
 		service,
-		projectPath: location.worklist.path,
+		resolveLocation: () => {
+			const current = locate();
+			const notice = shadowedWorklistWarning(current);
+			return { path: current.path, ...(notice !== undefined ? { notice } : {}) };
+		},
 		repositoryLabel: basename(location.root),
-		...(notice !== undefined ? { notice } : {}),
 		initialGoals: (envelope.ok ? envelope.result.goals : undefined) ?? [],
 		input: process.stdin,
 		output: process.stdout,

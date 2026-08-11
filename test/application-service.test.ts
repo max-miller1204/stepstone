@@ -1038,7 +1038,7 @@ describe("worklist application service", () => {
 
 		// The service now answers from the file it moved, and asking again is the
 		// no-op an ID migration reports when no ID needs rewriting.
-		service.setProjectPath(currentPath);
+		service.setProjectPathResolver(() => currentPath);
 		await expect(
 			service.execute(
 				{ scope: "project", action: "migrate_path", targetPath: currentPath, confirm: true },

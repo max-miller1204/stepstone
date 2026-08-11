@@ -33,14 +33,36 @@ const RELOAD_POLL_MS = 1000;
 /** Editors tried when neither $VISUAL nor $EDITOR is set. */
 const FALLBACK_EDITORS = ["nano", "vim", "vi"] as const;
 
+/** Where the goals are right now, and what the user has to know about that. */
+export interface BoardWorklistLocation {
+	/** Absolute path of the goal file, as the shared resolution order chose it. */
+	path: string;
+	/**
+	 * A standing condition about that file, shown while the board is open.
+	 *
+	 * Composed by the caller so no two interfaces word the same condition
+	 * differently, and re-read with the path because merging the two files
+	 * resolves it as surely as the board's own writes create it.
+	 */
+	notice?: string;
+}
+
 export interface GoalBoardRuntimeOptions {
 	service: WorklistApplicationService;
-	/** Absolute path of the goal file, as the shared resolution order chose it. */
-	projectPath: string;
+	/**
+	 * Ask again, rather than remember, where the goals are.
+	 *
+	 * The board holds the terminal until the user quits, which makes it the one
+	 * command that outlives a `migrate_path` run in another terminal. A
+	 * remembered path would then be a file that no longer exists: the board would
+	 * blank, and the next goal it added would recreate the old file beside the
+	 * migrated one, splitting the roadmap in two. Every reload asks, so the file
+	 * the board watches, reads, and writes is the one the repository resolves to
+	 * now.
+	 */
+	resolveLocation: () => BoardWorklistLocation;
 	/** Repository name shown in the header. */
 	repositoryLabel: string;
-	/** A standing condition about the goal file, shown while the board is open. */
-	notice?: string;
 	initialGoals: ProjectGoal[];
 	input: TerminalInput;
 	output: TerminalOutput;
@@ -111,12 +133,13 @@ function runEditor(argv: string[], file: string): Promise<void> {
 }
 
 export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<void> {
-	const { service, projectPath, env } = options;
+	const { service, env } = options;
 	const palette = createPalette(supportsColor(options.output, env));
+	let location = options.resolveLocation();
 	const board = new GoalBoard({
 		palette,
 		repositoryLabel: options.repositoryLabel,
-		...(options.notice !== undefined ? { notice: options.notice } : {}),
+		...(location.notice !== undefined ? { notice: location.notice } : {}),
 		goals: options.initialGoals,
 	});
 	const terminal = new Terminal({ input: options.input, output: options.output });
@@ -148,7 +171,26 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 		});
 	};
 
+	// Declared before `reload` so a re-resolution can retarget the watchers, and
+	// assigned after them, because they are what it retargets.
+	let retargetWatchers: (directory: string) => void = () => {};
+
+	/**
+	 * Re-read where the goals are, and follow them if they moved.
+	 *
+	 * Every reload asks, so a `migrate_path` in another terminal is picked up by
+	 * the same poll that would otherwise have read the file it moved.
+	 */
+	const relocate = (): void => {
+		const next = options.resolveLocation();
+		const moved = next.path !== location.path;
+		location = next;
+		board.setNotice(next.notice);
+		if (moved) retargetWatchers(dirname(next.path));
+	};
+
 	const reload = async (): Promise<void> => {
+		relocate();
 		const envelope = await service.execute({ scope: "project", action: "list" }, { source: "cli" });
 		if (!envelope.ok) {
 			board.setMessage(envelope.error.message, "error");
@@ -287,13 +329,14 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 	// exhausted, a watcher errors after creation, or a filesystem drops events.
 	reloadPoller = setInterval(scheduleReload, RELOAD_POLL_MS);
 
-	const projectDirectory = dirname(projectPath);
+	let projectDirectory = dirname(location.path);
 	const attachProjectWatcher = (): void => {
 		projectWatcher?.close();
 		projectWatcher = undefined;
 		try {
-			const nextWatcher = watch(projectDirectory, (_event, filename) => {
-				if (filename !== null && basename(filename) !== basename(projectPath)) return;
+			const watched = projectDirectory;
+			const nextWatcher = watch(watched, (_event, filename) => {
+				if (filename !== null && basename(filename) !== basename(location.path)) return;
 				scheduleReload();
 			});
 			projectWatcher = nextWatcher;
@@ -306,20 +349,36 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 		}
 	};
 
-	try {
-		const nextWatcher = watch(dirname(projectDirectory), (_event, filename) => {
-			if (filename !== null && basename(filename) !== basename(projectDirectory)) return;
-			attachProjectWatcher();
-			scheduleReload();
-		});
-		parentWatcher = nextWatcher;
-		nextWatcher.on("error", () => {
-			nextWatcher.close();
-			if (parentWatcher === nextWatcher) parentWatcher = undefined;
-		});
-	} catch {
+	const attachParentWatcher = (): void => {
+		parentWatcher?.close();
 		parentWatcher = undefined;
-	}
+		try {
+			const watched = projectDirectory;
+			const nextWatcher = watch(dirname(watched), (_event, filename) => {
+				if (filename !== null && basename(filename) !== basename(watched)) return;
+				attachProjectWatcher();
+				scheduleReload();
+			});
+			parentWatcher = nextWatcher;
+			nextWatcher.on("error", () => {
+				nextWatcher.close();
+				if (parentWatcher === nextWatcher) parentWatcher = undefined;
+			});
+		} catch {
+			parentWatcher = undefined;
+		}
+	};
+
+	// A goal file that moved is in another directory, so the watches that would
+	// have reported the next change are watching the wrong one until they follow.
+	retargetWatchers = (directory: string): void => {
+		if (!running || directory === projectDirectory) return;
+		projectDirectory = directory;
+		attachParentWatcher();
+		attachProjectWatcher();
+	};
+
+	attachParentWatcher();
 	attachProjectWatcher();
 
 	try {
