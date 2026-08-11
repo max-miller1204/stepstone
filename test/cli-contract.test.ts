@@ -65,6 +65,18 @@ const SKILL_DIRECTORY = dirname(SKILL_PATH);
 const PACKAGE_NAME = String.raw`[\w@][\w@./-]*`;
 
 /**
+ * This package under either name it has been published as.
+ *
+ * Some shapes a document uses to name a package - `npm i <name>`, a
+ * `<name>@1.2.3` pin - name any package equally well, and a page may
+ * legitimately print one for a dependency or a toolchain version. Matching only
+ * this package's own names there keeps the assertion from reporting correct
+ * prose as a contract disagreement; a rename is still caught, because the shape
+ * then finds nothing and fails the check that it names this package at all.
+ */
+const OWN_PACKAGE = `(?:${[CLI_COMMAND_CONTRACT.binary, FROZEN_PREDECESSOR_PACKAGE].map(literal).join("|")})`;
+
+/**
  * Names the contract owns, paired with every spelling a document may state.
  *
  * A rename is a one-line change to the contract, which regenerates the
@@ -74,10 +86,10 @@ const PACKAGE_NAME = String.raw`[\w@][\w@./-]*`;
  * longer exists, which is silent because the old spellings still read as
  * instructions.
  *
- * Each entry collects every occurrence of its patterns across the documentation,
- * requires each one to be a spelling the contract renders today, and requires the
- * canonical spelling to appear at all, so a pattern that stops matching fails
- * rather than passing vacuously. The patterns cover the places a name is an
+ * Every pattern is checked on its own: each occurrence it finds has to be a
+ * spelling the contract renders today, and it has to find the canonical spelling
+ * somewhere, so a shape that stops matching fails rather than passing vacuously
+ * on the strength of the other shapes. The patterns cover the places a name is an
  * instruction a reader follows - a command, a registry or gallery URL, an import
  * specifier, a path - and deliberately not running prose, where the product name
  * is a word rather than a target and a sweep has to be done by hand.
@@ -93,11 +105,11 @@ const CONTRACT_SPELLINGS: readonly {
 		patterns: [
 			new RegExp(`npx -y (${PACKAGE_NAME})@latest`, "g"),
 			new RegExp(String.raw`\bnpm:(${PACKAGE_NAME})`, "g"),
-			new RegExp(String.raw`\bnpm (?:view|deprecate|i|install) (${PACKAGE_NAME})`, "g"),
+			new RegExp(String.raw`\bnpm (?:view|deprecate|i|install) (${OWN_PACKAGE})(?![\w@./-])`, "g"),
 			new RegExp(String.raw`\bnpmjs\.com/package/(${PACKAGE_NAME})`, "g"),
 			new RegExp(String.raw`\bshields\.io/npm/v/(${PACKAGE_NAME})\.svg`, "g"),
 			new RegExp(String.raw`\bpi\.dev/packages/(${PACKAGE_NAME})`, "g"),
-			new RegExp(String.raw`(${PACKAGE_NAME})@\d+\.\d+\.\d+`, "g"),
+			new RegExp(String.raw`(?<![\w@./-])(${OWN_PACKAGE})@\d+\.\d+\.\d+`, "g"),
 			new RegExp(`from "(${PACKAGE_NAME})/src/`, "g"),
 		],
 		allowed: [CLI_COMMAND_CONTRACT.binary, FROZEN_PREDECESSOR_PACKAGE],
@@ -289,7 +301,15 @@ describe("single CLI command contract", () => {
 		expect(skill).toContain(`npx -y ${CLI_COMMAND_CONTRACT.binary}@latest`);
 		expect(skill).not.toMatch(new RegExp(String.raw`\bnpx -y ${CLI_COMMAND_CONTRACT.binary}(?!@latest)`));
 		expect(skill).not.toMatch(new RegExp(String.raw`\bnpx ${CLI_COMMAND_CONTRACT.binary}\b`));
-		expect(skill).not.toContain("/home/");
+		// A path rooted at `/` is a path on whoever generated the file. The skill roots
+		// its paths at a placeholder instead - `<git-root>/...`, `<checkout>/...` - so
+		// the slash that starts a token, rather than continuing one, is the tell.
+		expect(
+			[...skill.matchAll(/(?<![\w>:~./-])\/[A-Za-z0-9_.~-]+(?:\/[A-Za-z0-9_.~-]+)*/g)].map(
+				(match) => match[0],
+			),
+			"SKILL.md names an absolute path, which exists only on the machine that generated it",
+		).toEqual([]);
 		expect(skill).toContain(DOCS_PATH);
 		const exampleBlock = skill.match(/Examples:\n\n```sh\n([\s\S]*?)\n```/)?.[1];
 		expect(exampleBlock, "SKILL.md is missing its Examples block").toBeDefined();
@@ -352,19 +372,21 @@ describe("single CLI command contract", () => {
 		const documentation = await readDocumentation();
 
 		for (const { subject, patterns, allowed, canonical } of CONTRACT_SPELLINGS) {
-			const stated = documentation.flatMap(([path, contents]) =>
-				patterns.flatMap((pattern) =>
+			for (const pattern of patterns) {
+				const stated = documentation.flatMap(([path, contents]) =>
 					[...contents.matchAll(pattern)].map((match) => [path, match[1] ?? ""] as const),
-				),
-			);
-			expect(
-				stated.filter(([, name]) => !allowed.includes(name)).map(([path, name]) => `${path} states ${name}`),
-				`the documentation names a ${subject} the contract does not render`,
-			).toEqual([]);
-			expect(
-				stated.map(([, name]) => name),
-				`no document states the ${subject} \`${canonical}\`, so the assertion above pins nothing`,
-			).toContain(canonical);
+				);
+				expect(
+					stated
+						.filter(([, name]) => !allowed.includes(name))
+						.map(([path, name]) => `${path} states ${name}`),
+					`the documentation names a ${subject} the contract does not render`,
+				).toEqual([]);
+				expect(
+					stated.map(([, name]) => name),
+					`no document spells the ${subject} \`${canonical}\` as \`${pattern.source}\`, so that shape pins nothing`,
+				).toContain(canonical);
+			}
 		}
 	});
 
