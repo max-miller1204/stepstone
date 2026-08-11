@@ -19,7 +19,7 @@ The package ships TypeScript source directly because Pi loads extensions through
 | Command | What it proves |
 | --- | --- |
 | `npm run check` | Types, the import scan, Biome lint and format, and the whole test suite |
-| `npm run docs:check` | The generated documents match the contract they come from |
+| `npm run docs:check` | The generated documents match the sources they are rendered from |
 | `npm run imports:check` | Nothing the CLI loads imports a Pi package |
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
 | `npm run no-pi-install:check` | The packed, installed bin works with no Pi present |
