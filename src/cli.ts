@@ -51,15 +51,18 @@ import type {
 } from "./types.ts";
 
 /**
- * Pi-free command line for Project Goals, so external agents and scripts can
- * manage the repository's goal file through the same mutation service,
- * cross-process lock, and atomic replacement as a live Pi session.
+ * Command line entry point for Project Goals, driving the repository's goal file
+ * through the same mutation service, cross-process lock, and atomic replacement
+ * every other interface uses.
  *
- * Which file that is comes from `resolveWorklistLocation`, the one resolution
- * order every interface shares, rather than from anything decided here.
+ * Nothing reachable from here may import a Pi package: the compiled bin has to
+ * run with only Node and the declared runtime dependencies.
  *
- * Session Tasks are deliberately out of scope: they live inside a Pi session
- * tree and have no meaning outside one.
+ * Which goal file this operates on comes from `resolveWorklistLocation`, the one
+ * resolution order every interface shares, rather than from anything decided here.
+ *
+ * Session Tasks are out of scope here because they live inside a Pi session tree
+ * rather than in the repository.
  */
 
 const LIFECYCLE_ACTIONS = ["complete", "reopen", "archive", "delete"] as const;
