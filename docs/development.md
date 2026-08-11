@@ -53,7 +53,7 @@ The load-bearing ones:
 - Dependency edges are stored in one direction only, and `blocked`, dependents, cycles, and the sequencing views are derived in `src/dependencies.ts` rather than stored.
 - No project lifecycle path may bypass explicit confirmation.
 - The terminal board keeps rendering pure in `src/tui/goal-board.ts` and all I/O in `src/tui/goal-board-runtime.ts`, so frames stay testable without a pseudo-terminal.
-- The changelog is generated; never hand-edit it.
+- Never add a changelog by hand: the release workflow generates each release's notes from the pull requests merged since the previous tag.
 
 ## Releases
 

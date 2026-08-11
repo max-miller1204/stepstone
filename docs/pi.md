@@ -28,8 +28,8 @@ Try a checkout without installing it:
 pi -e ./src/extension.ts
 ```
 
-The `pi-package` npm keyword and the `pi.extensions` manifest field let the gallery discover releases automatically, without a separate submission step.
 Every Pi peer dependency is declared optional, which is what lets the same package serve as a dependency-free CLI elsewhere.
+How a release reaches npm and the gallery is in [docs/releasing.md](releasing.md).
 
 ## The dashboard
 
