@@ -236,7 +236,7 @@ async function lockWorklistDirectory(dir: string): Promise<() => Promise<void>> 
 	});
 }
 
-/** Both absolute paths a completed migration moved the worklist between. */
+/** Both absolute paths a migration moves the worklist between. */
 export interface ProjectWorklistMove {
 	fromPath: string;
 	toPath: string;
@@ -280,8 +280,7 @@ export async function moveProjectWorklist(
 		// content that lands at the destination is the content that passed, and
 		// the revision reported back is the revision that travelled.
 		const readResult = parseProjectWorklist(contents, fromPath);
-		if (readResult.error)
-			return { data: undefined as unknown as ProjectWorklistMove, error: readResult.error };
+		if (readResult.error) return { data: { fromPath, toPath }, error: readResult.error };
 		// Checked under both locks, so nothing can create the destination between
 		// the look and the rename that would otherwise overwrite it.
 		const destination = await stat(toPath).catch(() => undefined);
@@ -296,7 +295,7 @@ export async function moveProjectWorklist(
 	} catch (err) {
 		if (err instanceof ProjectMutationRefusedError) throw err;
 		return {
-			data: undefined as unknown as ProjectWorklistMove,
+			data: { fromPath, toPath },
 			error: `Project worklist move failed: ${String(err)}`,
 		};
 	} finally {
