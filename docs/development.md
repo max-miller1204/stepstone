@@ -20,18 +20,20 @@ The package ships TypeScript source directly because Pi loads extensions through
 | --- | --- |
 | `npm run check` | Types, the import scan, Biome lint and format, and the whole test suite |
 | `npm run docs:check` | The generated documents match the sources they are rendered from |
-| `npm run imports:check` | Nothing the CLI loads imports a Pi package |
+| `npm run imports:check` | Nothing either compiled bin loads imports a Pi package |
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
-| `npm run no-pi-install:check` | The packed, installed bin works with no Pi present |
+| `npm run no-pi-install:check` | The packed, installed CLI and MCP bins both work with no Pi present |
 | `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
 
-`npm run imports:check` reads the module graph behind `src/cli.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
+`npm run imports:check` reads the merged module graph behind both published entry points, `src/cli.ts` and `src/mcp.ts`, and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
+Both entry points are named in `executableEntryPoints` in `scripts/cli-import-graph.ts`, which the check, the test suite, and any future executable all walk, so a bin added to the manifest is guarded by adding it there.
 That is why a Pi type belongs in an `import type` statement rather than an inline `import { type Foo }`: the latter is a runtime import the scan will reject.
 
 `npm run no-pi-install:check` is the slower proof behind it.
-It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and asserts the exit codes and `--json` envelopes of the installed bin across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
+It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and asserts the exit codes and `--json` envelopes of the installed CLI bin across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
+It then speaks MCP over stdio to the installed server bin, reading a resource and calling a mutation tool, so the second executable is proven to load from the same Pi-free install rather than only being packed into it.
 It runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 ## Generated files

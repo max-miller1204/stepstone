@@ -26,7 +26,7 @@ import { dirname, extname, relative, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const entryPoint = resolve(repoRoot, "src/cli.ts");
-const executableEntryPoints = [entryPoint, resolve(repoRoot, "src/mcp.ts")];
+export const executableEntryPoints = [entryPoint, resolve(repoRoot, "src/mcp.ts")];
 
 export interface ModuleImport {
 	specifier: string;
@@ -300,6 +300,17 @@ export async function collectModuleGraph(entry = entryPoint): Promise<Map<string
 	return graph;
 }
 
+/**
+ * The one graph the invariant is about: every module either compiled executable
+ * pulls in, merged. Walking a single entry point leaves the other bin's imports
+ * unread, so a caller that wants the guarded surface asks for this rather than
+ * naming an entry point of its own.
+ */
+export async function collectExecutableModuleGraph(): Promise<Map<string, ModuleImport[]>> {
+	const graphs = await Promise.all(executableEntryPoints.map((entry) => collectModuleGraph(entry)));
+	return new Map(graphs.flatMap((graph) => [...graph]));
+}
+
 function packageNameOf(specifier: string): string {
 	return specifier.startsWith("@")
 		? specifier.split("/").slice(0, 2).join("/")
@@ -314,7 +325,7 @@ export async function findDisallowedImports(
 		dependencies?: Record<string, string>;
 	};
 	const declared = new Set(Object.keys(manifest.dependencies ?? {}));
-	const modules = graph ?? (await collectModuleGraph());
+	const modules = graph ?? (await collectExecutableModuleGraph());
 	const disallowed: DisallowedImport[] = [];
 	for (const [file, imports] of modules) {
 		for (const { specifier, typeOnly } of imports) {
@@ -351,8 +362,7 @@ function isEntryPoint(): boolean {
 
 if (isEntryPoint()) {
 	try {
-		const graphs = await Promise.all(executableEntryPoints.map((entry) => collectModuleGraph(entry)));
-		const graph = new Map(graphs.flatMap((entry) => [...entry]));
+		const graph = await collectExecutableModuleGraph();
 		const disallowed = await findDisallowedImports(graph);
 		if (disallowed.length > 0) {
 			const report = disallowed.map((entry) => `  ${entry.file} imports ${entry.specifier}: ${entry.reason}`);
@@ -361,8 +371,9 @@ if (isEntryPoint()) {
 			);
 			process.exit(1);
 		}
+		const entries = executableEntryPoints.map((entry) => relative(repoRoot, entry)).join(" and ");
 		process.stdout.write(
-			`Checked ${graph.size} modules reachable from src/cli.ts and src/mcp.ts: no Pi peers, no undeclared imports.\n`,
+			`Checked ${graph.size} modules reachable from ${entries}: no Pi peers, no undeclared imports.\n`,
 		);
 	} catch (error) {
 		process.stderr.write(`The CLI import graph could not be walked:\n  ${(error as Error).message}\n`);

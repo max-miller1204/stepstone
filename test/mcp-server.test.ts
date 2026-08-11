@@ -271,6 +271,32 @@ describe("Stepstone MCP server", () => {
 		});
 	});
 
+	it("decodes an encoded template value and answers a malformed one with an envelope", async () => {
+		const root = await createGitRepository();
+		await withMcpClient(root, async (client) => {
+			await callTool(client, "add", { title: "Alpha goal" });
+
+			// docs/mcp.md tells clients to URI-encode both path values, and the SDK
+			// hands the segment back exactly as the client wrote it.
+			expect(await readEnvelope(client, `${RESOURCE_PREFIX}/show/alpha%2Dgoal`)).toMatchObject({
+				ok: true,
+				action: "show",
+				result: { goal: { id: "alpha-goal" } },
+			});
+
+			// A client that encoded nothing still matches both templates, so a
+			// segment that is not valid percent-encoding has to stay an envelope
+			// rather than a transport-level error the client cannot read.
+			const malformedQuery = await readEnvelope(client, `${RESOURCE_PREFIX}/find/50%%20off`);
+			expect(malformedQuery).toMatchObject({ ok: true, action: "find" });
+			expect(resultGoals(malformedQuery)).toEqual([]);
+
+			const malformedSelector = await readEnvelope(client, `${RESOURCE_PREFIX}/show/50%`);
+			expect(malformedSelector).toMatchObject({ ok: false, action: "show" });
+			expect(malformedSelector.error?.code).toBe("NOT_FOUND");
+		});
+	});
+
 	it("forwards omitted, false, and true lifecycle confirmations without mutating on refusal", async () => {
 		const root = await createGitRepository();
 		await withMcpClient(root, async (client) => {

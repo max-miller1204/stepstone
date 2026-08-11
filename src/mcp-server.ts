@@ -195,6 +195,25 @@ function selectionFailure(
 	};
 }
 
+/**
+ * The first value of a URI template variable, percent-decoded.
+ *
+ * `UriTemplate.match` hands back the raw path segment, so a value a client
+ * encoded as docs/mcp.md asks arrives still encoded. A segment that is not
+ * valid percent-encoding is read as written rather than throwing out of the
+ * resource callback, which would answer a transport error instead of an
+ * application-service envelope.
+ */
+function templateVariable(variables: Record<string, string | string[]>, name: string): string {
+	const raw = variables[name];
+	const value = Array.isArray(raw) ? (raw[0] ?? "") : (raw ?? "");
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return value;
+	}
+}
+
 async function readEnvelope(
 	service: WorklistApplicationService,
 	action: string,
@@ -211,8 +230,7 @@ async function readEnvelope(
 
 	switch (action) {
 		case "show": {
-			const rawSelector = variables.id;
-			const selector = Array.isArray(rawSelector) ? (rawSelector[0] ?? "") : (rawSelector ?? "");
+			const selector = templateVariable(variables, "id");
 			const resolution = resolveGoalSelector(goals, selector, retiredIds);
 			if (resolution.kind !== "found") return selectionFailure(action, selector, resolution);
 			const goal = resolution.goal;
@@ -229,9 +247,7 @@ async function readEnvelope(
 			);
 		}
 		case "find": {
-			const rawQuery = variables.query;
-			const encodedQuery = Array.isArray(rawQuery) ? (rawQuery[0] ?? "") : (rawQuery ?? "");
-			const query = decodeURIComponent(encodedQuery).trim();
+			const query = templateVariable(variables, "query").trim();
 			const matches = goals.filter((goal) => matchesGoalQuery(goal, query));
 			return successEnvelope(action, { scope: "project", action, goals: matches }, snapshot.meta);
 		}
