@@ -83,6 +83,23 @@ const FROZEN_PREDECESSOR_PACKAGE = "pi-worklist";
 const SKILL_DIRECTORY = dirname(SKILL_PATH);
 
 /**
+ * Everything this checkout writes for itself rather than for an install.
+ *
+ * A published tarball is downloaded by everyone who runs the CLI once through
+ * `npx`, so it carries what an install reads and nothing else: the notes a
+ * contributor to this repository needs are on the repository, where the person
+ * who needs them already is. `AGENTS.md` is the rule list for changing this
+ * source, the roadmap is this project's own goals, and the development and
+ * releasing pages describe working on the package rather than using it.
+ */
+const DEVELOPMENT_ONLY_FILES: readonly string[] = [
+	"AGENTS.md",
+	ROADMAP_PATH,
+	"docs/development.md",
+	"docs/releasing.md",
+];
+
+/**
  * How a document spells a package name: never leading with the dash of a flag,
  * so an option that follows the command being matched is not read as its target.
  */
@@ -571,11 +588,31 @@ describe("single CLI command contract", () => {
 		).toEqual(new Set([sourceNodeFloor, binaryNodeFloor]));
 	});
 
-	it("ships the generated skill in the published package", async () => {
-		const manifest = JSON.parse(await readFile(resolve("package.json"), "utf8")) as { files: string[] };
-		expect(manifest.files, `${SKILL_PATH} must be packaged so installs carry the skill`).toContain(
-			dirname(SKILL_PATH),
-		);
+	it("packs what an install reads and leaves this repository's own material behind", async () => {
+		// Asked of the real packer rather than read off the manifest's `files` array:
+		// that array is a set of patterns, and whether one of them actually keeps a
+		// file out of the tarball is npm's answer to give rather than something a
+		// reader of the declaration can tell.
+		const { stdout } = await execFileAsync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"]);
+		const [packed] = JSON.parse(stdout) as [{ files: { path: string }[] }];
+		const paths = new Set(packed.files.map((file) => file.path));
+		for (const path of DEVELOPMENT_ONLY_FILES) {
+			expect(paths, `${path} is written for this checkout and must not be packaged`).not.toContain(path);
+		}
+		expect(paths, `${SKILL_PATH} must be packaged so an install carries the skill`).toContain(SKILL_PATH);
+		expect(paths, "README.md must be packaged; it is the package's front page").toContain("README.md");
+		// Every other page under docs/ documents the package for somebody using it, so
+		// it ships. Classified by reading the directory rather than from a second list,
+		// so a page added tomorrow is covered the day it lands: it is packaged unless it
+		// was named above as one this checkout keeps to itself.
+		const published = (await readdir(resolve("docs")))
+			.filter((entry) => entry.endsWith(".md"))
+			.map((entry) => join("docs", entry))
+			.filter((path) => !DEVELOPMENT_ONLY_FILES.includes(path));
+		expect(published.length, "no docs page is published, so this assertion pins nothing").toBeGreaterThan(0);
+		for (const path of published) {
+			expect(paths, `${path} documents the package and must be packaged`).toContain(path);
+		}
 	});
 
 	it("prints the contract-rendered help from the CLI itself", async () => {

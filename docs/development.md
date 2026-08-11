@@ -46,6 +46,16 @@ Regenerate it in the same commit that changes the goal, or the check reports the
 The published package name lives in exactly one place, `CLI_COMMAND_CONTRACT.binary`, which feeds every generated document, the CLI's own diagnostics, and the manifest's `name` and `bin` keys as asserted by the tests, so a rename stays a one-line change.
 The goal-file directory names and the environment variable live beside it, so the generated documents and the path resolver cannot drift.
 
+## What the published package carries
+
+The tarball carries what an install reads and nothing else: `src/`, `dist/`, the generated skill, `README.md`, and the `docs/` pages that document the package.
+
+This page, [docs/releasing.md](releasing.md), [docs/ROADMAP.md](ROADMAP.md), and `AGENTS.md` are written for this checkout, so the manifest's `files` keeps them out.
+They stay on the repository, where a contributor who needs them already is, rather than being downloaded by everyone who runs the CLI once through `npx`.
+
+Add a new page to `docs/` and it ships by default.
+A page that belongs to this repository instead has to be named in the manifest's `files` and in `DEVELOPMENT_ONLY_FILES` in `test/cli-contract.test.ts`, which asks `npm pack` itself what the tarball ended up containing, because whether a pattern keeps a file out of it is npm's answer to give rather than something a reader of the declaration can tell.
+
 ## Invariants
 
 `AGENTS.md` is the short list of rules a change here has to respect, and it is worth reading before touching anything under `src/`.

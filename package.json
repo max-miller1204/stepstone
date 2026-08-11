@@ -28,8 +28,10 @@
 		"src",
 		"dist",
 		"docs",
+		"!docs/ROADMAP.md",
+		"!docs/development.md",
+		"!docs/releasing.md",
 		".claude/skills/stepstone",
-		"AGENTS.md",
 		"README.md",
 		"package.json"
 	],
