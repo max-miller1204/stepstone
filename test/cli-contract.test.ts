@@ -1,16 +1,20 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
 	CLI_COMMAND_CONTRACT,
 	DOCS_PATH,
+	LEGACY_WORKLIST_DIRECTORY,
 	renderCliGuide,
 	renderCliUsage,
 	renderSkillMarkdown,
 	SKILL_PATH,
+	WORKLIST_DIRECTORY,
+	WORKLIST_FILENAME,
+	WORKLIST_PATH_ENV,
 } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
@@ -35,6 +39,69 @@ async function readDocumentation(): Promise<(readonly [string, string])[]> {
 	];
 	return Promise.all(paths.map(async (path) => [path, await readFile(resolve(path), "utf8")] as const));
 }
+
+/** Escape a contract value so a pattern built around it matches it literally. */
+function literal(value: string): string {
+	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/**
+ * The package this one was published as before the rename.
+ *
+ * docs/releasing.md names it deliberately, in the prose about the frozen build
+ * that stays published under the old name, so it is the one npx target in the
+ * documentation that is not the contract's binary. A later rename never moves
+ * it: it states what npm already carries, not what this package is called.
+ */
+const FROZEN_PREDECESSOR_PACKAGE = "pi-worklist";
+
+/** Directory holding the generated skill, whose name is the published binary. */
+const SKILL_DIRECTORY = dirname(SKILL_PATH);
+
+/**
+ * Names the contract owns, paired with every spelling a document may state.
+ *
+ * A rename is a one-line change to the contract, which regenerates the
+ * generated artifacts but cannot touch hand-written prose. Pinning one
+ * invocation in README.md leaves the rest of the documentation free to go on
+ * sending readers to a package, an environment variable, or a directory that no
+ * longer exists, which is silent because the old spellings still read as
+ * instructions. Each entry collects every occurrence of its shape across the
+ * documentation, requires each one to be a spelling the contract renders today,
+ * and requires the canonical spelling to appear at all, so a pattern that stops
+ * matching fails rather than passing vacuously.
+ */
+const CONTRACT_SPELLINGS: readonly {
+	subject: string;
+	pattern: RegExp;
+	allowed: readonly string[];
+	canonical: string;
+}[] = [
+	{
+		subject: "published package",
+		pattern: /npx -y (\S+)@latest/g,
+		allowed: [CLI_COMMAND_CONTRACT.binary, FROZEN_PREDECESSOR_PACKAGE],
+		canonical: CLI_COMMAND_CONTRACT.binary,
+	},
+	{
+		subject: "goal file environment override",
+		pattern: /\$([A-Z][A-Z0-9_]*_WORKLIST)\b/g,
+		allowed: [WORKLIST_PATH_ENV],
+		canonical: WORKLIST_PATH_ENV,
+	},
+	{
+		subject: "goal file directory",
+		pattern: new RegExp(String.raw`([\w.-]+)/${literal(WORKLIST_FILENAME)}`, "g"),
+		allowed: [WORKLIST_DIRECTORY, LEGACY_WORKLIST_DIRECTORY],
+		canonical: WORKLIST_DIRECTORY,
+	},
+	{
+		subject: "agent skill directory",
+		pattern: new RegExp(String.raw`${literal(dirname(SKILL_DIRECTORY))}/([\w.-]+)`, "g"),
+		allowed: [basename(SKILL_DIRECTORY)],
+		canonical: basename(SKILL_DIRECTORY),
+	},
+];
 
 /** Split a GFM table row into its cells: on unescaped pipes only, as a renderer does. */
 function tableCells(row: string): string[] {
@@ -253,6 +320,24 @@ describe("single CLI command contract", () => {
 			documentation.some(([, contents]) => contents.includes("node src/cli.ts project <action>")),
 			"no document states the checkout entry point the skill sends contributors to",
 		).toBe(true);
+	});
+
+	it("spells the names the contract owns the way the contract renders them", async () => {
+		const documentation = await readDocumentation();
+
+		for (const { subject, pattern, allowed, canonical } of CONTRACT_SPELLINGS) {
+			const stated = documentation.flatMap(([path, contents]) =>
+				[...contents.matchAll(pattern)].map((match) => [path, match[1] ?? ""] as const),
+			);
+			expect(
+				stated.filter(([, name]) => !allowed.includes(name)).map(([path, name]) => `${path} states ${name}`),
+				`the documentation names a ${subject} the contract does not render`,
+			).toEqual([]);
+			expect(
+				stated.map(([, name]) => name),
+				`no document states the ${subject} \`${canonical}\`, so the assertion above pins nothing`,
+			).toContain(canonical);
+		}
 	});
 
 	it("declares the same Node floor the package does", async () => {
