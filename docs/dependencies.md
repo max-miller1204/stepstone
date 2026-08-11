@@ -5,7 +5,8 @@
 A goal may record the goals that must land before it, and everything about what to start next is derived from those edges.
 
 ```sh
-npx -y stepstone@latest project add Add the dependency graph --depends-on slug-ids --depends-on schema-fields
+npx -y stepstone@latest project add Add the dependency graph \
+  --depends-on slug-ids --depends-on schema-fields
 npx -y stepstone@latest project update <id> --depends-on <other-id>
 npx -y stepstone@latest project update <id> --depends-on ''
 ```
