@@ -115,6 +115,7 @@ Only the active goal and an intentionally bounded list of incomplete task titles
 
 Project Goals use a schema-versioned JSON file at `.worklist/worklist.json` in the canonical Git root, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
 Reads fall back to the legacy `.pi/worklist.json`, and writes go to whichever path resolved, so a repository holding only the legacy file keeps using it rather than splitting into two roadmaps; when both exist the current path wins and every command warns, because quietly ignoring a populated legacy file would look exactly like data loss.
+Nothing remembers where that resolution landed: every operation asks again, so a second worklist arriving mid-session, from a branch checkout, a merge, or a colleague on an older release, is picked up rather than missed, and a Pi session warns about it the first time it appears rather than on every turn.
 `migrate_path` moves the file under the same cross-process lock and atomic replacement as any other write, and changes nothing but its location: the goals, their IDs, and the schema version are carried across untouched.
 The goal array order is canonical rather than incidental: `add` appends, `move` is the only action that rearranges it, and every reader displays that order unless it was explicitly asked for another one.
 A move rewrites the order without touching any goal's `updatedAt`, so rearranging the roadmap never reads as editing the goals on it and never invalidates a baseline nobody's edit conflicts with.
@@ -323,7 +324,7 @@ Reordering is refused outside file order, where the rows are not where the file 
 Status and recent are views over that same order, which stays their tiebreak, so an arrangement survives a trip through them.
 Those two views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
 The status line names the active goal in full in every order, which keeps it readable while the list is filtered to something else or scrolled past it.
-When a repository holds two worklists, the warning about them stands above that line for as long as the board is open, because the board owns the whole screen and a warning printed before it opened sits on a buffer nobody can see.
+When a repository holds two worklists, the warning about them stands above that line for as long as that stays true, because the board owns the whole screen and a warning printed before it opened sits on a buffer nobody can see.
 It wraps on word boundaries across up to four rows of its own, because the file being ignored and the merge that resolves it both sit past one line's worth of an absolute path.
 Those rows stay reserved while the condition holds, so a passing message takes the status line without clearing the warning off the screen and without shifting the list and detail panes; a terminal with no rows to spare falls back to the warning taking that line itself, truncated.
 In the all view, done and archived rows recede so live work stays legible beside them, and a goal waiting on work that has not landed recedes in every view for the same reason; the selected row always keeps full contrast.
@@ -350,6 +351,8 @@ The key map scrolls, so a short terminal cannot hide the binding that closes it;
 
 Every change routes through the same application service, cross-process lock, and atomic replacement as `/tasks` and the rest of the CLI, so a Pi session may be open on the same repository at the same time.
 The board reloads automatically when another process writes the file, and a low-frequency re-read keeps that true where filesystem watches cannot be created or silently drop events.
+Every reload also asks again where the goal file is and retargets those watches when it moved, so a `migrate_path` run in another terminal leaves the board reading and writing the migrated file instead of the path it opened on.
+The two-worklist warning is re-derived by the same reload, so it appears when a second worklist shows up while the board is open and clears once the files are merged.
 Completing, reopening, archiving, and deleting each ask for confirmation first, and only an explicit `y` proceeds; that answer is the explicit user intent the application service requires.
 The board is drawn with no runtime dependencies, so the compiled bin needs nothing installed but Node.
 It requires a terminal and refuses to start without one, which keeps `list` and `--json` the read path for scripts and agents.
