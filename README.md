@@ -12,17 +12,26 @@ Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to sta
 
 ## Install
 
-There is nothing to install for the CLI: it runs from npm on demand, in any Git repository, with nothing present but Node.
+**Any shell, script, or coding agent.**
+There is nothing to install: the CLI runs from npm on demand, in any Git repository, with nothing present but Node.
 
 ```sh
 npx -y stepstone@latest project list
 ```
 
-| Harness | Install | What it adds |
-| --- | --- | --- |
-| Any shell, script, or coding agent | none | The `stepstone` CLI, run as `npx -y stepstone@latest project <action>` |
-| Claude Code and other agents the [`skills` CLI](https://github.com/vercel-labs/skills) supports | `npx skills add max-miller1204/stepstone --skill stepstone -g` | An [agent skill](docs/skill.md) that teaches the CLI and its guardrails |
-| [Pi](https://pi.dev) | `pi install npm:stepstone` | The [Pi extension](docs/pi.md): `/tasks`, a session widget, a model-facing tool, and Session Tasks |
+**Claude Code, and other agents the [`skills` CLI](https://github.com/vercel-labs/skills) supports.**
+Install the [agent skill](docs/skill.md), which teaches that CLI and its guardrails:
+
+```sh
+npx skills add max-miller1204/stepstone --skill stepstone -g
+```
+
+**[Pi](https://pi.dev).**
+Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a model-facing tool, and Session Tasks:
+
+```sh
+pi install npm:stepstone
+```
 
 Installing the npm package does not install the skill, and installing the skill does not install a copy of the CLI.
 The skill is guidance that invokes the published CLI; see [docs/skill.md](docs/skill.md).
@@ -30,10 +39,13 @@ The skill is guidance that invokes the published CLI; see [docs/skill.md](docs/s
 ## Try it
 
 ```sh
-npx -y stepstone@latest project add Replace legacy authentication --description "Migrate every supported client first"
+npx -y stepstone@latest project add Replace legacy authentication \
+  --description "Migrate every supported client first"
 # Added project goal replace-legacy-authentication: Replace legacy authentication
 
-npx -y stepstone@latest project add Retire the legacy auth service --depends-on replace-legacy-authentication
+npx -y stepstone@latest project add Retire the legacy auth service \
+  --depends-on replace-legacy-authentication
+
 npx -y stepstone@latest project waves
 # Wave 1 (1 goal):
 #   [open] replace-legacy-authentication: Replace legacy authentication

@@ -45,8 +45,10 @@ Every `<id>` argument accepts a full ID, a unique prefix of one, or an ID the go
 ## Changing the roadmap
 
 ```sh
-npx -y stepstone@latest project add Support goal templates --description "Let teams share reusable goal outlines"
-npx -y stepstone@latest project update <id> Replace the title --description "Replace the description"
+npx -y stepstone@latest project add Support goal templates \
+  --description "Let teams share reusable goal outlines"
+npx -y stepstone@latest project update <id> Replace the title \
+  --description "Replace the description"
 npx -y stepstone@latest project update <id> --append-description "Add a note as a new paragraph"
 npx -y stepstone@latest project update <id> --group Foundation
 npx -y stepstone@latest project update <id> --depends-on <other-id> --depends-on <third-id>
