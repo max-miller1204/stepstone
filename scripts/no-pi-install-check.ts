@@ -8,9 +8,13 @@
  * someone running `npx` on the published name without Pi - the install this
  * package's own agent skill prescribes. So the check refuses to trust the local
  * tree: it packs the real tarball, installs it into a scratch directory with
- * no dev dependencies and no Pi packages, and drives the installed bin across
- * the command surface, asserting exit codes and `--json` envelopes rather than
- * only that the process started.
+ * no dev dependencies and no Pi packages, and drives every executable the
+ * manifest publishes, asserting exit codes, `--json` envelopes, and JSON-RPC
+ * replies rather than only that a process started.
+ *
+ * Which executables those are comes from package.json's `bin` map rather than
+ * from a list written here, so a newly published bin cannot be packed and left
+ * unstarted by a check that does not know it exists.
  *
  * scripts/cli-import-graph.ts catches the same regression from the sources in
  * milliseconds; this is the slower proof that the tarball a user downloads
@@ -22,6 +26,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
@@ -48,6 +54,9 @@ interface SuccessEnvelope extends Envelope {
 	result: Record<string, unknown>;
 	meta: { cliVersion?: string; changed?: boolean };
 }
+
+/** Drives one installed executable in a scratch repository of its own. */
+type BinExercise = (binPath: string, workspace: string, version: string) => Promise<void>;
 
 // `execFile` hands the child a stdin pipe nothing ever ends, so a bin that reads
 // stdin instead of exiting would leave this job hanging until the CI runner's
@@ -133,10 +142,10 @@ function assertNothingUnresolved(command: string, stderr: string): void {
 	const missing = UNRESOLVED_IMPORT.exec(detail)?.[1] ?? "a package outside its dependencies";
 	throw new Error(
 		`${detail}\n\n` +
-			`\`${command}\` cannot load ${missing} from a Pi-free install, which is how ` +
-			`everyone running \`npx ${binary}\` has it. Something reachable from src/cli.ts imports it at ` +
+			`\`${command}\` cannot load ${missing} from a Pi-free install, which is how the published ` +
+			"executables are installed. Something reachable from src/cli.ts or src/mcp.ts imports it at " +
 			"runtime: run `npm run imports:check` to name the module, then make that import type-only or " +
-			"move it out of the CLI graph.",
+			"move it out of the executable graph.",
 	);
 }
 
@@ -317,18 +326,93 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	assert.match(board.stderr, /needs an interactive terminal/);
 }
 
+/** Initializes the packaged stdio server and proves reads and writes survive a Pi-free install. */
+async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
+	const command = basename(binPath);
+	const transport = new StdioClientTransport({
+		command: binPath,
+		cwd: workspace,
+		stderr: "pipe",
+	});
+	let stderr = "";
+	transport.stderr?.on("data", (chunk: Buffer) => {
+		stderr += chunk.toString();
+	});
+	const client = new Client({ name: "stepstone-no-pi-install-check", version: "1.0.0" });
+	let failure: unknown;
+	try {
+		await client.connect(transport, { timeout: CLI_TIMEOUT_MS });
+		const listed = await client.readResource(
+			{ uri: `${binary}://worklist/list` },
+			{ timeout: CLI_TIMEOUT_MS },
+		);
+		assert.equal(listed.contents.length, 1);
+		const content = listed.contents[0];
+		assert.ok(content && "text" in content, "the MCP list resource must return textual JSON");
+		const envelope = parseEnvelope(content.text, "MCP list resource");
+		assert.deepEqual(
+			{ ok: envelope.ok, scope: envelope.scope, action: envelope.action, goals: envelope.result?.goals },
+			{ ok: true, scope: "project", action: "list", goals: [] },
+		);
+
+		const added = await client.callTool(
+			{ name: "add", arguments: { title: "Installed MCP goal" } },
+			undefined,
+			{ timeout: CLI_TIMEOUT_MS },
+		);
+		assert.equal(added.isError, false);
+		const addedEnvelope = added.structuredContent as
+			| (Envelope & { result?: { goal?: { id?: string } } })
+			| undefined;
+		assert.deepEqual(
+			{ ok: addedEnvelope?.ok, scope: addedEnvelope?.scope, action: addedEnvelope?.action },
+			{ ok: true, scope: "project", action: "add" },
+		);
+		assert.equal(addedEnvelope?.result?.goal?.id, "installed-mcp-goal");
+	} catch (error) {
+		failure = error;
+	} finally {
+		await client.close().catch(() => undefined);
+	}
+	assertNothingUnresolved(command, stderr);
+	assert.equal(stderr, "", `${command} wrote outside the JSON-RPC stdout channel:\n${stderr}`);
+	if (failure !== undefined) throw failure;
+}
+
+/**
+ * How each published executable is driven once it is installed, keyed by the
+ * command name the manifest's `bin` map puts on a user's PATH. The manifest is
+ * the list of executables an install exposes, so this check compares itself
+ * against that map instead of naming the bins twice.
+ */
+const BIN_EXERCISES: Record<string, BinExercise> = {
+	[binary]: exerciseCli,
+	[`${binary}-mcp`]: exerciseMcp,
+};
+
 const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));
 const packDir = join(scratch, "pack");
 const installDir = join(scratch, "install");
-const workspace = join(scratch, "workspace");
 let succeeded = false;
 try {
-	await Promise.all([packDir, installDir, workspace].map((dir) => mkdir(dir, { recursive: true })));
+	await Promise.all([packDir, installDir].map((dir) => mkdir(dir, { recursive: true })));
 
-	const { name, version } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
+	const { name, version, bin } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
 		name: string;
 		version: string;
+		bin?: Record<string, string>;
 	};
+
+	// Before spending minutes on a pack and an install: a bin this check never
+	// starts is packed without anyone proving it loads from a Pi-free install,
+	// which is the one regression this whole job exists to catch.
+	assert.deepEqual(
+		Object.keys(bin ?? {}).sort(),
+		Object.keys(BIN_EXERCISES).sort(),
+		"package.json's `bin` map and BIN_EXERCISES in scripts/no-pi-install-check.ts must name the " +
+			"same executables. A published bin with no exercise here ships unstarted, and an exercise " +
+			"for a bin the manifest no longer publishes drives nothing.",
+	);
 
 	step("Packing the publishable tarball");
 	const tarball = await packTarball(packDir);
@@ -337,9 +421,18 @@ try {
 	await installTarball(tarball, installDir);
 	await assertNoPiPackages(installDir);
 
-	step("Driving the installed bin");
-	await run("git", ["init", "-q", "."], workspace);
-	await exerciseCli(join(installDir, "node_modules", ".bin", binary), workspace, version);
+	step(`Driving every published bin: ${Object.keys(BIN_EXERCISES).join(", ")}`);
+	for (const [command, exercise] of Object.entries(BIN_EXERCISES)) {
+		// Each bin gets its own repository, so one bin's writes can never stand in
+		// for a second bin that never wrote anything.
+		const workspace = join(scratch, `workspace-${command}`);
+		// pi-lens-ignore: await-in-loop
+		await mkdir(workspace, { recursive: true });
+		// pi-lens-ignore: await-in-loop
+		await run("git", ["init", "-q", "."], workspace);
+		// pi-lens-ignore: await-in-loop
+		await exercise(join(installDir, "node_modules", ".bin", command), workspace, version);
+	}
 
 	succeeded = true;
 	step(`${name} ${version} runs from a Pi-free install.`);

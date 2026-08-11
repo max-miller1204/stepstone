@@ -11,8 +11,10 @@ npm run pack:check
 npm run no-pi-install:check
 ```
 
-`npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out; both need Node 22.18 or newer for native type stripping.
-The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for the published bin, which Node refuses to type-strip under `node_modules`.
+`npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
+`npm run mcp` runs this checkout's stdio MCP server, which an MCP client can be pointed at instead of the published `stepstone-mcp` bin; see [docs/mcp.md](mcp.md).
+All of them run a TypeScript entry point straight from the checkout, so they need Node 22.18 or newer for native type stripping.
+The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for the published bins, which Node refuses to type-strip under `node_modules`.
 
 ## Checks
 
@@ -20,18 +22,21 @@ The package ships TypeScript source directly because Pi loads extensions through
 | --- | --- |
 | `npm run check` | Types, the import scan, Biome lint and format, and the whole test suite |
 | `npm run docs:check` | The generated documents match the sources they are rendered from |
-| `npm run imports:check` | Nothing the CLI loads imports a Pi package |
+| `npm run imports:check` | Nothing either compiled bin loads imports a Pi package |
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
-| `npm run no-pi-install:check` | The packed, installed bin works with no Pi present |
+| `npm run no-pi-install:check` | The packed, installed CLI and MCP bins both work with no Pi present |
 | `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
 
-`npm run imports:check` reads the module graph behind `src/cli.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
+`npm run imports:check` reads the merged module graph behind both published entry points, `src/cli.ts` and `src/mcp.ts`, and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
+Both entry points are named in `executableEntryPoints` in `scripts/cli-import-graph.ts`, which this check and the test suite both walk, so a new executable joins the scan by being added there.
 That is why a Pi type belongs in an `import type` statement rather than an inline `import { type Foo }`: the latter is a runtime import the scan will reject.
 
 `npm run no-pi-install:check` is the slower proof behind it.
-It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and asserts the exit codes and `--json` envelopes of the installed bin across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
+It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and asserts the exit codes and `--json` envelopes of the installed CLI bin across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
+It then speaks MCP over stdio to the installed server bin, reading a resource and calling a mutation tool, so the second executable is proven to load from the same Pi-free install rather than only being packed into it.
+Which bins it drives comes from the manifest's `bin` map compared against `BIN_EXERCISES` in the script, so publishing a third executable without teaching this check to start it fails the job rather than shipping a bin nobody ever loaded.
 It runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 ## Generated files

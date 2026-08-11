@@ -26,6 +26,9 @@ Install the [agent skill](docs/skill.md), which teaches that CLI and its guardra
 npx skills add max-miller1204/stepstone --skill stepstone -g
 ```
 
+**Any MCP client.**
+Configure the cross-harness [MCP server](docs/mcp.md), which exposes roadmap reads as resources and mutations as tools through the package's `stepstone-mcp` bin.
+
 **[Pi](https://pi.dev).**
 Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a model-facing tool, and Session Tasks:
 
@@ -70,11 +73,11 @@ Statuses are `open`, `active`, `done`, and `archived`; at most one goal is activ
 Dependency edges say which goals must land first, and blocked is derived from those edges on every read rather than stored, so nothing is ever left marked blocked after the work holding it up finished.
 `ready` is the whole parallel frontier, `next` is its first entry, and `waves` lays the unfinished goals out in the earliest layer each could start in.
 
-Every interface writes through one application service, one cross-process lock, and one atomic file replacement, so a CLI call, an open board, and a live Pi session can share a repository without corrupting the file or losing an edit.
+Every interface writes through one application service, one cross-process lock, and one atomic file replacement, so a CLI call, an MCP client, an open board, and a live Pi session can share a repository without corrupting the file or losing an edit.
 Optional preconditions, a file-wide revision and a single goal's `updatedAt`, turn a stale read into a reported conflict instead of a silent overwrite.
 
-Nothing the CLI loads imports a Pi package, so `npx -y stepstone@latest` installs under a megabyte and runs with no Pi installation at all.
-That is enforced by a source-level import scan and by a CI job that packs the tarball and drives the installed bin with no Pi present, rather than promised in prose.
+Nothing the CLI or MCP server loads imports a Pi package, so `npx -y stepstone@latest` runs with no Pi installation.
+That is enforced by source-level import scans and by a CI job that packs the tarball and drives both installed bins with no Pi present.
 
 ## Documentation
 
@@ -87,6 +90,7 @@ That is enforced by a source-level import scan and by a CI job that packs the ta
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
 | [docs/skill.md](docs/skill.md) | The generated agent skill, and how to install it |
+| [docs/mcp.md](docs/mcp.md) | The cross-harness MCP server: client configuration, resources, mutation tools, and confirmation guardrails |
 | [docs/pi.md](docs/pi.md) | The Pi extension: Session Tasks, `/tasks`, the widget, the model tool, the module API |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | This repository's own Project Goals, generated from the goal file it commits |
 | [docs/development.md](docs/development.md) | Working on stepstone: checks, generated files, and the invariants behind them |

@@ -1,18 +1,19 @@
 /**
- * Fails when the module graph reachable from src/cli.ts stops being runnable
+ * Fails when either compiled executable's module graph stops being runnable
  * with nothing installed but Node.
  *
  *   npm run imports:check
  *
- * The compiled bin ships to people who run `npx stepstone` with no Pi
- * installation, so every runtime import it reaches has to resolve from Node's
- * builtins or the package's own `dependencies`. This repository installs every
- * Pi peer as a devDependency, so a stray `@earendil-works/*` import resolves
- * here and fails only for those users. Reading the sources catches that the
- * moment the import is written, well before the pack-and-install job in
- * scripts/no-pi-install-check.ts proves the same thing the slow way.
+ * The compiled bins ship to people who run `npx stepstone` or configure
+ * `stepstone-mcp` with no Pi installation, so every runtime import they reach
+ * has to resolve from Node's builtins or the package's own `dependencies`.
+ * This repository installs every Pi peer as a devDependency, so a stray
+ * `@earendil-works/*` import resolves here and fails only for those users.
+ * Reading the sources catches that the moment the import is written, well
+ * before the pack-and-install job in scripts/no-pi-install-check.ts proves the
+ * same thing the slow way.
  *
- * `import type` and `export type` statements are erased before the bin runs and
+ * `import type` and `export type` statements are erased before a bin runs and
  * are therefore allowed, which is what lets src/session-store.ts keep its Pi
  * types. An inline `import { type Foo }` is reported instead of erased: the
  * emitted shape depends on how the file is compiled, and the type-only form is
@@ -25,6 +26,7 @@ import { dirname, extname, relative, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const entryPoint = resolve(repoRoot, "src/cli.ts");
+export const executableEntryPoints = [entryPoint, resolve(repoRoot, "src/mcp.ts")];
 
 export interface ModuleImport {
 	specifier: string;
@@ -298,6 +300,17 @@ export async function collectModuleGraph(entry = entryPoint): Promise<Map<string
 	return graph;
 }
 
+/**
+ * The one graph the invariant is about: every module either compiled executable
+ * pulls in, merged. Walking a single entry point leaves the other bin's imports
+ * unread, so a caller that wants the guarded surface asks for this rather than
+ * naming an entry point of its own.
+ */
+export async function collectExecutableModuleGraph(): Promise<Map<string, ModuleImport[]>> {
+	const graphs = await Promise.all(executableEntryPoints.map((entry) => collectModuleGraph(entry)));
+	return new Map(graphs.flatMap((graph) => [...graph]));
+}
+
 function packageNameOf(specifier: string): string {
 	return specifier.startsWith("@")
 		? specifier.split("/").slice(0, 2).join("/")
@@ -312,7 +325,7 @@ export async function findDisallowedImports(
 		dependencies?: Record<string, string>;
 	};
 	const declared = new Set(Object.keys(manifest.dependencies ?? {}));
-	const modules = graph ?? (await collectModuleGraph());
+	const modules = graph ?? (await collectExecutableModuleGraph());
 	const disallowed: DisallowedImport[] = [];
 	for (const [file, imports] of modules) {
 		for (const { specifier, typeOnly } of imports) {
@@ -349,17 +362,18 @@ function isEntryPoint(): boolean {
 
 if (isEntryPoint()) {
 	try {
-		const graph = await collectModuleGraph();
+		const graph = await collectExecutableModuleGraph();
 		const disallowed = await findDisallowedImports(graph);
 		if (disallowed.length > 0) {
 			const report = disallowed.map((entry) => `  ${entry.file} imports ${entry.specifier}: ${entry.reason}`);
 			process.stderr.write(
-				`The CLI import graph no longer runs without Pi installed:\n${report.join("\n")}\n`,
+				`A compiled executable import graph no longer runs without Pi installed:\n${report.join("\n")}\n`,
 			);
 			process.exit(1);
 		}
+		const entries = executableEntryPoints.map((entry) => relative(repoRoot, entry)).join(" and ");
 		process.stdout.write(
-			`Checked ${graph.size} modules reachable from src/cli.ts: no Pi peers, no undeclared imports.\n`,
+			`Checked ${graph.size} modules reachable from ${entries}: no Pi peers, no undeclared imports.\n`,
 		);
 	} catch (error) {
 		process.stderr.write(`The CLI import graph could not be walked:\n  ${(error as Error).message}\n`);

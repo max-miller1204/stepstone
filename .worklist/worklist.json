@@ -347,16 +347,17 @@
       "id": "mcp-server-expose-the-worklist-over-mcp",
       "title": "mcp-server: expose the worklist over MCP",
       "description": "Expose the WorklistApplicationService over MCP so any agent in any harness can list, add, find, sequence, apply plans, and complete goals through the same contract, the same cross-process lock, and the same confirmation guardrails as the CLI and the Pi extension.\n\nPromoted out of Later on 2026-08-08 by the harness pivot. The original deferral was conditional on apply-plan and capture-skill proving the workflow first; apply-plan has since landed, and the reason to wait has been replaced by the reason to hurry. MCP is now the universal integration path: it is the one surface Claude Code, Codex, Cursor, and Zed can all consume without a per-harness adapter, and it is the only way an agent reads the worklist without paying npx process startup on every call. That latency matters more than it looks, because the sequencing commands (next, ready, waves) are meant to be polled in a dispatch loop.\n\nExpose reads as MCP resources and mutations as tools, so an agent can hold the active goal in context without spending a tool call on it. Keep the tool surface generated from src/cli-contract.ts like every other agent-facing artifact, so a fourth renderer cannot drift from the CLI. Preserve the confirmation contract exactly: complete, reopen, archive, and delete stay explicit-intent operations, and MCP must not become the entrance that quietly skips them. Nothing in the MCP path may import @earendil-works, the same rule the CLI already lives under.",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-04T02:37:54.454Z",
-      "updatedAt": "2026-08-08T23:54:04.836Z",
+      "updatedAt": "2026-08-11T22:23:45.102Z",
       "previousIds": [
         "goal-mse1szvb-65812ec4"
       ],
       "group": "Harness",
       "dependsOn": [
         "apply-plan-atomic-batch-import-of-a"
-      ]
+      ],
+      "completedAt": "2026-08-11T22:23:45.102Z"
     },
     {
       "id": "agents-md-generate-a-harness-neutral",
@@ -591,5 +592,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 245
+  "revision": 246
 }

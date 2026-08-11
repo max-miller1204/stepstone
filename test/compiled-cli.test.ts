@@ -12,6 +12,7 @@ import { buildPackage, packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
 const compiledCliPath = resolve("dist/cli.js");
+const compiledMcpPath = resolve("dist/mcp.js");
 
 /**
  * Everything this checkout writes for itself rather than for an install.
@@ -64,12 +65,18 @@ describe("published stepstone package", () => {
 		await buildPackage();
 	}, 60_000);
 
-	it("compiles to plain JavaScript with an executable entry point", async () => {
-		const compiled = await readFile(compiledCliPath, "utf8");
-		expect(compiled.startsWith("#!/usr/bin/env node")).toBe(true);
-		// Node refuses TypeScript under node_modules; the bin must not need type stripping.
-		expect(compiled).not.toContain('from "./application-service.ts"');
-		expect(compiled).toContain('from "./application-service.js"');
+	it("compiles both executables to plain JavaScript entry points", async () => {
+		const [compiledCli, compiledMcp] = await Promise.all([
+			readFile(compiledCliPath, "utf8"),
+			readFile(compiledMcpPath, "utf8"),
+		]);
+		for (const compiled of [compiledCli, compiledMcp]) {
+			expect(compiled.startsWith("#!/usr/bin/env node")).toBe(true);
+			// Node refuses TypeScript under node_modules; neither bin may need type stripping.
+			expect(compiled).not.toMatch(/from "\.\/[^"]+\.ts"/);
+		}
+		expect(compiledCli).toContain('from "./application-service.js"');
+		expect(compiledMcp).toContain('from "./mcp-server.js"');
 	});
 
 	it("imports only declared dependencies, never a Pi peer", async () => {
@@ -255,9 +262,10 @@ describe("published stepstone package", () => {
 		).toEqual([]);
 	}, 60_000);
 
-	it("ships the compiled bin in the published package", async () => {
+	it("ships both compiled bins in the published package", async () => {
 		const paths = await packedFilePaths();
 		expect(paths).toContain("dist/cli.js");
+		expect(paths).toContain("dist/mcp.js");
 		expect(paths).toContain("src/extension.ts");
 
 		const packageJson = parseJson<{
@@ -270,7 +278,10 @@ describe("published stepstone package", () => {
 		// command it then runs is the bin key. Pinning only one lets a rename ship
 		// docs that name a package nobody published.
 		expect(packageJson.name).toBe(CLI_COMMAND_CONTRACT.binary);
-		expect(packageJson.bin).toEqual({ [CLI_COMMAND_CONTRACT.binary]: "dist/cli.js" });
+		expect(packageJson.bin).toEqual({
+			[CLI_COMMAND_CONTRACT.binary]: "dist/cli.js",
+			[`${CLI_COMMAND_CONTRACT.binary}-mcp`]: "dist/mcp.js",
+		});
 		expect(packageJson.files).toContain("dist");
 	}, 60_000);
 });

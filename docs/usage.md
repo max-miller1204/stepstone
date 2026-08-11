@@ -15,9 +15,9 @@ The explicit `@latest` specifier prevents a stale local npx cache from selecting
 Run the command from inside the target repository, or pass `--cwd <dir>` to resolve the Git root from another directory.
 `--file <path>`, and the `$STEPSTONE_WORKLIST` environment variable, name a goal file outright instead of letting the repository resolve one; see [docs/storage.md](storage.md).
 
-The published package ships a compiled bin, so the CLI needs Node 20 or newer and nothing else.
-Every Pi peer dependency is optional and nothing the bin loads imports one, so `npx -y stepstone@latest` installs under a megabyte and runs with no Pi installation at all.
-That is enforced rather than promised, by an import scan over the CLI's module graph and by a CI job that packs the tarball and drives the installed bin in a scratch directory with no Pi present; see [docs/development.md](https://github.com/max-miller1204/stepstone/blob/main/docs/development.md).
+The CLI ships as a compiled bin in the published package, so it needs Node 20 or newer and nothing else.
+Every Pi peer dependency is optional, and neither compiled bin loads one, so `npx -y stepstone@latest` runs with no Pi installation.
+That is enforced by import scans over both module graphs and by a CI job that packs the tarball and drives both installed bins in a scratch directory with no Pi present; see [docs/development.md](https://github.com/max-miller1204/stepstone/blob/main/docs/development.md).
 
 ## Running from a checkout
 

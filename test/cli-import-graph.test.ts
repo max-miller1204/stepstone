@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { collectModuleGraph, findDisallowedImports, moduleImports } from "../scripts/cli-import-graph.ts";
+import {
+	collectExecutableModuleGraph,
+	collectModuleGraph,
+	findDisallowedImports,
+	moduleImports,
+} from "../scripts/cli-import-graph.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -145,7 +150,7 @@ describe("CLI module scanner", () => {
 	});
 });
 
-describe("the module graph behind the CLI bin", () => {
+describe("the module graph behind the compiled bins", () => {
 	it("reaches the terminal board, which is where a Pi import is most tempting", async () => {
 		const graph = await collectModuleGraph();
 		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
@@ -153,10 +158,19 @@ describe("the module graph behind the CLI bin", () => {
 		expect(files).toContain("src/tui/goal-board.ts");
 	});
 
+	it("reaches the MCP adapter, which only the second entry point pulls in", async () => {
+		// Walking the CLI alone leaves this subtree unread, so an import added here
+		// would be checked by nothing until the pack-and-install job runs.
+		const graph = await collectExecutableModuleGraph();
+		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
+		expect(files).toContain("src/mcp.ts");
+		expect(files).toContain("src/mcp-server.ts");
+	});
+
 	it("imports nothing at runtime that a Pi-free install could not resolve", async () => {
 		// The slow proof lives in scripts/no-pi-install-check.ts, which packs and
 		// installs the tarball; this is the same invariant read off the sources.
-		expect(await findDisallowedImports()).toEqual([]);
+		expect(await findDisallowedImports(await collectExecutableModuleGraph())).toEqual([]);
 	});
 });
 
