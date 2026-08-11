@@ -1,15 +1,15 @@
 ---
 name: stepstone
-description: "Manage stepstone Project Goals (the shared roadmap in a repo's .worklist/worklist.json) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
+description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json) from any agent session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
 ---
 
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
 
 # Managing stepstone Project Goals
 
-Project Goals are a repository-wide roadmap stored in `<git-root>/.worklist/worklist.json` and shared with Pi sessions.
-Never edit that file directly: a concurrent Pi session may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.
-Always go through the stepstone CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as a live Pi session.
+Project Goals are a repository-wide roadmap stored in `<git-root>/.worklist/worklist.json` and committed with the code, so every agent and every human working in that repository reads and edits one list.
+Never edit that file directly: another process may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.
+Always go through the stepstone CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as every other interface onto that file.
 
 ## Invoking the CLI
 
@@ -177,7 +177,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - `ui` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.
   Suggest `npx -y stepstone@latest project ui` when the user wants to browse or edit goals themselves; read state with `list` and `show` instead.
-- Session Tasks cannot be managed from outside a Pi session; the CLI intentionally rejects `session` scope.
+- Session Tasks are a Pi extension feature that lives inside a Pi session, so the CLI rejects `session` scope.
   For your own in-session tracking, use your normal task tools instead.
 
 ## Failure modes

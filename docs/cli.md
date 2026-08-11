@@ -2,7 +2,7 @@
 
 # stepstone CLI
 
-Manage repository-wide Project Goals in <git-root>/.worklist/worklist.json through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.
+Manage a repository's Project Goals in <git-root>/.worklist/worklist.json from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
 
 ## Invocation
 

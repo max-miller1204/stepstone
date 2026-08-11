@@ -1,0 +1,129 @@
+<!-- markdownlint-disable MD013 -->
+
+# The Pi extension
+
+Pi is one supported harness rather than the product.
+Everything on the roadmap side works the same there as anywhere else, through the same application service, cross-process lock, and atomic replacement, so a Pi session and a CLI call may be open on one repository at the same time.
+
+What Pi adds on top is Session Tasks: a branch-aware queue of the concrete chunks in the session at hand, kept separate from the roadmap because a session's next steps and a repository's outcomes are not the same thing.
+Session Tasks are supported and documented, and they keep working; they are simply not where the project is heading, so new work goes into Project Goals and the interfaces every harness can reach.
+
+## Install
+
+```sh
+pi install npm:stepstone
+```
+
+View it in the [Pi package gallery](https://pi.dev/packages/stepstone) or on [npm](https://www.npmjs.com/package/stepstone).
+
+Install directly from GitHub:
+
+```sh
+pi install git:github.com/max-miller1204/stepstone
+```
+
+Try a checkout without installing it:
+
+```sh
+pi -e ./src/extension.ts
+```
+
+Every Pi peer dependency is declared optional, which is what lets the same package serve as a dependency-free CLI elsewhere.
+How a release reaches npm and the gallery is in [docs/releasing.md](releasing.md).
+
+## The dashboard
+
+Run `/tasks` with no arguments to open the dashboard, a two-section view over Session Tasks and Project Goals.
+Use Tab to switch lists and arrow keys to navigate.
+
+In Session Tasks, `a` appends, `i` inserts before the selected task, and Shift+Up or Shift+Down moves the selected task.
+Project Goals support `a` to add and the same Shift+Up and Shift+Down to reorder, but not insertion at a position.
+In either scope, press Enter to open a detail window, Space to advance status, `e` to edit, `d` to delete, and Escape to close.
+Session Task edits change the title, while Project Goal edits can also change the description.
+
+The detail window wraps complete descriptions and the metadata it displays instead of truncating them.
+Use Up and Down or `j` and `k` to scroll long details, with Page Up and Page Down for larger jumps, then Enter or Escape to return to the dashboard.
+For a Session Task associated with a Project Goal, the detail window also shows the goal title and full description.
+The dashboard keeps the current list and the selected task across each action, so a moved task stays selected at its new position.
+
+The full-screen [terminal goal board](board.md) is a separate, roadmap-only view that runs outside any session; the dashboard is the one that shows both lists.
+
+## The widget and the prompt
+
+A compact widget shows the active Project Goal and up to three unfinished Session Tasks, with a `+N more` line when the queue is longer.
+Only the active goal and an intentionally bounded list of incomplete task titles and statuses are added to the current turn's system prompt, preserving their relative queue order, so the session's state is present without the roadmap crowding the context.
+
+## Direct commands
+
+Direct commands are useful in RPC mode and scripts:
+
+```text
+/tasks session list
+/tasks session add Write RPC regression tests
+/tasks session add --before <anchor-id> Reproduce the failure first
+/tasks session add --after <anchor-id> Verify the dashboard behavior
+/tasks session add Verify the dashboard behavior --after <anchor-id>
+/tasks session move <task-id> --before <anchor-id>
+/tasks session move <task-id> --after <anchor-id>
+/tasks session update <id> Replace the task title
+/tasks session status <id> doing
+/tasks project list
+/tasks project add Replace legacy authentication -- Migrate every supported client
+/tasks project update <id> -- Replace the goal description
+/tasks project move <goal-id> --before <anchor-id>
+/tasks project set_active <id>
+/tasks project complete <id>
+```
+
+Text after `--` is stored as the optional Project Goal description for `add` and `update`.
+Session Tasks do not support descriptions.
+Session Task `add` accepts either `--before <anchor-id>` or `--after <anchor-id>` and appends when neither is supplied, while `move` requires exactly one of those stable-ID anchors.
+An anchor flag and its ID may lead the arguments or trail them, but only one anchor flag is accepted per command.
+Project Goal `move` takes the same anchors; Project Goals are appended on `add` and never accept a placement there.
+
+Typing a Project Goal lifecycle command is explicit user intent.
+The model-facing tool instead requires `confirm=true`, and its prompt rules prohibit setting that flag without an explicit request.
+
+## The model tool
+
+The `worklist` tool accepts `scope=session|project` and actions including `list`, `add`, `apply-plan`, `move`, `update`, `set_status`, `set_active`, `complete`, `reopen`, `archive`, and `delete`.
+For Session Tasks, `add` optionally accepts exactly one of `beforeId` or `afterId`, while `move` requires exactly one.
+Project Goal `move` takes the same anchors and reorders the roadmap; `add` and `update` also accept a `group`, where an empty string clears it, and a `dependsOn` array that replaces the goal's edges, where an empty array clears them.
+
+Moves preserve the task ID, title, status, and Project Goal association.
+Self-placement, already-satisfied placement, identical Session Task updates, and repeated status changes succeed without writing another session snapshot.
+
+Session Tasks use concise, self-contained titles without descriptions.
+Agents are instructed to split non-trivial work into several concrete, independently completable Session Tasks instead of copying the broad end goal into one task.
+Session Task statuses are `todo`, `doing`, and `done`, while Project Goal statuses are `open`, `active`, `done`, and `archived`, and only activation is a non-destructive direct Project Goal status change.
+
+The tool's schema uses `StringEnum` for string enums, which keeps it compatible with Google providers.
+
+## Session Task storage
+
+Session Tasks are stored as versioned Pi custom entries in the current session tree, so they survive `/resume` and follow `/tree`, `/fork`, and `/clone`.
+A new session starts with an empty Session Task list.
+The array order is a canonical queue that supports stable-ID insertion and movement, and completed tasks remain in that order rather than being swept aside.
+
+Each snapshot carries an opaque concurrency token that follows the active branch, and a branch without a snapshot uses the opaque baseline token `0`.
+Snapshots written by earlier releases are still loaded, derive their token from the Pi custom entry ID when necessary, retain existing task IDs, and drop legacy descriptions and legacy orchestrator metadata during in-memory migration; the next mutation writes the migrated state as snapshot version 3.
+Session Task expected-revision checks run inside the serialized mutation queue and return the active branch token in conflicts, and a semantic no-op leaves the snapshot count and branch token untouched.
+
+Session Tasks are the one part of the tool that a CLI call cannot reach, because they live inside a session tree rather than in the repository; the CLI rejects `session` scope for that reason.
+Project Goal storage is documented in [docs/storage.md](storage.md).
+
+## Using the service from another extension
+
+Another Pi extension can drive the same worklist without instantiating its own store or touching the file, by importing the application service through the package's subpath export:
+
+```ts
+import { WorklistApplicationService } from "stepstone/src/application-service.ts";
+```
+
+Every interface in this package goes through that one service, so an external caller applies identical validation, confirmation, locking, and persistence rules.
+Each operation names its `source`, one of `tool`, `command`, `dashboard`, or `cli`, and returns a deterministic envelope: `ok`, the `result`, or a typed `error`, plus a `meta` reporting whether anything changed, whether the mutation was a semantic no-op, which fields moved as JSON Pointer paths, which entity IDs changed, and the resulting revisions.
+
+Errors carry a stable code, `UNAVAILABLE`, `INVALID_REQUEST`, `VALIDATION_FAILED`, `NOT_FOUND`, `DEPENDENCY_CYCLE`, `APPROVAL_REQUIRED`, `CONFLICT`, or `PERSISTENCE_FAILED`, a `retryable` flag, and, for a conflict, details naming whether the file-wide revision or one goal's `updatedAt` moved.
+Operations accept an `expectedRevision` and, for a single Project Goal, an `expectedUpdatedAt`, both checked under the same lock that writes, so a caller resuming from a stale read is told rather than allowed to overwrite newer state.
+Project operations resolve the goal file through a resolver the host supplies rather than a path captured at startup, so a `migrate_path` elsewhere cannot leave a long-lived caller writing to a file that is no longer the roadmap.
+Session Task operations need a session store and report `UNAVAILABLE` without one, which is what a non-Pi host gets.

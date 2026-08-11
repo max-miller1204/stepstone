@@ -316,15 +316,16 @@
     {
       "id": "positioning-rewrite-the-docs-around-the",
       "title": "positioning: rewrite the docs around the cross-harness product",
-      "description": "README currently opens with \"pi-worklist gives Pi two deliberately different lists\" and presents Session Tasks and Project Goals as equal halves. That framing is now backwards. Project Goals are the product: a repository-scoped roadmap that any coding agent can drive through the CLI, the skill, or MCP. Session Tasks are a Pi extension feature, kept working and documented, but no longer the headline and no longer receiving investment.\n\nRewrite the README so the first screen answers \"what is this and how do I use it from my harness\", with install and quickstart paths per harness, and demote Pi to a clearly labeled section that keeps the extension, widget, dashboard, and inter-extension API documented for the people using them. Do the same to the generated contract prose: the skill description and docs/cli.md intro both currently frame Project Goals as \"shared with Pi sessions\" and Session Tasks as \"deliberately out of scope\", phrasing that reads as a Pi tool apologizing for a CLI rather than a general tool that also integrates with Pi.\n\nAlso reconcile the feature list, which advertises \"a Pi-free external CLI\" as though Pi-free were the exception. Sequence this after the identity rename and the path move so the docs are rewritten once against final names rather than churned twice.",
+      "description": "README currently opens with \"pi-worklist gives Pi two deliberately different lists\" and presents Session Tasks and Project Goals as equal halves. That framing is now backwards. Project Goals are the product: a repository-scoped roadmap that any coding agent can drive through the CLI, the skill, or MCP. Session Tasks are a Pi extension feature, kept working and documented, but no longer the headline and no longer receiving investment.\n\nRewrite the README so the first screen answers \"what is this and how do I use it from my harness\", with install and quickstart paths per harness, and demote Pi to a clearly labeled section that keeps the extension, widget, dashboard, and inter-extension API documented for the people using them. Do the same to the generated contract prose: the skill description and docs/cli.md intro both currently frame Project Goals as \"shared with Pi sessions\" and Session Tasks as \"deliberately out of scope\", phrasing that reads as a Pi tool apologizing for a CLI rather than a general tool that also integrates with Pi.\n\nAlso reconcile the feature list, which advertises \"a Pi-free external CLI\" as though Pi-free were the exception. Sequence this after the identity rename and the path move so the docs are rewritten once against final names rather than churned twice.\n\nLasly, restructure the README so that it only contains the important information. we can make a /docs folder with everything else. Look at this repo as an example: https://github.com/nicobailon/pi-subagents",
       "group": "Harness",
       "dependsOn": [
         "harness-identity-rename-off-the-pi",
         "worklist-path-move-the-goal-file-out-of"
       ],
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-08T23:53:23.024Z",
-      "updatedAt": "2026-08-08T23:53:23.024Z"
+      "updatedAt": "2026-08-11T07:32:20.520Z",
+      "completedAt": "2026-08-11T07:32:20.520Z"
     },
     {
       "id": "roadmap-md-generate-docs-roadmap-md",
@@ -589,5 +590,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 240
+  "revision": 243
 }

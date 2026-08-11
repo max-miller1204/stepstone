@@ -1,19 +1,213 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
 	CLI_COMMAND_CONTRACT,
 	DOCS_PATH,
+	LEGACY_WORKLIST_DIRECTORY,
 	renderCliGuide,
 	renderCliUsage,
 	renderSkillMarkdown,
 	SKILL_PATH,
+	WORKLIST_DIRECTORY,
+	WORKLIST_FILENAME,
+	WORKLIST_PATH_ENV,
 } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Every page of prose a reader lands on, paired with its contents.
+ *
+ * The documentation is the README plus `docs/`, so an assertion naming README.md
+ * alone would stop covering the page that actually carries the claim as soon as
+ * prose moves. Reading the directory also covers a document the day it is added,
+ * which is the case a hand-maintained list always misses.
+ */
+async function readDocumentation(): Promise<(readonly [string, string])[]> {
+	const docsDirectory = "docs";
+	const entries = await readdir(resolve(docsDirectory));
+	const paths = [
+		"README.md",
+		...entries
+			.filter((entry) => entry.endsWith(".md"))
+			.sort()
+			.map((entry) => join(docsDirectory, entry)),
+	];
+	return Promise.all(paths.map(async (path) => [path, await readFile(resolve(path), "utf8")] as const));
+}
+
+/**
+ * Every absolute filesystem path a string names.
+ *
+ * A path rooted at `/` is a path on whoever generated the file, so the generated
+ * skill must never carry one; it roots its paths at a placeholder instead. The
+ * tell is a slash that starts a token rather than continuing one, which is what
+ * separates `/opt/tools/x` from `docs/cli.md`, from `<git-root>/.worklist`, and
+ * from the `//` inside a URL.
+ */
+function absolutePathsIn(text: string): string[] {
+	return [...text.matchAll(/(?<![\w>:~./-])\/[A-Za-z0-9_.~-]+(?:\/[A-Za-z0-9_.~-]+)*/g)].map(
+		(match) => match[0],
+	);
+}
+
+/** Escape a contract value so a pattern built around it matches it literally. */
+function literal(value: string): string {
+	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/**
+ * The package this one was published as before the rename.
+ *
+ * docs/releasing.md names it deliberately, in the prose about the frozen build
+ * that stays published under the old name, so it is the one npx target in the
+ * documentation that is not the contract's binary. A later rename never moves
+ * it: it states what npm already carries, not what this package is called.
+ */
+const FROZEN_PREDECESSOR_PACKAGE = "pi-worklist";
+
+/** Directory holding the generated skill, whose name is the published binary. */
+const SKILL_DIRECTORY = dirname(SKILL_PATH);
+
+/**
+ * How a document spells a package name: never leading with the dash of a flag,
+ * so an option that follows the command being matched is not read as its target.
+ */
+const PACKAGE_NAME = String.raw`[\w@][\w@./-]*`;
+
+/**
+ * One spelling a document may use for a name, and whether one has to exist.
+ *
+ * A required shape has to occur at least once across the documentation, so a
+ * shape that quietly stops matching fails rather than passing vacuously on the
+ * strength of the shapes still matching. An optional shape is held to the same
+ * spellings wherever it appears but is never demanded, because prose exists for a
+ * reader rather than to keep a pattern non-empty: a `<name>@1.2.3` pin is written
+ * only where a page has a reason to name one version, and the day the last such
+ * page is deleted there is nothing to fix.
+ */
+type SpellingShape = { readonly pattern: RegExp; readonly required: boolean };
+
+/** A shape some document has to state, so its disappearance is a failure. */
+function required(pattern: RegExp): SpellingShape {
+	return { pattern, required: true };
+}
+
+/** A shape checked wherever it appears and not required to appear at all. */
+function optional(pattern: RegExp): SpellingShape {
+	return { pattern, required: false };
+}
+
+/** A name the contract owns, paired with every spelling a document may state. */
+type SpellingEntry = {
+	readonly subject: string;
+	readonly shapes: readonly SpellingShape[];
+	readonly allowed: readonly string[];
+	readonly canonical: string;
+};
+
+/**
+ * Every shape a document uses to name this published package.
+ *
+ * Built from the binary rather than closing over the contract's own value, so the
+ * check can be run against a renamed contract - the failure it exists to catch,
+ * and otherwise only reachable by editing the source it is asserting about.
+ *
+ * Some shapes name any package equally well - `npm i <name>`, a `<name>@1.2.3`
+ * pin - and a page may legitimately print one for a dependency or a toolchain
+ * version. Matching only this package's own names there keeps the check from
+ * reporting correct prose as a contract disagreement; a rename is still caught,
+ * because the shape then finds nothing and fails the check that it names this
+ * package at all.
+ */
+function publishedPackageSpellings(binary: string): SpellingEntry {
+	const ownPackage = `(?:${[binary, FROZEN_PREDECESSOR_PACKAGE].map(literal).join("|")})`;
+	return {
+		subject: "published package",
+		shapes: [
+			required(new RegExp(`npx -y (${PACKAGE_NAME})@latest`, "g")),
+			required(new RegExp(String.raw`\bnpm:(${PACKAGE_NAME})`, "g")),
+			required(new RegExp(String.raw`\bnpm (?:view|deprecate|i|install) (${ownPackage})(?![\w@./-])`, "g")),
+			required(new RegExp(String.raw`\bnpmjs\.com/package/(${PACKAGE_NAME})`, "g")),
+			required(new RegExp(String.raw`\bshields\.io/npm/v/(${PACKAGE_NAME})\.svg`, "g")),
+			required(new RegExp(String.raw`\bpi\.dev/packages/(${PACKAGE_NAME})`, "g")),
+			optional(new RegExp(String.raw`(?<![\w@./-])(${ownPackage})@\d+\.\d+\.\d+`, "g")),
+			required(new RegExp(`from "(${PACKAGE_NAME})/src/`, "g")),
+		],
+		allowed: [binary, FROZEN_PREDECESSOR_PACKAGE],
+		canonical: binary,
+	};
+}
+
+/**
+ * Names the contract owns, paired with every spelling a document may state.
+ *
+ * A rename is a one-line change to the contract, which regenerates the
+ * generated artifacts but cannot touch hand-written prose. Pinning one
+ * invocation in README.md leaves the rest of the documentation free to go on
+ * sending readers to a package, an environment variable, or a directory that no
+ * longer exists, which is silent because the old spellings still read as
+ * instructions.
+ *
+ * Every shape is checked on its own, and each occurrence it finds has to be a
+ * spelling the contract renders today. The shapes cover the places a name is an
+ * instruction a reader follows - a command, a registry or gallery URL, an import
+ * specifier, a path - and deliberately not running prose, where the product name
+ * is a word rather than a target and a sweep has to be done by hand.
+ */
+const CONTRACT_SPELLINGS: readonly SpellingEntry[] = [
+	publishedPackageSpellings(CLI_COMMAND_CONTRACT.binary),
+	{
+		subject: "goal file environment override",
+		shapes: [required(/\$([A-Z][A-Z0-9_]*_WORKLIST)\b/g)],
+		allowed: [WORKLIST_PATH_ENV],
+		canonical: WORKLIST_PATH_ENV,
+	},
+	{
+		subject: "goal file directory",
+		// Anchored to the dot-directory form the contract renders, because `--file`
+		// and the environment override exist precisely so a document may print the
+		// path of a goal file living anywhere else.
+		shapes: [required(new RegExp(String.raw`(?<![\w.-])(\.[\w-]+)/${literal(WORKLIST_FILENAME)}`, "g"))],
+		allowed: [WORKLIST_DIRECTORY, LEGACY_WORKLIST_DIRECTORY],
+		canonical: WORKLIST_DIRECTORY,
+	},
+	{
+		subject: "agent skill directory",
+		shapes: [
+			required(new RegExp(String.raw`${literal(dirname(SKILL_DIRECTORY))}/([\w.-]+)`, "g")),
+			required(/--skill ([\w.-]+)/g),
+		],
+		allowed: [basename(SKILL_DIRECTORY)],
+		canonical: basename(SKILL_DIRECTORY),
+	},
+];
+
+/** Every disagreement between a set of documents and one entry's spellings. */
+function spellingProblems(
+	documentation: readonly (readonly [string, string])[],
+	{ subject, shapes, allowed, canonical }: SpellingEntry,
+): string[] {
+	const problems: string[] = [];
+	for (const shape of shapes) {
+		const stated = documentation.flatMap(([path, contents]) =>
+			[...contents.matchAll(shape.pattern)].map((match) => [path, match[1] ?? ""] as const),
+		);
+		problems.push(
+			...stated.filter(([, name]) => !allowed.includes(name)).map(([path, name]) => `${path} states ${name}`),
+		);
+		if (shape.required && !stated.some(([, name]) => name === canonical)) {
+			problems.push(
+				`no document spells the ${subject} \`${canonical}\` as \`${shape.pattern.source}\`, so that shape pins nothing`,
+			);
+		}
+	}
+	return problems;
+}
 
 /** Split a GFM table row into its cells: on unescaped pipes only, as a renderer does. */
 function tableCells(row: string): string[] {
@@ -166,6 +360,31 @@ describe("single CLI command contract", () => {
 		);
 	});
 
+	it("finds the absolute paths the skill is checked against, and nothing else", () => {
+		// The check the skill's neutrality rests on, exercised against inputs, because a
+		// matcher only ever run over a file that has none cannot tell "no absolute path"
+		// from "this pattern stopped matching".
+		expect(absolutePathsIn("node /Users/someone/checkout/src/cli.ts project list")).toEqual([
+			"/Users/someone/checkout/src/cli.ts",
+		]);
+		expect(absolutePathsIn("the skill file lands at /opt/stepstone/SKILL.md")).toEqual([
+			"/opt/stepstone/SKILL.md",
+		]);
+		expect(absolutePathsIn("generated from /home/max/checkouts/stepstone by hand")).toEqual([
+			"/home/max/checkouts/stepstone",
+		]);
+		expect(absolutePathsIn("two paths: /var/tmp/one and /etc/two")).toEqual(["/var/tmp/one", "/etc/two"]);
+		// The spellings the skill legitimately carries: repository-relative paths, the
+		// placeholder roots it uses instead of a real one, a home-relative path, and a URL.
+		expect(
+			absolutePathsIn(
+				"`.worklist/worklist.json`, `docs/cli.md`, `.claude/skills/stepstone/SKILL.md`, " +
+					"`<git-root>/.worklist/worklist.json`, `<checkout>/src/cli.ts`, `~/.claude/skills/`, " +
+					"and https://example.com/a/b",
+			),
+		).toEqual([]);
+	});
+
 	it("renders a repository-neutral skill covering the whole contract surface", () => {
 		const skill = renderSkillMarkdown();
 		expect(skill).toContain(`description: ${JSON.stringify(CLI_COMMAND_CONTRACT.skillDescription)}`);
@@ -175,7 +394,10 @@ describe("single CLI command contract", () => {
 		expect(skill).toContain(`npx -y ${CLI_COMMAND_CONTRACT.binary}@latest`);
 		expect(skill).not.toMatch(new RegExp(String.raw`\bnpx -y ${CLI_COMMAND_CONTRACT.binary}(?!@latest)`));
 		expect(skill).not.toMatch(new RegExp(String.raw`\bnpx ${CLI_COMMAND_CONTRACT.binary}\b`));
-		expect(skill).not.toContain("/home/");
+		expect(
+			absolutePathsIn(skill),
+			"SKILL.md names an absolute path, which exists only on the machine that generated it",
+		).toEqual([]);
 		expect(skill).toContain(DOCS_PATH);
 		const exampleBlock = skill.match(/Examples:\n\n```sh\n([\s\S]*?)\n```/)?.[1];
 		expect(exampleBlock, "SKILL.md is missing its Examples block").toBeDefined();
@@ -211,18 +433,74 @@ describe("single CLI command contract", () => {
 		const bareInvocation = new RegExp(
 			String.raw`\b${CLI_COMMAND_CONTRACT.binary} ${CLI_COMMAND_CONTRACT.scope}\b`,
 		);
-		const artifacts = [
+		const generated = [
 			[SKILL_PATH, renderSkillMarkdown()],
 			[DOCS_PATH, renderCliGuide()],
-			["README.md", await readFile(resolve("README.md"), "utf8")],
 		] as const;
+		const documentation = await readDocumentation();
 
-		for (const [path, contents] of artifacts) {
-			expect(contents, `${path} is missing the published CLI invocation`).toContain(publishedInvocation);
+		// A bare invocation anywhere is the hazard: it lets a stale npx cache serve an
+		// older build, which is silent while it happens wherever it was copied from.
+		for (const [path, contents] of [...generated, ...documentation]) {
 			expect(contents, `${path} contains a bare published CLI invocation`).not.toMatch(bareInvocation);
 		}
+		for (const [path, contents] of generated) {
+			expect(contents, `${path} is missing the published CLI invocation`).toContain(publishedInvocation);
+		}
+		const readme = documentation.find(([path]) => path === "README.md");
+		expect(readme?.[1], "README.md is missing the published CLI invocation").toContain(publishedInvocation);
 		expect(renderSkillMarkdown()).toContain("node <checkout>/src/cli.ts project <action>");
-		expect(artifacts[2][1]).toContain("node src/cli.ts project <action>");
+		expect(
+			documentation.some(([, contents]) => contents.includes("node src/cli.ts project <action>")),
+			"no document states the checkout entry point the skill sends contributors to",
+		).toBe(true);
+	});
+
+	it("spells the names the contract owns the way the contract renders them", async () => {
+		const documentation = await readDocumentation();
+
+		for (const entry of CONTRACT_SPELLINGS) {
+			expect(
+				spellingProblems(documentation, entry),
+				`the documentation disagrees with the ${entry.subject} the contract renders; if the prose is right, add the name to this entry's allowed list, or declare that shape optional if no page should have to state it`,
+			).toEqual([]);
+		}
+	});
+
+	it("catches a rename the generated artifacts absorb and the prose does not", async () => {
+		// Renaming the contract regenerates docs/cli.md and SKILL.md and cannot touch a
+		// hand-written page, so every spelling in the prose is stale the moment it lands.
+		const documentation = await readDocumentation();
+		const problems = spellingProblems(documentation, publishedPackageSpellings("stepstone-renamed"));
+		const stale = problems.filter((problem) => problem.endsWith(` states ${CLI_COMMAND_CONTRACT.binary}`));
+		expect(stale, "a rename leaves the prose unchanged and is reported nowhere").not.toEqual([]);
+		expect(stale, "the report names the page a reader would be sent to the wrong package from").toContain(
+			`README.md states ${CLI_COMMAND_CONTRACT.binary}`,
+		);
+		// The renamed spellings are absent everywhere, so each required shape also reports
+		// that it now pins nothing rather than passing on an empty match set.
+		expect(problems.filter((problem) => problem.includes("pins nothing"))).not.toEqual([]);
+	});
+
+	it("requires a declared shape to be stated and lets an optional shape be absent", () => {
+		const documentation = [["docs/example.md", "Install it with `npm i example-package`."]] as const;
+		const versionPin = /(example-[\w-]+)@\d+\.\d+\.\d+/g;
+		const entry: SpellingEntry = {
+			subject: "example package",
+			shapes: [required(/npm i (example-[\w-]+)/g), optional(versionPin)],
+			allowed: ["example-package"],
+			canonical: "example-package",
+		};
+		// No page pins a version, which is a page's choice rather than a defect.
+		expect(spellingProblems(documentation, entry)).toEqual([]);
+		// The same absence in a required shape is the vacuous pass the check exists for.
+		expect(spellingProblems(documentation, { ...entry, shapes: [required(versionPin)] })).toEqual([
+			`no document spells the example package \`example-package\` as \`${versionPin.source}\`, so that shape pins nothing`,
+		]);
+		// A name the entry does not allow is reported wherever a shape finds it.
+		expect(spellingProblems([["docs/example.md", "`npm i example-other`"]], entry)).toContain(
+			"docs/example.md states example-other",
+		);
 	});
 
 	it("declares the same Node floor the package does", async () => {
@@ -235,21 +513,53 @@ describe("single CLI command contract", () => {
 		).toBe(`>=${CLI_COMMAND_CONTRACT.runtime.binaryNodeFloor}`);
 	});
 
-	it("states the same Node floors in the README the contract declares", async () => {
-		const readme = await readFile(resolve("README.md"), "utf8");
+	it("states the same Node floors in the documentation the contract declares", async () => {
+		const documentation = await readDocumentation();
 		const { binaryNodeFloor, sourceNodeFloor } = CLI_COMMAND_CONTRACT.runtime;
-		expect(readme, "README.md and CLI_COMMAND_CONTRACT.runtime.sourceNodeFloor disagree").toContain(
-			`Node ${sourceNodeFloor} or newer`,
+		// A floor is only useful paired with the runtime it applies to: the two are far
+		// enough apart that a reader on the lower one, told the TypeScript entry point
+		// works, meets `Unknown file extension ".ts"` instead. Matching the sentence
+		// rather than the page keeps that pairing wherever the prose moves.
+		const runtimes = [
+			{
+				runtime: "the compiled bin the published package ships",
+				floor: binaryNodeFloor,
+				named: [/compiled bin/, /published package/],
+			},
+			{
+				runtime: "the TypeScript entry point run from a checkout",
+				floor: sourceNodeFloor,
+				named: [/TypeScript entry point/, /src\/cli\.ts/],
+			},
+		];
+		const stated = documentation.flatMap(([path, contents]) =>
+			contents.split("\n").flatMap((line) =>
+				[...line.matchAll(/Node (\d+(?:\.\d+)*) (?:or newer|floor)/g)].map((match) => ({
+					path,
+					line,
+					version: match[1] ?? "",
+				})),
+			),
 		);
-		expect(readme, "README.md and CLI_COMMAND_CONTRACT.runtime.binaryNodeFloor disagree").toContain(
-			`Node ${binaryNodeFloor} floor`,
-		);
-		// A stale floor left behind by a contract bump would still satisfy the assertions above,
-		// so every version the README states as a requirement has to be one the contract declares.
-		const stated = [...readme.matchAll(/Node (\d+(?:\.\d+)*) (?:or newer|floor)/g)].map((match) => match[1]);
-		expect(new Set(stated), "README.md states a Node requirement the contract does not declare").toEqual(
-			new Set([sourceNodeFloor, binaryNodeFloor]),
-		);
+		for (const { path, line, version } of stated) {
+			const named = runtimes.filter((entry) => entry.named.some((marker) => marker.test(line)));
+			expect(
+				named.map((entry) => entry.runtime),
+				`${path} states Node ${version} without naming exactly one runtime it applies to: ${line}`,
+			).toHaveLength(1);
+			expect(version, `${path} states the wrong Node floor for ${named[0]?.runtime}: ${line}`).toBe(
+				named[0]?.floor,
+			);
+		}
+		// Set equality closes the other direction: both floors have to be stated where a
+		// reader will meet them, and no page may state a version the contract does not
+		// declare, because a stale floor left behind by a bump reads like a requirement.
+		expect(
+			new Set(stated.map(({ version }) => version)),
+			`the documentation and CLI_COMMAND_CONTRACT.runtime disagree about Node requirements: ${stated
+				.map(({ path, version }) => `${path} states ${version}`)
+				.join(", ")}`,
+		).toEqual(new Set([sourceNodeFloor, binaryNodeFloor]));
 	});
 
 	it("ships the generated skill in the published package", async () => {

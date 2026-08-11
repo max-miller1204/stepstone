@@ -1,0 +1,100 @@
+The generated agent skill, executed line by line against the shipped bin
+=======================================================================
+Every command below is the Examples block of the SKILL.md that ships in the tarball,
+run verbatim in a fresh git repository. 'npx -y stepstone@latest' is served by the
+packed build of this branch. Only 'plan.json' was created first, as the block assumes.
+Output is trimmed to the first two lines per command; a non-zero exit would be shown.
+
+$ cat plan.json
+[
+  { "title": "Ship the new parser", "description": "The parser the importer retirement waits on" }
+]
+
+$ npx -y stepstone@latest project list --json
+  {
+    "ok": true,
+  ... (17 more lines)
+
+$ npx -y stepstone@latest project add Support goal templates --description "Let teams share reusable goal outlines"
+  Added project goal support-goal-templates: Support goal templates
+
+$ npx -y stepstone@latest project apply-plan plan.json --dry-run --json
+  {
+    "ok": true,
+  ... (46 more lines)
+
+$ npx -y stepstone@latest project apply-plan plan.json --json
+  {
+    "ok": true,
+  ... (54 more lines)
+
+$ npx -y stepstone@latest project find templates --json
+  {
+    "ok": true,
+  ... (26 more lines)
+
+$ npx -y stepstone@latest project next --json
+  {
+    "ok": true,
+  ... (24 more lines)
+
+$ npx -y stepstone@latest project ready --json
+  {
+    "ok": true,
+  ... (34 more lines)
+
+$ npx -y stepstone@latest project waves --json
+  {
+    "ok": true,
+  ... (36 more lines)
+
+$ npx -y stepstone@latest project show support-goal-templates --json
+  {
+    "ok": true,
+  ... (26 more lines)
+
+$ npx -y stepstone@latest project update support-goal-templates --description "Replace only the description"
+  Updated project goal support-goal-templates
+
+$ npx -y stepstone@latest project update support-goal-templates Support shared goal templates
+  Updated project goal support-goal-templates
+
+$ npx -y stepstone@latest project update support-goal-templates --append-description "Blocked on the template schema until it lands"
+  Updated project goal support-goal-templates
+
+$ npx -y stepstone@latest project update support-goal-templates --expect-updated-at 2026-05-04T09:12:31.004Z --append-description "Reviewed and still current"
+  Project goal support-goal-templates changed from 2026-05-04T09:12:31.004Z to 2026-08-11T09:02:23.402Z.
+  !! exit 4
+
+$ npx -y stepstone@latest project update support-goal-templates --group Foundation
+  Updated project goal support-goal-templates
+
+$ npx -y stepstone@latest project add Retire the legacy importer --depends-on support-goal-templates --depends-on ship-the-new-parser
+  Added project goal retire-the-legacy-importer: Retire the legacy importer
+
+$ npx -y stepstone@latest project update retire-the-legacy-importer --depends-on support-goal-templates
+  Updated project goal retire-the-legacy-importer
+
+$ npx -y stepstone@latest project update retire-the-legacy-importer --depends-on ''
+  Updated project goal retire-the-legacy-importer
+
+$ npx -y stepstone@latest project move support-goal-templates up
+  Project goal support-goal-templates is already there
+
+$ npx -y stepstone@latest project move support-goal-templates before retire-the-legacy-importer
+  Moved project goal support-goal-templates
+
+$ npx -y stepstone@latest project set_active support-goal-templates
+  Activated project goal support-goal-templates
+
+$ npx -y stepstone@latest project waves
+Wave 1 (3 goals):
+  [open] ship-the-new-parser: Ship the new parser
+  [active] support-goal-templates: Support shared goal templates
+  [open] retire-the-legacy-importer: Retire the legacy importer
+
+Note on the one non-zero exit above: the `--expect-updated-at 2026-05-04T09:12:31.004Z`
+example carries a fixed placeholder timestamp, so in a scratch repository it correctly
+reports a concurrent-change conflict and exits 4 without writing. That is the documented
+precondition doing its job, not a broken example; every other line of the skill's Examples
+block succeeds against the shipped bin.
