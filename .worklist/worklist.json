@@ -331,16 +331,17 @@
       "id": "roadmap-md-generate-docs-roadmap-md",
       "title": "roadmap-md: generate docs/ROADMAP.md from the worklist",
       "description": "Render .pi/worklist.json to a committed docs/ROADMAP.md via the existing docs generator pipeline: sections by group, goals in file order, status and dependencies noted, so the roadmap reads on GitHub without the CLI.",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-04T02:37:53.978Z",
-      "updatedAt": "2026-08-05T05:02:33.711Z",
+      "updatedAt": "2026-08-11T19:10:48.559Z",
       "previousIds": [
         "goal-mse1szi2-0010a190"
       ],
       "group": "Visibility",
       "dependsOn": [
         "schema-fields-group-completedat-links"
-      ]
+      ],
+      "completedAt": "2026-08-11T19:10:48.559Z"
     },
     {
       "id": "mcp-server-expose-the-worklist-over-mcp",
@@ -590,5 +591,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 243
+  "revision": 245
 }

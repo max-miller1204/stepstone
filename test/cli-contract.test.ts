@@ -16,6 +16,7 @@ import {
 	WORKLIST_FILENAME,
 	WORKLIST_PATH_ENV,
 } from "../src/cli-contract.ts";
+import { ROADMAP_PATH } from "../src/roadmap.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +27,14 @@ const execFileAsync = promisify(execFile);
  * alone would stop covering the page that actually carries the claim as soon as
  * prose moves. Reading the directory also covers a document the day it is added,
  * which is the case a hand-maintained list always misses.
+ *
+ * The generated roadmap is the one exclusion: its body is goal prose rendered
+ * from the committed goal file rather than documentation somebody authored. A
+ * goal describing a command in passing would fail the copy-paste-safety
+ * assertion, and holding goals to the names the contract renders today would
+ * make a rename a demand to rewrite descriptions written before it, which are a
+ * record of what was decided rather than instructions to follow.
+ * test/roadmap.test.ts pins the prose that page does author.
  */
 async function readDocumentation(): Promise<(readonly [string, string])[]> {
 	const docsDirectory = "docs";
@@ -33,7 +42,7 @@ async function readDocumentation(): Promise<(readonly [string, string])[]> {
 	const paths = [
 		"README.md",
 		...entries
-			.filter((entry) => entry.endsWith(".md"))
+			.filter((entry) => entry.endsWith(".md") && join(docsDirectory, entry) !== ROADMAP_PATH)
 			.sort()
 			.map((entry) => join(docsDirectory, entry)),
 	];
