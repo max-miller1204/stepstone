@@ -380,7 +380,7 @@ describe("single CLI command contract", () => {
 					stated
 						.filter(([, name]) => !allowed.includes(name))
 						.map(([path, name]) => `${path} states ${name}`),
-					`the documentation names a ${subject} the contract does not render`,
+					`the documentation names a ${subject} the contract does not render; if the prose is right, add the name to this entry's allowed list`,
 				).toEqual([]);
 				expect(
 					stated.map(([, name]) => name),
