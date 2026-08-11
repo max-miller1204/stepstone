@@ -1,14 +1,32 @@
 import { execFile } from "node:child_process";
-import { glob, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { glob, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
-import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
+import { CLI_COMMAND_CONTRACT, SKILL_PATH } from "../src/cli-contract.ts";
+import { ROADMAP_PATH } from "../src/roadmap.ts";
 import { packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
 const compiledCliPath = resolve("dist/cli.js");
+
+/**
+ * Everything this checkout writes for itself rather than for an install.
+ *
+ * A published tarball is downloaded by everyone who runs the CLI once through
+ * `npx`, so it carries what an install reads and nothing else: the notes a
+ * contributor to this repository needs are on the repository, where the person
+ * who needs them already is. `AGENTS.md` is the rule list for changing this
+ * source, the roadmap is this project's own goals, and the development and
+ * releasing pages describe working on the package rather than using it.
+ */
+const DEVELOPMENT_ONLY_FILES: readonly string[] = [
+	"AGENTS.md",
+	ROADMAP_PATH,
+	"docs/development.md",
+	"docs/releasing.md",
+];
 
 interface CliResult {
 	code: number;
@@ -34,7 +52,11 @@ function parseJson<T>(text: string): T {
 	}
 }
 
-describe("compiled stepstone CLI bin", () => {
+describe("published stepstone package", () => {
+	// Every assertion that asks `npm pack` what the tarball holds lives in this
+	// file, because this build rewrites `dist/` while a pack walks it: run from
+	// another file, the two race in parallel workers and the pack reads a tree
+	// that is being deleted. Here they are ordered behind the build instead.
 	beforeAll(async () => {
 		await execFileAsync("npm", ["run", "build"], { cwd: resolve(".") });
 	}, 60_000);
@@ -171,6 +193,56 @@ describe("compiled stepstone CLI bin", () => {
 		const refused = await runCompiledCli(root, ["project", "delete", `${goalId}`]);
 		expect(refused.code).toBe(3);
 	});
+
+	it("packs what an install reads and leaves this repository's own material behind", async () => {
+		const paths = await packedFilePaths();
+		for (const path of DEVELOPMENT_ONLY_FILES) {
+			expect(paths, `${path} is written for this checkout and must not be packaged`).not.toContain(path);
+		}
+		expect(paths, `${SKILL_PATH} must be packaged so an install carries the skill`).toContain(SKILL_PATH);
+		expect(paths, "README.md must be packaged; it is the package's front page").toContain("README.md");
+		// Every other page under docs/ documents the package for somebody using it, so
+		// it ships. Classified by reading the directory rather than from a second list,
+		// so a page added tomorrow is covered the day it lands: it is packaged unless it
+		// was named above as one this checkout keeps to itself.
+		const published = (await readdir(resolve("docs")))
+			.filter((entry) => entry.endsWith(".md"))
+			.map((entry) => join("docs", entry))
+			.filter((path) => !DEVELOPMENT_ONLY_FILES.includes(path));
+		expect(published.length, "no docs page is published, so this assertion pins nothing").toBeGreaterThan(0);
+		for (const path of published) {
+			expect(paths, `${path} documents the package and must be packaged`).toContain(path);
+		}
+	}, 60_000);
+
+	it("links only to pages an install carries, from every page an install carries", async () => {
+		// A packaged page is read out of `node_modules`, where a relative link can only
+		// land on something the tarball also carries. Excluding a page from the tarball
+		// therefore breaks every relative link into it from a page that still ships,
+		// which is invisible in this checkout because both files are on disk here.
+		//
+		// README.md is the one page held out, and deliberately: its reader is on GitHub
+		// or on npmjs.com's rendered README, where every path in the repository
+		// resolves, so its links to the development-only pages are answers rather than
+		// dead ends.
+		const paths = await packedFilePaths();
+		const pages = [...paths].filter((path) => path.endsWith(".md") && path !== "README.md");
+		expect(pages.length, "no Markdown page is packaged, so this assertion pins nothing").toBeGreaterThan(0);
+		const dangling: string[] = [];
+		for (const page of pages) {
+			const contents = await readFile(resolve(page), "utf8");
+			for (const [, target] of contents.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
+				// Absolute URLs leave the package, and a bare fragment stays on the page.
+				if (target === undefined || /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("#")) continue;
+				const resolved = posix.normalize(posix.join(posix.dirname(page), target.split("#")[0] ?? ""));
+				if (!paths.has(resolved)) dangling.push(`${page} links to ${target}`);
+			}
+		}
+		expect(
+			dangling,
+			`packaged pages link to files an install does not carry: ${dangling.join("; ")}`,
+		).toEqual([]);
+	}, 60_000);
 
 	it("ships the compiled bin in the published package", async () => {
 		const paths = await packedFilePaths();

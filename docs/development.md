@@ -54,10 +54,11 @@ This page, [docs/releasing.md](releasing.md), [docs/ROADMAP.md](ROADMAP.md), and
 They stay on the repository, where a contributor who needs them already is, rather than being downloaded by everyone who runs the CLI once through `npx`.
 
 Add a new page to `docs/` and it ships by default.
-A page that belongs to this repository instead has to be named in the manifest's `files` and in `DEVELOPMENT_ONLY_FILES` in `test/cli-contract.test.ts`, which asks `npm pack` itself what the tarball ended up containing, because whether a pattern keeps a file out of it is npm's answer to give rather than something a reader of the declaration can tell.
+A page that belongs to this repository instead has to be named in the manifest's `files` and in `DEVELOPMENT_ONLY_FILES` in `test/compiled-cli.test.ts`, which asks `npm pack` itself what the tarball ended up containing, because whether a pattern keeps a file out of it is npm's answer to give rather than something a reader of the declaration can tell.
 
 Holding a page back also breaks every relative link into it from a page that still ships, which is invisible here because both files are on disk in a checkout.
-A packaged page is read out of `node_modules`, so it links to a held-back page by absolute GitHub URL, and the same test resolves every relative link in every packaged page against the tarball's own file list.
+A packaged page is read out of `node_modules`, so it links to a held-back page by absolute GitHub URL, and the same file resolves every relative link in every packaged page against the tarball's own file list.
+Every assertion that asks `npm pack` lives there rather than anywhere else, because that suite also runs `npm run build`, which rewrites `dist/` while a pack is walking it.
 `README.md` is the one page exempt: its reader is on GitHub or on npmjs.com's rendered README, where every path in the repository resolves.
 
 ## Invariants

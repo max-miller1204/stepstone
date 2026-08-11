@@ -17,6 +17,11 @@ interface PackedPackage {
  * deliberate: it keeps the dry run from triggering `prepack`, which would
  * rebuild `dist/` underneath the suites reading it.
  *
+ * Call this only from the suite that owns `npm run build`. A pack walks the
+ * whole worktree, including `dist/`, and that build deletes and rewrites it, so
+ * a caller in another file races the rebuild across parallel workers and reads a
+ * tree that is disappearing underneath it. Inside one file the two are ordered.
+ *
  * npm has emitted two shapes for this payload: an array of results through
  * npm 11, and an object keyed by package name from npm 12. Both describe the
  * same tarball, and callers only assert what that tarball contains, so this
