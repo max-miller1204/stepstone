@@ -40,6 +40,21 @@ async function readDocumentation(): Promise<(readonly [string, string])[]> {
 	return Promise.all(paths.map(async (path) => [path, await readFile(resolve(path), "utf8")] as const));
 }
 
+/**
+ * Every absolute filesystem path a string names.
+ *
+ * A path rooted at `/` is a path on whoever generated the file, so the generated
+ * skill must never carry one; it roots its paths at a placeholder instead. The
+ * tell is a slash that starts a token rather than continuing one, which is what
+ * separates `/opt/tools/x` from `docs/cli.md`, from `<git-root>/.worklist`, and
+ * from the `//` inside a URL.
+ */
+function absolutePathsIn(text: string): string[] {
+	return [...text.matchAll(/(?<![\w>:~./-])\/[A-Za-z0-9_.~-]+(?:\/[A-Za-z0-9_.~-]+)*/g)].map(
+		(match) => match[0],
+	);
+}
+
 /** Escape a contract value so a pattern built around it matches it literally. */
 function literal(value: string): string {
 	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
@@ -292,6 +307,31 @@ describe("single CLI command contract", () => {
 		);
 	});
 
+	it("finds the absolute paths the skill is checked against, and nothing else", () => {
+		// The check the skill's neutrality rests on, exercised against inputs, because a
+		// matcher only ever run over a file that has none cannot tell "no absolute path"
+		// from "this pattern stopped matching".
+		expect(absolutePathsIn("node /Users/someone/checkout/src/cli.ts project list")).toEqual([
+			"/Users/someone/checkout/src/cli.ts",
+		]);
+		expect(absolutePathsIn("the skill file lands at /opt/stepstone/SKILL.md")).toEqual([
+			"/opt/stepstone/SKILL.md",
+		]);
+		expect(absolutePathsIn("generated from /home/max/checkouts/stepstone by hand")).toEqual([
+			"/home/max/checkouts/stepstone",
+		]);
+		expect(absolutePathsIn("two paths: /var/tmp/one and /etc/two")).toEqual(["/var/tmp/one", "/etc/two"]);
+		// The spellings the skill legitimately carries: repository-relative paths, the
+		// placeholder roots it uses instead of a real one, a home-relative path, and a URL.
+		expect(
+			absolutePathsIn(
+				"`.worklist/worklist.json`, `docs/cli.md`, `.claude/skills/stepstone/SKILL.md`, " +
+					"`<git-root>/.worklist/worklist.json`, `<checkout>/src/cli.ts`, `~/.claude/skills/`, " +
+					"and https://example.com/a/b",
+			),
+		).toEqual([]);
+	});
+
 	it("renders a repository-neutral skill covering the whole contract surface", () => {
 		const skill = renderSkillMarkdown();
 		expect(skill).toContain(`description: ${JSON.stringify(CLI_COMMAND_CONTRACT.skillDescription)}`);
@@ -301,13 +341,8 @@ describe("single CLI command contract", () => {
 		expect(skill).toContain(`npx -y ${CLI_COMMAND_CONTRACT.binary}@latest`);
 		expect(skill).not.toMatch(new RegExp(String.raw`\bnpx -y ${CLI_COMMAND_CONTRACT.binary}(?!@latest)`));
 		expect(skill).not.toMatch(new RegExp(String.raw`\bnpx ${CLI_COMMAND_CONTRACT.binary}\b`));
-		// A path rooted at `/` is a path on whoever generated the file. The skill roots
-		// its paths at a placeholder instead - `<git-root>/...`, `<checkout>/...` - so
-		// the slash that starts a token, rather than continuing one, is the tell.
 		expect(
-			[...skill.matchAll(/(?<![\w>:~./-])\/[A-Za-z0-9_.~-]+(?:\/[A-Za-z0-9_.~-]+)*/g)].map(
-				(match) => match[0],
-			),
+			absolutePathsIn(skill),
 			"SKILL.md names an absolute path, which exists only on the machine that generated it",
 		).toEqual([]);
 		expect(skill).toContain(DOCS_PATH);
@@ -403,19 +438,48 @@ describe("single CLI command contract", () => {
 	it("states the same Node floors in the documentation the contract declares", async () => {
 		const documentation = await readDocumentation();
 		const { binaryNodeFloor, sourceNodeFloor } = CLI_COMMAND_CONTRACT.runtime;
+		// A floor is only useful paired with the runtime it applies to: the two are far
+		// enough apart that a reader on the lower one, told the TypeScript entry point
+		// works, meets `Unknown file extension ".ts"` instead. Matching the sentence
+		// rather than the page keeps that pairing wherever the prose moves.
+		const runtimes = [
+			{
+				runtime: "the compiled bin the published package ships",
+				floor: binaryNodeFloor,
+				named: [/compiled bin/, /published package/],
+			},
+			{
+				runtime: "the TypeScript entry point run from a checkout",
+				floor: sourceNodeFloor,
+				named: [/TypeScript entry point/, /src\/cli\.ts/],
+			},
+		];
 		const stated = documentation.flatMap(([path, contents]) =>
-			[...contents.matchAll(/Node (\d+(?:\.\d+)*) (?:or newer|floor)/g)].map(
-				(match) => [path, match[1]] as const,
+			contents.split("\n").flatMap((line) =>
+				[...line.matchAll(/Node (\d+(?:\.\d+)*) (?:or newer|floor)/g)].map((match) => ({
+					path,
+					line,
+					version: match[1] ?? "",
+				})),
 			),
 		);
-		// Set equality asserts both directions at once: both floors have to be stated
-		// where a reader will meet them, and no page may state a version the contract
-		// does not declare, because a stale floor left behind by a contract bump reads
-		// exactly like a current requirement.
+		for (const { path, line, version } of stated) {
+			const named = runtimes.filter((entry) => entry.named.some((marker) => marker.test(line)));
+			expect(
+				named.map((entry) => entry.runtime),
+				`${path} states Node ${version} without naming exactly one runtime it applies to: ${line}`,
+			).toHaveLength(1);
+			expect(version, `${path} states the wrong Node floor for ${named[0]?.runtime}: ${line}`).toBe(
+				named[0]?.floor,
+			);
+		}
+		// Set equality closes the other direction: both floors have to be stated where a
+		// reader will meet them, and no page may state a version the contract does not
+		// declare, because a stale floor left behind by a bump reads like a requirement.
 		expect(
-			new Set(stated.map(([, version]) => version)),
+			new Set(stated.map(({ version }) => version)),
 			`the documentation and CLI_COMMAND_CONTRACT.runtime disagree about Node requirements: ${stated
-				.map(([path, version]) => `${path} states ${version}`)
+				.map(({ path, version }) => `${path} states ${version}`)
 				.join(", ")}`,
 		).toEqual(new Set([sourceNodeFloor, binaryNodeFloor]));
 	});

@@ -22,7 +22,8 @@ A goal completed before `completedAt` existed simply has none, because that mome
 ## Statuses
 
 A goal is `open`, `active`, `done`, or `archived`.
-Exactly one goal is active, so `set_active` is the answer to what is in flight rather than a label anybody can spread across the list.
+At most one goal is active: `set_active` demotes whichever goal held it, so the active goal is the answer to what is in flight rather than a label anybody can spread across the list.
+Having none is a normal state rather than a gap to fill - `complete` moves the active goal to `done` without promoting a successor, and a fresh roadmap has never had one.
 
 Activation is the only non-destructive direct status change.
 Completing, reopening, archiving, and deleting a goal all require explicit user intent: `--confirm` on the CLI, `confirm=true` on the model tool, a typed command, or a keystroke a person pressed in a board.

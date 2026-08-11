@@ -53,7 +53,7 @@ Run `npx -y stepstone@latest project ui` for a full-screen [terminal board](docs
 ## How it works
 
 A goal is a broad outcome with a title, an optional description, a status, and a slug ID derived from its title and frozen afterwards, so a reference written in a commit message or a PR stays valid after a rename.
-Statuses are `open`, `active`, `done`, and `archived`; exactly one goal is active, and completing, reopening, archiving, or deleting one always requires explicit user intent, from a `--confirm` flag or a keystroke a person pressed.
+Statuses are `open`, `active`, `done`, and `archived`; at most one goal is active, because `set_active` demotes whichever goal held it, and completing, reopening, archiving, or deleting one always requires explicit user intent, from a `--confirm` flag or a keystroke a person pressed.
 
 Dependency edges say which goals must land first, and blocked is derived from those edges on every read rather than stored, so nothing is ever left marked blocked after the work holding it up finished.
 `ready` is the whole parallel frontier, `next` is its first entry, and `waves` lays the unfinished goals out in the earliest layer each could start in.
