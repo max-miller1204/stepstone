@@ -809,6 +809,12 @@ describe("registered model tool", () => {
 		call: (params: Record<string, unknown>) => Promise<unknown>;
 		/** Everything the session has put in front of the user, newest last. */
 		notifications: string[];
+		/**
+		 * What pi does for `/new`, `/resume`, `/fork` and `/clone`: shut the session
+		 * down and start the next one on the same extension instance, which is
+		 * registered once per process rather than once per session.
+		 */
+		restart: (reason: "new" | "resume" | "fork") => Promise<void>;
 	}
 
 	/** A live session on a repository, left exactly as `session_start` leaves one. */
@@ -823,11 +829,15 @@ describe("registered model tool", () => {
 		} as unknown as ExtensionContext;
 		const sessionStart = handlers.get("session_start");
 		if (!sessionStart) throw new Error("session_start handler was not registered");
-		await sessionStart({}, sessionContext);
+		await sessionStart({ reason: "new" }, sessionContext);
 		const execute = tool.execute as ToolExecute;
 		return {
 			call: (params) => execute("call", params, undefined, undefined, sessionContext),
 			notifications,
+			restart: async (reason) => {
+				await handlers.get("session_shutdown")?.({}, sessionContext);
+				await sessionStart({ reason }, sessionContext);
+			},
 		};
 	}
 
@@ -926,6 +936,14 @@ describe("registered model tool", () => {
 		expect(
 			session.notifications.filter((message) => message.includes("two project worklists exist")),
 		).toHaveLength(1);
+
+		// The next session is told too. pi registers this extension once per process
+		// and reuses it across /new, /resume and /fork, so a session that inherited
+		// the previous one's dedupe would show one roadmap and never name the other.
+		await session.restart("new");
+		expect(
+			session.notifications.filter((message) => message.includes("two project worklists exist")),
+		).toHaveLength(2);
 	});
 
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {

@@ -142,7 +142,9 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	 * lands in. The notice is derived from the same resolution that chooses the
 	 * path, so it can never describe a file the session is not using, and it is
 	 * raised only when the condition newly appears, so a widget refresh on every
-	 * turn does not repeat it.
+	 * turn does not repeat it. What counts as newly appeared is scoped to one
+	 * session: pi reuses this extension across `/new`, `/resume`, `/fork` and
+	 * `/clone`, and every session has to be told which of two roadmaps it reads.
 	 */
 	function announceLocationNotice(ctx: ExtensionContext): void {
 		const notice = locateProject?.()?.notice;
@@ -441,6 +443,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 		sessionStore.reconstruct(ctx);
 		const locate = createProjectLocator(ctx.cwd);
 		locateProject = locate;
+		announcedNotice = undefined;
 		applicationService.setProjectPathResolver(() => locate()?.path ?? null);
 		try {
 			await updateUi(ctx);

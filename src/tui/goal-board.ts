@@ -1158,60 +1158,85 @@ export class GoalBoard {
 	 * Rows the status area holds while the standing notice is up.
 	 *
 	 * Budgeted from the condition rather than from whatever is on the line this
-	 * frame. The notice takes several rows and a transient message takes one, so
-	 * measuring the rendered content instead would reflow the list and detail
-	 * panes on the keystroke that raises a message and again on the one that
-	 * clears it.
+	 * frame, so a passing message cannot reflow the list and detail panes on the
+	 * keystroke that raises it and again on the one that clears it. The notice
+	 * gets rows of its own above the status line rather than sharing it, which is
+	 * what lets a message take that line without wiping the warning off a screen
+	 * that has no scrollback to recover it. A frame with nothing to spare falls
+	 * back to one row, and there the notice shares the line as it used to.
 	 */
 	private reservedStatusRows(width: number, rows: number): number {
 		if (this.notice === undefined) return 1;
-		const spare = rows - 1 - BODY_MIN_ROWS - 1;
-		const budget = Math.max(1, Math.min(NOTICE_MAX_ROWS, spare));
-		return wrapToLines(this.notice, Math.max(1, width - 2), budget).length;
+		const spare = rows - 1 - BODY_MIN_ROWS - 1 - 1;
+		if (spare < 1) return 1;
+		const budget = Math.min(NOTICE_MAX_ROWS, spare);
+		return wrapToLines(this.notice, Math.max(1, width - 2), budget).length + 1;
 	}
 
-	/** The prompt lines, which also carry the cursor column when input is open. */
-	private renderStatus(width: number, noticeRows: number): { lines: string[]; cursorColumn?: number } {
+	/**
+	 * The whole status block: the standing notice, and whatever needs the line.
+	 *
+	 * A message, a prompt, or a confirmation keeps the bottom row, so what the
+	 * board is asking or reporting stays where the eye already looks. The notice
+	 * takes the reserved rows above it rather than pushing it aside, because the
+	 * board owns the screen and a warning cleared by a passing message would have
+	 * nowhere to be read again.
+	 */
+	private renderStatus(width: number, statusRows: number): { lines: string[]; cursorColumn?: number } {
+		const noticeRows = statusRows - 1;
+		const line = this.renderStatusLine(width, noticeRows < 1);
+		return {
+			lines: [...this.renderNoticeRows(width, noticeRows), line.line],
+			...(line.cursorColumn === undefined ? {} : { cursorColumn: line.cursorColumn }),
+		};
+	}
+
+	/**
+	 * The standing notice, wrapped into the rows it was given.
+	 *
+	 * It wraps rather than being cut at the first line, because the two things it
+	 * exists to convey - which file is being ignored, and that the fix is to merge
+	 * by hand and delete - both sit past one line's worth of an absolute path.
+	 */
+	private renderNoticeRows(width: number, rows: number): string[] {
+		if (this.notice === undefined || rows <= 0) return [];
+		const { warning } = this.palette;
+		return wrapToLines(this.notice, Math.max(1, width - 2), rows).map((line) => ` ${warning(line)}`);
+	}
+
+	/**
+	 * The bottom row of the status block.
+	 *
+	 * Carries the cursor column when input is open, which is why it stays the last
+	 * row of the block. `mayHoldNotice` is set only on a frame too short to give
+	 * the notice a row of its own, where it falls back to taking this one.
+	 */
+	private renderStatusLine(width: number, mayHoldNotice: boolean): { line: string; cursorColumn?: number } {
 		const { accent, muted, dim, success, danger, warning, bold } = this.palette;
 		const inner = Math.max(1, width - 2);
 		if (this.mode.kind === "prompt") {
-			const input = this.renderInputLine(`${this.mode.prompt.label}: `, this.mode.prompt, width, accent);
-			return {
-				lines: [input.line],
-				...(input.cursorColumn === undefined ? {} : { cursorColumn: input.cursorColumn }),
-			};
+			return this.renderInputLine(`${this.mode.prompt.label}: `, this.mode.prompt, width, accent);
 		}
 		if (this.mode.kind === "search") {
-			const input = this.renderInputLine("/", this.mode.search, width, accent);
-			return {
-				lines: [input.line],
-				...(input.cursorColumn === undefined ? {} : { cursorColumn: input.cursorColumn }),
-			};
+			return this.renderInputLine("/", this.mode.search, width, accent);
 		}
 		if (this.mode.kind === "confirm") {
 			const suffix = ` ${dim("[")}${bold("y")}${dim("/")}N${dim("]")}`;
 			const question = truncateToWidth(this.mode.confirm.question, Math.max(1, width - 8));
-			return { lines: [` ${warning(question)}${suffix}`] };
+			return { line: ` ${warning(question)}${suffix}` };
 		}
 		if (this.message) {
 			const style =
 				this.message.tone === "error" ? danger : this.message.tone === "success" ? success : muted;
-			return { lines: [` ${style(truncateToWidth(this.message.text, inner))}`] };
+			return { line: ` ${style(truncateToWidth(this.message.text, inner))}` };
 		}
-		// A standing condition outranks the idle summary: the summary describes the
-		// roadmap on screen, and the notice is the reason that roadmap may not be
-		// all of them.
-		//
-		// It also wraps rather than being cut at the first line, because the two
-		// things it exists to convey - which file is being ignored, and that the fix
-		// is to merge by hand and delete - both sit past one line's worth of an
-		// absolute path. The goal rows still come first: the notice only takes the
-		// rows the frame can spare, and falls back to one truncated line when there
-		// are none.
-		if (this.notice !== undefined) {
-			return { lines: wrapToLines(this.notice, inner, noticeRows).map((line) => ` ${warning(line)}`) };
+		// With no row of its own, a standing condition outranks the idle summary: the
+		// summary describes the roadmap on screen, and the notice is the reason that
+		// roadmap may not be all of them.
+		if (mayHoldNotice && this.notice !== undefined) {
+			return { line: ` ${warning(truncateToWidth(this.notice, inner))}` };
 		}
-		return { lines: [` ${dim(truncateToWidth(this.idleSummary(), inner))}`] };
+		return { line: ` ${dim(truncateToWidth(this.idleSummary(), inner))}` };
 	}
 
 	/**

@@ -216,7 +216,7 @@ describe("goal board presentation", () => {
 		expect(statusLine([])).toBe("No project goals yet. Press a to add one.");
 	});
 
-	it("holds a standing notice on the status line, which the alternate screen would otherwise swallow", () => {
+	it("holds a standing notice above the status line, which the alternate screen would otherwise swallow", () => {
 		const notice = "Warning: two project worklists exist. /repo/.pi/worklist.json is ignored.";
 		const board = new GoalBoard({
 			palette: createPalette(false),
@@ -226,16 +226,21 @@ describe("goal board presentation", () => {
 			now: () => NOW,
 		});
 		const statusLine = () => plainFrame(board, 120, 20).at(-2)?.trim();
+		const noticeRow = () => plainFrame(board, 120, 20).at(-3)?.trim();
 
-		// It outranks the idle summary, which describes only the roadmap on screen.
-		expect(statusLine()).toBe(notice);
+		// The notice gets a row of its own, so it does not have to displace the idle
+		// summary to be seen.
+		expect(noticeRow()).toBe(notice);
+		expect(statusLine()).toBe("Active: Replace legacy authentication");
 
 		// A message takes the line while it has something to say, and the standing
-		// condition comes back rather than being reported once and lost.
+		// condition stays put above it rather than being reported once and lost.
 		board.setMessage("Added goal.", "success");
 		expect(statusLine()).toBe("Added goal.");
+		expect(noticeRow()).toBe(notice);
 		press(board, "j");
-		expect(statusLine()).toBe(notice);
+		expect(statusLine()).toBe("Active: Replace legacy authentication");
+		expect(noticeRow()).toBe(notice);
 	});
 
 	it("wraps the real two-worklist warning so the ignored file and the fix survive 80 columns", () => {
@@ -292,28 +297,30 @@ describe("goal board presentation", () => {
 			now: () => NOW,
 		});
 
-		// The notice needs four rows here, so a status area budgeted per frame would
-		// hand three of them back to the panes the moment a message took the line.
+		// The notice holds rows of its own above the status line, so a status area
+		// budgeted per frame would hand them back the moment a message arrived.
 		const standing = plainFrame(board, 80, 20);
-		const noticeRows = standing.filter((line) =>
-			/Warning:|worklist\.json|Merge the goals|delete the second/.test(line),
-		);
-		expect(noticeRows).toHaveLength(4);
 		const goalRows = listedRows(board, 80, 20);
 		const detail = detailLines(board, 80, 20);
 		expect(goalRows.length).toBeGreaterThan(0);
 
 		board.setMessage("Added goal.", "success");
 		const withMessage = plainFrame(board, 80, 20);
-		expect(withMessage.at(-2)?.trim()).toBe("Added goal.");
 
-		// Same list, same detail, same geometry: the message replaced the notice on
-		// the bottom row and the rows it was using stayed reserved, blank.
+		// The message keeps the bottom row, and the whole notice keeps the rows above
+		// it rather than being wiped off a screen with no scrollback to recover it.
+		expect(withMessage.at(-2)?.trim()).toBe("Added goal.");
+		const shown = withMessage.join(" ").replace(/\s+/g, " ");
+		expect(shown).toContain(notice);
+		expect(shown).toContain(`${legacyPath} is ignored`);
+		expect(shown).toContain("Merge the goals you want to keep into the first file and delete the second.");
+
+		// Same list, same detail, same geometry: only the bottom row changed.
 		expect(listedRows(board, 80, 20)).toEqual(goalRows);
 		expect(detailLines(board, 80, 20)).toEqual(detail);
 		expect(withMessage).toHaveLength(standing.length);
-		expect(withMessage.slice(0, -5)).toEqual(standing.slice(0, -5));
-		expect(withMessage.slice(-5, -2).every((line) => line.trim() === "")).toBe(true);
+		expect(withMessage.slice(0, -2)).toEqual(standing.slice(0, -2));
+		expect(withMessage.every((line) => visibleWidth(line) <= 80)).toBe(true);
 	});
 
 	it("falls back to one truncated notice line on a terminal too short to wrap it", () => {
