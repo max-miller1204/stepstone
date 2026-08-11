@@ -8,9 +8,13 @@
  * someone running `npx` on the published name without Pi - the install this
  * package's own agent skill prescribes. So the check refuses to trust the local
  * tree: it packs the real tarball, installs it into a scratch directory with
- * no dev dependencies and no Pi packages, and drives the installed bin across
- * the command surface, asserting exit codes and `--json` envelopes rather than
- * only that the process started.
+ * no dev dependencies and no Pi packages, and drives every executable the
+ * manifest publishes, asserting exit codes, `--json` envelopes, and JSON-RPC
+ * replies rather than only that a process started.
+ *
+ * Which executables those are comes from package.json's `bin` map rather than
+ * from a list written here, so a newly published bin cannot be packed and left
+ * unstarted by a check that does not know it exists.
  *
  * scripts/cli-import-graph.ts catches the same regression from the sources in
  * milliseconds; this is the slower proof that the tarball a user downloads
@@ -50,6 +54,9 @@ interface SuccessEnvelope extends Envelope {
 	result: Record<string, unknown>;
 	meta: { cliVersion?: string; changed?: boolean };
 }
+
+/** Drives one installed executable in a scratch repository of its own. */
+type BinExercise = (binPath: string, workspace: string, version: string) => Promise<void>;
 
 // `execFile` hands the child a stdin pipe nothing ever ends, so a bin that reads
 // stdin instead of exiting would leave this job hanging until the CI runner's
@@ -372,21 +379,40 @@ async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
 	if (failure !== undefined) throw failure;
 }
 
+/**
+ * How each published executable is driven once it is installed, keyed by the
+ * command name the manifest's `bin` map puts on a user's PATH. The manifest is
+ * the list of executables an install exposes, so this check compares itself
+ * against that map instead of naming the bins twice.
+ */
+const BIN_EXERCISES: Record<string, BinExercise> = {
+	[binary]: exerciseCli,
+	[`${binary}-mcp`]: exerciseMcp,
+};
+
 const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));
 const packDir = join(scratch, "pack");
 const installDir = join(scratch, "install");
-const workspace = join(scratch, "workspace");
-const mcpWorkspace = join(scratch, "mcp-workspace");
 let succeeded = false;
 try {
-	await Promise.all(
-		[packDir, installDir, workspace, mcpWorkspace].map((dir) => mkdir(dir, { recursive: true })),
-	);
+	await Promise.all([packDir, installDir].map((dir) => mkdir(dir, { recursive: true })));
 
-	const { name, version } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
+	const { name, version, bin } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
 		name: string;
 		version: string;
+		bin?: Record<string, string>;
 	};
+
+	// Before spending minutes on a pack and an install: a bin this check never
+	// starts is packed without anyone proving it loads from a Pi-free install,
+	// which is the one regression this whole job exists to catch.
+	assert.deepEqual(
+		Object.keys(bin ?? {}).sort(),
+		Object.keys(BIN_EXERCISES).sort(),
+		"package.json's `bin` map and BIN_EXERCISES in scripts/no-pi-install-check.ts must name the " +
+			"same executables. A published bin with no exercise here ships unstarted, and an exercise " +
+			"for a bin the manifest no longer publishes drives nothing.",
+	);
 
 	step("Packing the publishable tarball");
 	const tarball = await packTarball(packDir);
@@ -395,11 +421,18 @@ try {
 	await installTarball(tarball, installDir);
 	await assertNoPiPackages(installDir);
 
-	step("Driving the installed CLI and MCP bins");
-	await run("git", ["init", "-q", "."], workspace);
-	await run("git", ["init", "-q", "."], mcpWorkspace);
-	await exerciseCli(join(installDir, "node_modules", ".bin", binary), workspace, version);
-	await exerciseMcp(join(installDir, "node_modules", ".bin", `${binary}-mcp`), mcpWorkspace);
+	step(`Driving every published bin: ${Object.keys(BIN_EXERCISES).join(", ")}`);
+	for (const [command, exercise] of Object.entries(BIN_EXERCISES)) {
+		// Each bin gets its own repository, so one bin's writes can never stand in
+		// for a second bin that never wrote anything.
+		const workspace = join(scratch, `workspace-${command}`);
+		// pi-lens-ignore: await-in-loop
+		await mkdir(workspace, { recursive: true });
+		// pi-lens-ignore: await-in-loop
+		await run("git", ["init", "-q", "."], workspace);
+		// pi-lens-ignore: await-in-loop
+		await exercise(join(installDir, "node_modules", ".bin", command), workspace, version);
+	}
 
 	succeeded = true;
 	step(`${name} ${version} runs from a Pi-free install.`);
