@@ -273,6 +273,49 @@ describe("goal board presentation", () => {
 		expect(frame.some((line) => line.includes("Replace legacy authentication"))).toBe(true);
 	});
 
+	it("holds the notice's rows while it stands, so a passing message does not reflow the panes", () => {
+		const currentPath = "/home/dev/service-api/.worklist/worklist.json";
+		const legacyPath = "/home/dev/service-api/.pi/worklist.json";
+		const notice = shadowedWorklistWarning({
+			path: currentPath,
+			source: "current",
+			currentPath,
+			legacyPath,
+			shadowedPath: legacyPath,
+		});
+		if (notice === undefined) throw new Error("a shadowed worklist must earn a notice");
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+
+		// The notice needs four rows here, so a status area budgeted per frame would
+		// hand three of them back to the panes the moment a message took the line.
+		const standing = plainFrame(board, 80, 20);
+		const noticeRows = standing.filter((line) =>
+			/Warning:|worklist\.json|Merge the goals|delete the second/.test(line),
+		);
+		expect(noticeRows).toHaveLength(4);
+		const goalRows = listedRows(board, 80, 20);
+		const detail = detailLines(board, 80, 20);
+		expect(goalRows.length).toBeGreaterThan(0);
+
+		board.setMessage("Added goal.", "success");
+		const withMessage = plainFrame(board, 80, 20);
+		expect(withMessage.at(-2)?.trim()).toBe("Added goal.");
+
+		// Same list, same detail, same geometry: the message replaced the notice on
+		// the bottom row and the rows it was using stayed reserved, blank.
+		expect(listedRows(board, 80, 20)).toEqual(goalRows);
+		expect(detailLines(board, 80, 20)).toEqual(detail);
+		expect(withMessage).toHaveLength(standing.length);
+		expect(withMessage.slice(0, -5)).toEqual(standing.slice(0, -5));
+		expect(withMessage.slice(-5, -2).every((line) => line.trim() === "")).toBe(true);
+	});
+
 	it("falls back to one truncated notice line on a terminal too short to wrap it", () => {
 		const notice =
 			"Warning: two project worklists exist. Reading and writing /a/.worklist/worklist.json; /a/.pi/worklist.json is ignored. Merge the goals you want to keep into the first file and delete the second.";

@@ -30,10 +30,11 @@ const BODY_MIN_ROWS = 3;
 /**
  * Rows the standing notice may take.
  *
- * Enough to read the two-worklist warning whole at eighty columns, which is the
- * narrow end of a normal terminal and where its two absolute paths would
- * otherwise run off the line. It is a ceiling, not a reservation: a notice that
- * fits on one row takes one.
+ * Four holds the two-worklist warning whole at eighty columns for an ordinary
+ * repository path. A deep one - a cloud-synced folder, a checkout nested a few
+ * levels down - still runs past four rows and is cut at the last of them. The
+ * ceiling stays here anyway, because every row above it is a goal row taken
+ * from the list, and this is a rare condition that one merge clears for good.
  */
 const NOTICE_MAX_ROWS = 4;
 
@@ -806,14 +807,21 @@ export class GoalBoard {
 	// ----------------------------------------------------------------- render
 
 	render(width: number, rows: number): Frame {
-		const status = this.renderStatus(width, rows);
-		const bodyRows = Math.max(BODY_MIN_ROWS, rows - 2 - status.lines.length);
+		const statusRows = this.reservedStatusRows(width, rows);
+		const bodyRows = Math.max(BODY_MIN_ROWS, rows - 2 - statusRows);
 		const body =
 			this.mode.kind === "help" ? this.renderHelp(width, bodyRows) : this.renderPanes(width, bodyRows);
-		const lines = [this.renderHeader(width), ...body, ...status.lines, this.renderKeyBar(width)];
+		const status = this.renderStatus(width, statusRows);
+		// Anything shorter than the reservation sits at the bottom of it, so a prompt
+		// and its cursor stay on the row directly above the key bar.
+		const statusBlock = [
+			...new Array<string>(Math.max(0, statusRows - status.lines.length)).fill(""),
+			...status.lines,
+		];
+		const lines = [this.renderHeader(width), ...body, ...statusBlock, this.renderKeyBar(width)];
 		// The frame is exactly the size it was asked for, whatever the panes produced,
 		// so the status lines and key bar always land on the last rows.
-		const tail = status.lines.length + 1;
+		const tail = statusBlock.length + 1;
 		while (lines.length < rows) lines.splice(lines.length - tail, 0, "");
 		if (lines.length > rows) lines.splice(rows - tail, lines.length - rows);
 		return {
@@ -1146,8 +1154,24 @@ export class GoalBoard {
 		return lines;
 	}
 
+	/**
+	 * Rows the status area holds while the standing notice is up.
+	 *
+	 * Budgeted from the condition rather than from whatever is on the line this
+	 * frame. The notice takes several rows and a transient message takes one, so
+	 * measuring the rendered content instead would reflow the list and detail
+	 * panes on the keystroke that raises a message and again on the one that
+	 * clears it.
+	 */
+	private reservedStatusRows(width: number, rows: number): number {
+		if (this.notice === undefined) return 1;
+		const spare = rows - 1 - BODY_MIN_ROWS - 1;
+		const budget = Math.max(1, Math.min(NOTICE_MAX_ROWS, spare));
+		return wrapToLines(this.notice, Math.max(1, width - 2), budget).length;
+	}
+
 	/** The prompt lines, which also carry the cursor column when input is open. */
-	private renderStatus(width: number, rows: number): { lines: string[]; cursorColumn?: number } {
+	private renderStatus(width: number, noticeRows: number): { lines: string[]; cursorColumn?: number } {
 		const { accent, muted, dim, success, danger, warning, bold } = this.palette;
 		const inner = Math.max(1, width - 2);
 		if (this.mode.kind === "prompt") {
@@ -1185,9 +1209,7 @@ export class GoalBoard {
 		// rows the frame can spare, and falls back to one truncated line when there
 		// are none.
 		if (this.notice !== undefined) {
-			const spare = rows - 1 - BODY_MIN_ROWS - 1;
-			const budget = Math.max(1, Math.min(NOTICE_MAX_ROWS, spare));
-			return { lines: wrapToLines(this.notice, inner, budget).map((line) => ` ${warning(line)}`) };
+			return { lines: wrapToLines(this.notice, inner, noticeRows).map((line) => ` ${warning(line)}`) };
 		}
 		return { lines: [` ${dim(truncateToWidth(this.idleSummary(), inner))}`] };
 	}
