@@ -93,13 +93,13 @@ export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
 	scope: "project",
-	intro: `Manage repository-wide Project Goals in <git-root>/${WORKLIST_RELATIVE_PATH} through the same application service, cross-process lock, and atomic replacement as a live Pi session. Session Tasks live inside a Pi session and are deliberately out of scope.`,
+	intro: `Manage a repository's Project Goals in <git-root>/${WORKLIST_RELATIVE_PATH} from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.`,
 	/**
 	 * Trigger text agents match against to auto-load the skill. Deliberately
 	 * repository-neutral: one skill file serves every checkout, so it must never
 	 * assume it was installed alongside this source tree.
 	 */
-	skillDescription: `Manage ${BINARY} Project Goals (the shared roadmap in a repo's ${WORKLIST_RELATIVE_PATH}) from any Claude session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
+	skillDescription: `Manage ${BINARY} Project Goals (the roadmap committed in a repo's ${WORKLIST_RELATIVE_PATH}) from any agent session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
 	runtime: {
 		/** Node floor for the published compiled bin. Asserted against package.json engines.node. */
 		binaryNodeFloor: "20",
@@ -543,9 +543,9 @@ export function renderSkillMarkdown(): string {
 		"",
 		`# Managing ${contract.binary} Project Goals`,
 		"",
-		`Project Goals are a repository-wide roadmap stored in \`<git-root>/${WORKLIST_RELATIVE_PATH}\` and shared with Pi sessions.`,
-		"Never edit that file directly: a concurrent Pi session may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.",
-		`Always go through the ${contract.binary} CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as a live Pi session.`,
+		`Project Goals are a repository-wide roadmap stored in \`<git-root>/${WORKLIST_RELATIVE_PATH}\` and committed with the code, so every agent and every human working in that repository reads and edits one list.`,
+		"Never edit that file directly: another process may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.",
+		`Always go through the ${contract.binary} CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as every other interface onto that file.`,
 		"",
 		"## Invoking the CLI",
 		"",
@@ -622,7 +622,7 @@ export function renderSkillMarkdown(): string {
 		`- ${actionNameList(interactiveActions)} opens a full-screen board for the human at the keyboard, not for you.`,
 		"  Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.",
 		`  Suggest \`npx -y ${publishedBinary} ${contract.scope} ui\` when the user wants to browse or edit goals themselves; read state with \`list\` and \`show\` instead.`,
-		"- Session Tasks cannot be managed from outside a Pi session; the CLI intentionally rejects `session` scope.",
+		"- Session Tasks are a Pi extension feature that lives inside a Pi session, so the CLI rejects `session` scope.",
 		"  For your own in-session tracking, use your normal task tools instead.",
 		"",
 		"## Failure modes",

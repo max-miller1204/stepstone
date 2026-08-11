@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -14,6 +14,27 @@ import {
 } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * Every page of prose a reader lands on, paired with its contents.
+ *
+ * The documentation is the README plus `docs/`, so an assertion naming README.md
+ * alone would stop covering the page that actually carries the claim as soon as
+ * prose moves. Reading the directory also covers a document the day it is added,
+ * which is the case a hand-maintained list always misses.
+ */
+async function readDocumentation(): Promise<(readonly [string, string])[]> {
+	const docsDirectory = "docs";
+	const entries = await readdir(resolve(docsDirectory));
+	const paths = [
+		"README.md",
+		...entries
+			.filter((entry) => entry.endsWith(".md"))
+			.sort()
+			.map((entry) => join(docsDirectory, entry)),
+	];
+	return Promise.all(paths.map(async (path) => [path, await readFile(resolve(path), "utf8")] as const));
+}
 
 /** Split a GFM table row into its cells: on unescaped pipes only, as a renderer does. */
 function tableCells(row: string): string[] {
@@ -211,18 +232,27 @@ describe("single CLI command contract", () => {
 		const bareInvocation = new RegExp(
 			String.raw`\b${CLI_COMMAND_CONTRACT.binary} ${CLI_COMMAND_CONTRACT.scope}\b`,
 		);
-		const artifacts = [
+		const generated = [
 			[SKILL_PATH, renderSkillMarkdown()],
 			[DOCS_PATH, renderCliGuide()],
-			["README.md", await readFile(resolve("README.md"), "utf8")],
 		] as const;
+		const documentation = await readDocumentation();
 
-		for (const [path, contents] of artifacts) {
-			expect(contents, `${path} is missing the published CLI invocation`).toContain(publishedInvocation);
+		// A bare invocation anywhere is the hazard: it lets a stale npx cache serve an
+		// older build, which is silent while it happens wherever it was copied from.
+		for (const [path, contents] of [...generated, ...documentation]) {
 			expect(contents, `${path} contains a bare published CLI invocation`).not.toMatch(bareInvocation);
 		}
+		for (const [path, contents] of generated) {
+			expect(contents, `${path} is missing the published CLI invocation`).toContain(publishedInvocation);
+		}
+		const readme = documentation.find(([path]) => path === "README.md");
+		expect(readme?.[1], "README.md is missing the published CLI invocation").toContain(publishedInvocation);
 		expect(renderSkillMarkdown()).toContain("node <checkout>/src/cli.ts project <action>");
-		expect(artifacts[2][1]).toContain("node src/cli.ts project <action>");
+		expect(
+			documentation.some(([, contents]) => contents.includes("node src/cli.ts project <action>")),
+			"no document states the checkout entry point the skill sends contributors to",
+		).toBe(true);
 	});
 
 	it("declares the same Node floor the package does", async () => {
@@ -235,21 +265,24 @@ describe("single CLI command contract", () => {
 		).toBe(`>=${CLI_COMMAND_CONTRACT.runtime.binaryNodeFloor}`);
 	});
 
-	it("states the same Node floors in the README the contract declares", async () => {
-		const readme = await readFile(resolve("README.md"), "utf8");
+	it("states the same Node floors in the documentation the contract declares", async () => {
+		const documentation = await readDocumentation();
 		const { binaryNodeFloor, sourceNodeFloor } = CLI_COMMAND_CONTRACT.runtime;
-		expect(readme, "README.md and CLI_COMMAND_CONTRACT.runtime.sourceNodeFloor disagree").toContain(
-			`Node ${sourceNodeFloor} or newer`,
+		const stated = documentation.flatMap(([path, contents]) =>
+			[...contents.matchAll(/Node (\d+(?:\.\d+)*) (?:or newer|floor)/g)].map(
+				(match) => [path, match[1]] as const,
+			),
 		);
-		expect(readme, "README.md and CLI_COMMAND_CONTRACT.runtime.binaryNodeFloor disagree").toContain(
-			`Node ${binaryNodeFloor} floor`,
-		);
-		// A stale floor left behind by a contract bump would still satisfy the assertions above,
-		// so every version the README states as a requirement has to be one the contract declares.
-		const stated = [...readme.matchAll(/Node (\d+(?:\.\d+)*) (?:or newer|floor)/g)].map((match) => match[1]);
-		expect(new Set(stated), "README.md states a Node requirement the contract does not declare").toEqual(
-			new Set([sourceNodeFloor, binaryNodeFloor]),
-		);
+		// Set equality asserts both directions at once: both floors have to be stated
+		// where a reader will meet them, and no page may state a version the contract
+		// does not declare, because a stale floor left behind by a contract bump reads
+		// exactly like a current requirement.
+		expect(
+			new Set(stated.map(([, version]) => version)),
+			`the documentation and CLI_COMMAND_CONTRACT.runtime disagree about Node requirements: ${stated
+				.map(([path, version]) => `${path} states ${version}`)
+				.join(", ")}`,
+		).toEqual(new Set([sourceNodeFloor, binaryNodeFloor]));
 	});
 
 	it("ships the generated skill in the published package", async () => {
