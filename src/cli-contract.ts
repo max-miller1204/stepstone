@@ -95,7 +95,7 @@ export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
 	scope: "project",
-	intro: `Manage a repository's Project Goals in <git-root>/${WORKLIST_RELATIVE_PATH} from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.`,
+	intro: `Manage a repository's Project Goals in <git-root>/${WORKLIST_RELATIVE_PATH} from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, an MCP client, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.`,
 	/**
 	 * Trigger text agents match against to auto-load the skill. Deliberately
 	 * repository-neutral: one skill file serves every checkout, so it must never
@@ -306,7 +306,7 @@ export const CLI_COMMAND_CONTRACT = {
 	 */
 	pathRules: [
 		`The goal file is \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.`,
-		`One resolution order applies everywhere, in the CLI, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
+		`One resolution order applies everywhere, in the CLI, the MCP server, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
 		`Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only \`${LEGACY_WORKLIST_RELATIVE_PATH}\` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes \`${WORKLIST_RELATIVE_PATH}\`.`,
 		`When both files exist the current path wins and every command warns, because quietly ignoring a populated \`${LEGACY_WORKLIST_RELATIVE_PATH}\` would look exactly like data loss. Merge them by hand; no command picks a winner for you.`,
 		"With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.",

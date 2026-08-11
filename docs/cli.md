@@ -2,7 +2,7 @@
 
 # stepstone CLI
 
-Manage a repository's Project Goals in <git-root>/.worklist/worklist.json from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
+Manage a repository's Project Goals in <git-root>/.worklist/worklist.json from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, an MCP client, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
 
 ## Invocation
 
@@ -17,7 +17,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- One resolution order applies everywhere, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- One resolution order applies everywhere, in the CLI, the MCP server, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
 - When both files exist the current path wins and every command warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
 - With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
