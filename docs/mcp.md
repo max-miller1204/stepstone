@@ -111,7 +111,8 @@ Do not infer confirmation from a general request to manage the roadmap, a confir
 Do not automatically retry an unconfirmed call with `confirm: true`.
 Ask the user for the missing exact confirmation, then retry only the action and goal they approved.
 
-The four tool schemas mark `confirm` as required, and their MCP metadata advertises `confirmRequired: true`.
+The four tool schemas declare `confirm` as an optional boolean, and their MCP metadata advertises `confirmRequired: true`.
+Confirmation is a guardrail the application service enforces, not a JSON Schema requirement, so an omitted `confirm` reaches the service and is refused with the same actionable envelope as `confirm: false` rather than a protocol-level validation error that carries no guidance.
 The server forwards the supplied boolean unchanged to the application service and never fills it in.
 Any value other than literal `true` fails without a write and returns an envelope with `error.code` set to `APPROVAL_REQUIRED`, `error.details.confirmation` set to `confirm=true`, and `error.details.resolution` set to `request-explicit-user-confirmation`.
 `expectedUpdatedAt` is a concurrency precondition and never substitutes for confirmation.

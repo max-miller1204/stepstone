@@ -137,6 +137,18 @@ describe("Stepstone MCP server", () => {
 					annotations: { readOnlyHint: false, openWorldHint: false },
 					_meta: { confirmRequired: action.confirmRequired === true },
 				});
+				if (!action.confirmRequired) continue;
+				// docs/mcp.md documents confirmation as an application-service
+				// guardrail rather than a schema requirement, so the published
+				// schema has to keep an omitted `confirm` valid: the call reaches
+				// the service and is answered with the actionable APPROVAL_REQUIRED
+				// envelope instead of a guidance-free validation error.
+				const schema = tool?.inputSchema as {
+					required?: unknown;
+					properties?: Record<string, unknown>;
+				};
+				expect(schema.required).toEqual(["id"]);
+				expect(schema.properties?.confirm).toMatchObject({ type: "boolean" });
 			}
 		});
 	});
