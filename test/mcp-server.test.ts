@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -28,7 +28,10 @@ interface ApplicationEnvelope {
 }
 
 async function createGitRepository(): Promise<string> {
-	const root = await mkdtemp(join(tmpdir(), "stepstone-mcp-"));
+	// The server reports the canonical repository root, which is what Git resolves a
+	// symlinked temporary directory to on macOS, so the test has to name paths the
+	// same way rather than by the link it happened to create the repository through.
+	const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-mcp-")));
 	await execFileAsync("git", ["init", "-q"], { cwd: root });
 	return root;
 }
