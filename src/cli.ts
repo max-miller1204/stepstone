@@ -111,8 +111,8 @@ interface CliInvocation {
 interface CliResultMeta extends WorklistResultMeta {
 	cliVersion: string;
 	/**
-	 * A populated worklist this invocation passed over, present only when both
-	 * files exist.
+	 * A worklist this invocation passed over, present whenever both files exist,
+	 * whether or not the passed-over one holds any goals.
 	 *
 	 * A human is told on stderr, which a `--json` caller cannot be: that stream
 	 * carries the failure envelope, and a sentence in front of it would leave

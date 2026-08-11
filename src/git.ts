@@ -45,8 +45,8 @@ export interface WorklistLocation {
 	/** Absolute legacy path, whether or not a file is there yet. */
 	legacyPath: string;
 	/**
-	 * A populated worklist that resolution passed over, present only when both
-	 * files exist.
+	 * A worklist that resolution passed over, present whenever both files exist,
+	 * whether or not the passed-over one holds any goals.
 	 *
 	 * Two files are two roadmaps, and reading one while the other quietly rots is
 	 * indistinguishable from losing the goals in it, so every interface reports

@@ -34,11 +34,6 @@ export function createProjectLocator(cwd: string): () => WorklistLocation | null
 	return () => resolveWorklistLocation(root, { env: process.env, overrideBase: cwd });
 }
 
-/** The goal file a Pi session works with, as it stands right now. */
-export function getProjectLocation(cwd: string): WorklistLocation | null {
-	return createProjectLocator(cwd)();
-}
-
 function getApplicationService(deps: ToolDeps): WorklistApplicationService {
 	if (deps.applicationService) return deps.applicationService;
 	return new WorklistApplicationService({

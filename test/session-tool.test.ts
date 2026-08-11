@@ -10,7 +10,7 @@ import worklistExtension from "../src/extension.ts";
 import { formatSessionTasks } from "../src/format.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SESSION_SNAPSHOT_TYPE, SessionStore } from "../src/session-store.ts";
-import { executeWorklist, getProjectLocation } from "../src/tool.ts";
+import { createProjectLocator, executeWorklist } from "../src/tool.ts";
 import type { ProjectWorklist } from "../src/types.ts";
 import type { DashboardResult } from "../src/ui.ts";
 
@@ -826,7 +826,7 @@ describe("registered model tool", () => {
 		// temporary directory reaches it through a symlink on macOS.
 		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-path-")));
 		execFileSync("git", ["init", "-q"], { cwd: root });
-		expect(getProjectLocation(root)).toMatchObject({
+		expect(createProjectLocator(root)()).toMatchObject({
 			path: join(root, ".worklist", "worklist.json"),
 			source: "default",
 		});
@@ -835,12 +835,12 @@ describe("registered model tool", () => {
 		// that is actually there, which is what makes the move need no migration.
 		await mkdir(join(root, ".pi"), { recursive: true });
 		await writeFile(join(root, ".pi", "worklist.json"), `${JSON.stringify({ version: 1, goals: [] })}\n`);
-		expect(getProjectLocation(root)).toMatchObject({
+		expect(createProjectLocator(root)()).toMatchObject({
 			path: join(root, ".pi", "worklist.json"),
 			source: "legacy",
 		});
 
-		expect(getProjectLocation(await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-")))).toBeNull();
+		expect(createProjectLocator(await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-")))()).toBeNull();
 	});
 
 	it("writes where the goal file is now, not where it was when the session started", async () => {
