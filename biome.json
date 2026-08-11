@@ -1,7 +1,7 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
 	"files": {
-		"includes": ["**", "!node_modules", "!.git", "!.pi-subagents", "!.pi", "!dist"]
+		"includes": ["**", "!node_modules", "!.git", "!.pi-subagents", "!.pi", "!.worklist", "!dist"]
 	},
 	"formatter": {
 		"enabled": true,
