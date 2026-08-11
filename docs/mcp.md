@@ -48,17 +48,12 @@ A manually launched server normally appears idle because it is waiting for an MC
 At startup, the server resolves the real Git root containing its process working directory.
 If the working directory is not inside a Git repository, operations return an `UNAVAILABLE` application-service envelope instead of reading an unrelated file.
 
-Within that repository, every resource read and tool mutation resolves the worklist location again in this order:
-
-1. `$STEPSTONE_WORKLIST`, resolved from the server process working directory.
-2. `.worklist/worklist.json` at the canonical Git root when that file exists.
-3. The legacy `.pi/worklist.json` when only that file exists.
-4. `.worklist/worklist.json` as the destination when neither file exists yet.
-
-Use an absolute value for `$STEPSTONE_WORKLIST` in client configuration when overriding the repository's normal location.
-When both current and legacy files exist, the current `.worklist/worklist.json` wins.
-Reads and writes continue using a lone legacy file rather than silently creating a second roadmap, and the MCP server never migrates a file automatically.
+Within that repository, every resource read and tool mutation resolves the goal file again through the one resolution order every interface shares, described in [storage.md](storage.md#which-file-a-repository-has).
 Re-resolving before every operation means that a file appearing after the server started, such as after a branch change, is used according to the same canonical rules.
+
+The server takes no flags, so `$STEPSTONE_WORKLIST` is its only override; give it an absolute value in client configuration, because a relative one is resolved from the server process working directory.
+When both the canonical and the legacy file exist, `meta.shadowedWorklistPath` on every envelope names the file being passed over, which is the whole of the warning an MCP client gets, because the server has no prose channel beside its JSON responses.
+The server never migrates a file: `migrate_path` stays a CLI action and is not exposed as an MCP tool.
 See [storage.md](storage.md) for the file schema, locking, revisions, and migration behavior.
 
 ## Read resources

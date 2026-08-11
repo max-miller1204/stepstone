@@ -28,7 +28,7 @@ Try a checkout without installing it:
 pi -e ./src/extension.ts
 ```
 
-Every Pi peer dependency is declared optional, which is what lets the same package serve as a dependency-free CLI elsewhere.
+Every Pi peer dependency is declared optional, which is what lets the same package serve as a dependency-free CLI and MCP server elsewhere.
 How a release reaches npm and the gallery is in [docs/releasing.md](https://github.com/max-miller1204/stepstone/blob/main/docs/releasing.md).
 
 ## The dashboard

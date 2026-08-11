@@ -11,8 +11,10 @@ npm run pack:check
 npm run no-pi-install:check
 ```
 
-`npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out; both need Node 22.18 or newer for native type stripping.
-The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for the published bin, which Node refuses to type-strip under `node_modules`.
+`npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
+`npm run mcp` runs this checkout's stdio MCP server, which an MCP client can be pointed at instead of the published `stepstone-mcp` bin; see [docs/mcp.md](mcp.md).
+All of them run the TypeScript sources, so they need Node 22.18 or newer for native type stripping.
+The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for the published bins, which Node refuses to type-strip under `node_modules`.
 
 ## Checks
 
