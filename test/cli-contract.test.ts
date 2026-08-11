@@ -637,7 +637,10 @@ describe("single CLI command contract", () => {
 				if (!paths.has(resolved)) dangling.push(`${page} links to ${target}`);
 			}
 		}
-		expect(dangling, `packaged pages link to files an install does not carry: ${dangling.join("; ")}`).toEqual([]);
+		expect(
+			dangling,
+			`packaged pages link to files an install does not carry: ${dangling.join("; ")}`,
+		).toEqual([]);
 	}, 60_000);
 
 	it("prints the contract-rendered help from the CLI itself", async () => {

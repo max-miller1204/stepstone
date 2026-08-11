@@ -1,7 +1,7 @@
 What a consumer has on disk after installing the tarball, and the CLI still running
 ==================================================================================
 
-Built:     npm pack --pack-destination /tmp/stepstone-install/pack   (prepack build ran)
+Built:     npm pack --pack-destination /tmp/stepstone-e2e/pack   (prepack build ran)
 Installed: npm install ../pack/stepstone-0.2.2.tgz  ->  added 5 packages
 
 Every Markdown file the install carries
@@ -26,10 +26,13 @@ The four development-facing paths, looked for in the installed tree
 
 The installed package still works: bin from dist/, in a scratch git repository
 -----------------------------------------------------------------------------
-  $ stepstone project add "Ship the trimmed tarball"
-  Added project goal ship-the-trimmed-tarball: Ship the trimmed tarball
+  $ stepstone project add "Trim the published tarball"
+  Added project goal trim-the-published-tarball: Trim the published tarball
+  $ stepstone project add "Keep shipped docs links resolving" --depends-on trim-the-published-tarball
+  Added project goal keep-shipped-docs-links-resolving: Keep shipped docs links resolving
   $ stepstone project list
-  [open] ship-the-trimmed-tarball: Ship the trimmed tarball
+  [open] trim-the-published-tarball: Trim the published tarball
+  [open] keep-shipped-docs-links-resolving: Keep shipped docs links resolving
   $ stepstone project next --json
   {
     "ok": true,
@@ -39,11 +42,11 @@ The installed package still works: bin from dist/, in a scratch git repository
       "scope": "project",
       "action": "next",
       "goal": {
-        "id": "ship-the-trimmed-tarball",
-        "title": "Ship the trimmed tarball",
+        "id": "trim-the-published-tarball",
+        "title": "Trim the published tarball",
         "status": "open",
-        "createdAt": "2026-08-11T20:42:19.195Z",
-        "updatedAt": "2026-08-11T20:42:19.195Z"
+        "createdAt": "2026-08-11T20:51:05.906Z",
+        "updatedAt": "2026-08-11T20:51:05.906Z"
       }
     },
     "meta": {
@@ -51,8 +54,13 @@ The installed package still works: bin from dist/, in a scratch git repository
       "semanticNoOp": false,
       "changedFields": [],
       "revisions": {
+        "project": "2"
+      },
+      "cliVersion": "0.2.2"
+    }
+  }
 
-Pi extension entry, loaded from source through jiti, is present in the install:
-  17498 bytes  src/extension.ts
-Generated skill an agent reads:
-  18319 bytes  .claude/skills/stepstone/SKILL.md
+Both halves of the package are present, which is why src/ and dist/ both stay:
+  17498 bytes  src/extension.ts   (Pi loads the TypeScript source through jiti)
+  42956 bytes  dist/cli.js        (the published bin runs the compiled output)
+  18319 bytes  .claude/skills/stepstone/SKILL.md   (the generated skill an agent reads)

@@ -2,17 +2,17 @@ What the published tarball carries after 'publish only what an install reads'
 ============================================================================
 
 Repository: stepstone @ 0.2.2   node v24.18.1   npm 11.16.0
-Command:    npm pack --dry-run --ignore-scripts   (dist/ built beforehand)
+Command:    npm pack --dry-run --ignore-scripts
 
-BEFORE (package.json files array from base commit 46331c3)
-----------------------------------------------------------
-  ships: 8.6kB AGENTS.md
-  ships: 5.5kB docs/development.md
+BEFORE (the base commit's files array, packed from this tree)
+-------------------------------------------------------------
+  ships: 8.9kB AGENTS.md
+  ships: 6.1kB docs/development.md
   ships: 2.7kB docs/releasing.md
   ships: 51.0kB docs/ROADMAP.md
-  package size: 225.7 kB
-  unpacked size: 823.7 kB
-  total files: 57
+  package size:  226.1 kB
+  unpacked size: 824.7 kB
+  total files:   57
 
 AFTER (this branch)
 -------------------
@@ -21,9 +21,11 @@ AFTER (this branch)
   absent:  docs/ROADMAP.md
   absent:  docs/development.md
   absent:  docs/releasing.md
-  package size: 203.0 kB
-  unpacked size: 756.0 kB
-  total files: 53
+  package size:  203.0 kB
+  unpacked size: 756.1 kB
+  total files:   53
+
+The 51 kB roadmap that triggered the change is the single largest saving.
 
 Full tarball listing after the change (53 files)
 ------------------------------------------------
