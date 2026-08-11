@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -17,6 +17,7 @@ import {
 	WORKLIST_PATH_ENV,
 } from "../src/cli-contract.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
+import { documentationPages } from "./docs-pages.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -37,15 +38,8 @@ const execFileAsync = promisify(execFile);
  * test/roadmap.test.ts pins the prose that page does author.
  */
 async function readDocumentation(): Promise<(readonly [string, string])[]> {
-	const docsDirectory = "docs";
-	const entries = await readdir(resolve(docsDirectory));
-	const paths = [
-		"README.md",
-		...entries
-			.filter((entry) => entry.endsWith(".md") && join(docsDirectory, entry) !== ROADMAP_PATH)
-			.sort()
-			.map((entry) => join(docsDirectory, entry)),
-	];
+	const pages = await documentationPages();
+	const paths = ["README.md", ...pages.filter((path) => path !== ROADMAP_PATH)];
 	return Promise.all(paths.map(async (path) => [path, await readFile(resolve(path), "utf8")] as const));
 }
 

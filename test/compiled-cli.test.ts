@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
-import { glob, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { glob, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import { CLI_COMMAND_CONTRACT, SKILL_PATH } from "../src/cli-contract.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
-import { packedFilePaths } from "./npm-pack.ts";
+import { documentationPages } from "./docs-pages.ts";
+import { buildPackage, packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
 const compiledCliPath = resolve("dist/cli.js");
@@ -56,9 +58,10 @@ describe("published stepstone package", () => {
 	// Every assertion that asks `npm pack` what the tarball holds lives in this
 	// file, because this build rewrites `dist/` while a pack walks it: run from
 	// another file, the two race in parallel workers and the pack reads a tree
-	// that is being deleted. Here they are ordered behind the build instead.
+	// that is being deleted. Awaiting the build here is what orders them, and
+	// what `packedFilePaths` refuses to run without.
 	beforeAll(async () => {
-		await execFileAsync("npm", ["run", "build"], { cwd: resolve(".") });
+		await buildPackage();
 	}, 60_000);
 
 	it("compiles to plain JavaScript with an executable entry point", async () => {
@@ -195,20 +198,28 @@ describe("published stepstone package", () => {
 	});
 
 	it("packs what an install reads and leaves this repository's own material behind", async () => {
+		// Asked of the real packer rather than read off the manifest's `files` array:
+		// that array is a set of patterns, and whether one of them actually keeps a
+		// file out of the tarball is npm's answer to give rather than something a
+		// reader of the declaration can tell.
 		const paths = await packedFilePaths();
 		for (const path of DEVELOPMENT_ONLY_FILES) {
+			// A held-back file has to still be there, or the exclusion passes by naming
+			// nothing: a page renamed without updating this list and the manifest would
+			// leave a dead negation behind and ship under its new name, with every
+			// assertion here green.
+			expect(existsSync(resolve(path)), `${path} names no file, so holding it back asserts nothing`).toBe(
+				true,
+			);
 			expect(paths, `${path} is written for this checkout and must not be packaged`).not.toContain(path);
 		}
 		expect(paths, `${SKILL_PATH} must be packaged so an install carries the skill`).toContain(SKILL_PATH);
 		expect(paths, "README.md must be packaged; it is the package's front page").toContain("README.md");
-		// Every other page under docs/ documents the package for somebody using it, so
-		// it ships. Classified by reading the directory rather than from a second list,
-		// so a page added tomorrow is covered the day it lands: it is packaged unless it
-		// was named above as one this checkout keeps to itself.
-		const published = (await readdir(resolve("docs")))
-			.filter((entry) => entry.endsWith(".md"))
-			.map((entry) => join("docs", entry))
-			.filter((path) => !DEVELOPMENT_ONLY_FILES.includes(path));
+		// Every other documentation page ships, because it documents the package for
+		// somebody using it. Classified by walking the directory rather than from a
+		// second list, so a page added tomorrow is covered the day it lands: it is
+		// packaged unless it was named above as one this checkout keeps to itself.
+		const published = (await documentationPages()).filter((path) => !DEVELOPMENT_ONLY_FILES.includes(path));
 		expect(published.length, "no docs page is published, so this assertion pins nothing").toBeGreaterThan(0);
 		for (const path of published) {
 			expect(paths, `${path} documents the package and must be packaged`).toContain(path);

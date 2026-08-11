@@ -56,9 +56,13 @@ They stay on the repository, where a contributor who needs them already is, rath
 Add a new page to `docs/` and it ships by default.
 A page that belongs to this repository instead has to be named in the manifest's `files` and in `DEVELOPMENT_ONLY_FILES` in `test/compiled-cli.test.ts`, which asks `npm pack` itself what the tarball ended up containing, because whether a pattern keeps a file out of it is npm's answer to give rather than something a reader of the declaration can tell.
 
+Every `npm pack` assertion in the suite lives in that one file, because a pack walks the whole worktree while `npm run build` deletes and rewrites `dist/`, and vitest runs test files in parallel workers.
+Inside a single file the two are ordered: the build is awaited in `beforeAll` before any test packs.
+`packedFilePaths` in `test/npm-pack.ts` owns both halves and throws rather than pack in a worker that never awaited `buildPackage()`, so an assertion written elsewhere fails immediately instead of passing until it happens to interleave with the rebuild.
+`scripts/no-pi-install-check.ts` packs as well and stays where it is, because it runs standalone rather than beside anything vitest scheduled.
+
 Holding a page back also breaks every relative link into it from a page that still ships, which is invisible here because both files are on disk in a checkout.
 A packaged page is read out of `node_modules`, so it links to a held-back page by absolute GitHub URL, and the same file resolves every relative link in every packaged page against the tarball's own file list.
-Every assertion that asks `npm pack` lives there rather than anywhere else, because that suite also runs `npm run build`, which rewrites `dist/` while a pack is walking it.
 `README.md` is the one page exempt: its reader is on GitHub or on npmjs.com's rendered README, where every path in the repository resolves.
 
 ## Invariants
