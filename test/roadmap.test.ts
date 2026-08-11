@@ -107,6 +107,26 @@ describe("generated roadmap", () => {
 		expect(ungrouped).toContain("`blank-group`");
 	});
 
+	it("flattens a group name so stored whitespace cannot forge a section", () => {
+		const markdown = renderRoadmapMarkdown(
+			worklist([
+				goal({ id: "multiline", title: "Multiline", group: "Later\n## Foundation" }),
+				goal({ id: "spaced", title: "Spaced", group: "  Later   ## Foundation  " }),
+			]),
+		);
+		// A heading is the page's only structural element, so a stored newline may
+		// neither open a section nobody named nor leave prose outside a list item.
+		expect(markdown.split("\n").filter((line) => line.startsWith("#"))).toEqual([
+			"# Roadmap",
+			"## Later ## Foundation",
+		]);
+		// Groups that differ only in whitespace read as one heading, so they are one
+		// section rather than two the page shows under the same name.
+		const section = markdown.split("\n## Later ## Foundation\n")[1] ?? "";
+		expect(section).toContain("`multiline`");
+		expect(section).toContain("`spaced`");
+	});
+
 	it("states each goal's status, and that the graph has it waiting", () => {
 		const markdown = renderRoadmapMarkdown(
 			worklist([

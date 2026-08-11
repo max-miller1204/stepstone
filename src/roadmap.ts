@@ -50,7 +50,7 @@ interface RoadmapSection {
 function roadmapSections(goals: readonly ProjectGoal[]): RoadmapSection[] {
 	const sections = new Map<string, RoadmapSection>();
 	for (const goal of goals) {
-		const heading = goal.group?.trim() || UNGROUPED_HEADING;
+		const heading = compactDescription(goal.group ?? "") || UNGROUPED_HEADING;
 		const section = sections.get(heading) ?? { heading, goals: [] };
 		section.goals.push(goal);
 		sections.set(heading, section);
