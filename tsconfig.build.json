@@ -10,5 +10,5 @@
 		"sourceMap": false
 	},
 	"include": [],
-	"files": ["src/cli.ts"]
+	"files": ["src/cli.ts", "src/mcp.ts"]
 }

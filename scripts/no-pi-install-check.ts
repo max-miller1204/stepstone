@@ -22,6 +22,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
@@ -133,10 +135,10 @@ function assertNothingUnresolved(command: string, stderr: string): void {
 	const missing = UNRESOLVED_IMPORT.exec(detail)?.[1] ?? "a package outside its dependencies";
 	throw new Error(
 		`${detail}\n\n` +
-			`\`${command}\` cannot load ${missing} from a Pi-free install, which is how ` +
-			`everyone running \`npx ${binary}\` has it. Something reachable from src/cli.ts imports it at ` +
+			`\`${command}\` cannot load ${missing} from a Pi-free install, which is how the published ` +
+			"executables are installed. Something reachable from src/cli.ts or src/mcp.ts imports it at " +
 			"runtime: run `npm run imports:check` to name the module, then make that import type-only or " +
-			"move it out of the CLI graph.",
+			"move it out of the executable graph.",
 	);
 }
 
@@ -317,13 +319,69 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	assert.match(board.stderr, /needs an interactive terminal/);
 }
 
+/** Initializes the packaged stdio server and proves reads and writes survive a Pi-free install. */
+async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
+	const command = basename(binPath);
+	const transport = new StdioClientTransport({
+		command: binPath,
+		cwd: workspace,
+		stderr: "pipe",
+	});
+	let stderr = "";
+	transport.stderr?.on("data", (chunk: Buffer) => {
+		stderr += chunk.toString();
+	});
+	const client = new Client({ name: "stepstone-no-pi-install-check", version: "1.0.0" });
+	let failure: unknown;
+	try {
+		await client.connect(transport, { timeout: CLI_TIMEOUT_MS });
+		const listed = await client.readResource(
+			{ uri: `${binary}://worklist/list` },
+			{ timeout: CLI_TIMEOUT_MS },
+		);
+		assert.equal(listed.contents.length, 1);
+		const content = listed.contents[0];
+		assert.ok(content && "text" in content, "the MCP list resource must return textual JSON");
+		const envelope = parseEnvelope(content.text, "MCP list resource");
+		assert.deepEqual(
+			{ ok: envelope.ok, scope: envelope.scope, action: envelope.action, goals: envelope.result?.goals },
+			{ ok: true, scope: "project", action: "list", goals: [] },
+		);
+
+		const added = await client.callTool(
+			{ name: "add", arguments: { title: "Installed MCP goal" } },
+			undefined,
+			{ timeout: CLI_TIMEOUT_MS },
+		);
+		assert.equal(added.isError, false);
+		const addedEnvelope = added.structuredContent as
+			| (Envelope & { result?: { goal?: { id?: string } } })
+			| undefined;
+		assert.deepEqual(
+			{ ok: addedEnvelope?.ok, scope: addedEnvelope?.scope, action: addedEnvelope?.action },
+			{ ok: true, scope: "project", action: "add" },
+		);
+		assert.equal(addedEnvelope?.result?.goal?.id, "installed-mcp-goal");
+	} catch (error) {
+		failure = error;
+	} finally {
+		await client.close().catch(() => undefined);
+	}
+	assertNothingUnresolved(command, stderr);
+	assert.equal(stderr, "", `${command} wrote outside the JSON-RPC stdout channel:\n${stderr}`);
+	if (failure !== undefined) throw failure;
+}
+
 const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));
 const packDir = join(scratch, "pack");
 const installDir = join(scratch, "install");
 const workspace = join(scratch, "workspace");
+const mcpWorkspace = join(scratch, "mcp-workspace");
 let succeeded = false;
 try {
-	await Promise.all([packDir, installDir, workspace].map((dir) => mkdir(dir, { recursive: true })));
+	await Promise.all(
+		[packDir, installDir, workspace, mcpWorkspace].map((dir) => mkdir(dir, { recursive: true })),
+	);
 
 	const { name, version } = JSON.parse(await readFile(resolve(repoRoot, "package.json"), "utf8")) as {
 		name: string;
@@ -337,9 +395,11 @@ try {
 	await installTarball(tarball, installDir);
 	await assertNoPiPackages(installDir);
 
-	step("Driving the installed bin");
+	step("Driving the installed CLI and MCP bins");
 	await run("git", ["init", "-q", "."], workspace);
+	await run("git", ["init", "-q", "."], mcpWorkspace);
 	await exerciseCli(join(installDir, "node_modules", ".bin", binary), workspace, version);
+	await exerciseMcp(join(installDir, "node_modules", ".bin", `${binary}-mcp`), mcpWorkspace);
 
 	succeeded = true;
 	step(`${name} ${version} runs from a Pi-free install.`);

@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-45 goals: 18 open, 24 done, 3 archived.
+45 goals: 17 open, 25 done, 3 archived.
 
 ## Orchestrator
 
@@ -194,7 +194,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `harness-identity-rename-off-the-pi` (done), `worklist-path-move-the-goal-file-out-of` (done).
 
-- **[open]** mcp-server: expose the worklist over MCP - `mcp-server-expose-the-worklist-over-mcp`
+- **[done]** mcp-server: expose the worklist over MCP - `mcp-server-expose-the-worklist-over-mcp`
 
   Expose the WorklistApplicationService over MCP so any agent in any harness can list, add, find, sequence, apply plans, and complete goals through the same contract, the same cross-process lock, and the same confirmation guardrails as the CLI and the Pi extension.
 
@@ -214,7 +214,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `harness-identity-rename-off-the-pi` (done), `worklist-path-move-the-goal-file-out-of` (done).
 
-- **[open, blocked]** claude-plugin: ship skill, commands, and MCP as one plugin - `claude-plugin-ship-skill-commands-and`
+- **[open]** claude-plugin: ship skill, commands, and MCP as one plugin - `claude-plugin-ship-skill-commands-and`
 
   Claude Code installation is currently a two-step that installs one of the three useful surfaces: `npx skills add max-miller1204/stepstone --skill worklist -g` brings the skill and nothing else, and the README has to explain why installing the npm package does not install the skill. Package the Claude Code integration as a single installable plugin carrying the generated skill, the MCP server registration, and slash commands for the operations a human runs by hand rather than through the model.
 
@@ -222,7 +222,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on the MCP server existing, since bundling MCP registration is most of the value over the current skill-only install.
 
-  Depends on `harness-identity-rename-off-the-pi` (done), `mcp-server-expose-the-worklist-over-mcp` (open).
+  Depends on `harness-identity-rename-off-the-pi` (done), `mcp-server-expose-the-worklist-over-mcp` (done).
 
 - **[open]** worktree-guard: stop a linked worktree silently forking the roadmap - `worktree-guard-stop-a-linked-worktree`
 
@@ -269,13 +269,13 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Later
 
-- **[open, blocked]** context-surface: show the active goal inside each harness - `context-surface-show-the-active-goal`
+- **[open]** context-surface: show the active goal inside each harness - `context-surface-show-the-active-goal`
 
   Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged after the pivot.
 
   Survey what each harness actually offers before building anything: Claude Code has a statusline hook and session-start hooks, some harnesses have persistent context files, and several have no equivalent surface at all. The likely answer is that the MCP server exposes the active goal as a resource, the generated skill and AGENTS.md block tell the agent to read it at session start, and anything richer is a per-harness adapter shipped as an optional extra rather than core. Deliberately deferred until the MCP server lands, because the resource it would expose does not exist yet, and because building per-harness adapters before knowing which harnesses people actually use would be guessing.
 
-  Depends on `mcp-server-expose-the-worklist-over-mcp` (open).
+  Depends on `mcp-server-expose-the-worklist-over-mcp` (done).
 
 - **[open, blocked]** branch-scoped-active: per-worktree featured goal via links - `branch-scoped-active-per-worktree`
 

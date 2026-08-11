@@ -63,6 +63,8 @@ export interface WorklistResultMeta {
 	changedFields: string[];
 	changedEntities?: WorklistChangedEntities;
 	revisions?: WorklistRevisionSet;
+	/** Legacy worklist ignored because the canonical path also exists. */
+	shadowedWorklistPath?: string;
 }
 
 function compareChangedFields(left: string, right: string): number {

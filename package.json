@@ -36,7 +36,8 @@
 		"package.json"
 	],
 	"bin": {
-		"stepstone": "dist/cli.js"
+		"stepstone": "dist/cli.js",
+		"stepstone-mcp": "dist/mcp.js"
 	},
 	"main": "./src/extension.ts",
 	"exports": {
@@ -51,6 +52,7 @@
 	},
 	"scripts": {
 		"worklist": "node ./src/cli.ts",
+		"mcp": "node ./src/mcp.ts",
 		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
 		"docs": "node ./scripts/generate-docs.ts",
 		"docs:check": "node ./scripts/generate-docs.ts --check",
@@ -69,7 +71,9 @@
 		"verify": "npm run check && npm run pack:check"
 	},
 	"dependencies": {
-		"proper-lockfile": "^4.1.2"
+		"@modelcontextprotocol/sdk": "^1.30.0",
+		"proper-lockfile": "^4.1.2",
+		"zod": "^4.4.3"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": "*",
