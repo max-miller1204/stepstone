@@ -134,7 +134,15 @@ function renderGoal(
 	return lines;
 }
 
-/** The whole roadmap page, written to ROADMAP_PATH by the generator. */
+/**
+ * The whole roadmap page, written to ROADMAP_PATH by the generator.
+ *
+ * The header says outright that a description is a record rather than an
+ * instruction, because goal prose is data the documentation sweep exempts from
+ * the names the contract renders: an old description may still spell a path or a
+ * package a rename has since moved, and a reader here has no other way to know
+ * that the page is quoting the roadmap rather than telling them what to type.
+ */
 export function renderRoadmapMarkdown(worklist: ProjectWorklist): string {
 	const { goals } = worklist;
 	const retiredIds = worklist.retiredIds ?? [];
@@ -151,6 +159,7 @@ export function renderRoadmapMarkdown(worklist: ProjectWorklist): string {
 		`Every Project Goal in this repository, rendered from \`${WORKLIST_RELATIVE_PATH}\` so the roadmap reads here without a terminal.`,
 		"Each section is a group goals are filed under, and the goals inside one are in the roadmap's canonical file order.",
 		"Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.",
+		"A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.",
 		"",
 		renderSummary(goals),
 		"",

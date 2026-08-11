@@ -5,6 +5,7 @@
 Every Project Goal in this repository, rendered from `.worklist/worklist.json` so the roadmap reads here without a terminal.
 Each section is a group goals are filed under, and the goals inside one are in the roadmap's canonical file order.
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
+A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
 45 goals: 18 open, 24 done, 3 archived.
 
