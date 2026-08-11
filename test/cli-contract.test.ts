@@ -80,16 +80,68 @@ const SKILL_DIRECTORY = dirname(SKILL_PATH);
 const PACKAGE_NAME = String.raw`[\w@][\w@./-]*`;
 
 /**
- * This package under either name it has been published as.
+ * One spelling a document may use for a name, and whether one has to exist.
  *
- * Some shapes a document uses to name a package - `npm i <name>`, a
- * `<name>@1.2.3` pin - name any package equally well, and a page may
- * legitimately print one for a dependency or a toolchain version. Matching only
- * this package's own names there keeps the assertion from reporting correct
- * prose as a contract disagreement; a rename is still caught, because the shape
- * then finds nothing and fails the check that it names this package at all.
+ * A required shape has to occur at least once across the documentation, so a
+ * shape that quietly stops matching fails rather than passing vacuously on the
+ * strength of the shapes still matching. An optional shape is held to the same
+ * spellings wherever it appears but is never demanded, because prose exists for a
+ * reader rather than to keep a pattern non-empty: a `<name>@1.2.3` pin is written
+ * only where a page has a reason to name one version, and the day the last such
+ * page is deleted there is nothing to fix.
  */
-const OWN_PACKAGE = `(?:${[CLI_COMMAND_CONTRACT.binary, FROZEN_PREDECESSOR_PACKAGE].map(literal).join("|")})`;
+type SpellingShape = { readonly pattern: RegExp; readonly required: boolean };
+
+/** A shape some document has to state, so its disappearance is a failure. */
+function required(pattern: RegExp): SpellingShape {
+	return { pattern, required: true };
+}
+
+/** A shape checked wherever it appears and not required to appear at all. */
+function optional(pattern: RegExp): SpellingShape {
+	return { pattern, required: false };
+}
+
+/** A name the contract owns, paired with every spelling a document may state. */
+type SpellingEntry = {
+	readonly subject: string;
+	readonly shapes: readonly SpellingShape[];
+	readonly allowed: readonly string[];
+	readonly canonical: string;
+};
+
+/**
+ * Every shape a document uses to name this published package.
+ *
+ * Built from the binary rather than closing over the contract's own value, so the
+ * check can be run against a renamed contract - the failure it exists to catch,
+ * and otherwise only reachable by editing the source it is asserting about.
+ *
+ * Some shapes name any package equally well - `npm i <name>`, a `<name>@1.2.3`
+ * pin - and a page may legitimately print one for a dependency or a toolchain
+ * version. Matching only this package's own names there keeps the check from
+ * reporting correct prose as a contract disagreement; a rename is still caught,
+ * because the shape then finds nothing and fails the check that it names this
+ * package at all.
+ */
+function publishedPackageSpellings(binary: string): SpellingEntry {
+	const ownPackage = `(?:${[binary, FROZEN_PREDECESSOR_PACKAGE].map(literal).join("|")})`;
+	return {
+		subject: "published package",
+		shapes: [
+			required(new RegExp(`npx -y (${PACKAGE_NAME})@latest`, "g")),
+			required(new RegExp(String.raw`\bnpm:(${PACKAGE_NAME})`, "g")),
+			required(new RegExp(String.raw`\bnpm (?:view|deprecate|i|install) (${ownPackage})(?![\w@./-])`, "g")),
+			required(new RegExp(String.raw`\bnpmjs\.com/package/(${PACKAGE_NAME})`, "g")),
+			required(new RegExp(String.raw`\bshields\.io/npm/v/(${PACKAGE_NAME})\.svg`, "g")),
+			required(new RegExp(String.raw`\bpi\.dev/packages/(${PACKAGE_NAME})`, "g")),
+			optional(new RegExp(String.raw`(?<![\w@./-])(${ownPackage})@\d+\.\d+\.\d+`, "g")),
+			required(new RegExp(`from "(${PACKAGE_NAME})/src/`, "g")),
+		],
+		allowed: [binary, FROZEN_PREDECESSOR_PACKAGE],
+		canonical: binary,
+	};
+}
 
 /**
  * Names the contract owns, paired with every spelling a document may state.
@@ -101,38 +153,17 @@ const OWN_PACKAGE = `(?:${[CLI_COMMAND_CONTRACT.binary, FROZEN_PREDECESSOR_PACKA
  * longer exists, which is silent because the old spellings still read as
  * instructions.
  *
- * Every pattern is checked on its own: each occurrence it finds has to be a
- * spelling the contract renders today, and it has to find the canonical spelling
- * somewhere, so a shape that stops matching fails rather than passing vacuously
- * on the strength of the other shapes. The patterns cover the places a name is an
+ * Every shape is checked on its own, and each occurrence it finds has to be a
+ * spelling the contract renders today. The shapes cover the places a name is an
  * instruction a reader follows - a command, a registry or gallery URL, an import
  * specifier, a path - and deliberately not running prose, where the product name
  * is a word rather than a target and a sweep has to be done by hand.
  */
-const CONTRACT_SPELLINGS: readonly {
-	subject: string;
-	patterns: readonly RegExp[];
-	allowed: readonly string[];
-	canonical: string;
-}[] = [
-	{
-		subject: "published package",
-		patterns: [
-			new RegExp(`npx -y (${PACKAGE_NAME})@latest`, "g"),
-			new RegExp(String.raw`\bnpm:(${PACKAGE_NAME})`, "g"),
-			new RegExp(String.raw`\bnpm (?:view|deprecate|i|install) (${OWN_PACKAGE})(?![\w@./-])`, "g"),
-			new RegExp(String.raw`\bnpmjs\.com/package/(${PACKAGE_NAME})`, "g"),
-			new RegExp(String.raw`\bshields\.io/npm/v/(${PACKAGE_NAME})\.svg`, "g"),
-			new RegExp(String.raw`\bpi\.dev/packages/(${PACKAGE_NAME})`, "g"),
-			new RegExp(String.raw`(?<![\w@./-])(${OWN_PACKAGE})@\d+\.\d+\.\d+`, "g"),
-			new RegExp(`from "(${PACKAGE_NAME})/src/`, "g"),
-		],
-		allowed: [CLI_COMMAND_CONTRACT.binary, FROZEN_PREDECESSOR_PACKAGE],
-		canonical: CLI_COMMAND_CONTRACT.binary,
-	},
+const CONTRACT_SPELLINGS: readonly SpellingEntry[] = [
+	publishedPackageSpellings(CLI_COMMAND_CONTRACT.binary),
 	{
 		subject: "goal file environment override",
-		patterns: [/\$([A-Z][A-Z0-9_]*_WORKLIST)\b/g],
+		shapes: [required(/\$([A-Z][A-Z0-9_]*_WORKLIST)\b/g)],
 		allowed: [WORKLIST_PATH_ENV],
 		canonical: WORKLIST_PATH_ENV,
 	},
@@ -141,20 +172,42 @@ const CONTRACT_SPELLINGS: readonly {
 		// Anchored to the dot-directory form the contract renders, because `--file`
 		// and the environment override exist precisely so a document may print the
 		// path of a goal file living anywhere else.
-		patterns: [new RegExp(String.raw`(?<![\w.-])(\.[\w-]+)/${literal(WORKLIST_FILENAME)}`, "g")],
+		shapes: [required(new RegExp(String.raw`(?<![\w.-])(\.[\w-]+)/${literal(WORKLIST_FILENAME)}`, "g"))],
 		allowed: [WORKLIST_DIRECTORY, LEGACY_WORKLIST_DIRECTORY],
 		canonical: WORKLIST_DIRECTORY,
 	},
 	{
 		subject: "agent skill directory",
-		patterns: [
-			new RegExp(String.raw`${literal(dirname(SKILL_DIRECTORY))}/([\w.-]+)`, "g"),
-			/--skill ([\w.-]+)/g,
+		shapes: [
+			required(new RegExp(String.raw`${literal(dirname(SKILL_DIRECTORY))}/([\w.-]+)`, "g")),
+			required(/--skill ([\w.-]+)/g),
 		],
 		allowed: [basename(SKILL_DIRECTORY)],
 		canonical: basename(SKILL_DIRECTORY),
 	},
 ];
+
+/** Every disagreement between a set of documents and one entry's spellings. */
+function spellingProblems(
+	documentation: readonly (readonly [string, string])[],
+	{ subject, shapes, allowed, canonical }: SpellingEntry,
+): string[] {
+	const problems: string[] = [];
+	for (const shape of shapes) {
+		const stated = documentation.flatMap(([path, contents]) =>
+			[...contents.matchAll(shape.pattern)].map((match) => [path, match[1] ?? ""] as const),
+		);
+		problems.push(
+			...stated.filter(([, name]) => !allowed.includes(name)).map(([path, name]) => `${path} states ${name}`),
+		);
+		if (shape.required && !stated.some(([, name]) => name === canonical)) {
+			problems.push(
+				`no document spells the ${subject} \`${canonical}\` as \`${shape.pattern.source}\`, so that shape pins nothing`,
+			);
+		}
+	}
+	return problems;
+}
 
 /** Split a GFM table row into its cells: on unescaped pipes only, as a renderer does. */
 function tableCells(row: string): string[] {
@@ -406,23 +459,48 @@ describe("single CLI command contract", () => {
 	it("spells the names the contract owns the way the contract renders them", async () => {
 		const documentation = await readDocumentation();
 
-		for (const { subject, patterns, allowed, canonical } of CONTRACT_SPELLINGS) {
-			for (const pattern of patterns) {
-				const stated = documentation.flatMap(([path, contents]) =>
-					[...contents.matchAll(pattern)].map((match) => [path, match[1] ?? ""] as const),
-				);
-				expect(
-					stated
-						.filter(([, name]) => !allowed.includes(name))
-						.map(([path, name]) => `${path} states ${name}`),
-					`the documentation names a ${subject} the contract does not render; if the prose is right, add the name to this entry's allowed list`,
-				).toEqual([]);
-				expect(
-					stated.map(([, name]) => name),
-					`no document spells the ${subject} \`${canonical}\` as \`${pattern.source}\`, so that shape pins nothing`,
-				).toContain(canonical);
-			}
+		for (const entry of CONTRACT_SPELLINGS) {
+			expect(
+				spellingProblems(documentation, entry),
+				`the documentation disagrees with the ${entry.subject} the contract renders; if the prose is right, add the name to this entry's allowed list, or declare that shape optional if no page should have to state it`,
+			).toEqual([]);
 		}
+	});
+
+	it("catches a rename the generated artifacts absorb and the prose does not", async () => {
+		// Renaming the contract regenerates docs/cli.md and SKILL.md and cannot touch a
+		// hand-written page, so every spelling in the prose is stale the moment it lands.
+		const documentation = await readDocumentation();
+		const problems = spellingProblems(documentation, publishedPackageSpellings("stepstone-renamed"));
+		const stale = problems.filter((problem) => problem.endsWith(` states ${CLI_COMMAND_CONTRACT.binary}`));
+		expect(stale, "a rename leaves the prose unchanged and is reported nowhere").not.toEqual([]);
+		expect(stale, "the report names the page a reader would be sent to the wrong package from").toContain(
+			`README.md states ${CLI_COMMAND_CONTRACT.binary}`,
+		);
+		// The renamed spellings are absent everywhere, so each required shape also reports
+		// that it now pins nothing rather than passing on an empty match set.
+		expect(problems.filter((problem) => problem.includes("pins nothing"))).not.toEqual([]);
+	});
+
+	it("requires a declared shape to be stated and lets an optional shape be absent", () => {
+		const documentation = [["docs/example.md", "Install it with `npm i example-package`."]] as const;
+		const versionPin = /(example-[\w-]+)@\d+\.\d+\.\d+/g;
+		const entry: SpellingEntry = {
+			subject: "example package",
+			shapes: [required(/npm i (example-[\w-]+)/g), optional(versionPin)],
+			allowed: ["example-package"],
+			canonical: "example-package",
+		};
+		// No page pins a version, which is a page's choice rather than a defect.
+		expect(spellingProblems(documentation, entry)).toEqual([]);
+		// The same absence in a required shape is the vacuous pass the check exists for.
+		expect(spellingProblems(documentation, { ...entry, shapes: [required(versionPin)] })).toEqual([
+			`no document spells the example package \`example-package\` as \`${versionPin.source}\`, so that shape pins nothing`,
+		]);
+		// A name the entry does not allow is reported wherever a shape finds it.
+		expect(spellingProblems([["docs/example.md", "`npm i example-other`"]], entry)).toContain(
+			"docs/example.md states example-other",
+		);
 	});
 
 	it("declares the same Node floor the package does", async () => {
