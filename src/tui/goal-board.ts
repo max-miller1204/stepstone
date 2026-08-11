@@ -1,5 +1,6 @@
 import type { WorklistOperation } from "../application-service.ts";
 import { dependentGoals, isGoalBlocked, resolveDependencies } from "../dependencies.ts";
+import { GOAL_STATUS_RANK, goalStatusCounts } from "../format.ts";
 import { findGoalByStoredId, matchesGoalQuery } from "../goal-selection.ts";
 import type { ProjectGoal, ProjectGoalStatus } from "../types.ts";
 import type { KeyEvent } from "./keys.ts";
@@ -74,17 +75,6 @@ const STATUS_MARKERS: Readonly<Record<ProjectGoalStatus, string>> = {
 	done: "✓",
 	archived: "◌",
 };
-
-/** Active goals lead the board, then open work, then everything already settled. */
-const STATUS_RANK: Readonly<Record<ProjectGoalStatus, number>> = {
-	active: 0,
-	open: 1,
-	done: 2,
-	archived: 3,
-};
-
-/** Order the status counts always read in. */
-const STATUS_ORDER: readonly ProjectGoalStatus[] = ["active", "open", "done", "archived"];
 
 /** A goal still in play and untouched for this long is worth pointing at. */
 const STALE_AFTER_DAYS = 30;
@@ -370,7 +360,7 @@ export class GoalBoard {
 				if (this.sort === "file") return rank(left) - rank(right);
 				if (isActive(left) !== isActive(right)) return isActive(left) ? -1 : 1;
 				if (this.sort === "status") {
-					const status = STATUS_RANK[left.status] - STATUS_RANK[right.status];
+					const status = GOAL_STATUS_RANK[left.status] - GOAL_STATUS_RANK[right.status];
 					if (status !== 0) return status;
 				} else {
 					const updated = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
@@ -858,11 +848,7 @@ export class GoalBoard {
 	 */
 	private renderStatusCounts(): string {
 		const { dim } = this.palette;
-		return STATUS_ORDER.map((status) => ({
-			status,
-			count: this.goals.filter((goal) => goal.status === status).length,
-		}))
-			.filter((entry) => entry.count > 0)
+		return goalStatusCounts(this.goals)
 			.map((entry) => this.statusStyle(entry.status)(`${STATUS_MARKERS[entry.status]} ${entry.count}`))
 			.join(dim(SEPARATOR));
 	}

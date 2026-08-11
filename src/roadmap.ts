@@ -1,7 +1,7 @@
 import { GENERATOR_PATH, WORKLIST_RELATIVE_PATH } from "./cli-contract.ts";
 import { isGoalBlocked, resolveDependencies } from "./dependencies.ts";
-import { compactDescription, goalCount } from "./format.ts";
-import type { ProjectGoal, ProjectGoalStatus, ProjectWorklist } from "./types.ts";
+import { compactDescription, goalCount, goalStatusCounts } from "./format.ts";
+import type { ProjectGoal, ProjectWorklist } from "./types.ts";
 
 /**
  * The roadmap page, rendered from a repository's own goal file.
@@ -34,9 +34,6 @@ const UNGROUPED_HEADING = "Ungrouped";
 /** Indent that keeps a continuation block inside the list item it belongs to. */
 const ITEM_INDENT = "  ";
 
-/** The statuses the summary counts, in the order it states them. */
-const SUMMARY_STATUSES: readonly ProjectGoalStatus[] = ["active", "open", "done", "archived"];
-
 /** One heading and the goals filed under it, in canonical file order. */
 interface RoadmapSection {
 	heading: string;
@@ -64,15 +61,14 @@ function roadmapSections(goals: readonly ProjectGoal[]): RoadmapSection[] {
 /**
  * One line naming how much of the roadmap sits in each state.
  *
- * A status nothing is in is left out rather than printed as a zero, so the line
- * reads as what the roadmap holds instead of as a form with empty fields.
+ * The counts and the order they read in come from the shared helper the board
+ * header counts through, so the page and the terminal cannot state the same
+ * roadmap's shape differently, and the total here stays the sum of the parts.
  */
 function renderSummary(goals: readonly ProjectGoal[]): string {
 	if (goals.length === 0) return "No project goals.";
-	const counted = SUMMARY_STATUSES.map(
-		(status) => [status, goals.filter((goal) => goal.status === status).length] as const,
-	).filter(([, count]) => count > 0);
-	return `${goalCount(goals.length)}: ${counted.map(([status, count]) => `${count} ${status}`).join(", ")}.`;
+	const counted = goalStatusCounts(goals);
+	return `${goalCount(goals.length)}: ${counted.map(({ status, count }) => `${count} ${status}`).join(", ")}.`;
 }
 
 /**

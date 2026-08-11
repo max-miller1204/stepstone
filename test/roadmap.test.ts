@@ -50,6 +50,10 @@ describe("generated roadmap", () => {
 		const located = createWorklistLocator(repoRoot)();
 		const stored = await readProjectWorklist(located.path);
 		expect(stored.error, `${located.path} could not be read`).toBeUndefined();
+		// A read that finds no file reports an empty worklist without an error, so
+		// without this the assertion below would pass on a page blanked from one:
+		// both sides would be the empty render rather than this repository's goals.
+		expect(stored.data.goals.length, `${located.path} holds no goals`).toBeGreaterThan(0);
 		const committed = await readFile(resolve(repoRoot, ROADMAP_PATH), "utf8");
 		expect(committed, `${ROADMAP_PATH} is stale; run \`npm run docs\` to regenerate it`).toBe(
 			renderRoadmapMarkdown(stored.data),
