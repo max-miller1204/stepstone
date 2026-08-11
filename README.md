@@ -88,6 +88,7 @@ That is enforced by a source-level import scan and by a CI job that packs the ta
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
 | [docs/skill.md](docs/skill.md) | The generated agent skill, and how to install it |
 | [docs/pi.md](docs/pi.md) | The Pi extension: Session Tasks, `/tasks`, the widget, the model tool, the module API |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | This repository's own Project Goals, generated from the goal file it commits |
 | [docs/development.md](docs/development.md) | Working on stepstone: checks, generated files, and the invariants behind them |
 | [docs/releasing.md](docs/releasing.md) | How a release is published, and the one-time registry setup |
 

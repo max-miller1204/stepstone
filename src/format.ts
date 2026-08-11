@@ -4,6 +4,17 @@ export function compactDescription(description: string): string {
 	return description.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * `1 goal` or `3 goals`, so a count reads as a sentence wherever it is stated.
+ *
+ * Shared rather than spelled out per surface, because a wave header at the
+ * terminal and a summary on the roadmap page are counting the same things and
+ * have no reason to word it differently.
+ */
+export function goalCount(count: number): string {
+	return `${count} goal${count === 1 ? "" : "s"}`;
+}
+
 export function formatSessionTasks(tasks: SessionTask[]): string {
 	if (tasks.length === 0) return "No session tasks.";
 	return tasks

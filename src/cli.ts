@@ -26,6 +26,7 @@ import {
 	resolveDependencies,
 	unfinishedGoals,
 } from "./dependencies.ts";
+import { goalCount } from "./format.ts";
 import {
 	createWorklistLocator,
 	resolveGitRoot,
@@ -448,11 +449,6 @@ function formatGoalLine(goal: ProjectGoal): string {
 function formatGoalList(goals: ProjectGoal[]): string {
 	if (goals.length === 0) return "No project goals.";
 	return goals.map(formatGoalLine).join("\n");
-}
-
-/** `1 goal` or `3 goals`, so a wave header reads as a sentence. */
-function goalCount(count: number): string {
-	return `${count} goal${count === 1 ? "" : "s"}`;
 }
 
 /**
