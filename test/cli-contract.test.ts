@@ -59,6 +59,12 @@ const FROZEN_PREDECESSOR_PACKAGE = "pi-worklist";
 const SKILL_DIRECTORY = dirname(SKILL_PATH);
 
 /**
+ * How a document spells a package name: never leading with the dash of a flag,
+ * so an option that follows the command being matched is not read as its target.
+ */
+const PACKAGE_NAME = String.raw`[\w@][\w@./-]*`;
+
+/**
  * Names the contract owns, paired with every spelling a document may state.
  *
  * A rename is a one-line change to the contract, which regenerates the
@@ -66,38 +72,58 @@ const SKILL_DIRECTORY = dirname(SKILL_PATH);
  * invocation in README.md leaves the rest of the documentation free to go on
  * sending readers to a package, an environment variable, or a directory that no
  * longer exists, which is silent because the old spellings still read as
- * instructions. Each entry collects every occurrence of its shape across the
- * documentation, requires each one to be a spelling the contract renders today,
- * and requires the canonical spelling to appear at all, so a pattern that stops
- * matching fails rather than passing vacuously.
+ * instructions.
+ *
+ * Each entry collects every occurrence of its patterns across the documentation,
+ * requires each one to be a spelling the contract renders today, and requires the
+ * canonical spelling to appear at all, so a pattern that stops matching fails
+ * rather than passing vacuously. The patterns cover the places a name is an
+ * instruction a reader follows - a command, a registry or gallery URL, an import
+ * specifier, a path - and deliberately not running prose, where the product name
+ * is a word rather than a target and a sweep has to be done by hand.
  */
 const CONTRACT_SPELLINGS: readonly {
 	subject: string;
-	pattern: RegExp;
+	patterns: readonly RegExp[];
 	allowed: readonly string[];
 	canonical: string;
 }[] = [
 	{
 		subject: "published package",
-		pattern: /npx -y (\S+)@latest/g,
+		patterns: [
+			new RegExp(`npx -y (${PACKAGE_NAME})@latest`, "g"),
+			new RegExp(String.raw`\bnpm:(${PACKAGE_NAME})`, "g"),
+			new RegExp(String.raw`\bnpm (?:view|deprecate|i|install) (${PACKAGE_NAME})`, "g"),
+			new RegExp(String.raw`\bnpmjs\.com/package/(${PACKAGE_NAME})`, "g"),
+			new RegExp(String.raw`\bshields\.io/npm/v/(${PACKAGE_NAME})\.svg`, "g"),
+			new RegExp(String.raw`\bpi\.dev/packages/(${PACKAGE_NAME})`, "g"),
+			new RegExp(String.raw`(${PACKAGE_NAME})@\d+\.\d+\.\d+`, "g"),
+			new RegExp(`from "(${PACKAGE_NAME})/src/`, "g"),
+		],
 		allowed: [CLI_COMMAND_CONTRACT.binary, FROZEN_PREDECESSOR_PACKAGE],
 		canonical: CLI_COMMAND_CONTRACT.binary,
 	},
 	{
 		subject: "goal file environment override",
-		pattern: /\$([A-Z][A-Z0-9_]*_WORKLIST)\b/g,
+		patterns: [/\$([A-Z][A-Z0-9_]*_WORKLIST)\b/g],
 		allowed: [WORKLIST_PATH_ENV],
 		canonical: WORKLIST_PATH_ENV,
 	},
 	{
 		subject: "goal file directory",
-		pattern: new RegExp(String.raw`([\w.-]+)/${literal(WORKLIST_FILENAME)}`, "g"),
+		// Anchored to the dot-directory form the contract renders, because `--file`
+		// and the environment override exist precisely so a document may print the
+		// path of a goal file living anywhere else.
+		patterns: [new RegExp(String.raw`(?<![\w.-])(\.[\w-]+)/${literal(WORKLIST_FILENAME)}`, "g")],
 		allowed: [WORKLIST_DIRECTORY, LEGACY_WORKLIST_DIRECTORY],
 		canonical: WORKLIST_DIRECTORY,
 	},
 	{
 		subject: "agent skill directory",
-		pattern: new RegExp(String.raw`${literal(dirname(SKILL_DIRECTORY))}/([\w.-]+)`, "g"),
+		patterns: [
+			new RegExp(String.raw`${literal(dirname(SKILL_DIRECTORY))}/([\w.-]+)`, "g"),
+			/--skill ([\w.-]+)/g,
+		],
 		allowed: [basename(SKILL_DIRECTORY)],
 		canonical: basename(SKILL_DIRECTORY),
 	},
@@ -325,9 +351,11 @@ describe("single CLI command contract", () => {
 	it("spells the names the contract owns the way the contract renders them", async () => {
 		const documentation = await readDocumentation();
 
-		for (const { subject, pattern, allowed, canonical } of CONTRACT_SPELLINGS) {
+		for (const { subject, patterns, allowed, canonical } of CONTRACT_SPELLINGS) {
 			const stated = documentation.flatMap(([path, contents]) =>
-				[...contents.matchAll(pattern)].map((match) => [path, match[1] ?? ""] as const),
+				patterns.flatMap((pattern) =>
+					[...contents.matchAll(pattern)].map((match) => [path, match[1] ?? ""] as const),
+				),
 			);
 			expect(
 				stated.filter(([, name]) => !allowed.includes(name)).map(([path, name]) => `${path} states ${name}`),
