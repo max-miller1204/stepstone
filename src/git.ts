@@ -117,3 +117,31 @@ export function shadowedWorklistWarning(location: WorklistLocation): string | un
 		`${location.shadowedPath} is ignored. Merge the goals you want to keep into the first file and delete the second.`
 	);
 }
+
+/** A resolution, carrying whatever the user has to be told about it. */
+export interface LocatedWorklist extends WorklistLocation {
+	/** The standing warning this resolution earns, from the one helper that words it. */
+	notice?: string;
+}
+
+/**
+ * Ask where the goals are and what must be said about that, as one answer.
+ *
+ * This lives beside the resolution order and the warning wording rather than in
+ * the board, because the Pi session needs the same pairing and reaching into the
+ * TUI for it would drag the board's I/O into the extension. Every interface that
+ * outlives its own resolution asks again rather than remembering: the board
+ * across a `migrate_path` in another terminal, a session across a branch
+ * checkout that lands a second worklist. Because both halves come from one
+ * resolution, the notice cannot describe a file other than the one in use.
+ */
+export function createWorklistLocator(
+	gitRoot: string,
+	options: WorklistLocationOptions = {},
+): () => LocatedWorklist {
+	return () => {
+		const location = resolveWorklistLocation(gitRoot, options);
+		const notice = shadowedWorklistWarning(location);
+		return { ...location, ...(notice !== undefined ? { notice } : {}) };
+	};
+}

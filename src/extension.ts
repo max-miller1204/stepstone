@@ -3,7 +3,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { WorklistApplicationService, type WorklistOperationSource } from "./application-service.ts";
 import { CLI_COMMAND_CONTRACT } from "./cli-contract.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
-import { shadowedWorklistWarning } from "./git.ts";
+import type { LocatedWorklist } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import { WorklistParamsSchema } from "./schema.ts";
 import { SessionStore } from "./session-store.ts";
@@ -125,13 +125,35 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	const applicationService = new WorklistApplicationService({ sessionStore });
 	let projectGoals: ProjectGoal[] = [];
 	let latestContext: ExtensionContext | undefined;
+	let locateProject: (() => LocatedWorklist | null) | undefined;
+	let announcedNotice: string | undefined;
 
 	async function refreshProject(): Promise<void> {
 		projectGoals = await applicationService.getProjectGoals();
 	}
 
+	/**
+	 * Say which of two roadmaps the session is reading, whenever that answer
+	 * changes.
+	 *
+	 * The session re-resolves the goal file on every operation, so a second
+	 * worklist arriving mid-session - a branch checkout, a merge, a colleague's
+	 * older release - silently switches which file every later read and write
+	 * lands in. The notice is derived from the same resolution that chooses the
+	 * path, so it can never describe a file the session is not using, and it is
+	 * raised only when the condition newly appears, so a widget refresh on every
+	 * turn does not repeat it.
+	 */
+	function announceLocationNotice(ctx: ExtensionContext): void {
+		const notice = locateProject?.()?.notice;
+		if (notice === announcedNotice) return;
+		announcedNotice = notice;
+		if (notice) ctx.ui.notify(notice, "warning");
+	}
+
 	async function updateUi(ctx: ExtensionContext): Promise<void> {
 		latestContext = ctx;
+		announceLocationNotice(ctx);
 		await refreshProject();
 		const lines = buildWidgetLines(applicationService.getSessionTasks(), projectGoals);
 		if (!lines.length) ctx.ui.setWidget(WIDGET_ID, undefined);
@@ -417,13 +439,9 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		sessionStore.reconstruct(ctx);
-		const locateProject = createProjectLocator(ctx.cwd);
-		applicationService.setProjectPathResolver(() => locateProject()?.path ?? null);
-		const location = locateProject();
-		// The session's one chance to say which of two roadmaps it is reading,
-		// before anything it shows can be mistaken for all the goals there are.
-		const warning = location ? shadowedWorklistWarning(location) : undefined;
-		if (warning) ctx.ui.notify(warning, "warning");
+		const locate = createProjectLocator(ctx.cwd);
+		locateProject = locate;
+		applicationService.setProjectPathResolver(() => locate()?.path ?? null);
 		try {
 			await updateUi(ctx);
 		} catch (error) {

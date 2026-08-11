@@ -59,6 +59,9 @@ export interface GoalBoardRuntimeOptions {
 	 * migrated one, splitting the roadmap in two. Every reload asks, so the file
 	 * the board watches, reads, and writes is the one the repository resolves to
 	 * now.
+	 *
+	 * `createWorklistLocator` composes one of these; a host that builds its own
+	 * is answering a question two interfaces already agree on.
 	 */
 	resolveLocation: () => BoardWorklistLocation;
 	/** Repository name shown in the header. */
@@ -134,6 +137,10 @@ function runEditor(argv: string[], file: string): Promise<void> {
 
 export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<void> {
 	const { service, env } = options;
+	// Pointed here rather than by the caller: every write then lands in the file
+	// the board resolved for its own reads, and no host can wire the two halves
+	// to different answers.
+	service.setProjectPathResolver(() => options.resolveLocation().path);
 	const palette = createPalette(supportsColor(options.output, env));
 	let location = options.resolveLocation();
 	const board = new GoalBoard({

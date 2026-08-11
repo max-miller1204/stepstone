@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { shadowedWorklistWarning } from "../src/git.ts";
 import type { BoardIntent } from "../src/tui/goal-board.ts";
 import { GoalBoard } from "../src/tui/goal-board.ts";
 import { decodeKeys } from "../src/tui/keys.ts";
 import { createPalette } from "../src/tui/style.ts";
-import { visibleWidth } from "../src/tui/text.ts";
+import { truncateToWidth, visibleWidth } from "../src/tui/text.ts";
 import type { ProjectGoal } from "../src/types.ts";
 
 const ESC = "\u001b";
@@ -235,6 +236,60 @@ describe("goal board presentation", () => {
 		expect(statusLine()).toBe("Added goal.");
 		press(board, "j");
 		expect(statusLine()).toBe(notice);
+	});
+
+	it("wraps the real two-worklist warning so the ignored file and the fix survive 80 columns", () => {
+		const currentPath = "/home/dev/service-api/.worklist/worklist.json";
+		const legacyPath = "/home/dev/service-api/.pi/worklist.json";
+		// The wording every interface shares, composed by its one helper rather than
+		// fabricated short here: the board has to hold whatever that helper says.
+		const notice = shadowedWorklistWarning({
+			path: currentPath,
+			source: "current",
+			currentPath,
+			legacyPath,
+			shadowedPath: legacyPath,
+		});
+		if (notice === undefined) throw new Error("a shadowed worklist must earn a notice");
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+
+		const frame = plainFrame(board, 80, 20);
+		const shown = frame.join(" ").replace(/\s+/g, " ");
+
+		// Both halves the notice exists for, not just the prefix and half a path.
+		expect(shown).toContain(notice);
+		expect(shown).toContain(`${legacyPath} is ignored`);
+		expect(shown).toContain("Merge the goals you want to keep into the first file and delete the second.");
+
+		// And it stays inside the terminal, without taking the roadmap off screen.
+		expect(frame.every((line) => visibleWidth(line) <= 80)).toBe(true);
+		expect(frame.length).toBe(20);
+		expect(frame.some((line) => line.includes("Replace legacy authentication"))).toBe(true);
+	});
+
+	it("falls back to one truncated notice line on a terminal too short to wrap it", () => {
+		const notice =
+			"Warning: two project worklists exist. Reading and writing /a/.worklist/worklist.json; /a/.pi/worklist.json is ignored. Merge the goals you want to keep into the first file and delete the second.";
+		const board = new GoalBoard({
+			palette: createPalette(false),
+			repositoryLabel: "demo",
+			notice,
+			goals: GOALS,
+			now: () => NOW,
+		});
+
+		// Six rows leave nothing to spare once the header, the pane minimum, and the
+		// key bar are paid for, so the goal rows keep the space.
+		const frame = plainFrame(board, 80, 6);
+		expect(frame.length).toBe(6);
+		expect(frame.at(-2)?.trim()).toBe(truncateToWidth(notice, 78));
+		expect(frame.every((line) => visibleWidth(line) <= 80)).toBe(true);
 	});
 
 	it("dims settled rows only where they sit alongside live work", () => {

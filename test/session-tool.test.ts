@@ -805,20 +805,30 @@ describe("registered model tool", () => {
 		ctx: ExtensionContext,
 	) => Promise<unknown>;
 
+	interface LiveSession {
+		call: (params: Record<string, unknown>) => Promise<unknown>;
+		/** Everything the session has put in front of the user, newest last. */
+		notifications: string[];
+	}
+
 	/** A live session on a repository, left exactly as `session_start` leaves one. */
-	async function startSession(cwd: string): Promise<(params: Record<string, unknown>) => Promise<unknown>> {
+	async function startSession(cwd: string): Promise<LiveSession> {
 		const { tool, handlers } = registerExtension();
+		const notifications: string[] = [];
 		const sessionContext = {
 			cwd,
 			mode: "cli",
 			sessionManager: { getBranch: () => [] },
-			ui: { notify: () => {}, setWidget: () => {} },
+			ui: { notify: (message: string) => notifications.push(message), setWidget: () => {} },
 		} as unknown as ExtensionContext;
 		const sessionStart = handlers.get("session_start");
 		if (!sessionStart) throw new Error("session_start handler was not registered");
 		await sessionStart({}, sessionContext);
 		const execute = tool.execute as ToolExecute;
-		return (params) => execute("call", params, undefined, undefined, sessionContext);
+		return {
+			call: (params) => execute("call", params, undefined, undefined, sessionContext),
+			notifications,
+		};
 	}
 
 	it("resolves the same goal file a terminal in the repository would", async () => {
@@ -865,7 +875,7 @@ describe("registered model tool", () => {
 				],
 			})}\n`,
 		);
-		const execute = await startSession(root);
+		const session = await startSession(root);
 
 		// migrate_path, run in a terminal while the session stays open on the file
 		// it moved.
@@ -875,7 +885,7 @@ describe("registered model tool", () => {
 		);
 		expect(migration.ok).toBe(true);
 
-		await execute({ scope: "project", action: "add", title: "Added after the move" });
+		await session.call({ scope: "project", action: "add", title: "Added after the move" });
 
 		// The goal joins the roadmap that moved. Writing to the remembered path
 		// would recreate the legacy file holding only this goal, which is the split
@@ -883,6 +893,39 @@ describe("registered model tool", () => {
 		const worklist = JSON.parse(await readFile(migrated, "utf8")) as ProjectWorklist;
 		expect(worklist.goals.map((goal) => goal.id)).toEqual(["carried", "added-after-the-move"]);
 		await expect(readFile(legacy, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	it("announces a second worklist that appears while the session is already running", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-shadowed-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const legacy = join(root, ".pi", "worklist.json");
+		const current = join(root, ".worklist", "worklist.json");
+		await mkdir(join(root, ".pi"), { recursive: true });
+		await writeFile(legacy, `${JSON.stringify({ version: 1, goals: [] })}\n`);
+
+		// A repository an older release wrote: one roadmap, so nothing to warn about.
+		const session = await startSession(root);
+		expect(session.notifications).toEqual([]);
+
+		// A branch checkout, a merge, or a colleague's older release lands the second
+		// file. From here every read and write the session makes silently moves to it.
+		await mkdir(join(root, ".worklist"), { recursive: true });
+		await writeFile(current, `${JSON.stringify({ version: 1, goals: [] })}\n`);
+
+		await session.call({ scope: "project", action: "list" });
+
+		const warnings = session.notifications.filter((message) =>
+			message.includes("two project worklists exist"),
+		);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain(`Reading and writing ${current}`);
+		expect(warnings[0]).toContain(`${legacy} is ignored`);
+
+		// Said when it becomes true, not on every turn after.
+		await session.call({ scope: "project", action: "list" });
+		expect(
+			session.notifications.filter((message) => message.includes("two project worklists exist")),
+		).toHaveLength(1);
 	});
 
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {

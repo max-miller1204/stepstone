@@ -27,6 +27,7 @@ import {
 	unfinishedGoals,
 } from "./dependencies.ts";
 import {
+	createWorklistLocator,
 	resolveGitRoot,
 	resolveWorklistLocation,
 	shadowedWorklistWarning,
@@ -943,20 +944,16 @@ async function runInteractiveBoard(
 	// The board holds the terminal until the user quits, so it is handed the
 	// resolution instead: a `migrate_path` in another terminal moves the goal
 	// file, and a board still writing to the old path would recreate it beside
-	// the migrated one. The service and the board ask the same locator, so what
-	// the board shows and what it writes cannot come apart. The board takes the
-	// whole screen, so the warning already written to stderr is on a buffer the
-	// user will not see again until they quit; it travels with the path.
-	const locate = (): WorklistLocation =>
-		resolveWorklistLocation(location.root, { override: invocation.file, env: process.env });
-	service.setProjectPathResolver(() => locate().path);
+	// the migrated one. The board takes the whole screen, so the warning already
+	// written to stderr is on a buffer the user will not see again until they
+	// quit; it travels with the path. `runGoalBoard` points the service at this
+	// same locator, so what the board shows and what it writes cannot come apart.
 	await runGoalBoard({
 		service,
-		resolveLocation: () => {
-			const current = locate();
-			const notice = shadowedWorklistWarning(current);
-			return { path: current.path, ...(notice !== undefined ? { notice } : {}) };
-		},
+		resolveLocation: createWorklistLocator(location.root, {
+			override: invocation.file,
+			env: process.env,
+		}),
 		repositoryLabel: basename(location.root),
 		initialGoals: (envelope.ok ? envelope.result.goals : undefined) ?? [],
 		input: process.stdin,

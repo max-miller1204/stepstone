@@ -6,7 +6,7 @@ import type { KeyEvent } from "./keys.ts";
 import { isInterrupt } from "./keys.ts";
 import type { Palette, Style } from "./style.ts";
 import type { Frame } from "./terminal.ts";
-import { fitToWidth, singleLine, truncateToWidth, visibleWidth, wrapText } from "./text.ts";
+import { fitToWidth, singleLine, truncateToWidth, visibleWidth, wrapText, wrapToLines } from "./text.ts";
 
 /**
  * The Project Goal board: all state and rendering, no input or output.
@@ -23,6 +23,19 @@ import { fitToWidth, singleLine, truncateToWidth, visibleWidth, wrapText } from 
 
 export const GOAL_FILTERS = ["open", "done", "archived", "all"] as const;
 export type GoalFilter = (typeof GOAL_FILTERS)[number];
+
+/** Rows the panes are never squeezed below, however much else wants the space. */
+const BODY_MIN_ROWS = 3;
+
+/**
+ * Rows the standing notice may take.
+ *
+ * Enough to read the two-worklist warning whole at eighty columns, which is the
+ * narrow end of a normal terminal and where its two absolute paths would
+ * otherwise run off the line. It is a ceiling, not a reservation: a notice that
+ * fits on one row takes one.
+ */
+const NOTICE_MAX_ROWS = 4;
 
 const FILTER_LABELS: Readonly<Record<GoalFilter, string>> = {
 	open: "Open",
@@ -793,15 +806,16 @@ export class GoalBoard {
 	// ----------------------------------------------------------------- render
 
 	render(width: number, rows: number): Frame {
-		const bodyRows = Math.max(3, rows - 3);
+		const status = this.renderStatus(width, rows);
+		const bodyRows = Math.max(BODY_MIN_ROWS, rows - 2 - status.lines.length);
 		const body =
 			this.mode.kind === "help" ? this.renderHelp(width, bodyRows) : this.renderPanes(width, bodyRows);
-		const status = this.renderStatus(width);
-		const lines = [this.renderHeader(width), ...body, status.line, this.renderKeyBar(width)];
+		const lines = [this.renderHeader(width), ...body, ...status.lines, this.renderKeyBar(width)];
 		// The frame is exactly the size it was asked for, whatever the panes produced,
-		// so the status line and key bar always land on the last two rows.
-		while (lines.length < rows) lines.splice(lines.length - 2, 0, "");
-		if (lines.length > rows) lines.splice(rows - 2, lines.length - rows);
+		// so the status lines and key bar always land on the last rows.
+		const tail = status.lines.length + 1;
+		while (lines.length < rows) lines.splice(lines.length - tail, 0, "");
+		if (lines.length > rows) lines.splice(rows - tail, lines.length - rows);
 		return {
 			lines,
 			...(status.cursorColumn === undefined
@@ -1132,32 +1146,50 @@ export class GoalBoard {
 		return lines;
 	}
 
-	/** The prompt line, which also carries the cursor column when input is open. */
-	private renderStatus(width: number): { line: string; cursorColumn?: number } {
+	/** The prompt lines, which also carry the cursor column when input is open. */
+	private renderStatus(width: number, rows: number): { lines: string[]; cursorColumn?: number } {
 		const { accent, muted, dim, success, danger, warning, bold } = this.palette;
+		const inner = Math.max(1, width - 2);
 		if (this.mode.kind === "prompt") {
-			return this.renderInputLine(`${this.mode.prompt.label}: `, this.mode.prompt, width, accent);
+			const input = this.renderInputLine(`${this.mode.prompt.label}: `, this.mode.prompt, width, accent);
+			return {
+				lines: [input.line],
+				...(input.cursorColumn === undefined ? {} : { cursorColumn: input.cursorColumn }),
+			};
 		}
 		if (this.mode.kind === "search") {
-			return this.renderInputLine("/", this.mode.search, width, accent);
+			const input = this.renderInputLine("/", this.mode.search, width, accent);
+			return {
+				lines: [input.line],
+				...(input.cursorColumn === undefined ? {} : { cursorColumn: input.cursorColumn }),
+			};
 		}
 		if (this.mode.kind === "confirm") {
 			const suffix = ` ${dim("[")}${bold("y")}${dim("/")}N${dim("]")}`;
 			const question = truncateToWidth(this.mode.confirm.question, Math.max(1, width - 8));
-			return { line: ` ${warning(question)}${suffix}` };
+			return { lines: [` ${warning(question)}${suffix}`] };
 		}
 		if (this.message) {
 			const style =
 				this.message.tone === "error" ? danger : this.message.tone === "success" ? success : muted;
-			return { line: ` ${style(truncateToWidth(this.message.text, Math.max(1, width - 2)))}` };
+			return { lines: [` ${style(truncateToWidth(this.message.text, inner))}`] };
 		}
 		// A standing condition outranks the idle summary: the summary describes the
 		// roadmap on screen, and the notice is the reason that roadmap may not be
 		// all of them.
+		//
+		// It also wraps rather than being cut at the first line, because the two
+		// things it exists to convey - which file is being ignored, and that the fix
+		// is to merge by hand and delete - both sit past one line's worth of an
+		// absolute path. The goal rows still come first: the notice only takes the
+		// rows the frame can spare, and falls back to one truncated line when there
+		// are none.
 		if (this.notice !== undefined) {
-			return { line: ` ${warning(truncateToWidth(this.notice, Math.max(1, width - 2)))}` };
+			const spare = rows - 1 - BODY_MIN_ROWS - 1;
+			const budget = Math.max(1, Math.min(NOTICE_MAX_ROWS, spare));
+			return { lines: wrapToLines(this.notice, inner, budget).map((line) => ` ${warning(line)}`) };
 		}
-		return { line: ` ${dim(truncateToWidth(this.idleSummary(), Math.max(1, width - 2)))}` };
+		return { lines: [` ${dim(truncateToWidth(this.idleSummary(), inner))}`] };
 	}
 
 	/**

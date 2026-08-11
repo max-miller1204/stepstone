@@ -6,7 +6,7 @@ import {
 	type WorklistOperationSource,
 } from "./application-service.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
-import { resolveGitRoot, resolveWorklistLocation, type WorklistLocation } from "./git.ts";
+import { createWorklistLocator, type LocatedWorklist, resolveGitRoot } from "./git.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { WorklistOperationResult, WorklistToolDetails } from "./types.ts";
 
@@ -24,14 +24,15 @@ export interface ToolDeps {
  *
  * The repository a session runs in cannot change under it, so the git root is
  * found once; which file inside it holds the goals can change, because
- * `migrate_path` in another terminal moves it, so that part is re-read every
- * time it is asked for.
+ * `migrate_path` in another terminal moves it or a branch checkout lands a
+ * second worklist beside it, so that part is re-read every time it is asked
+ * for. The standing warning travels with the path it describes, so a session
+ * cannot report one file while reading another.
  */
-export function createProjectLocator(cwd: string): () => WorklistLocation | null {
+export function createProjectLocator(cwd: string): () => LocatedWorklist | null {
 	const result = resolveGitRoot(cwd);
 	if (!result.isGit || !result.root) return () => null;
-	const root = result.root;
-	return () => resolveWorklistLocation(root, { env: process.env, overrideBase: cwd });
+	return createWorklistLocator(result.root, { env: process.env, overrideBase: cwd });
 }
 
 function getApplicationService(deps: ToolDeps): WorklistApplicationService {

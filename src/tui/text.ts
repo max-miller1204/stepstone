@@ -296,6 +296,23 @@ export function wrapText(text: string, width: number): string[] {
 	return lines;
 }
 
+/**
+ * Word-wrap to at most `maxLines`, truncating the last one when it still spills.
+ *
+ * For a line budget fixed by the frame rather than by the text: everything that
+ * fits is wrapped on word boundaries, and only the overflow past the last line
+ * is cut, so a caller keeps as much of the message as the rows allow instead of
+ * losing everything past the first one.
+ */
+export function wrapToLines(text: string, width: number, maxLines: number): string[] {
+	if (width <= 0 || maxLines <= 0) return [];
+	const wrapped = wrapText(text, width);
+	if (wrapped.length <= maxLines) return wrapped;
+	const kept = wrapped.slice(0, maxLines - 1);
+	kept.push(truncateToWidth(wrapped.slice(maxLines - 1).join(" "), width));
+	return kept;
+}
+
 /** Collapse whitespace so a multi-line value fits one list row. */
 export function singleLine(text: string): string {
 	return text.replace(/\s+/g, " ").trim();

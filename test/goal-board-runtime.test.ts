@@ -1,13 +1,13 @@
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorklistApplicationService } from "../src/application-service.ts";
-import { resolveWorklistLocation, shadowedWorklistWarning } from "../src/git.ts";
+import { createWorklistLocator } from "../src/git.ts";
 import { parseEditorCommand, resolveEditorCommand, runGoalBoard } from "../src/tui/goal-board-runtime.ts";
 import type { ProjectGoal, ProjectWorklist } from "../src/types.ts";
 
@@ -108,17 +108,16 @@ async function readGoals(root: string): Promise<ProjectGoal[]> {
  */
 async function openBoard(root: string, env: NodeJS.ProcessEnv = {}): Promise<Harness> {
 	const projectPath = join(root, ".worklist", "worklist.json");
-	const locate = () => resolveWorklistLocation(root, { env: {} });
-	const resolveLocation = () => {
-		const current = locate();
-		const notice = shadowedWorklistWarning(current);
-		return { path: current.path, ...(notice !== undefined ? { notice } : {}) };
-	};
-	const service = new WorklistApplicationService({});
-	service.setProjectPathResolver(() => locate().path);
+	// The same locator `project ui` hands the board, not a copy of it, so a board
+	// wired to a frozen path fails here rather than passing against the harness.
+	const resolveLocation = createWorklistLocator(root, { env: {} });
+	const service = new WorklistApplicationService({ projectPath: resolveLocation().path });
 	const input = new PassThrough();
 	const output = new FakeOutput();
-	const initialGoals = await readGoals(root);
+	// From the service's own resolved list, the way `runInteractiveBoard` opens
+	// the board, rather than from a helper that names the current path itself.
+	const opening = await service.execute({ scope: "project", action: "list" }, { source: "cli" });
+	const initialGoals = (opening.ok ? opening.result.goals : undefined) ?? [];
 	const done = runGoalBoard({
 		service,
 		resolveLocation,
