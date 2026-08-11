@@ -17,7 +17,7 @@ Run the command from inside the target repository, or pass `--cwd <dir>` to reso
 
 The published package ships a compiled bin, so the CLI needs Node 20 or newer and nothing else.
 Every Pi peer dependency is optional and nothing the bin loads imports one, so `npx -y stepstone@latest` installs under a megabyte and runs with no Pi installation at all.
-That is enforced rather than promised, by an import scan over the CLI's module graph and by a CI job that packs the tarball and drives the installed bin in a scratch directory with no Pi present; see [docs/development.md](development.md).
+That is enforced rather than promised, by an import scan over the CLI's module graph and by a CI job that packs the tarball and drives the installed bin in a scratch directory with no Pi present; see [docs/development.md](https://github.com/max-miller1204/stepstone/blob/main/docs/development.md).
 
 ## Running from a checkout
 

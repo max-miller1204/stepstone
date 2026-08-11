@@ -1,0 +1,21 @@
+Relative Markdown links inside the installed package, resolved against the install
+=================================================================================
+
+Checked: README.md, every docs/*.md, and .claude/skills/stepstone/SKILL.md as they
+sit in node_modules/stepstone after installing the tarball.
+
+Links that do not resolve inside the install
+--------------------------------------------
+  README.md  ->  docs/ROADMAP.md
+  README.md  ->  docs/development.md
+  README.md  ->  docs/releasing.md
+  README.md  ->  docs/development.md
+  docs/pi.md  ->  releasing.md
+  docs/usage.md  ->  development.md
+
+README.md's four are intentional per the change's stated reasoning: a reader of the
+README is on the repository or on npmjs.com's rendered README, where they resolve.
+
+docs/pi.md and docs/usage.md are a different case. Those two pages ship inside the
+tarball while their targets no longer do, so the link is dead for a reader who is
+reading the page where it was delivered to them.

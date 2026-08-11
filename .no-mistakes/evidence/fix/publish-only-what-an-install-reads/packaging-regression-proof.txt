@@ -1,0 +1,24 @@
+The packaging test is a real regression test, not a restatement of package.json
+==============================================================================
+
+Selector: npx vitest run test/cli-contract.test.ts -t "packs what an install reads"
+The test asks npm pack --dry-run --json --ignore-scripts what the tarball holds,
+so each case below changes packaging and reads the packer's answer back.
+
+1. Unmodified branch
+    Tests  1 passed | 16 skipped (17)
+
+2. The docs/ROADMAP.md exclusion removed from package.json (the fix undone)
+    AssertionError: docs/ROADMAP.md is written for this checkout and must not be packaged: expected [ …(54) ] to not include 'docs/ROADMAP.md'
+    Tests  1 failed | 16 skipped (17)
+
+3. A page an install needs, docs/usage.md, excluded by mistake
+    AssertionError: docs/usage.md documents the package and must be packaged: expected [ …(52) ] to include 'docs/usage.md'
+    Tests  1 failed | 16 skipped (17)
+
+4. A docs page added after the exclusion list was written, held out of the tarball
+    AssertionError: docs/tmp-newpage.md documents the package and must be packaged: expected [ …(53) ] to include 'docs/tmp-newpage.md'
+    Tests  1 failed | 16 skipped (17)
+
+5. The same new page, shipping by default: covered the day it lands, no list to update
+    Tests  1 passed | 16 skipped (17)

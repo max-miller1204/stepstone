@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
@@ -612,6 +612,32 @@ describe("single CLI command contract", () => {
 		for (const path of published) {
 			expect(paths, `${path} documents the package and must be packaged`).toContain(path);
 		}
+	}, 60_000);
+
+	it("links only to pages an install carries, from every page an install carries", async () => {
+		// A packaged page is read out of `node_modules`, where a relative link can only
+		// land on something the tarball also carries. Excluding a page from the tarball
+		// therefore breaks every relative link into it from a page that still ships,
+		// which is invisible in this checkout because both files are on disk here.
+		//
+		// README.md is the one page held out, and deliberately: its reader is on GitHub
+		// or on npmjs.com's rendered README, where every path in the repository
+		// resolves, so its links to the development-only pages are answers rather than
+		// dead ends.
+		const paths = await packedFilePaths();
+		const pages = [...paths].filter((path) => path.endsWith(".md") && path !== "README.md");
+		expect(pages.length, "no Markdown page is packaged, so this assertion pins nothing").toBeGreaterThan(0);
+		const dangling: string[] = [];
+		for (const page of pages) {
+			const contents = await readFile(resolve(page), "utf8");
+			for (const [, target] of contents.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
+				// Absolute URLs leave the package, and a bare fragment stays on the page.
+				if (target === undefined || /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("#")) continue;
+				const resolved = posix.normalize(posix.join(posix.dirname(page), target.split("#")[0] ?? ""));
+				if (!paths.has(resolved)) dangling.push(`${page} links to ${target}`);
+			}
+		}
+		expect(dangling, `packaged pages link to files an install does not carry: ${dangling.join("; ")}`).toEqual([]);
 	}, 60_000);
 
 	it("prints the contract-rendered help from the CLI itself", async () => {
