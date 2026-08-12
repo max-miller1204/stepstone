@@ -1,0 +1,55 @@
+=== Pi registerTool({ name: worklist }) promptGuidelines ===
+
+1. For non-trivial multi-step work, use worklist to create several small, concrete, independently completable Session Tasks before implementation, then update them as verified work progresses.
+
+2. Do not create one Session Task that merely restates the user's broad request or end goal. Broad outcomes belong in Project Goals; Session Tasks should name the next executable chunks.
+
+3. Keep Session Task titles concise and self-contained. Session Tasks do not have descriptions.
+
+4. Use worklist with scope=project only when the user asks to manage the project roadmap.
+
+5. When using worklist to capture Project Goals: Brainstorm broad outcomes for the roadmap rather than internal implementation steps. Draft the exact plain JSON array that represents the complete proposed goal batch. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists. Present that exact JSON array to the user and wait for explicit approval before making any mutation. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.
+
+6. Never set worklist confirm=true for a project lifecycle action unless the user explicitly requested that exact completion, reopening, archival, or deletion.
+
+=== stepstone project init (scratch repo) ===
+Refreshed the Stepstone block in /tmp/stepstone-evidence-isU2Lw/AGENTS.md.
+
+Optional integrations were not installed or registered:
+Skill installation: npx skills add max-miller1204/stepstone --skill stepstone -g
+MCP client configuration:
+{
+  "mcpServers": {
+    "stepstone": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package",
+        "stepstone@latest",
+        "stepstone-mcp"
+      ],
+      "cwd": "/tmp/stepstone-evidence-isU2Lw"
+    }
+  }
+}
+Choose the skill installation scope and MCP client configuration location for your harness.
+
+Capture workflow: Brainstorm broad outcomes for the roadmap rather than internal implementation steps. Draft the exact plain JSON array that represents the complete proposed goal batch. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists. Present that exact JSON array to the user and wait for explicit approval before making any mutation. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.
+
+=== live MCP tool apply-plan description ===
+
+Validate and atomically add every goal in a JSON plan. Brainstorm broad outcomes for the roadmap rather than internal implementation steps. Draft the exact plain JSON array that represents the complete proposed goal batch. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists. Present that exact JSON array to the user and wait for explicit approval before making any mutation. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.
+
+=== canonical capture workflow steps, per surface ===
+
+PASS  Pi model-tool prompt: 6/6 canonical steps present
+PASS  generated skill: 6/6 canonical steps present
+PASS  AGENTS block (project init): 6/6 canonical steps present
+PASS  CLI guide: 6/6 canonical steps present
+PASS  MCP apply-plan tool: 6/6 canonical steps present
+
+PASS  Pi prompt keeps the exact project lifecycle confirmation guardrail
+PASS  Pi prompt forbids decomposing an approved batch into per-goal add calls
+PASS  Pi prompt text is the contract's step list verbatim (single workflow source)
+
+ALL SURFACES IN PARITY
