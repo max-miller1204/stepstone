@@ -45,7 +45,7 @@ With `--max-parallel 1`, the same loop is a serial auto-chain.
 ## Authorization boundary
 
 Explicit approval of a plan plus an explicit request to run its dispatch loop grants standing consent to complete a goal from that plan only after the goal's matching PR merges.
-This is the narrow exception to the normal rule that an agent must ask immediately before passing `--confirm`.
+This is the narrow exception to the normal rule that an agent must ask immediately before confirming a lifecycle action, and it holds for whichever interface the loop drives the roadmap through: `--confirm` on the CLI, `confirm: true` on the [MCP server](mcp.md#exact-confirmation-guardrails).
 
 Standing consent does not authorize completion based on worker exit, a green unmerged PR, or session silence.
 It does not authorize `archive`, `delete`, `reopen`, a goal outside the approved plan, or a later plan.

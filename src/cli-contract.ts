@@ -208,7 +208,7 @@ export const CLI_COMMAND_CONTRACT = {
 	 * repository-neutral: one skill file serves every checkout, so it must never
 	 * assume it was installed alongside this source tree.
 	 */
-	skillDescription: `Manage ${BINARY} Project Goals (the roadmap committed in a repo's ${WORKLIST_RELATIVE_PATH}) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
+	skillDescription: `Manage ${BINARY} Project Goals (the roadmap committed in a repo's ${WORKLIST_RELATIVE_PATH}) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; dispatch or fan out an approved plan, running its ready goals as parallel agent sessions in isolated worktrees; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
 	runtime: {
 		/** Node floor for the published compiled bin. Asserted against package.json engines.node. */
 		binaryNodeFloor: "20",
