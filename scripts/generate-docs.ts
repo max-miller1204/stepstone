@@ -13,13 +13,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import {
-	AGENTS_PATH,
-	AgentsBlockError,
-	readAgentsContents,
-	refreshAgentsFile,
-	updateAgentsContents,
-} from "../src/agents.ts";
+import { AGENTS_PATH, AgentsBlockError, agentsFileNeedsRefresh, refreshAgentsFile } from "../src/agents.ts";
 import { DOCS_PATH, renderCliGuide, renderSkillMarkdown, SKILL_PATH } from "../src/cli-contract.ts";
 import { createWorklistLocator } from "../src/git.ts";
 import { readProjectWorklist } from "../src/project-store.ts";
@@ -86,8 +80,7 @@ for (const artifact of artifacts) {
  */
 try {
 	if (check) {
-		const agentsContents = await readAgentsContents(repoRoot);
-		if (updateAgentsContents(agentsContents) !== agentsContents) stale.push(AGENTS_PATH);
+		if (await agentsFileNeedsRefresh(repoRoot)) stale.push(AGENTS_PATH);
 	} else {
 		const refreshed = await refreshAgentsFile(repoRoot);
 		process.stdout.write(
@@ -98,7 +91,7 @@ try {
 	}
 } catch (error) {
 	if (!(error instanceof AgentsBlockError)) throw error;
-	process.stderr.write(`${error.message}\nRepair ${resolve(repoRoot, AGENTS_PATH)} (${error.problem}).\n`);
+	process.stderr.write(`${error.message}\nRepair it by hand, then rerun.\n`);
 	process.exit(1);
 }
 

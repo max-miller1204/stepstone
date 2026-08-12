@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { AgentsBlockError, readAgentsContents } from "../src/agents.ts";
+import { AgentsBlockError, agentsFileNeedsRefresh } from "../src/agents.ts";
 import {
 	AGENTS_BLOCK_END,
 	AGENTS_BLOCK_START,
@@ -238,20 +238,45 @@ describe("project init AGENTS.md generation", () => {
 		// then declines to touch at all.
 		const root = await tempGitRepo();
 		const path = join(root, "AGENTS.md");
-		expect(await readAgentsContents(root)).toBe("");
+		expect(await agentsFileNeedsRefresh(root)).toBe(true);
 
 		await writeFile(path, Buffer.from([0xff]));
-		await expect(readAgentsContents(root)).rejects.toThrow(AgentsBlockError);
-		await expect(readAgentsContents(root)).rejects.toMatchObject({ problem: "invalid-encoding" });
+		await expect(agentsFileNeedsRefresh(root)).rejects.toThrow(AgentsBlockError);
+		await expect(agentsFileNeedsRefresh(root)).rejects.toMatchObject({
+			problem: "invalid-encoding",
+			path,
+		});
 		await unlink(path);
 
 		await writeFile(join(root, "shared-agents.md"), "shared guidance", "utf8");
 		await symlink("shared-agents.md", path);
-		await expect(readAgentsContents(root)).rejects.toMatchObject({ problem: "unsupported-file" });
+		await expect(agentsFileNeedsRefresh(root)).rejects.toMatchObject({
+			problem: "unsupported-file",
+			path,
+		});
 		await unlink(path);
 
 		await writeFile(path, "authored\n", "utf8");
-		expect(await readAgentsContents(root)).toBe("authored\n");
+		expect(await agentsFileNeedsRefresh(root)).toBe(true);
+		expect((await runCli(root, ["project", "init"])).code).toBe(0);
+		expect(await agentsFileNeedsRefresh(root)).toBe(false);
+	});
+
+	it("names the refused file when init targets another repository", async () => {
+		// `--cwd` puts the refused file outside the directory the person is standing
+		// in, so a message naming only `AGENTS.md` gives them nothing to go repair.
+		const root = await tempGitRepo();
+		const caller = await mkdtemp(join(tmpdir(), "stepstone-agents-caller-"));
+		const path = join(root, "AGENTS.md");
+		await writeFile(join(root, "CLAUDE.md"), "authored guidance", "utf8");
+		await symlink("CLAUDE.md", path);
+
+		const result = await runCli(caller, ["project", "init", "--cwd", root]);
+
+		expect(result.code).toBe(1);
+		expect(result.stdout).toBe("");
+		expect(result.stderr.trim()).toBe(`Refusing to update ${path}: the existing path is not a regular file.`);
+		expect((await lstat(path)).isSymbolicLink()).toBe(true);
 	});
 
 	it("serializes concurrent initializers into one complete block", async () => {

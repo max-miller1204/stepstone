@@ -728,6 +728,7 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 		fail(`project init accepts no arguments\n\n${USAGE}`, 2);
 	}
 	const root = resolveRepositoryRoot(invocation);
+	const agentsPath = resolve(root, AGENTS_PATH);
 	let refreshed: AgentsRefreshResult;
 	try {
 		refreshed = await refreshAgentsFile(root);
@@ -741,9 +742,9 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 				code: markerProblem
 					? WORKLIST_ERROR_CODES.VALIDATION_FAILED
 					: WORKLIST_ERROR_CODES.PERSISTENCE_FAILED,
-				message: error instanceof Error ? error.message : `Cannot refresh ${AGENTS_PATH}: ${String(error)}`,
+				message: error instanceof Error ? error.message : `Cannot refresh ${agentsPath}: ${String(error)}`,
 				retryable: isRetryableAgentsError(error),
-				details: { agentsPath: resolve(root, AGENTS_PATH), ...(markerProblem ? { markerProblem } : {}) },
+				details: { agentsPath, ...(markerProblem ? { markerProblem } : {}) },
 			},
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});

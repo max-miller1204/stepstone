@@ -17,18 +17,26 @@ export type AgentsBlockProblem =
 	| "invalid-encoding"
 	| "unsupported-file";
 
-/** A marker layout that cannot be refreshed without guessing what the user intended. */
+/**
+ * A marker layout that cannot be refreshed without guessing what the user intended.
+ *
+ * The refused file is named in the message rather than only carried beside it,
+ * because `--cwd` points init at a repository other than the one the person is
+ * standing in, and a bare `AGENTS.md` leaves them nothing to go and repair.
+ */
 export class AgentsBlockError extends Error {
 	readonly problem: AgentsBlockProblem;
+	readonly path: string;
 
-	constructor(problem: AgentsBlockProblem, message: string) {
-		super(message);
+	constructor(problem: AgentsBlockProblem, path: string, detail: string) {
+		super(`Refusing to update ${path}: ${detail}`);
 		this.name = "AgentsBlockError";
 		this.problem = problem;
+		this.path = path;
 	}
 }
 
-function markerOffsets(contents: string, marker: string): number[] {
+function markerOffsets(contents: string, marker: string, path: string): number[] {
 	const offsets: number[] = [];
 	let offset = 0;
 	while (offset <= contents.length - marker.length) {
@@ -39,7 +47,8 @@ function markerOffsets(contents: string, marker: string): number[] {
 		if ((before !== "" && before !== "\n") || (after !== undefined && after !== "\n" && after !== "\r")) {
 			throw new AgentsBlockError(
 				"malformed-markers",
-				`Refusing to update ${AGENTS_PATH}: Stepstone AGENTS markers must occupy complete lines.`,
+				path,
+				"Stepstone AGENTS markers must occupy complete lines.",
 			);
 		}
 		offsets.push(found);
@@ -49,24 +58,31 @@ function markerOffsets(contents: string, marker: string): number[] {
 }
 
 /**
- * Return the exact contents one init should persist.
+ * Return the exact contents one init should persist to `path`.
  *
  * Bytes outside a single valid marker pair are copied verbatim. Missing markers
  * append one block, while every ambiguous layout is refused rather than repaired.
+ * The path is passed rather than assumed so a refusal names the file it read.
  */
-export function updateAgentsContents(contents: string, block: string = renderAgentsMarkdownBlock()): string {
-	const starts = markerOffsets(contents, AGENTS_BLOCK_START);
-	const ends = markerOffsets(contents, AGENTS_BLOCK_END);
+export function updateAgentsContents(
+	path: string,
+	contents: string,
+	block: string = renderAgentsMarkdownBlock(),
+): string {
+	const starts = markerOffsets(contents, AGENTS_BLOCK_START, path);
+	const ends = markerOffsets(contents, AGENTS_BLOCK_END, path);
 	if (starts.length > 1 || ends.length > 1) {
 		throw new AgentsBlockError(
 			"duplicate-markers",
-			`Refusing to update ${AGENTS_PATH}: duplicate Stepstone AGENTS markers were found. Keep exactly one start marker and one end marker.`,
+			path,
+			"duplicate Stepstone AGENTS markers were found. Keep exactly one start marker and one end marker.",
 		);
 	}
 	if (starts.length !== ends.length || (starts.length === 1 && starts[0] > ends[0])) {
 		throw new AgentsBlockError(
 			"malformed-markers",
-			`Refusing to update ${AGENTS_PATH}: the Stepstone AGENTS markers are incomplete or out of order. Keep one start marker before one end marker, or remove both.`,
+			path,
+			"the Stepstone AGENTS markers are incomplete or out of order. Keep one start marker before one end marker, or remove both.",
 		);
 	}
 	if (starts.length === 1) {
@@ -106,17 +122,11 @@ async function readAgentsState(root: string): Promise<AgentsFileState> {
 		throw error;
 	});
 	if (existing && !existing.isFile()) {
-		throw new AgentsBlockError(
-			"unsupported-file",
-			`Refusing to update ${AGENTS_PATH}: the existing path is not a regular file.`,
-		);
+		throw new AgentsBlockError("unsupported-file", path, "the existing path is not a regular file.");
 	}
 	const bytes = existing ? await readFile(path) : Buffer.alloc(0);
 	if (!isUtf8(bytes)) {
-		throw new AgentsBlockError(
-			"invalid-encoding",
-			`Refusing to update ${AGENTS_PATH}: the existing file is not valid UTF-8.`,
-		);
+		throw new AgentsBlockError("invalid-encoding", path, "the existing file is not valid UTF-8.");
 	}
 	return {
 		path,
@@ -125,9 +135,10 @@ async function readAgentsState(root: string): Promise<AgentsFileState> {
 	};
 }
 
-/** One repository's AGENTS.md, as the refresher itself reads it. */
-export async function readAgentsContents(root: string): Promise<string> {
-	return (await readAgentsState(root)).contents;
+/** Whether one repository's AGENTS.md would change if it were refreshed now. */
+export async function agentsFileNeedsRefresh(root: string): Promise<boolean> {
+	const { path, contents } = await readAgentsState(root);
+	return updateAgentsContents(path, contents) !== contents;
 }
 
 /**
@@ -143,7 +154,7 @@ export async function refreshAgentsFile(root: string): Promise<AgentsRefreshResu
 	let tempPath: string | undefined;
 	try {
 		const { path, mode, contents } = await readAgentsState(root);
-		const updated = updateAgentsContents(contents);
+		const updated = updateAgentsContents(path, contents);
 		if (updated === contents) return { path, changed: false };
 
 		tempPath = resolve(root, `.stepstone-agents-${randomBytes(8).toString("hex")}.tmp`);
