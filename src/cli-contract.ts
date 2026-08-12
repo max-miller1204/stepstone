@@ -646,10 +646,8 @@ export function renderAgentsMarkdownBlock(): string {
 		"```",
 		`Flags: ${contract.flags
 			.map((flag) => {
-				const actionScope = flag.actions
-					? ` (only for ${contract.scope} ${joinWithAnd(flag.actions)})`
-					: "";
-				return `\`${flag.usage}\`${actionScope}`;
+				const scope = flagActionScope(flag);
+				return `\`${flag.usage}\`${scope ? ` (${scope})` : ""}`;
 			})
 			.join(", ")}.`,
 		"",
@@ -710,14 +708,21 @@ export function mcpActionDescription(action: CliActionContract): string {
 }
 
 /**
- * A flag's summary, stating which actions accept it.
+ * The action limit a flag carries, or an empty string when it has none.
  *
  * The applicable actions are rendered from the same list the CLI enforces, so
- * no surface can promise a flag the command line rejects.
+ * no surface can promise a flag the command line rejects, and every surface
+ * words the limit identically because they all render it from here.
  */
+export function flagActionScope(flag: CliFlagContract): string {
+	if (!flag.actions) return "";
+	return `only for ${CLI_COMMAND_CONTRACT.scope} ${joinWithAnd(flag.actions)}`;
+}
+
+/** A flag's summary, stating which actions accept it. */
 function flagSummary(flag: CliFlagContract): string {
-	if (!flag.actions) return flag.summary;
-	return `${flag.summary}; only for ${CLI_COMMAND_CONTRACT.scope} ${joinWithAnd(flag.actions)}`;
+	const scope = flagActionScope(flag);
+	return scope ? `${flag.summary}; ${scope}` : flag.summary;
 }
 
 /**

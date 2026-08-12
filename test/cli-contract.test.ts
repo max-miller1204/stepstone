@@ -8,7 +8,9 @@ import {
 	AGENTS_BLOCK_END,
 	AGENTS_BLOCK_START,
 	CLI_COMMAND_CONTRACT,
+	type CliFlagContract,
 	DOCS_PATH,
+	flagActionScope,
 	LEGACY_WORKLIST_DIRECTORY,
 	mcpActionDescription,
 	renderAgentsMarkdownBlock,
@@ -253,6 +255,33 @@ function tableCells(row: string): string[] {
 	return cells.slice(1, -1).map((entry) => entry.trim());
 }
 
+/**
+ * Every entry a surface renders for one flag: the text from its usage to the
+ * end of that entry.
+ *
+ * An entry ends at the line break or at the next flag's usage, whichever comes
+ * first, because the compact AGENTS.md block lists every flag on a single line
+ * while the other surfaces give each one its own line. Anchoring this way is
+ * what makes a per-flag assertion mean anything: several flags word their
+ * action limit identically, so a check against the whole surface still passes
+ * after one flag loses its annotation. A usage that merely prefixes a longer
+ * flag name is not an entry for it, which keeps `--append` from matching inside
+ * `--append-description`.
+ */
+function flagEntries(surface: string, flag: CliFlagContract): string[] {
+	const others = CLI_COMMAND_CONTRACT.flags.filter((other) => other !== flag).map((other) => other.usage);
+	const entries: string[] = [];
+	for (let at = surface.indexOf(flag.usage); at >= 0; at = surface.indexOf(flag.usage, at + 1)) {
+		const rest = surface.slice(at + flag.usage.length);
+		if (/^[\w-]/.test(rest)) continue;
+		const bounds = [rest.indexOf("\n"), ...others.map((usage) => rest.indexOf(usage))].filter(
+			(index) => index >= 0,
+		);
+		entries.push(rest.slice(0, Math.min(...bounds, rest.length)));
+	}
+	return entries;
+}
+
 /** The body rows of the table under a `## heading`, parsed into cells. */
 function tableRowsUnder(markdown: string, heading: string): string[][] {
 	const section = markdown.split(`\n## ${heading}\n`)[1]?.split("\n## ")[0] ?? "";
@@ -427,12 +456,12 @@ describe("single CLI command contract", () => {
 		const actionNames = CLI_COMMAND_CONTRACT.actions.map((action) => action.name);
 		const scoped = CLI_COMMAND_CONTRACT.flags.filter((flag) => flag.actions !== undefined);
 		expect(scoped.length, "no flag declares the actions it applies to").toBeGreaterThan(0);
-		const surfaces = [
-			renderCliUsage(),
-			renderCliGuide(),
-			renderSkillMarkdown(),
-			renderAgentsMarkdownBlock(),
-		];
+		const surfaces = {
+			"the help output": renderCliUsage(),
+			[DOCS_PATH]: renderCliGuide(),
+			[SKILL_PATH]: renderSkillMarkdown(),
+			"the AGENTS.md block": renderAgentsMarkdownBlock(),
+		};
 		for (const flag of scoped) {
 			const actions = flag.actions ?? [];
 			expect(actions.length, `${flag.name} scopes to no action at all`).toBeGreaterThan(0);
@@ -441,11 +470,25 @@ describe("single CLI command contract", () => {
 			}
 			// A reader who misses the limit would expect the flag to work everywhere,
 			// so every rendered surface has to carry it, not just the help output.
-			for (const surface of surfaces) {
-				expect(surface, `a surface omits the action limit for ${flag.name}`).toContain(`${flag.usage}`);
-				expect(surface, `a surface omits the action limit for ${flag.name}`).toContain(
-					`only for ${CLI_COMMAND_CONTRACT.scope} ${actions[0]}`,
-				);
+			// The limit has to name every action the CLI accepts too: a truncated
+			// list sends a reader to an exit code 2 the flag never warned about.
+			const scope = flagActionScope(flag);
+			const prefix = `only for ${CLI_COMMAND_CONTRACT.scope} `;
+			expect(scope.startsWith(prefix), `${flag.name} renders the limit as "${scope}"`).toBe(true);
+			expect(
+				scope
+					.slice(prefix.length)
+					.split(/,\s*(?:and\s+)?|\s+and\s+/)
+					.filter(Boolean),
+				`${flag.name}'s rendered limit does not name every action it applies to`,
+			).toEqual([...actions]);
+			for (const [name, surface] of Object.entries(surfaces)) {
+				const entries = flagEntries(surface, flag);
+				expect(entries.length, `${name} never renders ${flag.name}`).toBeGreaterThan(0);
+				expect(
+					entries.some((entry) => entry.includes(scope)),
+					`${name} omits "${scope}" beside ${flag.usage}; it renders ${JSON.stringify(entries)}`,
+				).toBe(true);
 			}
 		}
 	});
