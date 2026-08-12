@@ -159,6 +159,8 @@ Metadata reports `changed`, `semanticNoOp`, sorted JSON Pointer `changedFields`,
 ```
 
 Resource responses place the JSON envelope in their `application/json` text body.
-Tool responses expose the envelope both as `structuredContent` and as JSON text in `content`, so clients with either MCP result representation receive the same data.
-A failed tool response keeps the typed failure envelope and also sets the MCP `isError` flag.
+Tool calls that pass the MCP input schema expose the application-service envelope both as `structuredContent` and as JSON text in `content`, so clients with either MCP result representation receive the same data.
+A service-level failure keeps that typed envelope and also sets the MCP `isError` flag.
+An input-schema failure is different: the MCP SDK rejects it before the application service runs, sets `isError`, and returns diagnostic text without `structuredContent` or an application-service envelope.
+Clients should correct schema-invalid field types or shapes from that diagnostic; they should branch on stable `error.code`, `retryable`, `details`, and `meta` only after receiving an application-service envelope.
 Unlike the CLI's `--json` adapter, the MCP adapter does not add `meta.cliVersion`.

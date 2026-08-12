@@ -350,6 +350,10 @@ describe("worklist application service", () => {
 				{ scope: "project", action: "update", id, description: "Replace", appendDescription: "Add" },
 				"mutually exclusive",
 			],
+			[
+				{ scope: "project", action: "update", id, title: "Renamed", appendDescription: "Add" },
+				"appending never changes the title",
+			],
 			[{ scope: "project", action: "update", id, appendDescription: "   " }, "must not be blank"],
 			[
 				{ scope: "project", action: "add", title: "New", appendDescription: "Add" },

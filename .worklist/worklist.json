@@ -622,9 +622,10 @@
       "title": "Align MCP adapter contracts",
       "description": "Make the MCP resources and tools obey the same input and result contracts as the CLI and shared application service. Refuse title changes combined with appendDescription, preserve exact plan dependency-reference validation instead of trimming invalid input, reject blank find queries instead of returning every goal, replace CLI-argv tool titles with MCP-native metadata, keep schema failures and service failures predictably documented, and cover the shared envelope metadata and validation behavior through the real MCP protocol.",
       "group": "Audit remediation",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-12T09:42:45.110Z",
-      "updatedAt": "2026-08-12T09:42:45.110Z"
+      "updatedAt": "2026-08-12T22:55:38.550Z",
+      "completedAt": "2026-08-12T22:55:38.550Z"
     },
     {
       "id": "isolate-claude-plugin-mcp-config",
@@ -660,5 +661,5 @@
       "updatedAt": "2026-08-12T09:42:45.110Z"
     }
   ],
-  "revision": 261
+  "revision": 264
 }

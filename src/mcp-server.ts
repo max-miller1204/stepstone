@@ -12,7 +12,7 @@ import { CLI_COMMAND_CONTRACT, type CliActionContract, mcpActionDescription } fr
 import { dependencyWaves, dependentGoals, isGoalBlocked, nextGoal, readyGoals } from "./dependencies.ts";
 import { createWorklistLocator, resolveGitRoot } from "./git.ts";
 import { matchesGoalQuery, resolveGoalSelector, type UnresolvedGoalSelector } from "./goal-selection.ts";
-import type { WorklistResultMeta } from "./result-envelope.ts";
+import { WORKLIST_ERROR_CODES, type WorklistResultMeta } from "./result-envelope.ts";
 import type { WorklistOperationResult } from "./types.ts";
 
 const require = createRequire(import.meta.url);
@@ -24,7 +24,7 @@ if (typeof packageJson.version !== "string") {
 const SERVER_VERSION = packageJson.version;
 const RESOURCE_URI_PREFIX = `${CLI_COMMAND_CONTRACT.binary}://worklist`;
 
-type McpActionContract = CliActionContract & { mcp: "resource" | "tool" };
+type McpActionContract = CliActionContract & { mcp: "resource" | "tool"; mcpTitle: string };
 
 type ToolArguments = {
 	id?: string;
@@ -53,7 +53,9 @@ export interface StepstoneMcpServerOptions {
 }
 
 function isMcpAction(action: CliActionContract): action is McpActionContract {
-	return action.mcp === "resource" || action.mcp === "tool";
+	if (action.mcp !== "resource" && action.mcp !== "tool") return false;
+	if (!action.mcpTitle) throw new Error(`The ${action.name} MCP action must define mcpTitle`);
+	return true;
 }
 
 function mcpActions(kind: McpActionContract["mcp"]): McpActionContract[] {
@@ -94,7 +96,7 @@ function inputSchemaFor(action: McpActionContract) {
 					title: z.string().trim().min(1).describe(descriptions.title),
 					description: z.string().optional().describe(descriptions.description),
 					group: z.string().optional().describe(descriptions.group),
-					dependsOn: z.array(z.string().trim().min(1)).optional().describe(descriptions.dependsOn),
+					dependsOn: z.array(z.string().min(1)).optional().describe(descriptions.dependsOn),
 				})
 				.describe(descriptions.entry);
 			return z.strictObject({
@@ -217,13 +219,34 @@ function selectionFailure(
 	action: string,
 	selector: string,
 	resolution: UnresolvedGoalSelector,
+	meta: WorklistResultMeta,
 ): WorklistApplicationFailure {
 	return {
 		ok: false,
 		scope: "project",
 		action,
 		error: projectGoalSelectionError(selector, resolution).toResultError(),
-		meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		meta,
+	};
+}
+
+function validationFailure(
+	action: string,
+	message: string,
+	details: Record<string, unknown>,
+	meta: WorklistResultMeta,
+): WorklistApplicationFailure {
+	return {
+		ok: false,
+		scope: "project",
+		action,
+		error: {
+			code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+			message,
+			retryable: false,
+			details,
+		},
+		meta,
 	};
 }
 
@@ -264,7 +287,7 @@ async function readEnvelope(
 		case "show": {
 			const selector = templateVariable(variables, "id");
 			const resolution = resolveGoalSelector(goals, selector, retiredIds);
-			if (resolution.kind !== "found") return selectionFailure(action, selector, resolution);
+			if (resolution.kind !== "found") return selectionFailure(action, selector, resolution, snapshot.meta);
 			const goal = resolution.goal;
 			return successEnvelope(
 				action,
@@ -280,6 +303,14 @@ async function readEnvelope(
 		}
 		case "find": {
 			const query = templateVariable(variables, "query").trim();
+			if (!query) {
+				return validationFailure(
+					action,
+					"Project find requires non-blank search text.",
+					{ fields: ["query"], resolution: "provide-non-blank-search-text" },
+					snapshot.meta,
+				);
+			}
 			const matches = goals.filter((goal) => matchesGoalQuery(goal, query));
 			return successEnvelope(action, { scope: "project", action, goals: matches }, snapshot.meta);
 		}
@@ -383,7 +414,7 @@ export function createStepstoneMcpServer(options: StepstoneMcpServerOptions = {}
 	for (const action of mcpActions("resource")) {
 		const address = resourceAddress(action.name);
 		const config = {
-			title: action.usage,
+			title: action.mcpTitle,
 			description: action.summary,
 			mimeType: "application/json",
 		};
@@ -405,7 +436,7 @@ export function createStepstoneMcpServer(options: StepstoneMcpServerOptions = {}
 		server.registerTool(
 			action.name,
 			{
-				title: action.usage,
+				title: action.mcpTitle,
 				description: mcpActionDescription(action),
 				inputSchema,
 				annotations: {
