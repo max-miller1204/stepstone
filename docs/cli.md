@@ -85,6 +85,15 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - `apply-plan --dry-run` performs the same locked validation and ID projection without writing or incrementing the revision; its prediction is advisory after the command exits because another writer may change the worklist before a later apply.
 - The plan path is resolved from the process working directory, independently of `--cwd`, which only selects the target Git repository.
 
+## Capture brainstorms as approved goal plans
+
+1. Brainstorm broad outcomes for the roadmap rather than internal implementation steps.
+2. Draft the exact plain JSON array that represents the complete proposed goal batch.
+3. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists.
+4. Present that exact JSON array to the user and wait for explicit approval before making any mutation.
+5. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step.
+6. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.
+
 ## Goal IDs
 
 - A goal's ID is derived from its title when the goal is created and frozen from then on, so it reads as words and a later rename never invalidates a reference written down elsewhere.
@@ -160,5 +169,3 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - Record a real must-land-before relationship with `--depends-on <id>`, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.
 - Send the complete set of edges on every --depends-on update, because it replaces the stored set rather than adding to it.
 - Pass --expect-updated-at with the updatedAt from your own read whenever you change a goal, so your mutation conflicts if the goal changed in the meantime.
-- Use apply-plan for an approved JSON goal batch, and run it with --dry-run first when the user needs to review predicted IDs, dependencies, or shadow warnings.
-- Broad outcomes belong in Project Goals; do not mirror your internal step-by-step plan into them.

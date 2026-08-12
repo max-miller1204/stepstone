@@ -8,7 +8,7 @@ import {
 	WorklistApplicationService,
 	type WorklistOperation,
 } from "./application-service.ts";
-import { CLI_COMMAND_CONTRACT, type CliActionContract } from "./cli-contract.ts";
+import { CLI_COMMAND_CONTRACT, type CliActionContract, mcpActionDescription } from "./cli-contract.ts";
 import { dependencyWaves, dependentGoals, isGoalBlocked, nextGoal, readyGoals } from "./dependencies.ts";
 import { createWorklistLocator, resolveGitRoot } from "./git.ts";
 import { matchesGoalQuery, resolveGoalSelector, type UnresolvedGoalSelector } from "./goal-selection.ts";
@@ -59,7 +59,7 @@ function mcpActions(kind: McpActionContract["mcp"]): McpActionContract[] {
 		.filter((action) => action.mcp === kind);
 }
 
-function inputSchemaFor(action: string) {
+function inputSchemaFor(action: McpActionContract) {
 	const id = z.string().trim().min(1).describe("A complete goal ID or unique ID prefix");
 	const expectedUpdatedAt = z
 		.string()
@@ -68,14 +68,8 @@ function inputSchemaFor(action: string) {
 		.optional()
 		.describe("The target goal's updatedAt value from the caller's last read");
 	const dependsOn = z.array(z.string().trim().min(1)).optional();
-	const planEntry = z.strictObject({
-		title: z.string().trim().min(1),
-		description: z.string().optional(),
-		group: z.string().optional(),
-		dependsOn: z.array(z.string().trim().min(1)).optional(),
-	});
 
-	switch (action) {
+	switch (action.name) {
 		case "add":
 			return z.strictObject({
 				title: z.string().trim().min(1),
@@ -83,11 +77,23 @@ function inputSchemaFor(action: string) {
 				group: z.string().optional(),
 				dependsOn,
 			});
-		case "apply-plan":
+		case "apply-plan": {
+			const workflow = action.captureWorkflow;
+			if (!workflow) throw new Error("The apply-plan MCP action must own the capture workflow");
+			const descriptions = workflow.schemaDescriptions;
+			const planEntry = z
+				.strictObject({
+					title: z.string().trim().min(1).describe(descriptions.title),
+					description: z.string().optional().describe(descriptions.description),
+					group: z.string().optional().describe(descriptions.group),
+					dependsOn: z.array(z.string().trim().min(1)).optional().describe(descriptions.dependsOn),
+				})
+				.describe(descriptions.entry);
 			return z.strictObject({
-				plan: z.array(planEntry).describe("Goal plan entries to validate and add atomically"),
-				dryRun: z.boolean().optional(),
+				plan: z.array(planEntry).describe(descriptions.plan),
+				dryRun: z.boolean().optional().describe(descriptions.dryRun),
 			});
+		}
 		case "update":
 			return z.strictObject({
 				id,
@@ -120,7 +126,7 @@ function inputSchemaFor(action: string) {
 				expectedUpdatedAt,
 			});
 		default:
-			throw new Error(`No MCP input schema for ${action}`);
+			throw new Error(`No MCP input schema for ${action.name}`);
 	}
 }
 
@@ -369,18 +375,21 @@ export function createStepstoneMcpServer(options: StepstoneMcpServerOptions = {}
 	}
 
 	for (const action of mcpActions("tool")) {
-		const inputSchema = inputSchemaFor(action.name);
+		const inputSchema = inputSchemaFor(action);
 		server.registerTool(
 			action.name,
 			{
 				title: action.usage,
-				description: action.summary,
+				description: mcpActionDescription(action),
 				inputSchema,
 				annotations: {
 					readOnlyHint: false,
 					openWorldHint: false,
 				},
-				_meta: { confirmRequired: action.confirmRequired === true },
+				_meta: {
+					confirmRequired: action.confirmRequired === true,
+					...(action.captureWorkflow ? { captureWorkflow: action.captureWorkflow } : {}),
+				},
 			},
 			async (args: unknown) => {
 				const { service, withLocationMeta } = operationService();

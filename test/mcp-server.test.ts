@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it } from "vitest";
-import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
+import { CLI_COMMAND_CONTRACT, mcpActionDescription } from "../src/cli-contract.ts";
 import { createStepstoneMcpServer } from "../src/mcp-server.ts";
 
 const execFileAsync = promisify(execFile);
@@ -135,11 +135,41 @@ describe("Stepstone MCP server", () => {
 				expect(tool).toMatchObject({
 					name: action.name,
 					title: action.usage,
-					description: action.summary,
+					description: mcpActionDescription(action),
 					inputSchema: { type: "object" },
 					annotations: { readOnlyHint: false, openWorldHint: false },
 					_meta: { confirmRequired: action.confirmRequired === true },
 				});
+				if (action.captureWorkflow) {
+					expect(tool).toMatchObject({ _meta: { captureWorkflow: action.captureWorkflow } });
+					expect(tool?.inputSchema).toMatchObject({
+						properties: {
+							plan: {
+								description: action.captureWorkflow.schemaDescriptions.plan,
+								items: {
+									description: action.captureWorkflow.schemaDescriptions.entry,
+									properties: {
+										title: {
+											description: action.captureWorkflow.schemaDescriptions.title,
+										},
+										description: {
+											description: action.captureWorkflow.schemaDescriptions.description,
+										},
+										group: {
+											description: action.captureWorkflow.schemaDescriptions.group,
+										},
+										dependsOn: {
+											description: action.captureWorkflow.schemaDescriptions.dependsOn,
+										},
+									},
+								},
+							},
+							dryRun: {
+								description: action.captureWorkflow.schemaDescriptions.dryRun,
+							},
+						},
+					});
+				}
 				if (!action.confirmRequired) continue;
 				// docs/mcp.md documents confirmation as an application-service
 				// guardrail rather than a schema requirement, so the published
@@ -188,7 +218,7 @@ describe("Stepstone MCP server", () => {
 					ok: true,
 					action: "apply-plan",
 					result: { dryRun: true, addedGoals: [{ id: "beta-goal" }, { id: "gamma-goal" }] },
-					meta: { changed: false },
+					meta: { changed: false, revisions: { project: "1" } },
 				},
 			});
 			expect(await readFile(worklistPath, "utf8")).toBe(beforePreview);
@@ -196,7 +226,14 @@ describe("Stepstone MCP server", () => {
 			const applied = await callTool(client, "apply-plan", { plan });
 			expect(applied).toMatchObject({
 				isError: false,
-				envelope: { ok: true, action: "apply-plan", meta: { changed: true } },
+				envelope: {
+					ok: true,
+					action: "apply-plan",
+					result: {
+						addedGoals: [{ id: "beta-goal" }, { id: "gamma-goal" }],
+					},
+					meta: { changed: true, revisions: { project: "2" } },
+				},
 			});
 
 			const updated = await callTool(client, "update", {

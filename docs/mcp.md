@@ -77,7 +77,7 @@ Resource reads do not mutate the roadmap.
 ## Mutation tools
 
 The server publishes nine mutation tools.
-Tool names, titles, descriptions, and confirmation metadata come from the same command contract as the CLI's agent-facing surface.
+Tool names, titles, descriptions, confirmation metadata, capture-workflow metadata, and apply-plan schema descriptions come from the same command contract as the CLI's agent-facing surface.
 JSON field names use the camel-case MCP forms shown below rather than CLI flag names.
 
 | Tool | Required input | Optional input | Effect |
@@ -97,6 +97,12 @@ An `id` may be a complete goal ID or a unique ID prefix.
 The `plan` format and its deterministic reference rules are documented in [goals.md](goals.md#json-goal-plans).
 Pass the `updatedAt` value from the caller's last read as `expectedUpdatedAt` when changing an existing goal, so a concurrent edit returns a conflict instead of being overwritten.
 Every mutation runs through the shared cross-process lock and atomic file replacement.
+
+## Capturing a brainstorm
+
+The `apply-plan` tool carries the brainstorm-to-approved-plan workflow itself: in its description, in `_meta.captureWorkflow`, and in the `plan`, plan-entry, and `dryRun` schema descriptions, all rendered from the contract, so a client reads the steps off the tool it is about to call.
+Those steps are written once, in [cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
+On this surface the preview they allow is an `apply-plan` call with `dryRun: true`, which is never the user's approval, and the approved array is applied by exactly one call with `dryRun` omitted rather than by a sequence of `add` calls.
 
 ## Exact confirmation guardrails
 

@@ -10,6 +10,7 @@ import {
 	CLI_COMMAND_CONTRACT,
 	DOCS_PATH,
 	LEGACY_WORKLIST_DIRECTORY,
+	mcpActionDescription,
 	renderAgentsMarkdownBlock,
 	renderCliGuide,
 	renderCliUsage,
@@ -300,6 +301,48 @@ describe("single CLI command contract", () => {
 				confirmGuidance.some((guideline) => guideline.includes(action.name)),
 				`agent guidance never names the confirm-gated action \`${action.name}\``,
 			).toBe(true);
+		}
+	});
+
+	it("propagates the single capture workflow to every agent-facing renderer", () => {
+		const workflowActions = CLI_COMMAND_CONTRACT.actions.filter(
+			(action) => action.captureWorkflow !== undefined,
+		);
+		expect(workflowActions).toHaveLength(1);
+		const action = workflowActions[0];
+		if (!action?.captureWorkflow) throw new Error("apply-plan capture workflow is missing");
+		expect(action.name).toBe("apply-plan");
+
+		const surfaces = [
+			renderSkillMarkdown(),
+			renderAgentsMarkdownBlock(),
+			renderCliGuide(),
+			mcpActionDescription(action),
+		];
+		for (const step of action.captureWorkflow.steps) {
+			for (const surface of surfaces) expect(surface).toContain(step);
+		}
+		expect(renderSkillMarkdown()).toContain(`## ${action.captureWorkflow.title}`);
+		expect(renderCliGuide()).toContain(`## ${action.captureWorkflow.title}`);
+	});
+
+	it("keeps the mutating capture action out of the unconditionally safe actions", () => {
+		// The skill's guardrails tell an agent which actions need no user approval,
+		// so the action that only runs against a plan the user approved must not be
+		// listed there however the surrounding prose is rewritten.
+		const safeLine = renderSkillMarkdown()
+			.split("\n")
+			.find((line) => line.includes("are safe to run whenever they serve the user's request."));
+		if (!safeLine) throw new Error("the skill names no unconditionally safe actions");
+		const unconditionallySafe = new Set([...safeLine.matchAll(/`([a-z_-]+)`/g)].map(([, name]) => name));
+
+		for (const action of CLI_COMMAND_CONTRACT.actions) {
+			const gated = action.confirmRequired || action.interactive || action.name === "help";
+			const owned = action.captureWorkflow !== undefined;
+			expect(
+				unconditionallySafe.has(action.name),
+				`\`${action.name}\` is ${unconditionallySafe.has(action.name) ? "" : "not "}listed as unconditionally safe`,
+			).toBe(!gated && !owned);
 		}
 	});
 

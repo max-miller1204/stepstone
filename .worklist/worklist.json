@@ -377,16 +377,17 @@
       "id": "capture-skill-brainstorm-to-approved",
       "title": "capture-skill: brainstorm to approved plan to one apply",
       "description": "Extend the worklist skill with a capture flow: draft a JSON plan document from a brainstorm session, show it for approval, then apply it with a single apply-plan call. Teach the skill to add a dependsOn edge between goals that will collide on the same modules even without a logical dependency, choosing the more natural order, since edges mean must-land-before.\n\nBroadened 2026-08-08 by the harness pivot. The flow was scoped to the worklist skill, which is one of several agent-facing renderings rather than the only one. Land the capture guidance in the generated contract so it reaches the skill, the AGENTS.md block, and the MCP tool descriptions from one source, and so an agent in a harness that never reads .claude/skills still knows how to run a brainstorm to an approved plan to one apply.",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-04T02:37:25.671Z",
-      "updatedAt": "2026-08-08T23:54:05.192Z",
+      "updatedAt": "2026-08-12T02:03:00.732Z",
       "previousIds": [
         "goal-mse1sdnr-21dfc2f0"
       ],
       "group": "Capture",
       "dependsOn": [
         "apply-plan-atomic-batch-import-of-a"
-      ]
+      ],
+      "completedAt": "2026-08-12T02:03:00.732Z"
     },
     {
       "id": "claude-plugin-ship-skill-commands-and",
@@ -593,5 +594,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 247
+  "revision": 248
 }
