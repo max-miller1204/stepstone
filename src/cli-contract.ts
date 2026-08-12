@@ -691,7 +691,7 @@ function actionNameList(actions: readonly CliActionContract[]): string {
 type CaptureWorkflowAction = CliActionContract & { captureWorkflow: CliCaptureWorkflowContract };
 
 /** Find the one contract action that owns the brainstorm-to-approved-plan workflow. */
-function captureWorkflowAction(actions: readonly CliActionContract[]): CaptureWorkflowAction {
+export function captureWorkflowAction(actions: readonly CliActionContract[]): CaptureWorkflowAction {
 	const matches = actions.filter(
 		(action): action is CaptureWorkflowAction => action.captureWorkflow !== undefined,
 	);

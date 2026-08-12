@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { WorklistApplicationService, type WorklistOperationSource } from "./application-service.ts";
-import { CLI_COMMAND_CONTRACT } from "./cli-contract.ts";
+import { CLI_COMMAND_CONTRACT, captureWorkflowAction } from "./cli-contract.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
 import type { LocatedWorklist } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
@@ -22,10 +22,7 @@ import {
 
 /** Widget slot this extension owns in Pi's session UI, named after the package. */
 const WIDGET_ID = CLI_COMMAND_CONTRACT.binary;
-const CAPTURE_WORKFLOW = CLI_COMMAND_CONTRACT.actions.find(
-	(action) => action.name === "apply-plan",
-)?.captureWorkflow;
-if (!CAPTURE_WORKFLOW) throw new Error("The apply-plan action must define the Project Goal capture workflow");
+const CAPTURE_WORKFLOW = captureWorkflowAction(CLI_COMMAND_CONTRACT.actions).captureWorkflow;
 
 export interface ParsedCommand {
 	scope: "session" | "project";
