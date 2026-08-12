@@ -612,9 +612,10 @@
       "title": "Complete Pi capture guidance",
       "description": "Bring the Pi worklist model tool prompt up to the same capture contract as the generated skill, AGENTS block, CLI guide, and MCP metadata. Tell Pi agents to propose broad outcomes, present the exact JSON batch for explicit approval, treat dry-run only as a preview, apply an approved batch in exactly one mutating apply-plan call, and never decompose it into per-goal add calls. Preserve the exact-confirmation guardrails and test the prompt delivered to the registered tool.",
       "group": "Audit remediation",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-12T09:42:45.110Z",
-      "updatedAt": "2026-08-12T09:42:45.110Z"
+      "updatedAt": "2026-08-12T21:59:15.018Z",
+      "completedAt": "2026-08-12T21:59:15.018Z"
     },
     {
       "id": "align-mcp-adapter-contracts",
@@ -659,5 +660,5 @@
       "updatedAt": "2026-08-12T09:42:45.110Z"
     }
   ],
-  "revision": 255
+  "revision": 257
 }

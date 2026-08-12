@@ -22,6 +22,10 @@ import {
 
 /** Widget slot this extension owns in Pi's session UI, named after the package. */
 const WIDGET_ID = CLI_COMMAND_CONTRACT.binary;
+const CAPTURE_WORKFLOW = CLI_COMMAND_CONTRACT.actions.find(
+	(action) => action.name === "apply-plan",
+)?.captureWorkflow;
+if (!CAPTURE_WORKFLOW) throw new Error("The apply-plan action must define the Project Goal capture workflow");
 
 export interface ParsedCommand {
 	scope: "session" | "project";
@@ -40,7 +44,7 @@ export const WORKLIST_PROMPT_GUIDELINES = [
 	"Do not create one Session Task that merely restates the user's broad request or end goal. Broad outcomes belong in Project Goals; Session Tasks should name the next executable chunks.",
 	"Keep Session Task titles concise and self-contained. Session Tasks do not have descriptions.",
 	"Use worklist with scope=project only when the user asks to manage the project roadmap.",
-	"Use worklist project apply-plan for an approved JSON goal batch, and set dryRun=true first when predicted IDs, dependencies, or shadow warnings need review.",
+	`When using worklist to capture Project Goals: ${CAPTURE_WORKFLOW.steps.join(" ")}`,
 	"Never set worklist confirm=true for a project lifecycle action unless the user explicitly requested that exact completion, reopening, archival, or deletion.",
 ] as const;
 
