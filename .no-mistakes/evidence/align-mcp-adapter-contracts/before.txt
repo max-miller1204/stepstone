@@ -1,0 +1,275 @@
+
+==============================================================================
+stepstone MCP adapter parity transcript - BEFORE (base 6d4b0ff)
+==============================================================================
+checkout: /tmp/mcp-parity-base
+repository under test: /tmp/stepstone-parity-19rKjs
+server: {"name":"stepstone-mcp","version":"0.9.0"}
+
+==============================================================================
+1. What an MCP client sees in the catalog (titles)
+==============================================================================
+
+--- resources ---
+  stepstone://worklist/list          title: list
+  stepstone://worklist/next          title: next
+  stepstone://worklist/ready         title: ready
+  stepstone://worklist/waves         title: waves
+
+--- resource templates ---
+  stepstone://worklist/show/{id}     title: show <id>
+  stepstone://worklist/find/{query}  title: find <text...>
+
+--- tools ---
+  add                                title: add <title...> [--description <text> | -- <description...>]
+  apply-plan                         title: apply-plan <plan.json>
+  update                             title: update <id> [title...] [--description <text> | -- <description...>]
+  move                               title: move <id> up|down|before <id>|after <id>
+  start                              title: start <id> [--branch <name> | --clear]
+  set_active                         title: set_active <id>
+  complete                           title: complete <id> --confirm
+  reopen                             title: reopen <id> --confirm
+  archive                            title: archive <id> --confirm
+  delete                             title: delete <id> --confirm
+
+==============================================================================
+2. Seed one goal through the MCP add tool
+==============================================================================
+isError: false | goal id: alpha-goal
+
+==============================================================================
+3. update: title combined with appendDescription
+==============================================================================
+MCP tool call: update {"id":"alpha-goal","title":"Renamed goal","appendDescription":"New context."}
+isError: false | structuredContent present: true
+{
+  "ok": true,
+  "scope": "project",
+  "action": "update",
+  "result": {
+    "scope": "project",
+    "action": "update",
+    "goal": {
+      "id": "alpha-goal",
+      "title": "Renamed goal",
+      "status": "open",
+      "createdAt": "2026-08-12T23:40:18.229Z",
+      "updatedAt": "2026-08-12T23:40:18.234Z",
+      "description": "New context."
+    },
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Renamed goal",
+        "status": "open",
+        "createdAt": "2026-08-12T23:40:18.229Z",
+        "updatedAt": "2026-08-12T23:40:18.234Z",
+        "description": "New context."
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "alpha-goal"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "2"
+    }
+  }
+}
+
+--- same request through the CLI adapter ---
+$ stepstone project update alpha-goal "Renamed goal" --append-description "New context." --json
+exit 2
+project update cannot change the title while appending to the description
+[help screen omitted from transcript]
+
+==============================================================================
+4. apply-plan: dependsOn reference with surrounding whitespace
+==============================================================================
+MCP tool call: apply-plan {"plan":[{"title":"Dependent goal","dependsOn":[" alpha-goal "]}]}
+isError: false | structuredContent present: true
+{
+  "ok": true,
+  "scope": "project",
+  "action": "apply-plan",
+  "result": {
+    "scope": "project",
+    "action": "apply-plan",
+    "dryRun": false,
+    "addedGoals": [
+      {
+        "id": "dependent-goal",
+        "title": "Dependent goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-12T23:40:18.333Z",
+        "updatedAt": "2026-08-12T23:40:18.333Z"
+      }
+    ],
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Renamed goal",
+        "status": "open",
+        "createdAt": "2026-08-12T23:40:18.229Z",
+        "updatedAt": "2026-08-12T23:40:18.234Z",
+        "description": "New context."
+      },
+      {
+        "id": "dependent-goal",
+        "title": "Dependent goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-12T23:40:18.333Z",
+        "updatedAt": "2026-08-12T23:40:18.333Z"
+      }
+    ],
+    "warnings": []
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "dependent-goal"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "3"
+    }
+  }
+}
+
+--- same plan through the CLI adapter ---
+$ stepstone project apply-plan /tmp/stepstone-parity-19rKjs/plan.json --json
+exit 1
+{
+  "ok": false,
+  "scope": "project",
+  "action": "apply-plan",
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Project plan entry 0 dependsOn entries must match exact IDs without surrounding whitespace.",
+    "retryable": false,
+    "details": {
+      "fields": [
+        "plan/0/dependsOn"
+      ],
+      "resolution": "remove-surrounding-reference-whitespace"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.0"
+  }
+}
+
+==============================================================================
+5. find with a blank query
+==============================================================================
+MCP resource read: stepstone://worklist/find/%20%20
+{
+  "ok": true,
+  "scope": "project",
+  "action": "find",
+  "result": {
+    "scope": "project",
+    "action": "find",
+    "goals": [
+      {
+        "id": "alpha-goal",
+        "title": "Renamed goal",
+        "status": "open",
+        "createdAt": "2026-08-12T23:40:18.229Z",
+        "updatedAt": "2026-08-12T23:40:18.234Z",
+        "description": "New context."
+      },
+      {
+        "id": "dependent-goal",
+        "title": "Dependent goal",
+        "dependsOn": [
+          "alpha-goal"
+        ],
+        "status": "open",
+        "createdAt": "2026-08-12T23:40:18.333Z",
+        "updatedAt": "2026-08-12T23:40:18.333Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "3"
+    }
+  }
+}
+
+--- same request through the CLI adapter ---
+$ stepstone project find "  " --json
+exit 2
+project find requires search text
+[help screen omitted from transcript]
+
+==============================================================================
+6. show for an unknown goal: failure metadata
+==============================================================================
+MCP resource read: stepstone://worklist/show/missing
+{
+  "ok": false,
+  "code": "NOT_FOUND",
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": []
+  }
+}
+
+--- same request through the CLI adapter ---
+$ stepstone project show missing --json
+exit 1
+{
+  "ok": false,
+  "code": "NOT_FOUND",
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.0"
+  }
+}
+
+==============================================================================
+7. MCP input-schema failure stays outside the application-service envelope
+==============================================================================
+MCP tool call: update {"id":"alpha-goal","links":["not-a-url"]}
+isError: true | structuredContent present: false
+content: [{"type":"text","text":"MCP error -32602: Input validation error: Invalid arguments for tool update: Invalid URL at links[0]"}]
+
+==============================================================================
+8. Roadmap state after every refusal above
+==============================================================================
+  alpha-goal | title: Renamed goal | dependsOn: []
+     description: "New context."
+  dependent-goal | title: Dependent goal | dependsOn: ["alpha-goal"]
+     description: ""
