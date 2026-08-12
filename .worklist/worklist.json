@@ -645,7 +645,7 @@
       "group": "Audit remediation",
       "status": "open",
       "createdAt": "2026-08-12T09:42:45.110Z",
-      "updatedAt": "2026-08-12T09:42:45.110Z"
+      "updatedAt": "2026-08-12T22:06:36.401Z"
     },
     {
       "id": "make-dispatch-bindings-safe",
@@ -660,5 +660,5 @@
       "updatedAt": "2026-08-12T09:42:45.110Z"
     }
   ],
-  "revision": 257
+  "revision": 261
 }
