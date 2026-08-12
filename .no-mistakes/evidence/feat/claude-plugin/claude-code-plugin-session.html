@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stepstone as a Claude Code plugin - end-to-end session</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0e10; color: #c8ced3; font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace; }
+  main { width: 1180px; padding: 30px 30px 36px; }
+  h1 { font-family: system-ui, sans-serif; font-size: 21px; font-weight: 650; color: #e6edf2; margin: 0 0 4px; }
+  .sub { font-family: system-ui, sans-serif; font-size: 13px; color: #7f8b93; margin: 0 0 22px; }
+  h2 { font-family: system-ui, sans-serif; font-size: 13px; font-weight: 600; color: #8fb8cc; margin: 22px 0 9px; letter-spacing: .012em; }
+  .terminal { background: #0f1316; border: 1px solid #263038; border-radius: 9px; padding: 15px 17px; box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+  pre { margin: 0; font-size: 12.6px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .prompt { color: #56b6c2; }
+  .cmd { color: #e6edf2; font-weight: 650; }
+  .note { color: #6f7a82; }
+  .ok { color: #69db7c; }
+  .bad { color: #e06c75; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Stepstone ships as one Claude Code plugin</h1>
+  <p class="sub">Marketplace + plugin manifests, bundled MCP server, five namespaced commands, and a non-user-invocable skill - installed from the packed npm tarball of this branch and driven in a real Claude Code session.</p>
+  <section><h2>1 - Strict schema validation, marketplace install, component inventory, live MCP server</h2><div class="terminal"><pre><span class="prompt">$</span> <span class="cmd">claude plugin validate --strict .claude-plugin/plugin.json</span>
+Validating plugin manifest: /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZT016R3424A8KE4HF1AEZ9C/.claude-plugin/plugin.json
+
+<span class="ok">✔ Validation passed</span>
+<span class="ok">[exit 0]</span>
+
+<span class="prompt">$</span> <span class="cmd">claude plugin validate --strict .claude-plugin/marketplace.json</span>
+Validating marketplace manifest: /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZT016R3424A8KE4HF1AEZ9C/.claude-plugin/marketplace.json
+
+<span class="ok">✔ Validation passed</span>
+<span class="ok">[exit 0]</span>
+
+<span class="note"># CLAUDE_CONFIG_DIR is sandboxed to /tmp/stepstone-plugin-e2e/fresh-config; the real user config is untouched.</span>
+<span class="note"># The marketplace below serves the exact 'npm pack' tarball of this branch, installed with --omit=dev,</span>
+<span class="note"># i.e. what the npm registry will hand Claude Code once this branch is published.</span>
+
+<span class="prompt">$</span> <span class="cmd">claude plugin marketplace add /tmp/stepstone-plugin-e2e/marketplace</span>
+Adding marketplace…<span class="ok">✔ Successfully added marketplace: stepstone-release-candidate (declared in user settings)</span>
+<span class="ok">[exit 0]</span>
+
+<span class="prompt">$</span> <span class="cmd">claude plugin install stepstone@stepstone-release-candidate</span>
+Installing plugin "stepstone@stepstone-release-candidate"...<span class="ok">✔ Successfully installed plugin: stepstone@stepstone-release-candidate (scope: user)</span>
+<span class="ok">[exit 0]</span>
+
+<span class="prompt">$</span> <span class="cmd">claude plugin list</span>
+Installed plugins:
+
+  ❯ stepstone@stepstone-release-candidate
+    Version: 0.5.0
+    Scope: user
+    Status: <span class="ok">✔ enabled</span>
+
+<span class="ok">[exit 0]</span>
+
+<span class="prompt">$</span> <span class="cmd">claude plugin details stepstone</span>
+Stepstone (stepstone) 0.5.0
+  A shared roadmap of project goals for coding agents and the humans working beside them.
+  Source: stepstone@stepstone-release-candidate
+
+Component inventory
+  Skills (6)  list, next, ready, stepstone, ui, waves
+  Agents (0)
+  Hooks (0)
+  MCP servers (1)  stepstone  (tool schemas resolved at runtime; not counted)
+  LSP servers (0)
+
+Projected token cost
+  Always-on:   ~231 tok   added to every session
+
+Per-component (rounded)
+  component  always-on  on-invoke
+  stepstone       ~140      ~4.8k
+  ui              &lt; 20       ~150
+  ready            ~20       ~120
+  next             ~20       ~120
+  list            &lt; 20       ~120
+  waves           &lt; 20       ~120
+
+  On-invoke cost is paid each time a skill or agent fires.
+  Token counts are estimates and may differ from actual usage.
+<span class="ok">[exit 0]</span>
+
+<span class="prompt">$</span> <span class="cmd">claude mcp list</span>
+Checking MCP server health…
+
+plugin:stepstone:stepstone: node /tmp/stepstone-plugin-e2e/marketplace/stepstone/dist/mcp.js - <span class="ok">✔ Connected</span>
+<span class="ok">[exit 0]</span></pre></div></section>
+<section><h2>2 - The five namespaced commands, run in a real Claude Code session</h2><div class="terminal"><pre><span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:list" --plugin-dir &lt;installed stepstone plugin&gt;</span>
+<span class="note">## Project Goals (list)</span>
+
+| # | ID | Title | Group | Status | Depends on |
+|---|----|----|----|----|----|
+| 1 | `design-the-ingest-pipeline` | Design the ingest pipeline | Foundation | active | - |
+| 2 | `build-the-ingest-pipeline` | Build the ingest pipeline | Foundation | open | design-the-ingest-pipeline |
+| 3 | `ship-the-public-dashboard` | Ship the public dashboard | - | open | build-the-ingest-pipeline |
+| 4 | `write-the-onboarding-guide` | Write the onboarding guide | - | open | - |
+| 5 | `add-telemetry-dashboards` | Add telemetry dashboards | - | open | - |
+
+Scope: project · 5 goals total.
+
+<span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:next" --plugin-dir &lt;installed stepstone plugin&gt;</span>
+The next goal to start is:
+
+**Write the onboarding guide** (`write-the-onboarding-guide`) — open, ready to start.
+
+<span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:ready" --plugin-dir &lt;installed stepstone plugin&gt;</span>
+**Ready goals** (unblocked, unclaimed, open) - the parallel frontier:
+
+1. `write-the-onboarding-guide` - Write the onboarding guide
+2. `add-telemetry-dashboards` - Add telemetry dashboards
+
+Both are open with no blockers, so either can be started now.
+
+<span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:waves" --plugin-dir &lt;installed stepstone plugin&gt;</span>
+Here are the unfinished goals grouped into dependency waves (earliest first):
+
+**Wave 1** (no blockers, ready now)
+- `design-the-ingest-pipeline` - Design the ingest pipeline (Foundation) - **active**
+- `write-the-onboarding-guide` - Write the onboarding guide - open
+- `add-telemetry-dashboards` - Add telemetry dashboards - open
+
+**Wave 2** (blocked on Wave 1)
+- `build-the-ingest-pipeline` - Build the ingest pipeline (Foundation) - open - depends on `design-the-ingest-pipeline`
+
+**Wave 3** (blocked on Wave 2)
+- `ship-the-public-dashboard` - Ship the public dashboard - open - depends on `build-the-ingest-pipeline`
+
+<span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:ui" --plugin-dir &lt;installed stepstone plugin&gt;</span>
+node "/tmp/stepstone-plugin-e2e/marketplace/stepstone/dist/cli.js" project ui</pre></div></section>
+<section><h2>3 - Guardrails: the generated skill is not user-invocable, and no read mutated the roadmap</h2><div class="terminal"><pre><span class="prompt">$</span> <span class="cmd">head -4 &lt;plugin&gt;/skills/stepstone/SKILL.md</span>
+---
+name: stepstone
+description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json)
+user-invocable: false
+
+<span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:stepstone" --plugin-dir &lt;shipped payload: user-invocable: false&gt;</span>
+(no output - the generated skill is not user-invocable, so the slash form does nothing)
+
+<span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:stepstone" --plugin-dir &lt;same payload, only that one generated line removed&gt;</span>
+The stepstone CLI works here. Here's the current roadmap in `demo-repo`: ... (skill fires and answers)
+
+<span class="prompt">$</span> <span class="cmd">claude -p "/stepstone:not-a-real-command" --plugin-dir &lt;shipped payload&gt;</span>
+<span class="bad">Unknown command: /stepstone:not-a-real-command</span>
+
+<span class="prompt">$</span> <span class="cmd">git -C &lt;demo repo&gt; status --porcelain     # after every read command and the board session</span>
+(empty - nothing the plugin exposes to the model mutated the worklist)</pre></div></section>
+</main>
+</body>
+</html>

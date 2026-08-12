@@ -39,8 +39,8 @@ Add this repository's marketplace, then install the self-contained plugin:
 ```
 
 The plugin bundles the Stepstone skill, a cache-local MCP server, and the namespaced read commands `/stepstone:list`, `/stepstone:next`, `/stepstone:ready`, and `/stepstone:waves`.
-`/stepstone:ui` opens the existing interactive board for a human at the keyboard.
-The read commands cannot mutate the roadmap, and the plugin deliberately provides no mutation slash commands.
+`/stepstone:ui` hands a human at the keyboard the command that opens the existing [terminal board](docs/board.md), which they paste into their own terminal because a slash command cannot take over one.
+Each read command is one read of the matching MCP resource and nothing else, and the plugin deliberately provides no mutation slash commands.
 Ask Claude to change goals in natural language when you want it to use the guarded MCP tools.
 
 **Skill-only install for Claude Code and other agents the [`skills` CLI](https://github.com/vercel-labs/skills) supports.**
@@ -114,7 +114,7 @@ That is enforced by source-level import scans and by a CI job that packs the tar
 | [docs/dependencies.md](docs/dependencies.md) | Dependency edges and the sequencing reads behind `next`, `ready`, and `waves` |
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
-| [docs/skill.md](docs/skill.md) | The generated agent skill, and how to install it |
+| [docs/skill.md](docs/skill.md) | The generated agent skill, the Claude Code plugin that bundles it, and how to install either |
 | [docs/mcp.md](docs/mcp.md) | The cross-harness MCP server: client configuration, resources, mutation tools, and confirmation guardrails |
 | [docs/pi.md](docs/pi.md) | The Pi extension: Session Tasks, `/tasks`, the widget, the model tool, the module API |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | This repository's own Project Goals, generated from the goal file it commits |
