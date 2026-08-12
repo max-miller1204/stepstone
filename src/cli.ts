@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, resolve } from "node:path";
@@ -31,6 +30,7 @@ import {
 import { goalCount } from "./format.ts";
 import {
 	createWorklistLocator,
+	currentGitBranch,
 	resolveGitRoot,
 	resolveWorklistLocation,
 	shadowedWorklistWarning,
@@ -1278,15 +1278,7 @@ async function run(invocation: CliInvocation): Promise<void> {
 			}
 			let branch = invocation.branch;
 			if (!invocation.clear && branch === undefined) {
-				try {
-					branch = execSync("git branch --show-current", {
-						cwd: invocation.cwd,
-						encoding: "utf8",
-						stdio: ["ignore", "pipe", "ignore"],
-					}).trim();
-				} catch {
-					branch = "";
-				}
+				branch = currentGitBranch(invocation.cwd) ?? undefined;
 				if (!branch) fail(`project start needs --branch when Git has no current branch\n\n${USAGE}`, 1);
 			}
 			const envelope = await executeCliOperation(service, {

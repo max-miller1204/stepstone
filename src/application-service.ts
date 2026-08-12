@@ -450,6 +450,7 @@ const EXPECTED_UPDATED_AT_ACTIONS = new Set([
 	"delete",
 ]);
 
+/** Project actions that accept a section name, or a set of dependency edges. */
 const GROUP_ACTIONS = new Set(["add", "update"]);
 const DEPENDS_ON_ACTIONS = GROUP_ACTIONS;
 

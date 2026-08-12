@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
-import { resolveGitRoot, resolveWorklistLocation, shadowedWorklistWarning } from "../src/git.ts";
+import {
+	currentGitBranch,
+	resolveGitRoot,
+	resolveWorklistLocation,
+	shadowedWorklistWarning,
+} from "../src/git.ts";
 
 describe("git root", () => {
 	it("returns a canonical root through a symlink", async () => {
@@ -20,6 +25,39 @@ describe("git root", () => {
 	it("degrades cleanly outside git", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-no-git-"));
 		expect(resolveGitRoot(root).isGit).toBe(false);
+	});
+});
+
+describe("current branch", () => {
+	it("names the checked-out branch and answers null when there is none", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-branch-"));
+		// Every "no branch to default to" case reads the same to a caller, so the
+		// directory outside any repository has to answer null rather than throw.
+		expect(currentGitBranch(root)).toBeNull();
+
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		execFileSync("git", ["switch", "-q", "-c", "feat/claim"], { cwd: root });
+		expect(currentGitBranch(root)).toBe("feat/claim");
+
+		execFileSync(
+			"git",
+			[
+				"-c",
+				"user.email=t@example.com",
+				"-c",
+				"user.name=Test",
+				"commit",
+				"-q",
+				"--allow-empty",
+				"-m",
+				"root",
+			],
+			{
+				cwd: root,
+			},
+		);
+		execFileSync("git", ["checkout", "-q", "--detach"], { cwd: root });
+		expect(currentGitBranch(root)).toBeNull();
 	});
 });
 
