@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
+import { AGENTS_PATH, AgentsBlockError, type AgentsRefreshResult, refreshAgentsFile } from "./agents.ts";
 import {
 	projectGoalSelectionError,
 	projectWorklistMergeRequiredError,
@@ -390,7 +391,7 @@ interface ProjectLocation {
 	worklist: WorklistLocation;
 }
 
-function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
+function resolveRepositoryRoot(invocation: CliInvocation): string {
 	const result = resolveGitRoot(invocation.cwd);
 	if (!result.isGit || !result.root) {
 		throw new WorklistCliFailure({
@@ -406,7 +407,12 @@ function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
 	}
-	const worklist = resolveWorklistLocation(result.root, { override: invocation.file, env: process.env });
+	return result.root;
+}
+
+function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
+	const root = resolveRepositoryRoot(invocation);
+	const worklist = resolveWorklistLocation(root, { override: invocation.file, env: process.env });
 	// Every command reports it, because two roadmaps in a repository is a standing
 	// condition rather than one command's outcome. A human reads it on stderr; a
 	// `--json` caller reads it in `meta.shadowedWorklistPath`, because stderr is
@@ -415,7 +421,7 @@ function resolveProjectLocation(invocation: CliInvocation): ProjectLocation {
 	shadowedWorklistPath = worklist.shadowedPath;
 	const warning = shadowedWorklistWarning(worklist);
 	if (warning && !invocation.json) process.stderr.write(`${warning}\n`);
-	return { root: result.root, worklist };
+	return { root, worklist };
 }
 
 function requireId(invocation: CliInvocation): string {
@@ -713,6 +719,88 @@ function withCliMetadata(envelope: WorklistApplicationResult): CliResultEnvelope
 	};
 }
 
+function isRetryableAgentsError(error: unknown): boolean {
+	if (!error || typeof error !== "object" || !("code" in error)) return false;
+	return ["ELOCKED", "EBUSY", "ETIMEDOUT"].includes(String(error.code));
+}
+async function runInit(invocation: CliInvocation): Promise<void> {
+	if (invocation.rest.length > 0 || invocation.description !== undefined) {
+		fail(`project init accepts no arguments\n\n${USAGE}`, 2);
+	}
+	const root = resolveRepositoryRoot(invocation);
+	let refreshed: AgentsRefreshResult;
+	try {
+		refreshed = await refreshAgentsFile(root);
+	} catch (error) {
+		const markerProblem = error instanceof AgentsBlockError ? error.problem : undefined;
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "init",
+			error: {
+				code: markerProblem
+					? WORKLIST_ERROR_CODES.VALIDATION_FAILED
+					: WORKLIST_ERROR_CODES.PERSISTENCE_FAILED,
+				message: error instanceof Error ? error.message : `Cannot refresh ${AGENTS_PATH}: ${String(error)}`,
+				retryable: isRetryableAgentsError(error),
+				details: { agentsPath: resolve(root, AGENTS_PATH), ...(markerProblem ? { markerProblem } : {}) },
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+
+	const skillCommand = CLI_COMMAND_CONTRACT.agentSetup.skillInstallCommand;
+	const mcp = CLI_COMMAND_CONTRACT.agentSetup.mcp;
+	const mcpProcess = { command: mcp.command, args: [...mcp.args], cwd: root };
+	const mcpConfig = { mcpServers: { [mcp.name]: mcpProcess } };
+	const envelope = {
+		ok: true,
+		scope: "project",
+		action: "init",
+		result: {
+			scope: "project",
+			action: "init",
+			agentsPath: refreshed.path,
+			integrations: {
+				skill: {
+					command: skillCommand,
+					guidance:
+						"This command installs globally. Remove `-g` to choose project-local installation instead.",
+				},
+				mcp: {
+					config: mcpConfig,
+					guidance: "Merge this server entry into the MCP client's own configuration.",
+				},
+			},
+		},
+		meta: {
+			changed: refreshed.changed,
+			semanticNoOp: !refreshed.changed,
+			changedFields: [],
+			cliVersion: packageVersion,
+		},
+	} as const;
+	if (invocation.json) {
+		process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
+		return;
+	}
+	const status = refreshed.changed
+		? `Refreshed the Stepstone block in ${refreshed.path}.`
+		: `The Stepstone block in ${refreshed.path} is already up to date.`;
+	process.stdout.write(
+		[
+			status,
+			"",
+			"Optional integrations were not installed or registered:",
+			`Skill installation: ${skillCommand}`,
+			"MCP client configuration:",
+			JSON.stringify(mcpConfig, null, 2),
+			"Choose the skill installation scope and MCP client configuration location for your harness.",
+			"",
+		].join("\n"),
+	);
+}
+
 async function runLifecycle(
 	invocation: CliInvocation,
 	service: WorklistApplicationService,
@@ -960,6 +1048,10 @@ async function run(invocation: CliInvocation): Promise<void> {
 	validateFlagActions(invocation);
 	if (invocation.action === "help") {
 		process.stdout.write(`${USAGE}\n`);
+		return;
+	}
+	if (invocation.action === "init") {
+		await runInit(invocation);
 		return;
 	}
 	const location = resolveProjectLocation(invocation);

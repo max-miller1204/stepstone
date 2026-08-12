@@ -1,0 +1,130 @@
+import { isUtf8 } from "node:buffer";
+import { randomBytes } from "node:crypto";
+import { chmod, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import lockfile from "proper-lockfile";
+import { AGENTS_BLOCK_END, AGENTS_BLOCK_START, renderAgentsMarkdownBlock } from "./cli-contract.ts";
+
+/** Repository-root file carrying harness-neutral instructions for coding agents. */
+export const AGENTS_PATH = "AGENTS.md";
+
+/** Lock shared by every Stepstone process refreshing a repository's AGENTS.md. */
+const AGENTS_LOCK_PATH = ".stepstone-agents.lock";
+
+export type AgentsBlockProblem =
+	| "duplicate-markers"
+	| "malformed-markers"
+	| "invalid-encoding"
+	| "unsupported-file";
+
+/** A marker layout that cannot be refreshed without guessing what the user intended. */
+export class AgentsBlockError extends Error {
+	readonly problem: AgentsBlockProblem;
+
+	constructor(problem: AgentsBlockProblem, message: string) {
+		super(message);
+		this.name = "AgentsBlockError";
+		this.problem = problem;
+	}
+}
+
+function markerOffsets(contents: string, marker: string): number[] {
+	const offsets: number[] = [];
+	let offset = 0;
+	while (offset <= contents.length - marker.length) {
+		const found = contents.indexOf(marker, offset);
+		if (found === -1) break;
+		const before = found === 0 ? "" : contents[found - 1];
+		const after = contents[found + marker.length];
+		if ((before !== "" && before !== "\n") || (after !== undefined && after !== "\n" && after !== "\r")) {
+			throw new AgentsBlockError(
+				"malformed-markers",
+				`Refusing to update ${AGENTS_PATH}: Stepstone AGENTS markers must occupy complete lines.`,
+			);
+		}
+		offsets.push(found);
+		offset = found + marker.length;
+	}
+	return offsets;
+}
+
+/**
+ * Return the exact contents one init should persist.
+ *
+ * Bytes outside a single valid marker pair are copied verbatim. Missing markers
+ * append one block, while every ambiguous layout is refused rather than repaired.
+ */
+export function updateAgentsContents(contents: string, block: string = renderAgentsMarkdownBlock()): string {
+	const starts = markerOffsets(contents, AGENTS_BLOCK_START);
+	const ends = markerOffsets(contents, AGENTS_BLOCK_END);
+	if (starts.length > 1 || ends.length > 1) {
+		throw new AgentsBlockError(
+			"duplicate-markers",
+			`Refusing to update ${AGENTS_PATH}: duplicate Stepstone AGENTS markers were found. Keep exactly one start marker and one end marker.`,
+		);
+	}
+	if (starts.length !== ends.length || (starts.length === 1 && starts[0] > ends[0])) {
+		throw new AgentsBlockError(
+			"malformed-markers",
+			`Refusing to update ${AGENTS_PATH}: the Stepstone AGENTS markers are incomplete or out of order. Keep one start marker before one end marker, or remove both.`,
+		);
+	}
+	if (starts.length === 1) {
+		const suffixOffset = (ends[0] ?? 0) + AGENTS_BLOCK_END.length;
+		return `${contents.slice(0, starts[0])}${block}${contents.slice(suffixOffset)}`;
+	}
+	if (contents.length === 0) return `${block}\n`;
+	const separator = contents.endsWith("\n\n") ? "" : contents.endsWith("\n") ? "\n" : "\n\n";
+	return `${contents}${separator}${block}\n`;
+}
+
+export interface AgentsRefreshResult {
+	path: string;
+	changed: boolean;
+}
+
+/**
+ * Refresh one repository's generated block under a cross-process lock, then
+ * atomically rename the complete file over its prior version.
+ */
+export async function refreshAgentsFile(root: string): Promise<AgentsRefreshResult> {
+	const path = resolve(root, AGENTS_PATH);
+	const release = await lockfile.lock(root, {
+		lockfilePath: resolve(root, AGENTS_LOCK_PATH),
+		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
+		stale: 10000,
+	});
+	let tempPath: string | undefined;
+	try {
+		const existing = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+			if (error.code === "ENOENT") return undefined;
+			throw error;
+		});
+		if (existing && !existing.isFile()) {
+			throw new AgentsBlockError(
+				"unsupported-file",
+				`Refusing to update ${AGENTS_PATH}: the existing path is not a regular file.`,
+			);
+		}
+		const bytes = existing ? await readFile(path) : Buffer.alloc(0);
+		if (!isUtf8(bytes)) {
+			throw new AgentsBlockError(
+				"invalid-encoding",
+				`Refusing to update ${AGENTS_PATH}: the existing file is not valid UTF-8.`,
+			);
+		}
+		const contents = bytes.toString("utf8");
+		const updated = updateAgentsContents(contents);
+		if (updated === contents) return { path, changed: false };
+
+		tempPath = resolve(root, `.stepstone-agents-${randomBytes(8).toString("hex")}.tmp`);
+		await writeFile(tempPath, updated, { encoding: "utf8" });
+		if (existing) await chmod(tempPath, existing.mode & 0o7777);
+		await rename(tempPath, path);
+		tempPath = undefined;
+		return { path, changed: true };
+	} finally {
+		if (tempPath) await rm(tempPath, { force: true });
+		await release();
+	}
+}

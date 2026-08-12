@@ -12,6 +12,17 @@ Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to sta
 
 ## Install
 
+**Any coding harness.**
+Initialize or refresh the repository's harness-neutral `AGENTS.md` guidance, then follow whichever optional integration instructions apply to your client:
+
+```sh
+npx -y stepstone@latest project init
+```
+
+The command changes only the stable marker-delimited Stepstone block in `<git-root>/AGENTS.md` and preserves every byte of authored guidance around it.
+It prints the canonical skill installation command and MCP process configuration, but it does not run an installer or modify a client's configuration because those scopes and locations depend on the harness.
+Run it inside the target repository or select one with `--cwd`; `--file` and `$STEPSTONE_WORKLIST` select goal storage for other actions and never redirect the `AGENTS.md` target.
+
 **Any shell, script, or coding agent.**
 There is nothing to install: the CLI runs from npm on demand, in any Git repository, with nothing present but Node.
 
