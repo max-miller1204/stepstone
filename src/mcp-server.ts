@@ -34,6 +34,8 @@ type ToolArguments = {
 	group?: string;
 	dependsOn?: string[];
 	links?: string[];
+	branch?: string;
+	clear?: boolean;
 	plan?: unknown;
 	dryRun?: boolean;
 	direction?: "up" | "down";
@@ -118,6 +120,13 @@ function inputSchemaFor(action: McpActionContract) {
 				beforeId: z.string().trim().min(1).optional(),
 				afterId: z.string().trim().min(1).optional(),
 			});
+		case "start":
+			return z.strictObject({
+				id,
+				branch: z.string().trim().min(1).optional(),
+				clear: z.boolean().optional(),
+				expectedUpdatedAt,
+			});
 		case "set_active":
 			return z.strictObject({ id, expectedUpdatedAt });
 		case "complete":
@@ -170,6 +179,14 @@ function operationFor(action: string, args: ToolArguments): WorklistOperation {
 				direction: args.direction,
 				beforeId: args.beforeId,
 				afterId: args.afterId,
+			};
+		case "start":
+			return {
+				...base,
+				id: args.id,
+				branch: args.branch,
+				clear: args.clear,
+				expectedUpdatedAt: args.expectedUpdatedAt,
 			};
 		case "set_active":
 			return { ...base, id: args.id, expectedUpdatedAt: args.expectedUpdatedAt };

@@ -544,6 +544,32 @@ describe("session state and tool", () => {
 		expect(entries).toHaveLength(3);
 	});
 
+	it("reports a dispatch claim and its release from the stored branch", async () => {
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-start-")), ".worklist", "worklist.json");
+		const added = await executeWorklist({ scope: "project", action: "add", title: "Dispatch me" }, ctx, {
+			projectPath: path,
+		});
+		const id = added.details.goal?.id;
+		if (!id) throw new Error("Goal was not created");
+
+		const claimed = await executeWorklist(
+			{ scope: "project", action: "start", id, branch: "feat/dispatch" },
+			ctx,
+			{ projectPath: path },
+		);
+		expect(claimed.content).toBe("Started project goal dispatch-me on feat/dispatch");
+		expect(claimed.details.goal).toMatchObject({ id, status: "open", branch: "feat/dispatch" });
+
+		// A claim that changes no status is still a write, so the model has to be
+		// told what happened rather than handed a failed call over state that
+		// already moved underneath it.
+		const released = await executeWorklist({ scope: "project", action: "start", id, clear: true }, ctx, {
+			projectPath: path,
+		});
+		expect(released.content).toBe("Released project goal dispatch-me");
+		expect(released.details.goal).not.toHaveProperty("branch");
+	});
+
 	it("warns in project activation text while keeping blocked activation successful", async () => {
 		const path = join(await mkdtemp(join(tmpdir(), "stepstone-tool-blocked-")), ".worklist", "worklist.json");
 		const blocker = await executeWorklist({ scope: "project", action: "add", title: "Slug ids" }, ctx, {

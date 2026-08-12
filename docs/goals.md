@@ -13,7 +13,7 @@ Beyond that it may carry:
 - `group`, a free-form section name such as `Foundation`, which exists exactly when some goal names it.
 - `completedAt`, stamped by `complete` and cleared by `reopen`.
 - `links`, an informational array of absolute HTTP or HTTPS URLs written with `--link`, which carries no machine semantics; each entry is stored in its canonical spelling, so `https://example.com` is kept as `https://example.com/` and two spellings of one address collapse into a single entry.
-- `branch`, naming where the work is happening, which also marks the goal as claimed.
+- `branch`, naming where the work is happening, which also marks the goal as claimed; `start` records it, and `start --clear` or `complete` releases it.
 - `dependsOn`, the goals that must land first, documented in [docs/dependencies.md](dependencies.md).
 
 Every one of those fields is optional and additive, so the schema version stays at 1 and older files keep loading unchanged.
@@ -30,6 +30,9 @@ Completing, reopening, archiving, and deleting a goal all require explicit user 
 No interface may add a path around that, and an agent must never pass the flag because a goal merely looks finished or stale.
 
 `archived` settles a goal without claiming it was delivered, which is why an archived dependency satisfies the goals waiting on it just as a done one does.
+
+A settled goal - `done` or `archived` - refuses both ways of taking it back up: `set_active` and a `start` branch claim are turned down until `reopen` puts it back in play, so work the roadmap already recorded as finished is never quietly resumed under a status that says otherwise.
+Releasing is not taking up, so `start --clear` still drops a claim a settled goal is holding, because a dispatch that outlived its goal has to keep a way out.
 
 ## Goal identifiers
 

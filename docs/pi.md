@@ -86,10 +86,11 @@ The model-facing tool instead requires `confirm=true`, and its prompt rules proh
 
 ## The model tool
 
-The `worklist` tool accepts `scope=session|project` and actions including `list`, `add`, `apply-plan`, `move`, `update`, `set_status`, `set_active`, `complete`, `reopen`, `archive`, and `delete`.
+The `worklist` tool accepts `scope=session|project` and actions including `list`, `add`, `apply-plan`, `move`, `update`, `start`, `set_status`, `set_active`, `complete`, `reopen`, `archive`, and `delete`.
 For Session Tasks, `add` optionally accepts exactly one of `beforeId` or `afterId`, while `move` requires exactly one.
 Project Goal `move` takes the same anchors and reorders the roadmap; `add` and `update` also accept a `group`, where an empty string clears it, a `dependsOn` array that replaces the goal's edges, and a `links` array of absolute HTTP or HTTPS URLs that replaces its informational links.
 Empty arrays clear dependencies or links.
+Project Goal `start` is the dispatch claim: it takes exactly one of a `branch` naming what is working on the goal or `clear=true` releasing an abandoned claim, leaves the goal's status alone, and keeps a claimed goal out of the ready frontier until `start` with `clear` or `complete` releases it.
 
 Moves preserve the task ID, title, status, and Project Goal association.
 Self-placement, already-satisfied placement, identical Session Task updates, and repeated status changes succeed without writing another session snapshot.

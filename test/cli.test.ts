@@ -1451,6 +1451,32 @@ describe("project goal CLI", () => {
 		expect(wavesJson.result.unreachableGoals).toBeUndefined();
 	});
 
+	it("claims and releases a goal branch and completion clears the claim", async () => {
+		const root = await tempGitRepo();
+		await execFileAsync("git", ["switch", "-c", "feat/current"], { cwd: root });
+		await runCli(root, ["project", "add", "Claimed work"]);
+
+		const started = parseJson(
+			(await runCli(root, ["project", "start", "claimed-work", "--json"])).stdout,
+		) as {
+			result: { goal: ProjectGoal };
+		};
+		expect(started.result.goal).toMatchObject({ status: "open", branch: "feat/current" });
+		expect(parseJson((await runCli(root, ["project", "ready", "--json"])).stdout).result.goals).toEqual([]);
+
+		const released = parseJson(
+			(await runCli(root, ["project", "start", "claimed-work", "--clear", "--json"])).stdout,
+		) as { result: { goal: ProjectGoal } };
+		expect(released.result.goal.branch).toBeUndefined();
+
+		await runCli(root, ["project", "start", "claimed-work", "--branch", "feat/explicit"]);
+		const completed = parseJson(
+			(await runCli(root, ["project", "complete", "claimed-work", "--confirm", "--json"])).stdout,
+		) as { result: { goal: ProjectGoal } };
+		expect(completed.result.goal).toMatchObject({ status: "done" });
+		expect(completed.result.goal.branch).toBeUndefined();
+	});
+
 	it("never suggests a goal someone has already taken on", async () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Dispatched work"]);

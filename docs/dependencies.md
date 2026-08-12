@@ -60,6 +60,7 @@ npx -y stepstone@latest project waves
 
 A goal is claimed when it is `active` or carries a `branch`.
 Both are dedicated fields somebody set deliberately, never a heuristic over prose, and a claimed goal is left out of `ready` because handing the same work to a second driver is the one mistake a dispatch read exists to prevent.
+`project set_active <id>` sets the first and `project start <id> [--branch <name>]` the second; a claim is released by `project start <id> --clear` or by `project complete <id> --confirm`, so a dispatch that was abandoned rather than finished does not stay out of the frontier forever.
 
 `waves` lays the unfinished goals out in the earliest layer each could start in.
 Wave 1 is everything unblocked today, and each later wave is exactly what the wave before it releases, so the layers read as a schedule: how much can run in parallel, and what finishing this round opens up.

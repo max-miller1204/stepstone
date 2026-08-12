@@ -313,6 +313,12 @@ export const CLI_COMMAND_CONTRACT = {
 			mcp: "tool",
 		},
 		{
+			name: "start",
+			usage: "start <id> [--branch <name> | --clear]",
+			summary: "Claim a goal on a branch, or release its branch claim",
+			mcp: "tool",
+		},
+		{
 			name: "set_active",
 			usage: "set_active <id>",
 			summary: "Make a goal the single active goal",
@@ -427,10 +433,22 @@ export const CLI_COMMAND_CONTRACT = {
 			actions: ["add", "update"],
 		},
 		{
+			name: "--branch",
+			usage: "--branch <name>",
+			summary: "Record the branch working on a goal; project start defaults to the current Git branch",
+			actions: ["start"],
+		},
+		{
+			name: "--clear",
+			usage: "--clear",
+			summary: "Release the branch claim on a goal",
+			actions: ["start"],
+		},
+		{
 			name: "--expect-updated-at",
 			usage: "--expect-updated-at <timestamp>",
 			summary: "Refuse the change as a conflict unless the goal's updatedAt still matches this value",
-			actions: ["update", "set_active", "complete", "reopen", "archive", "delete"],
+			actions: ["update", "start", "set_active", "complete", "reopen", "archive", "delete"],
 		},
 		{
 			name: "--dry-run",

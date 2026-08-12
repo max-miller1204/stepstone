@@ -60,6 +60,17 @@ function formatProjectPlan(result: WorklistOperationResult): string {
 	return lines.join("\n");
 }
 
+/**
+ * A claim reported from the stored branch rather than from the request, so a
+ * release and a claim that resolved to no branch cannot read as a claim on
+ * `undefined`, and the wording matches what `project start` prints.
+ */
+function formatProjectClaim(result: WorklistOperationResult): string {
+	const goal = result.goal;
+	if (!goal?.branch) return `Released project goal ${goal?.id}`;
+	return `Started project goal ${goal.id} on ${goal.branch}`;
+}
+
 function formatProjectActivation(result: WorklistOperationResult): string {
 	const activated = `Activated project goal ${result.goal?.id}`;
 	const blockedBy = result.blockedBy ?? [];
@@ -98,6 +109,8 @@ function formatProjectResult(operation: WorklistOperation, result: WorklistOpera
 			return `Moved project goal ${result.goal?.id}`;
 		case "update":
 			return `Updated project goal ${result.goal?.id}`;
+		case "start":
+			return formatProjectClaim(result);
 		case "set_status":
 		case "set_active":
 			return formatProjectActivation(result);

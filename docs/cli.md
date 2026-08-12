@@ -41,6 +41,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 | `npx -y stepstone@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
 | `npx -y stepstone@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |
 | `npx -y stepstone@latest project move <id> up\|down\|before <id>\|after <id>` | Reorder a goal in the roadmap's canonical file order |
+| `npx -y stepstone@latest project start <id> [--branch <name> \| --clear]` | Claim a goal on a branch, or release its branch claim |
 | `npx -y stepstone@latest project set_active <id>` | Make a goal the single active goal |
 | `npx -y stepstone@latest project complete <id> --confirm` | Mark a goal done. Requires explicit user confirmation |
 | `npx -y stepstone@latest project reopen <id> --confirm` | Reopen a done or archived goal. Requires explicit user confirmation |
@@ -64,7 +65,9 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 | `--group <name>` | Put the goal in a free-form section, such as Foundation; an empty name clears it; only for project add and update |
 | `--depends-on <id>` | Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update |
 | `--link <url>` | Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update |
-| `--expect-updated-at <timestamp>` | Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, set_active, complete, reopen, archive, and delete |
+| `--branch <name>` | Record the branch working on a goal; project start defaults to the current Git branch; only for project start |
+| `--clear` | Release the branch claim on a goal; only for project start |
+| `--expect-updated-at <timestamp>` | Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete |
 | `--dry-run` | Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path |
 
 ## Description input

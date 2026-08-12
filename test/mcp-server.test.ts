@@ -328,6 +328,74 @@ describe("Stepstone MCP server", () => {
 		});
 	});
 
+	it("claims, guards, and releases a dispatch branch through the start tool", async () => {
+		const root = await createGitRepository();
+		const worklistPath = join(root, ".worklist", "worklist.json");
+		await withMcpClient(root, async (client) => {
+			await callTool(client, "add", { title: "Dispatchable goal" });
+
+			const claimed = await callTool(client, "start", {
+				id: "dispatchable",
+				branch: "feat/dispatch",
+			});
+			expect(claimed).toMatchObject({
+				isError: false,
+				envelope: {
+					ok: true,
+					scope: "project",
+					action: "start",
+					result: {
+						goal: { id: "dispatchable-goal", status: "open", branch: "feat/dispatch" },
+					},
+					meta: { changed: true },
+				},
+			});
+
+			// The claim earns its keep by what it removes: a goal already in flight
+			// stays out of the frontier the next dispatcher reads.
+			expect(resultGoals(await readEnvelope(client, `${RESOURCE_PREFIX}/ready`))).toEqual([]);
+
+			// The precondition guards a claim exactly as it guards an edit, so a
+			// second dispatcher working from a stale read is told rather than
+			// allowed to take the goal out from under the first.
+			const beforeConflict = await readFile(worklistPath, "utf8");
+			const conflicted = await callTool(client, "start", {
+				id: "dispatchable",
+				branch: "feat/second",
+				expectedUpdatedAt: "2020-01-01T00:00:00.000Z",
+			});
+			expect(conflicted.isError).toBe(true);
+			expect(conflicted.envelope).toMatchObject({
+				ok: false,
+				action: "start",
+				error: {
+					code: "CONFLICT",
+					retryable: true,
+					conflict: { type: "goal-updated-at", id: "dispatchable-goal" },
+				},
+			});
+			expect(await readFile(worklistPath, "utf8")).toBe(beforeConflict);
+
+			const claimedGoal = claimed.envelope.result?.goal as { updatedAt: string } | undefined;
+			if (!claimedGoal) throw new Error("The start tool did not return the claimed goal");
+			const released = await callTool(client, "start", {
+				id: "dispatchable",
+				clear: true,
+				expectedUpdatedAt: claimedGoal.updatedAt,
+			});
+			expect(released.isError).toBe(false);
+			expect(released.envelope).toMatchObject({ ok: true, action: "start", meta: { changed: true } });
+
+			// Released means gone from the file rather than stored empty, the same
+			// rule every other optional goal field follows.
+			expect(released.envelope.result?.goal).not.toHaveProperty("branch");
+			expect(JSON.parse(await readFile(worklistPath, "utf8")).goals[0]).not.toHaveProperty("branch");
+			expect(
+				resultGoals(await readEnvelope(client, `${RESOURCE_PREFIX}/ready`)).map((goal) => goal.id),
+			).toEqual(["dispatchable-goal"]);
+		});
+	});
+
 	it("replaces, preserves, and clears a link set through the update tool", async () => {
 		const root = await createGitRepository();
 		const worklistPath = join(root, ".worklist", "worklist.json");

@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-45 goals: 13 open, 29 done, 3 archived.
+45 goals: 12 open, 30 done, 3 archived.
 
 ## Orchestrator
 
@@ -148,7 +148,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `schema-fields-group-completedat-links` (done), `dependency-graph-dependson-edges-with` (done).
 
-- **[open]** project-start: mark a goal in flight and record its branch - `project-start-mark-a-goal-in-flight-and`
+- **[done]** project-start: mark a goal in flight and record its branch - `project-start-mark-a-goal-in-flight-and`
 
   Add project start <id> [--branch <name>]: records the branch in the dedicated branch field (not links, which stays purely informational) as the started or dispatched marker and leaves active semantics untouched; single active remains the focus concept, and in-flight only appears when fan-out is used. Create the branch only when asked, since treehouse owns worktree and branch creation in fan-out flows. Define the full marker lifecycle so a claim always has a release: project complete clears the branch field, and a start --clear release action un-claims an abandoned dispatch, so a reopened or orphaned goal never stays invisible to ready forever. Because ready excludes goals with the branch field set, the marker doubles as a crash-safe dispatch ledger.
 
@@ -250,7 +250,7 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Automation
 
-- **[open, blocked]** root-session recipe: harness-neutral dispatch loop over the worklist - `root-session-recipe-herdr-treehouse`
+- **[open]** root-session recipe: harness-neutral dispatch loop over the worklist - `root-session-recipe-herdr-treehouse`
 
   A skill plus documented recipe implementing the fan-out loop purely as a consumer of the CLI contract; nothing in src/ knows about any particular tool. Loop: apply-plan, then repeatedly read project ready --json, project start each dispatched goal, claim an isolated workspace for it, launch an agent session there with the goal as its prompt, detect completion primarily via PR merge with session liveness as a secondary signal, run project complete on main, and continue until the plan is done. A --max-parallel N knob sets concurrency per run; N=1 is a first-class auto-chain mode for serial projects. Worklist mutations happen on main only; the root session is the sole writer.
 
@@ -265,7 +265,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   The deliverable is therefore a harness-neutral dispatch contract - read ready, claim a goal, run an agent session against it in an isolated workspace, detect completion by merge evidence, complete on main - plus a small binding surface covering only the two axes above. Ship at least two working bindings so the contract is proven rather than fitted to one setup: plain git worktrees driven by detached processes as the zero-dependency baseline, and herdr panes over treehouse worktrees as the richer one. The existing rule that nothing in src/ knows about any of these tools already makes this a scope and documentation change rather than a redesign, and the standing-consent authorization model applies unchanged to whichever bindings run the loop.
 
-  Depends on `apply-plan-atomic-batch-import-of-a` (done), `sequencing-commands-project-next-ready` (done), `project-start-mark-a-goal-in-flight-and` (open).
+  Depends on `apply-plan-atomic-batch-import-of-a` (done), `sequencing-commands-project-next-ready` (done), `project-start-mark-a-goal-in-flight-and` (done).
 
 ## Later
 
@@ -277,13 +277,13 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `mcp-server-expose-the-worklist-over-mcp` (done).
 
-- **[open, blocked]** branch-scoped-active: per-worktree featured goal via links - `branch-scoped-active-per-worktree`
+- **[open]** branch-scoped-active: per-worktree featured goal via links - `branch-scoped-active-per-worktree`
 
   In a worktree, derive the widget and dashboard featured goal from the current git branch matched against the dedicated branch field, falling back to the stored single active goal. Per-worktree focus without changing active semantics.
 
   Generalized 2026-08-08 by the harness pivot: the original wording scoped this to the Pi widget and dashboard, which are now one surface among several. Derive the featured goal from the branch in every surface that shows one - the CLI, the goal board, whatever the MCP server exposes as the active-goal resource, and the Pi widget and dashboard - resolving it once in shared code rather than per renderer. Branch-derived focus is most valuable in the CLI and board, since that is where a fan-out session actually runs.
 
-  Depends on `schema-fields-group-completedat-links` (done), `project-start-mark-a-goal-in-flight-and` (open).
+  Depends on `schema-fields-group-completedat-links` (done), `project-start-mark-a-goal-in-flight-and` (done).
 
 - **[open]** goal-checklist: acceptance criteria items per goal - `goal-checklist-acceptance-criteria`
 

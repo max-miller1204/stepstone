@@ -38,6 +38,7 @@ add <title...> [--description <text> | -- <description...>]
 apply-plan <plan.json>
 update <id> [title...] [--description <text> | -- <description...>]
 move <id> up|down|before <id>|after <id>
+start <id> [--branch <name> | --clear]
 set_active <id>
 complete <id> --confirm
 reopen <id> --confirm
@@ -60,7 +61,9 @@ Flags:
 - `--group <name>` - Put the goal in a free-form section, such as Foundation; an empty name clears it; only for project add and update.
 - `--depends-on <id>` - Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update.
 - `--link <url>` - Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update.
-- `--expect-updated-at <timestamp>` - Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, set_active, complete, reopen, archive, and delete.
+- `--branch <name>` - Record the branch working on a goal; project start defaults to the current Git branch; only for project start.
+- `--clear` - Release the branch claim on a goal; only for project start.
+- `--expect-updated-at <timestamp>` - Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete.
 - `--dry-run` - Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path.
 
 Prefer `--json` whenever you need to read IDs, statuses, or errors back rather than parsing human output.
@@ -187,7 +190,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - Exit code 3 (confirmation required) means the command needs `--confirm`; stop and ask the user instead of retrying with the flag.
 - Exit code 4 (conflict) means a concurrent change conflicted with yours; re-read current state with `list` or `show` before retrying.
   A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.
-- `init`, `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, and `set_active` are safe to run whenever they serve the user's request.
+- `init`, `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, `start`, and `set_active` are safe to run whenever they serve the user's request.
 - `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.
 - `ui` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.

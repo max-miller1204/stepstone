@@ -47,9 +47,21 @@ export class ProjectGoalNotFoundError extends Error {
 	}
 }
 
-export class ProjectGoalActivationBlockedError extends Error {
+/**
+ * Extends the refused-mutation base because a mutate callback may raise it, and
+ * `mutateProjectWorklist` only re-throws that family; anything else it catches
+ * is reported as a persistence failure, which would tell a caller to retry a
+ * refusal that will never succeed.
+ *
+ * `set_active` and a `start` branch claim both raise it, so the message names
+ * both rather than activation alone. The class name predates `start` and stays
+ * as it is because the type is exported and callers narrow on it.
+ */
+export class ProjectGoalActivationBlockedError extends ProjectMutationRefusedError {
 	constructor(id: string) {
-		super(`Project goal ${id} is done or archived and must be reopened before activation`);
+		super(
+			`Project goal ${id} is done or archived and must be reopened before it can be started or activated`,
+		);
 		this.name = "ProjectGoalActivationBlockedError";
 	}
 }
@@ -140,7 +152,7 @@ function nextGoalUpdatedAt(previous: string): string {
 }
 
 /** The goal fields a mutation either writes or drops, never stores as empty. */
-type OptionalGoalField = "group" | "completedAt" | "dependsOn" | "links";
+type OptionalGoalField = "group" | "completedAt" | "dependsOn" | "links" | "branch";
 
 /**
  * A goal with each named optional field set, or dropped entirely when it is cleared.
@@ -688,6 +700,40 @@ export async function activateProjectGoal(
 	return { ...mutationOutcome({ ...result, data: outcome }), changedGoalIds };
 }
 
+export async function setProjectGoalBranch(
+	path: string,
+	id: string,
+	branch: string | undefined,
+	options?: ProjectMutationOptions,
+): Promise<ProjectMutationOutcome> {
+	const result = await mutateProjectWorklist(
+		path,
+		(worklist) => {
+			const target = findGoalByStoredId(worklist.goals, id, worklist.retiredIds ?? []);
+			const index = target ? worklist.goals.indexOf(target) : -1;
+			if (index === -1) return { worklist, result: null, changed: false };
+			const current = worklist.goals[index];
+			if (branch !== undefined && (current.status === "done" || current.status === "archived")) {
+				throw new ProjectGoalActivationBlockedError(id);
+			}
+			if (current.branch === branch) {
+				return { worklist, result: { goal: current, goals: worklist.goals }, changed: false };
+			}
+			const updated = withOptionalFields(
+				{ ...current, updatedAt: nextGoalUpdatedAt(current.updatedAt) },
+				{ branch },
+			);
+			const goals = [...worklist.goals];
+			goals[index] = updated;
+			return { worklist: { ...worklist, goals }, result: { goal: updated, goals } };
+		},
+		options,
+	);
+	if (result.error) throw new Error(result.error);
+	if (!result.data) throw new ProjectGoalNotFoundError(id);
+	return mutationOutcome({ ...result, data: result.data });
+}
+
 export async function transitionProjectGoal(
 	path: string,
 	id: string,
@@ -701,7 +747,7 @@ export async function transitionProjectGoal(
 			const index = target ? worklist.goals.indexOf(target) : -1;
 			if (index === -1) return { worklist, result: null, changed: false };
 			const current = worklist.goals[index];
-			if (current.status === status) {
+			if (current.status === status && !(status === "done" && current.branch !== undefined)) {
 				return {
 					worklist,
 					result: { goal: current, goals: worklist.goals },
@@ -711,7 +757,10 @@ export async function transitionProjectGoal(
 			const updatedAt = nextGoalUpdatedAt(current.updatedAt);
 			const updated = withOptionalFields(
 				{ ...current, status, updatedAt },
-				{ completedAt: nextCompletedAt(current, status, updatedAt) },
+				{
+					completedAt: nextCompletedAt(current, status, updatedAt),
+					...(status === "done" ? { branch: undefined } : {}),
+				},
 			);
 			const goals = [...worklist.goals];
 			goals[index] = updated;

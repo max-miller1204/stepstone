@@ -32,6 +32,29 @@ export function resolveGitRoot(cwd: string): GitRootResult {
 	}
 }
 
+/**
+ * The branch checked out in `cwd`, or null when there is none to name.
+ *
+ * A detached HEAD, a directory outside any repository, and a Git that never
+ * answers all collapse to the same null, because a caller defaulting to the
+ * current branch has the same fallback for each. The timeout matches
+ * `resolveGitRoot`, so a hung index lock or a stalled network filesystem ends
+ * as "no branch" rather than as a command that never returns.
+ */
+export function currentGitBranch(cwd: string): string | null {
+	try {
+		const raw = execSync("git branch --show-current", {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+			timeout: 10000,
+		});
+		return raw.trim() || null;
+	} catch {
+		return null;
+	}
+}
+
 /** Which rule in the resolution order chose the path. */
 export type WorklistPathSource = "override" | "current" | "legacy" | "default";
 
