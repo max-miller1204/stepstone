@@ -74,6 +74,9 @@ npx -y stepstone@latest project update <id> --link https://example.com/spec --li
 npx -y stepstone@latest project move <id> up
 npx -y stepstone@latest project move <id> before <anchor-id>
 npx -y stepstone@latest project set_active <id>
+npx -y stepstone@latest project start <id>
+npx -y stepstone@latest project start <id> --branch feat/parser
+npx -y stepstone@latest project start <id> --clear
 npx -y stepstone@latest project apply-plan plan.json --dry-run --json
 npx -y stepstone@latest project apply-plan plan.json --json
 ```
@@ -82,6 +85,8 @@ npx -y stepstone@latest project apply-plan plan.json --json
 `--group <name>` files a goal under a free-form section and `--group ''` clears it; a group exists exactly when some goal names it, so there is no separate list to keep in step.
 `--depends-on <id>` records a goal that must land first and may be repeated, `--depends-on ''` alone clears every edge, and an update replaces the stored set rather than adding to it.
 `--link <url>` stores an informational absolute HTTP or HTTPS URL such as the issue or design a goal came from, behaves the same way - repeatable, replaced whole by an update, cleared by `--link ''` alone - and rejects anything that is not an absolute HTTP or HTTPS URL, so the field never accumulates text a reader cannot follow.
+`start` records which branch is working on a goal, as a dispatch claim rather than a status change: the goal keeps whatever status it had, and `--branch <name>` names the branch while an omitted flag uses the current Git branch, which is read and never created, so a run outside a repository or on a detached HEAD asks for `--branch` instead of guessing.
+A claimed goal drops out of `ready` and `next`, which is the point - see [docs/dependencies.md](dependencies.md#sequencing-reads) - so every claim needs a release: `start <id> --clear` un-claims an abandoned dispatch and `complete` clears the branch on its way to done.
 `apply-plan` adds an approved batch of goals through one locked mutation; the plan schema is in [docs/goals.md](goals.md#json-goal-plans).
 A `--dry-run` is a preview rather than the user's approval, and the brainstorm-to-approved-plan workflow an agent runs before that single mutating call is in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
 
@@ -122,7 +127,7 @@ An empty `next` or `ready` is not among them: it exits 0, because a roadmap with
 The CLI routes every mutation through the same application service, cross-process lock, and atomic replacement as every other interface, so physical writes are serialized and atomic even with a board open and a Pi session running on the same repository.
 
 That serializes writes without tracking what a caller read, so a mutation built on a stale read otherwise proceeds unreported, and a full description replacement can overwrite newer prose.
-`--expect-updated-at <timestamp>`, carrying the goal's `updatedAt` from your own `show`, closes that gap on `update`, `set_active`, and the lifecycle actions.
+`--expect-updated-at <timestamp>`, carrying the goal's `updatedAt` from your own `show`, closes that gap on `update`, `start`, `set_active`, and the lifecycle actions.
 Pass it on every change to a goal you did not just create.
 
 Exit code 4 reports a concurrent-change conflict, whether the file-wide revision or a single goal's timestamp moved.

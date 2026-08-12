@@ -47,7 +47,13 @@ export class ProjectGoalNotFoundError extends Error {
 	}
 }
 
-export class ProjectGoalActivationBlockedError extends Error {
+/**
+ * Extends the refused-mutation base because a mutate callback may raise it, and
+ * `mutateProjectWorklist` only re-throws that family; anything else it catches
+ * is reported as a persistence failure, which would tell a caller to retry a
+ * refusal that will never succeed.
+ */
+export class ProjectGoalActivationBlockedError extends ProjectMutationRefusedError {
 	constructor(id: string) {
 		super(`Project goal ${id} is done or archived and must be reopened before activation`);
 		this.name = "ProjectGoalActivationBlockedError";

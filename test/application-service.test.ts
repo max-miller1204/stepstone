@@ -1356,6 +1356,59 @@ describe("worklist application service", () => {
 		expect((await service.getProjectGoals())[0].dependsOn).toBeUndefined();
 	});
 
+	it("refuses a claim on a finished goal as a permanent refusal rather than a retryable failure", async () => {
+		const projectPath = join(
+			await mkdtemp(join(tmpdir(), "stepstone-application-start-blocked-")),
+			".worklist",
+			"worklist.json",
+		);
+		const service = new WorklistApplicationService({ projectPath });
+
+		for (const [action, status] of [
+			["complete", "done"],
+			["archive", "archived"],
+		] as const) {
+			const added = await service.execute(
+				{ scope: "project", action: "add", title: `Finished by ${action}` },
+				{ source: "cli" },
+			);
+			const id = unwrapWorklistApplicationResult(added).goal?.id;
+			await expect(
+				service.execute({ scope: "project", action, id, confirm: true }, { source: "cli" }),
+			).resolves.toMatchObject({ ok: true, result: { goal: { id, status } } });
+
+			// A dispatcher told `retryable: true` retries a refusal that can never
+			// succeed, and the persistence wording sends a human to check repository
+			// access and the lock for a condition that is neither. `set_active`
+			// already answers this correctly, so `start` has to match it.
+			const refused = await service.execute(
+				{ scope: "project", action: "start", id, branch: "feat/claim" },
+				{ source: "cli" },
+			);
+			expect(refused).toMatchObject({
+				ok: false,
+				scope: "project",
+				action: "start",
+				error: {
+					code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+					retryable: false,
+					details: { id, resolution: "reopen-project-goal" },
+				},
+				meta: { changed: false },
+			});
+
+			const stored = (await service.getProjectGoals()).find((goal) => goal.id === id);
+			expect(stored).toMatchObject({ status });
+			expect(stored).not.toHaveProperty("branch");
+
+			// Releasing is not an activation, so a claim left on a goal that was
+			// archived while in flight can still be cleared without reopening it.
+			await expect(
+				service.execute({ scope: "project", action: "start", id, clear: true }, { source: "cli" }),
+			).resolves.toMatchObject({ ok: true, action: "start" });
+		}
+	});
+
 	it("enforces shared validation and explicit confirmation regardless of caller", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-validation-")),
