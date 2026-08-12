@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # Dispatching an approved plan
 
 A root session can fan out an explicitly approved Project Goal plan without making Stepstone depend on an agent harness, terminal multiplexer, or worktree manager.

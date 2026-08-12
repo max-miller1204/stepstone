@@ -1,0 +1,154 @@
+
+=== Scenario: root session on main, treehouse pool configured for this repo
+
+$ cat /tmp/ss-dispatch-b/root/treehouse.toml
+max_trees = 4
+root = "/tmp/ss-dispatch-b/pool"
+[exit 0]
+
+=== Contract step 1: apply the approved plan
+
+$ ss apply-plan /tmp/ss-dispatch-b/plan.json --json
+{"id":"extract-config-loader","title":"Extract config loader"}
+{"id":"cache-config-lookups","title":"Cache config lookups"}
+[exit 0]
+
+=== Why the branch name is chosen by the driver and not read back from the leased checkout
+leased /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root
+git -C <leased> branch --show-current -> [] (pooled worktree arrives detached)
+$ stepstone project start extract-config-loader --branch "" (what reading it back would send)
+--branch requires a branch name
+[exit 2]
+
+=== Herdr's real agent-name rule, and why the goal ID cannot be the agent name
+$ herdr agent start "root-session-recipe-herdr-treehouse" --kind claude --pane <pane>
+{"code":"invalid_agent_name","message":"agent name must start with a lowercase letter and contain only lowercase letters, digits, '-' or '_' (1-32 characters)"}
+derived name for that goal: ss-root-session-recip-2746030214 (32 chars)
+$ herdr agent start "ss-root-session-recip-2746030214" --kind claude --pane <nonexistent pane>
+{"code":"agent_pane_not_found","message":"agent target pane wX:pNOPE not found"}
+  -> the derived name clears name validation and fails only on the pane
+
+=== Contract step 2: read the ready frontier
+{"id":"extract-config-loader","title":"Extract config loader","updatedAt":"2026-08-12T08:16:22.179Z"}
+{"id":"cache-config-lookups","title":"Cache config lookups","updatedAt":"2026-08-12T08:16:22.179Z"}
+
+=== Contract steps 3-5: lease a workspace, claim, split a pane, run the configured agent in it
+
+--- dispatching extract-config-loader
+$ treehouse get --lease --lease-holder stepstone:extract-config-loader
+  leased /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root
+$ stepstone project start extract-config-loader --branch stepstone/extract-config-loader --expect-updated-at 2026-08-12T08:16:22.179Z
+  claimed
+$ git -C <leased> checkout -b stepstone/extract-config-loader eb46a7f1fca24b1c06d890ad472712c6e76d7909
+$ herdr pane split --pane wX:p1R --direction right --cwd <leased> --no-focus
+  pane wX:p1X hosts the session, cwd /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root
+  derived herdr agent name: ss-extract-config-loa-3633174484 (32 chars)
+$ herdr pane run wX:p1X /tmp/ss-dispatch/fake-agent.sh "<goal prompt>"   # stands in for `herdr agent start/prompt`
+
+--- dispatching cache-config-lookups
+$ treehouse get --lease --lease-holder stepstone:cache-config-lookups
+  leased /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/2/root
+$ stepstone project start cache-config-lookups --branch stepstone/cache-config-lookups --expect-updated-at 2026-08-12T08:16:22.179Z
+  claimed
+$ git -C <leased> checkout -b stepstone/cache-config-lookups eb46a7f1fca24b1c06d890ad472712c6e76d7909
+$ herdr pane split --pane wX:p1R --direction right --cwd <leased> --no-focus
+  pane wX:p1Y hosts the session, cwd /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/2/root
+  derived herdr agent name: ss-cache-config-looku-348311373 (31 chars)
+$ herdr pane run wX:p1Y /tmp/ss-dispatch/fake-agent.sh "<goal prompt>"   # stands in for `herdr agent start/prompt`
+
+=== Two goals are claimed, each in its own leased worktree, each hosted by its own pane
+
+$ ss ready --json
+{"stillReady":[]}
+[exit 0]
+
+$ ss list --json
+[{"id":"extract-config-loader","branch":"stepstone/extract-config-loader"},{"id":"cache-config-lookups","branch":"stepstone/cache-config-lookups"}]
+[exit 0]
+
+$ treehouse status
+1     leased       /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root  (held by stepstone:extract-config-loader)
+                   fish (608087)
+2     leased       /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/2/root  (held by stepstone:cache-config-lookups)
+                   fish (608429)
+[exit 0]
+
+=== Contract step 6: watch the panes, but take only merge evidence as completion
+
+--- pane wX:p1X (extract-config-loader), read back from the session host:
+  | agent finished extract-config-loader on stepstone/extract-config-loader; worklist untouched: 0 worklist changes
+  | …pstone/extract-config-loader
+  | ❯
+
+--- pane wX:p1Y (cache-config-lookups), read back from the session host:
+  | agent finished cache-config-lookups on stepstone/cache-config-lookups; worklist untouched: 0 worklist changes
+  | …nfig-lookups
+  | ❯
+
+=== The worker is done in its pane, but extract-config-loader has no merged PR yet
+  origin/stepstone/extract-config-loader is not an ancestor of origin/main -> no completion
+
+$ ss show extract-config-loader --json
+{"id":"extract-config-loader","status":"open","branch":"stepstone/extract-config-loader"}
+[exit 0]
+
+=== Reviewer merges both PRs, root session verifies, then completes on main
+  extract-config-loader: merged into origin/main and inside the approved plan -> standing consent applies
+
+$ ss complete extract-config-loader --expect-updated-at 2026-08-12T08:16:23.393Z --confirm --json
+{"id":"extract-config-loader","status":"done","completedAt":"2026-08-12T08:16:25.460Z","branch":null}
+[exit 0]
+  cache-config-lookups: merged into origin/main and inside the approved plan -> standing consent applies
+
+$ ss complete cache-config-lookups --expect-updated-at 2026-08-12T08:16:23.969Z --confirm --json
+{"id":"cache-config-lookups","status":"done","completedAt":"2026-08-12T08:16:25.972Z","branch":null}
+[exit 0]
+
+=== Contract step 8: close each pane, return each lease
+
+$ herdr pane close wX:p1X
+{"id":"cli:pane:close","result":{"type":"ok"}}
+[exit 0]
+
+$ treehouse return /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root --if-lease-holder stepstone:extract-config-loader
+🌳 Worktree returned to pool.
+[exit 0]
+
+$ herdr pane close wX:p1Y
+{"id":"cli:pane:close","result":{"type":"ok"}}
+[exit 0]
+
+$ treehouse return /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/2/root --if-lease-holder stepstone:cache-config-lookups
+🌳 Worktree returned to pool.
+[exit 0]
+
+$ treehouse status
+1     available    /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root
+2     available    /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/2/root
+[exit 0]
+
+=== Re-dispatching a goal whose branch survives: checkout -b fails, and the guard releases claim and lease
+
+$ ss reopen extract-config-loader --confirm --json
+{"id":"extract-config-loader","status":"open"}
+[exit 0]
+leased /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root
+claimed extract-config-loader
+$ git -C <leased> checkout -b stepstone/extract-config-loader <base>
+fatal: a branch named 'stepstone/extract-config-loader' already exists
+  checkout -b refused the existing branch -> abandon()
+
+$ ss show extract-config-loader --json
+{"id":"extract-config-loader","status":"open","branch":null}
+[exit 0]
+
+$ treehouse status
+1     available    /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/1/root
+2     available    /tmp/ss-dispatch-b/pool/.treehouse/root-32ef14/2/root
+[exit 0]
+
+=== Final roadmap state
+
+$ ss list --json
+[{"id":"extract-config-loader","status":"open"},{"id":"cache-config-lookups","status":"done"}]
+[exit 0]

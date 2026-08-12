@@ -1,0 +1,185 @@
+
+=== Contract step 1: apply the approved plan once, from the root checkout on main
+
+$ ss apply-plan /tmp/ss-dispatch/demo-serial/plan.json --json
+{"id":"add-greeting-module","title":"Add greeting module","dependsOn":null}
+{"id":"add-farewell-module","title":"Add farewell module","dependsOn":null}
+{"id":"wire-greetings-into-the-cli","title":"Wire greetings into the CLI","dependsOn":["add-greeting-module","add-farewell-module"]}
+[exit 0]
+
+=== Approved plan is the authorization allow-list: add-greeting-module add-farewell-module wire-greetings-into-the-cli 
+
+=== Round 1, contract step 2: read the ready frontier from main
+{"id":"add-greeting-module","title":"Add greeting module","updatedAt":"2026-08-12T08:19:18.049Z"}
+{"id":"add-farewell-module","title":"Add farewell module","updatedAt":"2026-08-12T08:19:18.049Z"}
+
+=== Round 1, contract steps 3-5: dispatch at most --max-parallel 1 of 2 ready goals
+
+--- dispatching add-greeting-module (Add greeting module)
+
+$ git worktree add -b stepstone/add-greeting-module /tmp/ss-dispatch/demo-serial/ws-add-greeting-module HEAD
+$ stepstone project start add-greeting-module --branch stepstone/add-greeting-module --expect-updated-at 2026-08-12T08:19:18.049Z
+  claimed: branch stepstone/add-greeting-module recorded on the goal
+  launched /tmp/ss-dispatch/fake-agent.sh detached in /tmp/ss-dispatch/demo-serial/ws-add-greeting-module (pid 615226, log /tmp/ss-dispatch/state-serial/stepstone/dispatch/add-greeting-module/agent.log)
+
+1 ready goal(s) left undispatched this round by --max-parallel 1
+
+=== Claimed goals leave the ready frontier, so a second driver reading ready cannot double-staff them
+
+$ ss ready --json
+{"stillReady":["add-farewell-module"]}
+[exit 0]
+
+$ ss list --json
+[{"id":"add-greeting-module","branch":"stepstone/add-greeting-module","status":"open"}]
+[exit 0]
+
+=== A second driver holding the pre-claim updatedAt is refused (exit 4), and its workspace is discarded
+
+$ ss start add-greeting-module --branch stepstone/second-driver --expect-updated-at 2026-08-12T08:19:18.049Z
+Project goal add-greeting-module changed from 2026-08-12T08:19:18.049Z to 2026-08-12T08:19:18.983Z.
+[exit 4]
+
+=== Round 1: wait for the detached workers, then check merge evidence, not process exit
+  add-greeting-module: worker pid 615226 exited; log tail: agent finished add-greeting-module on stepstone/add-greeting-module; worklist untouched: 0 worklist changes
+
+=== Worker exit is not completion evidence: the PR for add-greeting-module has not merged yet
+  stepstone/add-greeting-module is not an ancestor of origin/main -> no completion, goal stays claimed
+
+$ ss show add-greeting-module --json
+{"id":"add-greeting-module","status":"open","branch":"stepstone/add-greeting-module"}
+[exit 0]
+
+=== Round 1: reviewer merges each PR (stand-in for the code host), then the root session verifies the merge
+  add-greeting-module: origin/stepstone/add-greeting-module is an ancestor of origin/main -> merged-PR evidence
+
+=== Round 1, contract step 7: complete on main under standing consent, with a freshly read precondition
+
+=== The updatedAt read in step 2 was spent by the claim: reusing it is a conflict (exit 4)
+
+$ ss complete add-greeting-module --expect-updated-at 2026-08-12T08:19:18.049Z --confirm
+Project goal add-greeting-module changed from 2026-08-12T08:19:18.049Z to 2026-08-12T08:19:18.983Z.
+[exit 4]
+
+$ ss complete add-greeting-module --expect-updated-at 2026-08-12T08:19:18.983Z --confirm --json
+{"id":"add-greeting-module","status":"done","completedAt":"2026-08-12T08:19:20.701Z","branch":null}
+[exit 0]
+
+=== Round 1, contract step 8: release each workspace
+
+$ git worktree remove /tmp/ss-dispatch/demo-serial/ws-add-greeting-module
+[exit 0]
+
+=== Round 2, contract step 2: read the ready frontier from main
+{"id":"add-farewell-module","title":"Add farewell module","updatedAt":"2026-08-12T08:19:18.049Z"}
+
+=== Round 2, contract steps 3-5: dispatch at most --max-parallel 1 of 1 ready goals
+
+--- dispatching add-farewell-module (Add farewell module)
+
+$ git worktree add -b stepstone/add-farewell-module /tmp/ss-dispatch/demo-serial/ws-add-farewell-module HEAD
+$ stepstone project start add-farewell-module --branch stepstone/add-farewell-module --expect-updated-at 2026-08-12T08:19:18.049Z
+  claimed: branch stepstone/add-farewell-module recorded on the goal
+  launched /tmp/ss-dispatch/fake-agent.sh detached in /tmp/ss-dispatch/demo-serial/ws-add-farewell-module (pid 615621, log /tmp/ss-dispatch/state-serial/stepstone/dispatch/add-farewell-module/agent.log)
+
+=== Claimed goals leave the ready frontier, so a second driver reading ready cannot double-staff them
+
+$ ss ready --json
+{"stillReady":[]}
+[exit 0]
+
+$ ss list --json
+[{"id":"add-farewell-module","branch":"stepstone/add-farewell-module","status":"open"}]
+[exit 0]
+
+=== Round 2: wait for the detached workers, then check merge evidence, not process exit
+  add-farewell-module: worker pid 615621 exited; log tail: agent finished add-farewell-module on stepstone/add-farewell-module; worklist untouched: 0 worklist changes
+
+=== Round 2: reviewer merges each PR (stand-in for the code host), then the root session verifies the merge
+  add-farewell-module: origin/stepstone/add-farewell-module is an ancestor of origin/main -> merged-PR evidence
+
+=== Round 2, contract step 7: complete on main under standing consent, with a freshly read precondition
+
+$ ss complete add-farewell-module --expect-updated-at 2026-08-12T08:19:21.552Z --confirm --json
+{"id":"add-farewell-module","status":"done","completedAt":"2026-08-12T08:19:22.725Z","branch":null}
+[exit 0]
+
+=== Round 2, contract step 8: release each workspace
+
+$ git worktree remove /tmp/ss-dispatch/demo-serial/ws-add-farewell-module
+[exit 0]
+
+=== Round 3, contract step 2: read the ready frontier from main
+{"id":"wire-greetings-into-the-cli","title":"Wire greetings into the CLI","updatedAt":"2026-08-12T08:19:18.049Z"}
+
+=== Round 3, contract steps 3-5: dispatch at most --max-parallel 1 of 1 ready goals
+
+--- dispatching wire-greetings-into-the-cli (Wire greetings into the CLI)
+
+$ git worktree add -b stepstone/wire-greetings-into-the-cli /tmp/ss-dispatch/demo-serial/ws-wire-greetings-into-the-cli HEAD
+$ stepstone project start wire-greetings-into-the-cli --branch stepstone/wire-greetings-into-the-cli --expect-updated-at 2026-08-12T08:19:18.049Z
+  claimed: branch stepstone/wire-greetings-into-the-cli recorded on the goal
+  launched /tmp/ss-dispatch/fake-agent.sh detached in /tmp/ss-dispatch/demo-serial/ws-wire-greetings-into-the-cli (pid 615927, log /tmp/ss-dispatch/state-serial/stepstone/dispatch/wire-greetings-into-the-cli/agent.log)
+
+=== Claimed goals leave the ready frontier, so a second driver reading ready cannot double-staff them
+
+$ ss ready --json
+{"stillReady":[]}
+[exit 0]
+
+$ ss list --json
+[{"id":"wire-greetings-into-the-cli","branch":"stepstone/wire-greetings-into-the-cli","status":"open"}]
+[exit 0]
+
+=== Round 3: wait for the detached workers, then check merge evidence, not process exit
+  wire-greetings-into-the-cli: worker pid 615927 exited; log tail: agent finished wire-greetings-into-the-cli on stepstone/wire-greetings-into-the-cli; worklist untouched: 0 worklist changes
+
+=== Round 3: reviewer merges each PR (stand-in for the code host), then the root session verifies the merge
+  wire-greetings-into-the-cli: origin/stepstone/wire-greetings-into-the-cli is an ancestor of origin/main -> merged-PR evidence
+
+=== Round 3, contract step 7: complete on main under standing consent, with a freshly read precondition
+
+$ ss complete wire-greetings-into-the-cli --expect-updated-at 2026-08-12T08:19:23.526Z --confirm --json
+{"id":"wire-greetings-into-the-cli","status":"done","completedAt":"2026-08-12T08:19:24.646Z","branch":null}
+[exit 0]
+
+=== Round 3, contract step 8: release each workspace
+
+$ git worktree remove /tmp/ss-dispatch/demo-serial/ws-wire-greetings-into-the-cli
+[exit 0]
+
+=== Round 4, contract step 2: read the ready frontier from main
+
+=== ready is empty: contract step 9 says stop
+
+$ ss waves --json
+{"waves":[],"unreachable":[]}
+[exit 0]
+
+=== Abandonment path: claim a goal, then release it with start --clear instead of completing it
+
+$ ss reopen wire-greetings-into-the-cli --confirm --json
+{"id":"wire-greetings-into-the-cli","status":"open"}
+[exit 0]
+
+$ ss start wire-greetings-into-the-cli --branch stepstone/abandoned --expect-updated-at 2026-08-12T08:19:25.465Z --json
+{"id":"wire-greetings-into-the-cli","branch":"stepstone/abandoned"}
+[exit 0]
+
+$ ss ready --json
+{"readyWhileClaimed":[]}
+[exit 0]
+
+$ ss start wire-greetings-into-the-cli --clear --json
+{"id":"wire-greetings-into-the-cli","branch":null,"status":"open"}
+[exit 0]
+
+$ ss ready --json
+{"readyAfterClear":["wire-greetings-into-the-cli"]}
+[exit 0]
+
+=== Final roadmap state
+
+$ ss list --json
+[{"id":"add-greeting-module","status":"done"},{"id":"add-farewell-module","status":"done"},{"id":"wire-greetings-into-the-cli","status":"open"}]
+[exit 0]
