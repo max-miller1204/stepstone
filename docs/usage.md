@@ -41,6 +41,7 @@ Run `init` inside the target repository or pass `--cwd <dir>`.
 
 After refreshing the block, `init` prints the canonical optional skill installation command and MCP client process configuration.
 It does not execute the skill installer or edit MCP client configuration because installation scope and configuration location are choices owned by each harness.
+Neither line it prints names the Claude Code plugin, which bundles both of those integrations into one install; see [docs/skill.md](skill.md#claude-code-plugin-versus-the-standalone-skill).
 
 ## Reading the roadmap
 

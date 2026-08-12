@@ -1,11 +1,11 @@
 /**
  * The single command contract for the stepstone CLI and MCP server.
  *
- * CLI usage text, the command reference in docs/cli.md, the installable agent
- * skill in .claude/skills/stepstone/SKILL.md, the marker-delimited block
- * `project init` writes into a repository's AGENTS.md, and MCP resource and
- * tool metadata are all rendered from this structure so they cannot drift from
- * each other or from the implemented command surface.
+ * CLI usage text, the command reference in docs/cli.md, both installable agent
+ * skills, the Claude Code plugin manifest, marketplace catalog, MCP config and
+ * commands, the marker-delimited block `project init` writes into a repository's
+ * AGENTS.md, and MCP resource and tool metadata are all rendered from this
+ * structure so they cannot drift from each other or the implemented surface.
  */
 
 export interface CliActionContract {
@@ -16,6 +16,8 @@ export interface CliActionContract {
 	confirmRequired?: boolean;
 	/** Takes over the terminal until the user quits; agents must never run it. */
 	interactive?: boolean;
+	/** Generate this action as an installable Claude Code slash command. */
+	claudePlugin?: "read-only" | "human-interactive";
 	/** Expose this command through the matching MCP primitive. */
 	mcp?: "resource" | "tool";
 	/** Agent workflow attached to the one action that atomically applies an approved capture plan. */
@@ -109,6 +111,64 @@ export const DOCS_PATH = "docs/cli.md";
  */
 export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 
+/** Repository-relative paths of the installable Claude Code plugin artifacts. */
+export const CLAUDE_PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json";
+export const CLAUDE_PLUGIN_MARKETPLACE_PATH = ".claude-plugin/marketplace.json";
+export const CLAUDE_PLUGIN_MCP_PATH = ".mcp.json";
+export const CLAUDE_PLUGIN_COMMANDS_DIRECTORY = "commands";
+export const CLAUDE_PLUGIN_SKILL_PATH = `skills/${BINARY}/SKILL.md`;
+/** Private environment handoff from Claude Code to the bundled MCP process. */
+export const CLAUDE_PLUGIN_PROJECT_ROOT_ENV = "STEPSTONE_PLUGIN_PROJECT_ROOT";
+
+/**
+ * The two placeholders Claude Code substitutes before it starts a plugin's MCP
+ * server: the directory the plugin was cached into, and the repository the user
+ * is working in. Nothing generated here may spell them a second time, because a
+ * misspelled placeholder survives every JSON check and only fails when a real
+ * install tries to launch the server against a path that was never expanded.
+ */
+export const CLAUDE_PLUGIN_ROOT_PLACEHOLDER = `\${CLAUDE_PLUGIN_ROOT}`;
+export const CLAUDE_PROJECT_DIR_PLACEHOLDER = `\${CLAUDE_PROJECT_DIR}`;
+
+/** One MCP server process as the plugin configuration declares it. */
+export interface ClaudePluginMcpServer {
+	command: string;
+	args: string[];
+	env: Record<string, string>;
+}
+
+/**
+ * Expands the plugin placeholders the way Claude Code's MCP launcher does, so a
+ * caller that wants to actually start the configured server resolves it through
+ * the contract that wrote the placeholders rather than re-deriving them.
+ */
+export function resolveClaudePluginMcpServer(
+	server: ClaudePluginMcpServer,
+	locations: { pluginRoot: string; projectDir: string },
+): ClaudePluginMcpServer {
+	const expand = (value: string): string =>
+		value
+			.replaceAll(CLAUDE_PLUGIN_ROOT_PLACEHOLDER, locations.pluginRoot)
+			.replaceAll(CLAUDE_PROJECT_DIR_PLACEHOLDER, locations.projectDir);
+	return {
+		command: expand(server.command),
+		args: server.args.map((argument) => expand(argument)),
+		env: Object.fromEntries(Object.entries(server.env).map(([key, value]) => [key, expand(value)])),
+	};
+}
+
+/** Package metadata consumed by the plugin renderers. */
+export interface ClaudePluginPackageMetadata {
+	name: string;
+	version: string;
+	description: string;
+	author: string | { name: string; email?: string; url?: string };
+	license: string;
+	repository: string | { url: string };
+	homepage: string;
+	keywords: readonly string[];
+}
+
 /**
  * Stable delimiters around the only bytes Stepstone owns in a repository's AGENTS.md.
  *
@@ -164,6 +224,7 @@ export const CLI_COMMAND_CONTRACT = {
 			usage: "list",
 			summary: "Show a compact bounded list of project goals",
 			mcp: "resource",
+			claudePlugin: "read-only",
 		},
 		{
 			name: "show",
@@ -182,24 +243,28 @@ export const CLI_COMMAND_CONTRACT = {
 			usage: "next",
 			summary: "Show the one goal to start next, the first ready goal in file order",
 			mcp: "resource",
+			claudePlugin: "read-only",
 		},
 		{
 			name: "ready",
 			usage: "ready",
 			summary: "List every unblocked, unclaimed open goal: the whole parallel frontier",
 			mcp: "resource",
+			claudePlugin: "read-only",
 		},
 		{
 			name: "waves",
 			usage: "waves",
 			summary: "Print unfinished goals in dependency layers, earliest first",
 			mcp: "resource",
+			claudePlugin: "read-only",
 		},
 		{
 			name: "ui",
 			usage: "ui",
 			summary: "Open the interactive goal board for a human at the keyboard",
 			interactive: true,
+			claudePlugin: "human-interactive",
 		},
 		{
 			name: "add",
@@ -641,7 +706,7 @@ export function renderCliUsage(): string {
  * form so the same file works from any repository without stale-cache selection;
  * scope is chosen at install time, never in the content.
  */
-export function renderSkillMarkdown(): string {
+export function renderSkillMarkdown(options: { userInvocable?: boolean } = {}): string {
 	const contract = CLI_COMMAND_CONTRACT;
 	const publishedBinary = `${contract.binary}@latest`;
 	const lifecycleActions = contract.actions.filter((action) => action.confirmRequired);
@@ -689,6 +754,7 @@ export function renderSkillMarkdown(): string {
 		"---",
 		`name: ${contract.binary}`,
 		`description: ${JSON.stringify(contract.skillDescription)}`,
+		...(options.userInvocable === false ? ["user-invocable: false"] : []),
 		"---",
 		"",
 		`<!-- Generated from src/cli-contract.ts by ${GENERATOR_PATH}. Do not edit manually. -->`,
@@ -793,6 +859,162 @@ export function renderSkillMarkdown(): string {
 		"  This reports the package's runtime version directly instead of requiring inspection of the npx cache.",
 		"",
 	].join("\n");
+}
+
+export interface GeneratedClaudePluginArtifact {
+	path: string;
+	content: string;
+}
+
+/** The contract actions deliberately exposed as namespaced Claude Code commands. */
+export function claudePluginActions(): readonly (CliActionContract & {
+	claudePlugin: NonNullable<CliActionContract["claudePlugin"]>;
+})[] {
+	const actions: readonly CliActionContract[] = CLI_COMMAND_CONTRACT.actions;
+	return actions.filter(
+		(
+			action,
+		): action is CliActionContract & {
+			claudePlugin: NonNullable<CliActionContract["claudePlugin"]>;
+		} => action.claudePlugin !== undefined,
+	);
+}
+
+function packageAuthor(author: ClaudePluginPackageMetadata["author"]): {
+	name: string;
+	email?: string;
+	url?: string;
+} {
+	return typeof author === "string" ? { name: author } : author;
+}
+
+function packageRepositoryUrl(repository: ClaudePluginPackageMetadata["repository"]): string {
+	const url = typeof repository === "string" ? repository : repository.url;
+	return url.startsWith("git+") ? url.slice(4) : url;
+}
+
+function renderGeneratedJson(value: unknown): string {
+	return `${JSON.stringify(value, null, "\t")}\n`;
+}
+
+function assertPluginPackageMetadata(metadata: ClaudePluginPackageMetadata): void {
+	if (metadata.name !== CLI_COMMAND_CONTRACT.binary) {
+		throw new Error(
+			`Claude plugin package name ${JSON.stringify(metadata.name)} does not match contract binary ${JSON.stringify(CLI_COMMAND_CONTRACT.binary)}`,
+		);
+	}
+}
+
+/** Render the official Claude Code plugin manifest from package metadata. */
+export function renderClaudePluginManifest(metadata: ClaudePluginPackageMetadata): string {
+	assertPluginPackageMetadata(metadata);
+	const displayName = metadata.name.charAt(0).toUpperCase() + metadata.name.slice(1);
+	return renderGeneratedJson({
+		name: metadata.name,
+		displayName,
+		version: metadata.version,
+		description: metadata.description,
+		author: packageAuthor(metadata.author),
+		homepage: metadata.homepage,
+		repository: packageRepositoryUrl(metadata.repository),
+		license: metadata.license,
+		keywords: metadata.keywords,
+	});
+}
+
+/** Render the repository catalog used by `/plugin marketplace add`. */
+export function renderClaudePluginMarketplace(metadata: ClaudePluginPackageMetadata): string {
+	assertPluginPackageMetadata(metadata);
+	const author = packageAuthor(metadata.author);
+	return renderGeneratedJson({
+		name: metadata.name,
+		description: `Install ${metadata.name} Project Goals, read commands, skill guidance, and MCP integration for Claude Code.`,
+		owner: author,
+		plugins: [
+			{
+				name: metadata.name,
+				source: { source: "npm", package: metadata.name },
+				description: metadata.description,
+				category: "productivity",
+				tags: ["project-goals", "roadmap", "coding-agents"],
+			},
+		],
+	});
+}
+
+/** The MCP server process the plugin declares, before Claude Code expands it. */
+function claudePluginMcpServer(): ClaudePluginMcpServer {
+	return {
+		command: "node",
+		args: [`${CLAUDE_PLUGIN_ROOT_PLACEHOLDER}/dist/mcp.js`],
+		env: {
+			[CLAUDE_PLUGIN_PROJECT_ROOT_ENV]: CLAUDE_PROJECT_DIR_PLACEHOLDER,
+		},
+	};
+}
+
+/** Render the cache-safe MCP process configuration at the plugin root. */
+export function renderClaudePluginMcpConfig(): string {
+	return renderGeneratedJson({
+		mcpServers: {
+			[CLI_COMMAND_CONTRACT.binary]: claudePluginMcpServer(),
+		},
+	});
+}
+
+/** Render one flat Claude Code command definition from its contract action. */
+export function renderClaudePluginCommand(
+	action: CliActionContract & { claudePlugin: NonNullable<CliActionContract["claudePlugin"]> },
+): string {
+	const contract = CLI_COMMAND_CONTRACT;
+	const generatedNotice = `<!-- Generated from src/cli-contract.ts by ${GENERATOR_PATH}. Do not edit manually. -->`;
+	if (action.claudePlugin === "human-interactive") {
+		return [
+			"---",
+			`description: ${JSON.stringify(action.summary)}`,
+			"disable-model-invocation: true",
+			"---",
+			"",
+			generatedNotice,
+			"This command is only for a human at the keyboard.",
+			"Return the following command verbatim so the user can paste it into the current repository's interactive terminal:",
+			`node "${CLAUDE_PLUGIN_ROOT_PLACEHOLDER}/dist/cli.js" ${contract.scope} ${action.usage}`,
+			"Do not run it inside Claude Code's Bash tool because that process does not own the user's TTY.",
+			"The board may mutate Project Goals only through its existing explicit keyboard interactions.",
+			"Do not translate this request into a non-interactive mutation or invoke any mutation slash command.",
+			"",
+		].join("\n");
+	}
+	return [
+		"---",
+		`description: ${JSON.stringify(action.summary)}`,
+		"---",
+		"",
+		generatedNotice,
+		"",
+		`Read the bundled Stepstone MCP resource \`${contract.binary}://worklist/${action.name}\`, which performs the deterministic read-only \`${contract.binary} ${contract.scope} ${action.usage}\` action for the current repository.`,
+		"Return the resource's result without changing its order or selecting a different project action.",
+		"This command is read-only.",
+		"Do not call an MCP tool, run a mutating Stepstone action, or modify the worklist file directly.",
+		"",
+	].join("\n");
+}
+
+/** Every generated file that makes the package root an installable Claude Code plugin. */
+export function renderClaudePluginArtifacts(
+	metadata: ClaudePluginPackageMetadata,
+): readonly GeneratedClaudePluginArtifact[] {
+	const commandArtifacts = claudePluginActions().map((action) => ({
+		path: `${CLAUDE_PLUGIN_COMMANDS_DIRECTORY}/${action.name}.md`,
+		content: renderClaudePluginCommand(action),
+	}));
+	return [
+		{ path: CLAUDE_PLUGIN_MANIFEST_PATH, content: renderClaudePluginManifest(metadata) },
+		{ path: CLAUDE_PLUGIN_MARKETPLACE_PATH, content: renderClaudePluginMarketplace(metadata) },
+		{ path: CLAUDE_PLUGIN_MCP_PATH, content: renderClaudePluginMcpConfig() },
+		...commandArtifacts,
+		{ path: CLAUDE_PLUGIN_SKILL_PATH, content: renderSkillMarkdown({ userInvocable: false }) },
+	];
 }
 
 /** The generated command reference and agent guidance document, written to docs/cli.md. */

@@ -10,6 +10,9 @@
 		"tasks",
 		"cli",
 		"agent",
+		"claude-code",
+		"claude-code-plugin",
+		"mcp",
 		"pi-package",
 		"pi",
 		"extension"
@@ -32,7 +35,12 @@
 		"!docs/development.md",
 		"!docs/releasing.md",
 		".claude/skills/stepstone",
+		".claude-plugin",
+		".mcp.json",
+		"commands",
+		"skills/stepstone",
 		"README.md",
+		"npm-shrinkwrap.json",
 		"package.json"
 	],
 	"bin": {
@@ -59,6 +67,7 @@
 		"imports:check": "node ./scripts/cli-import-graph.ts",
 		"no-pi-install:check": "node ./scripts/no-pi-install-check.ts",
 		"prepack": "npm run build",
+		"version": "npm run docs && git add .claude-plugin/plugin.json",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",

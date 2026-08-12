@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-45 goals: 15 open, 27 done, 3 archived.
+45 goals: 14 open, 28 done, 3 archived.
 
 ## Orchestrator
 
@@ -214,7 +214,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `harness-identity-rename-off-the-pi` (done), `worklist-path-move-the-goal-file-out-of` (done).
 
-- **[open]** claude-plugin: ship skill, commands, and MCP as one plugin - `claude-plugin-ship-skill-commands-and`
+- **[done]** claude-plugin: ship skill, commands, and MCP as one plugin - `claude-plugin-ship-skill-commands-and`
 
   Claude Code installation is currently a two-step that installs one of the three useful surfaces: `npx skills add max-miller1204/stepstone --skill worklist -g` brings the skill and nothing else, and the README has to explain why installing the npm package does not install the skill. Package the Claude Code integration as a single installable plugin carrying the generated skill, the MCP server registration, and slash commands for the operations a human runs by hand rather than through the model.
 

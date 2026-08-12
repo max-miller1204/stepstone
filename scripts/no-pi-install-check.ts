@@ -8,9 +8,9 @@
  * someone running `npx` on the published name without Pi - the install this
  * package's own agent skill prescribes. So the check refuses to trust the local
  * tree: it packs the real tarball, installs it into a scratch directory with
- * no dev dependencies and no Pi packages, and drives every executable the
- * manifest publishes, asserting exit codes, `--json` envelopes, and JSON-RPC
- * replies rather than only that a process started.
+ * no dev dependencies and no Pi packages, and drives every executable plus the
+ * installed Claude Code plugin MCP configuration, asserting exit codes,
+ * `--json` envelopes, and JSON-RPC replies rather than only that a process started.
  *
  * Which executables those are comes from package.json's `bin` map rather than
  * from a list written here, so a newly published bin cannot be packed and left
@@ -27,8 +27,14 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
+import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {
+	CLAUDE_PLUGIN_MCP_PATH,
+	CLI_COMMAND_CONTRACT,
+	type ClaudePluginMcpServer,
+	renderClaudePluginMcpConfig,
+	resolveClaudePluginMcpServer,
+} from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -326,12 +332,24 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	assert.match(board.stderr, /needs an interactive terminal/);
 }
 
+/** How one MCP process is started: as a bin on PATH, or as the plugin declares it. */
+interface McpProcess {
+	/** The executable to start; the bin's path, or whatever the plugin config names. */
+	binPath: string;
+	args?: string[];
+	/** The working directory the server resolves the repository from. */
+	cwd: string;
+	env?: Record<string, string>;
+}
+
 /** Initializes the packaged stdio server and proves reads and writes survive a Pi-free install. */
-async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
+async function exerciseMcp({ binPath, args = [], cwd, env }: McpProcess): Promise<void> {
 	const command = basename(binPath);
 	const transport = new StdioClientTransport({
 		command: binPath,
-		cwd: workspace,
+		args,
+		cwd,
+		env,
 		stderr: "pipe",
 	});
 	let stderr = "";
@@ -379,6 +397,33 @@ async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
 	if (failure !== undefined) throw failure;
 }
 
+/** Starts the installed tarball through the exact MCP process configuration Claude Code reads. */
+async function exerciseClaudePluginMcp(pluginRoot: string, workspace: string): Promise<void> {
+	const installedPath = join(pluginRoot, CLAUDE_PLUGIN_MCP_PATH);
+	const config = JSON.parse(await readFile(installedPath, "utf8")) as {
+		mcpServers: Record<string, ClaudePluginMcpServer>;
+	};
+	// What the tarball carries has to be what this source renders: a plugin
+	// config generated here but stale or unpacked in the install is a server
+	// Claude Code cannot start, and the install is the only place that shows it.
+	assert.deepEqual(
+		config,
+		JSON.parse(renderClaudePluginMcpConfig()),
+		`${CLAUDE_PLUGIN_MCP_PATH} in the installed package is not what src/cli-contract.ts renders`,
+	);
+	const declared = config.mcpServers[binary];
+	assert.ok(declared, "installed Claude plugin config must declare the Stepstone MCP server");
+	const server = resolveClaudePluginMcpServer(declared, { pluginRoot, projectDir: workspace });
+	await exerciseMcp({
+		binPath: server.command,
+		args: server.args,
+		// Claude Code starts a plugin server from the plugin's own cache directory,
+		// so the repository can only be found through the expanded environment.
+		cwd: pluginRoot,
+		env: { ...getDefaultEnvironment(), ...server.env },
+	});
+}
+
 /**
  * How each published executable is driven once it is installed, keyed by the
  * command name the manifest's `bin` map puts on a user's PATH. The manifest is
@@ -387,7 +432,7 @@ async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
  */
 const BIN_EXERCISES: Record<string, BinExercise> = {
 	[binary]: exerciseCli,
-	[`${binary}-mcp`]: exerciseMcp,
+	[`${binary}-mcp`]: (binPath, workspace) => exerciseMcp({ binPath, cwd: workspace }),
 };
 
 const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));
@@ -433,6 +478,12 @@ try {
 		// pi-lens-ignore: await-in-loop
 		await exercise(join(installDir, "node_modules", ".bin", command), workspace, version);
 	}
+
+	const pluginWorkspace = join(scratch, "workspace-claude-plugin");
+	await mkdir(pluginWorkspace, { recursive: true });
+	await run("git", ["init", "-q", "."], pluginWorkspace);
+	step("Driving the installed Claude Code plugin MCP config");
+	await exerciseClaudePluginMcp(join(installDir, "node_modules", name), pluginWorkspace);
 
 	succeeded = true;
 	step(`${name} ${version} runs from a Pi-free install.`);

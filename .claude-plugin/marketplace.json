@@ -1,0 +1,23 @@
+{
+	"name": "stepstone",
+	"description": "Install stepstone Project Goals, read commands, skill guidance, and MCP integration for Claude Code.",
+	"owner": {
+		"name": "Max Miller"
+	},
+	"plugins": [
+		{
+			"name": "stepstone",
+			"source": {
+				"source": "npm",
+				"package": "stepstone"
+			},
+			"description": "A shared roadmap of project goals for coding agents and the humans working beside them.",
+			"category": "productivity",
+			"tags": [
+				"project-goals",
+				"roadmap",
+				"coding-agents"
+			]
+		}
+	]
+}

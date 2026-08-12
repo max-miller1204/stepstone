@@ -7,6 +7,8 @@ The integration is cross-harness: read operations are MCP resources, mutations a
 
 ## Configure an MCP client
 
+Claude Code is the exception: its [plugin](skill.md#claude-code-plugin-versus-the-standalone-skill) bundles this server already configured, so installing the plugin replaces the configuration below.
+
 The published package contains two executables.
 `stepstone` is the command-line interface that npm selects for a command such as `npx -y stepstone@latest project list`.
 `stepstone-mcp` is the stdio MCP server, so an MCP client must select that bin explicitly:
@@ -48,10 +50,13 @@ A manually launched server normally appears idle because it is waiting for an MC
 At startup, the server resolves the real Git root containing its process working directory.
 If the working directory is not inside a Git repository, operations return an `UNAVAILABLE` application-service envelope instead of reading an unrelated file.
 
+The Claude Code plugin is the one client that does not start the server inside the repository: Claude Code runs a plugin's server from the plugin's own cache directory, so the bundled configuration hands the project directory over in the `STEPSTONE_PLUGIN_PROJECT_ROOT` environment variable, and the server resolves the repository and any relative override from that directory instead of from its process working directory.
+It is that plugin's private handoff rather than a setting to configure: every other client selects the repository with `cwd`.
+
 Within that repository, every resource read and tool mutation resolves the goal file again through the one resolution order every interface shares, described in [storage.md](storage.md#which-file-a-repository-has).
 Re-resolving before every operation means that a file appearing after the server started, such as after a branch change, is used according to the same canonical rules.
 
-The server takes no flags, so `$STEPSTONE_WORKLIST` is its only override; give it an absolute value in client configuration, because a relative one is resolved from the server process working directory.
+The server takes no flags, so `$STEPSTONE_WORKLIST` is its only goal-file override; give it an absolute value in client configuration, because a relative one is resolved from the directory the server resolves the repository from.
 When both the canonical and the legacy file exist, `meta.shadowedWorklistPath` on every envelope names the file being passed over, which is the whole of the warning an MCP client gets, because the server has no prose channel beside its JSON responses.
 The server never migrates a file: `migrate_path` stays a CLI action and is not exposed as an MCP tool.
 See [storage.md](storage.md) for the file schema, locking, revisions, and migration behavior.

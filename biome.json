@@ -17,6 +17,14 @@
 		"indentStyle": "tab",
 		"lineWidth": 110
 	},
+	"overrides": [
+		{
+			"includes": [".claude-plugin/*.json", ".mcp.json"],
+			"formatter": {
+				"enabled": false
+			}
+		}
+	],
 	"linter": {
 		"enabled": true,
 		"rules": {

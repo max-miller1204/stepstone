@@ -398,9 +398,10 @@
         "harness-identity-rename-off-the-pi",
         "mcp-server-expose-the-worklist-over-mcp"
       ],
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-08T23:53:23.024Z",
-      "updatedAt": "2026-08-09T20:55:03.984Z"
+      "updatedAt": "2026-08-12T03:23:43.711Z",
+      "completedAt": "2026-08-12T03:23:43.711Z"
     },
     {
       "id": "link-flag-write-the-reserved-links",
@@ -594,5 +595,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 248
+  "revision": 249
 }

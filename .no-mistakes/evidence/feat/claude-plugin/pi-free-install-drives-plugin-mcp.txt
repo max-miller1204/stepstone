@@ -1,0 +1,15 @@
+
+> stepstone@0.5.0 no-pi-install:check
+> node ./scripts/no-pi-install-check.ts
+
+Packing the publishable tarball
+Installing stepstone-0.5.0.tgz with no dev dependencies and no Pi
+  installed 114 packages, none from Pi
+Driving every published bin: stepstone, stepstone-mcp
+  list, add, show, find
+  next, ready, waves
+  apply-plan --dry-run writes nothing
+  guarded mutation refuses, then lands with --confirm
+  typed failures instead of stack traces
+Driving the installed Claude Code plugin MCP config
+stepstone 0.5.0 runs from a Pi-free install.
