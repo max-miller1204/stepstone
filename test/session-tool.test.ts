@@ -823,6 +823,21 @@ describe("registered model tool", () => {
 		return { tool, handlers };
 	}
 
+	it("delivers the complete canonical capture workflow in the model prompt", () => {
+		const { tool } = registerExtension();
+		const guidelines = tool.promptGuidelines as string[];
+		const action = CLI_COMMAND_CONTRACT.actions.find(({ name }) => name === "apply-plan");
+		if (!action?.captureWorkflow) throw new Error("apply-plan capture workflow is missing");
+
+		const captureGuideline = guidelines.find((guideline) =>
+			action.captureWorkflow?.steps.every((step) => guideline.includes(step)),
+		);
+		expect(captureGuideline).toContain("worklist");
+		expect(guidelines).toContain(
+			"Never set worklist confirm=true for a project lifecycle action unless the user explicitly requested that exact completion, reopening, archival, or deletion.",
+		);
+	});
+
 	type ToolExecute = (
 		id: string,
 		params: Record<string, unknown>,
