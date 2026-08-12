@@ -703,6 +703,7 @@ describe("single CLI command contract", () => {
 			"apply-plan",
 			"update",
 			"move",
+			"start",
 			"set_active",
 			"complete",
 			"reopen",

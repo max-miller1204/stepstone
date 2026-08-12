@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, resolve } from "node:path";
@@ -100,6 +101,8 @@ interface CliInvocation {
 	dependsOn?: string[];
 	/** Informational URLs; an empty entry clears every link. */
 	links?: string[];
+	branch?: string;
+	clear: boolean;
 	expectedUpdatedAt?: string;
 	/** Report what a mutation would do without writing it. */
 	dryRun: boolean;
@@ -234,6 +237,8 @@ interface ParsedCliHead {
 	dryRun: boolean;
 	group?: string;
 	expectedUpdatedAt?: string;
+	branch?: string;
+	clear: boolean;
 	json: boolean;
 	confirm: boolean;
 	cwd: string;
@@ -252,6 +257,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	let directDescription: string | undefined;
 	let appendDescription: string | undefined;
 	let group: string | undefined;
+	let branch: string | undefined;
+	let clear = false;
 	let expectedUpdatedAt: string | undefined;
 	let cwd = process.cwd();
 	let file: string | undefined;
@@ -312,6 +319,13 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 				);
 				index++;
 				break;
+			case "--branch":
+				branch = readFlagValue(head, index, part, "a branch name");
+				index++;
+				break;
+			case "--clear":
+				clear = true;
+				break;
 			case "--expect-updated-at":
 				expectedUpdatedAt = readFlagValue(head, index, part, "a timestamp");
 				index++;
@@ -346,6 +360,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		append,
 		dryRun,
 		group,
+		branch,
+		clear,
 		expectedUpdatedAt,
 		json,
 		confirm,
@@ -1253,6 +1269,43 @@ async function run(invocation: CliInvocation): Promise<void> {
 			const goal = envelope.ok ? envelope.result.goal : undefined;
 			if (!goal) throw new Error(`Updated Project Goal ${id} was not returned`);
 			report(invocation, envelope, `Updated project goal ${goal.id}`);
+			return;
+		}
+		case "start": {
+			const id = requireId(invocation);
+			if (invocation.clear && invocation.branch !== undefined) {
+				fail(`project start cannot combine --branch with --clear\n\n${USAGE}`, 2);
+			}
+			let branch = invocation.branch;
+			if (!invocation.clear && branch === undefined) {
+				try {
+					branch = execSync("git branch --show-current", {
+						cwd: invocation.cwd,
+						encoding: "utf8",
+						stdio: ["ignore", "pipe", "ignore"],
+					}).trim();
+				} catch {
+					branch = "";
+				}
+				if (!branch) fail(`project start needs --branch when Git has no current branch\n\n${USAGE}`, 1);
+			}
+			const envelope = await executeCliOperation(service, {
+				scope: "project",
+				action: "start",
+				id,
+				branch,
+				clear: invocation.clear,
+				expectedUpdatedAt: invocation.expectedUpdatedAt,
+			});
+			const goal = envelope.ok ? envelope.result.goal : undefined;
+			if (!goal) throw new Error(`Started Project Goal ${id} was not returned`);
+			report(
+				invocation,
+				envelope,
+				invocation.clear
+					? `Released project goal ${goal.id}`
+					: `Started project goal ${goal.id} on ${goal.branch}`,
+			);
 			return;
 		}
 		case "set_active":

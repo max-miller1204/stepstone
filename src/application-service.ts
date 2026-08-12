@@ -22,6 +22,7 @@ import {
 	ProjectGoalPlanValidationError,
 	type ProjectGoalUpdate,
 	readProjectGoals,
+	setProjectGoalBranch,
 	transitionProjectGoal,
 	updateProjectGoal,
 } from "./project-mutations.ts";
@@ -68,6 +69,10 @@ export interface WorklistOperation {
 	appendDescription?: string;
 	/** Project Goal only: the section it belongs to. The empty string clears it. */
 	group?: string;
+	/** Project start only: branch claiming the goal. */
+	branch?: string;
+	/** Project start only: remove an existing branch claim instead of setting one. */
+	clear?: boolean;
 	/** Project Goal only: the complete set of informational HTTP(S) URLs. An empty array clears it. */
 	links?: string[];
 	/**
@@ -437,6 +442,7 @@ function normalizeDescriptionUpdate(operation: WorklistOperation): ProjectGoalUp
 const READ_ACTIONS = new Set(["list"]);
 const EXPECTED_UPDATED_AT_ACTIONS = new Set([
 	"update",
+	"start",
 	"set_active",
 	"complete",
 	"reopen",
@@ -444,7 +450,6 @@ const EXPECTED_UPDATED_AT_ACTIONS = new Set([
 	"delete",
 ]);
 
-/** Project actions that accept a section name, or a set of dependency edges. */
 const GROUP_ACTIONS = new Set(["add", "update"]);
 const DEPENDS_ON_ACTIONS = GROUP_ACTIONS;
 
@@ -511,6 +516,12 @@ function rejectUnsupportedProjectOptions(operation: WorklistOperation): void {
 		throw validationError("links is only supported for project add and update.", {
 			fields: ["links"],
 			resolution: "use-project-add-or-update",
+		});
+	}
+	if ((operation.branch !== undefined || operation.clear !== undefined) && operation.action !== "start") {
+		throw validationError("branch and clear are only supported for project start.", {
+			fields: ["branch", "clear"],
+			resolution: "use-project-start",
 		});
 	}
 }
@@ -1202,6 +1213,8 @@ export class WorklistApplicationService {
 				return this.activateProjectGoal(projectPath, operation, options);
 			case "set_active":
 				return this.activateProjectGoal(projectPath, operation, options);
+			case "start":
+				return this.startProjectGoal(projectPath, operation, options);
 			case "complete":
 			case "reopen":
 			case "archive":
@@ -1228,6 +1241,7 @@ export class WorklistApplicationService {
 							"move",
 							"reopen",
 							"set_active",
+							"start",
 							"set_status",
 							"update",
 						],
@@ -1374,6 +1388,50 @@ export class WorklistApplicationService {
 			// reported as changed: a reader watching for edits should see none.
 			changed: true,
 			changedGoalIds: [],
+		};
+	}
+
+	private async startProjectGoal(
+		projectPath: string,
+		operation: WorklistOperation,
+		options: ProjectMutationOptions,
+	): Promise<ProjectExecutionResult> {
+		if (!operation.id) {
+			throw validationError("id is required for project start.", {
+				fields: ["id"],
+				resolution: "provide-project-goal-id",
+			});
+		}
+		if (operation.clear === true && operation.branch !== undefined) {
+			throw validationError("Project start cannot combine branch with clear.", {
+				fields: ["branch", "clear"],
+				resolution: "choose-branch-or-clear",
+			});
+		}
+		const branch = operation.clear === true ? undefined : operation.branch?.trim();
+		if (operation.clear !== true && !branch) {
+			throw validationError("branch is required for project start unless clear is true.", {
+				fields: ["branch"],
+				resolution: "provide-branch",
+			});
+		}
+		if (branch?.includes("\n") || branch?.includes("\r")) {
+			throw validationError("branch must fit on one line.", {
+				fields: ["branch"],
+				resolution: "provide-valid-branch",
+			});
+		}
+		const { goal, goals, revision, changed } = await setProjectGoalBranch(
+			projectPath,
+			operation.id,
+			branch,
+			options,
+		);
+		return {
+			result: { scope: "project", action: "start", goal, goals },
+			revision,
+			changed,
+			changedGoalIds: changed ? [goal.id] : [],
 		};
 	}
 

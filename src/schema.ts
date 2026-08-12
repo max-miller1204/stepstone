@@ -11,6 +11,7 @@ const ActionSchema: TUnsafe<
 	| "apply-plan"
 	| "move"
 	| "update"
+	| "start"
 	| "set_status"
 	| "delete"
 	| "complete"
@@ -23,6 +24,7 @@ const ActionSchema: TUnsafe<
 		"add",
 		"apply-plan",
 		"move",
+		"start",
 		"update",
 		"set_status",
 		"delete",
@@ -33,7 +35,7 @@ const ActionSchema: TUnsafe<
 	] as const,
 	{
 		description:
-			"Action to perform. 'apply-plan' validates or atomically adds a project plan. 'move' reorders a Session Task in its queue or a Project Goal in the roadmap. 'complete', 'reopen', 'archive', and 'delete' on project goals require confirm=true.",
+			"Action to perform. 'apply-plan' validates or atomically adds a project plan. 'move' reorders a Session Task in its queue or a Project Goal in the roadmap. 'start' claims or releases a Project Goal branch. 'complete', 'reopen', 'archive', and 'delete' on project goals require confirm=true.",
 	},
 );
 
@@ -103,6 +105,16 @@ export const WorklistParamsSchema = Type.Object({
 		Type.Array(Type.String(), {
 			description:
 				"Informational absolute HTTP or HTTPS URLs for project goal add/update. Replaces the whole set; an empty array clears it. Accepted URLs are stored in canonical form and duplicates collapse. Session tasks do not support links.",
+		}),
+	),
+	branch: Type.Optional(
+		Type.String({
+			description: "Branch claiming a Project Goal for project start. Omit only when clear=true.",
+		}),
+	),
+	clear: Type.Optional(
+		Type.Boolean({
+			description: "For project start, remove the existing branch claim instead of setting one.",
 		}),
 	),
 	plan: Type.Optional(
