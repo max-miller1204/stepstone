@@ -271,9 +271,11 @@ describe("published stepstone package", () => {
 				artifact.path,
 			);
 		}
-		expect(paths, "the isolated Claude plugin cache needs its runtime dependency lock").toContain(
-			"npm-shrinkwrap.json",
-		);
+		for (const dependency of ["@modelcontextprotocol/sdk", "proper-lockfile", "zod"]) {
+			expect(paths, `the isolated Claude plugin cache needs bundled ${dependency}`).toContain(
+				`node_modules/${dependency}/package.json`,
+			);
+		}
 		expect(paths, "README.md must be packaged; it is the package's front page").toContain("README.md");
 		// Every other documentation page ships, because it documents the package for
 		// somebody using it. Classified by walking the directory rather than from a
@@ -297,7 +299,9 @@ describe("published stepstone package", () => {
 		// resolves, so its links to the development-only pages are answers rather than
 		// dead ends.
 		const paths = await packedFilePaths();
-		const pages = [...paths].filter((path) => path.endsWith(".md") && path !== "README.md");
+		const pages = [...paths].filter(
+			(path) => path.endsWith(".md") && path !== "README.md" && !path.startsWith("node_modules/"),
+		);
 		expect(pages.length, "no Markdown page is packaged, so this assertion pins nothing").toBeGreaterThan(0);
 		const dangling: string[] = [];
 		for (const page of pages) {
