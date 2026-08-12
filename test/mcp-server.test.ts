@@ -110,7 +110,7 @@ describe("Stepstone MCP server", () => {
 			expect(resources.resources).toEqual(
 				fixedResourceActions.map((action) => ({
 					name: action.name,
-					title: action.usage,
+					title: action.mcpTitle,
 					description: action.summary,
 					mimeType: "application/json",
 					uri: `${RESOURCE_PREFIX}/${action.name}`,
@@ -121,7 +121,7 @@ describe("Stepstone MCP server", () => {
 			expect(templates.resourceTemplates).toEqual(
 				templateActions.map((action) => ({
 					name: action.name,
-					title: action.usage,
+					title: action.mcpTitle,
 					description: action.summary,
 					mimeType: "application/json",
 					uriTemplate: `${RESOURCE_PREFIX}/${action.name}/{${action.name === "show" ? "id" : "query"}}`,
@@ -134,7 +134,7 @@ describe("Stepstone MCP server", () => {
 				const tool = tools.tools.find((candidate) => candidate.name === action.name);
 				expect(tool).toMatchObject({
 					name: action.name,
-					title: action.usage,
+					title: action.mcpTitle,
 					description: mcpActionDescription(action),
 					inputSchema: { type: "object" },
 					annotations: { readOnlyHint: false, openWorldHint: false },
@@ -183,6 +183,95 @@ describe("Stepstone MCP server", () => {
 				expect(schema.required).toEqual(["id"]);
 				expect(schema.properties?.confirm).toMatchObject({ type: "boolean" });
 			}
+		});
+	});
+
+	it("preserves service validation and snapshot metadata through the MCP protocol", async () => {
+		const root = await createGitRepository();
+		const worklistPath = join(root, ".worklist", "worklist.json");
+		await withMcpClient(root, async (client) => {
+			await callTool(client, "add", { title: "Alpha goal" });
+			const beforeRejections = await readFile(worklistPath, "utf8");
+
+			const titleAndAppend = await callTool(client, "update", {
+				id: "alpha-goal",
+				title: "Renamed goal",
+				appendDescription: "New context.",
+			});
+			expect(titleAndAppend).toMatchObject({
+				isError: true,
+				envelope: {
+					ok: false,
+					action: "update",
+					error: {
+						code: "VALIDATION_FAILED",
+						details: {
+							fields: ["appendDescription", "title"],
+							resolution: "remove-title-or-replace-description",
+						},
+					},
+					meta: { changed: false },
+				},
+			});
+
+			const inexactReference = await callTool(client, "apply-plan", {
+				plan: [{ title: "Dependent goal", dependsOn: [" alpha-goal "] }],
+			});
+			expect(inexactReference).toMatchObject({
+				isError: true,
+				envelope: {
+					ok: false,
+					action: "apply-plan",
+					error: {
+						code: "VALIDATION_FAILED",
+						details: {
+							fields: ["plan/0/dependsOn"],
+							resolution: "remove-surrounding-reference-whitespace",
+						},
+					},
+					meta: { changed: false },
+				},
+			});
+
+			const blankFind = await readEnvelope(client, `${RESOURCE_PREFIX}/find/%20%20`);
+			expect(blankFind).toMatchObject({
+				ok: false,
+				action: "find",
+				error: {
+					code: "VALIDATION_FAILED",
+					details: { fields: ["query"], resolution: "provide-non-blank-search-text" },
+				},
+				meta: { changed: false, revisions: { project: "1" } },
+			});
+
+			const missingGoal = await readEnvelope(client, `${RESOURCE_PREFIX}/show/missing`);
+			expect(missingGoal).toMatchObject({
+				ok: false,
+				action: "show",
+				error: { code: "NOT_FOUND" },
+				meta: { changed: false, revisions: { project: "1" } },
+			});
+			expect(await readFile(worklistPath, "utf8")).toBe(beforeRejections);
+		});
+	});
+
+	it("keeps MCP schema failures distinct from application-service envelopes", async () => {
+		const root = await createGitRepository();
+		await withMcpClient(root, async (client) => {
+			await callTool(client, "add", { title: "Schema boundary" });
+			const response = (await client.callTool({
+				name: "update",
+				arguments: { id: "schema-boundary", links: ["not-a-url"] },
+			})) as CallToolResult;
+
+			expect(response.isError).toBe(true);
+			expect(response.structuredContent).toBeUndefined();
+			expect(response.content).toEqual([
+				expect.objectContaining({
+					type: "text",
+					text: expect.stringContaining("validation"),
+				}),
+			]);
 		});
 	});
 

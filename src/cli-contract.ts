@@ -8,7 +8,7 @@
  * structure so they cannot drift from each other or the implemented surface.
  */
 
-export interface CliActionContract {
+interface CliActionContractBase {
 	name: string;
 	usage: string;
 	summary: string;
@@ -18,11 +18,28 @@ export interface CliActionContract {
 	interactive?: boolean;
 	/** Generate this action as an installable Claude Code slash command. */
 	claudePlugin?: "read-only" | "human-interactive";
-	/** Expose this command through the matching MCP primitive. */
-	mcp?: "resource" | "tool";
 	/** Agent workflow attached to the one action that atomically applies an approved capture plan. */
 	captureWorkflow?: CliCaptureWorkflowContract;
 }
+
+/** An action exposed through MCP, which always names the primitive and its title. */
+export interface CliMcpActionContract extends CliActionContractBase {
+	/** Expose this command through the matching MCP primitive. */
+	mcp: "resource" | "tool";
+	/** Human-readable MCP title, without CLI argv syntax. */
+	mcpTitle: string;
+}
+
+/**
+ * An action, with the MCP primitive and its title paired in the type itself.
+ *
+ * The pairing is a union rather than two optional fields so a contract entry
+ * that sets one without the other fails `satisfies CliActionContract[]` below,
+ * where the omission is written, instead of at MCP server construction.
+ */
+export type CliActionContract =
+	| (CliActionContractBase & { mcp?: never; mcpTitle?: never })
+	| CliMcpActionContract;
 
 export interface CliCaptureWorkflowContract {
 	title: string;
@@ -233,6 +250,7 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "list",
 			usage: "list",
 			summary: "Show a compact bounded list of project goals",
+			mcpTitle: "List project goals",
 			mcp: "resource",
 			claudePlugin: "read-only",
 		},
@@ -240,18 +258,21 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "show",
 			usage: "show <id>",
 			summary: "Show one goal with its full description",
+			mcpTitle: "Show project goal",
 			mcp: "resource",
 		},
 		{
 			name: "find",
 			usage: "find <text...>",
 			summary: "List the goals whose title or description contains the text",
+			mcpTitle: "Find project goals",
 			mcp: "resource",
 		},
 		{
 			name: "next",
 			usage: "next",
 			summary: "Show the one goal to start next, the first ready goal in file order",
+			mcpTitle: "Next project goal",
 			mcp: "resource",
 			claudePlugin: "read-only",
 		},
@@ -259,6 +280,7 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "ready",
 			usage: "ready",
 			summary: "List every unblocked, unclaimed open goal: the whole parallel frontier",
+			mcpTitle: "Ready project goals",
 			mcp: "resource",
 			claudePlugin: "read-only",
 		},
@@ -266,6 +288,7 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "waves",
 			usage: "waves",
 			summary: "Print unfinished goals in dependency layers, earliest first",
+			mcpTitle: "Project goal waves",
 			mcp: "resource",
 			claudePlugin: "read-only",
 		},
@@ -280,12 +303,14 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "add",
 			usage: "add <title...> [--description <text> | -- <description...>]",
 			summary: "Add an open goal",
+			mcpTitle: "Add project goal",
 			mcp: "tool",
 		},
 		{
 			name: "apply-plan",
 			usage: "apply-plan <plan.json>",
 			summary: "Validate and atomically add every goal in a JSON plan",
+			mcpTitle: "Apply project goal plan",
 			mcp: "tool",
 			captureWorkflow: {
 				title: "Capture brainstorms as approved goal plans",
@@ -314,30 +339,35 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "update",
 			usage: "update <id> [title...] [--description <text> | -- <description...>]",
 			summary: "Edit a goal's title or description",
+			mcpTitle: "Update project goal",
 			mcp: "tool",
 		},
 		{
 			name: "move",
 			usage: "move <id> up|down|before <id>|after <id>",
 			summary: "Reorder a goal in the roadmap's canonical file order",
+			mcpTitle: "Move project goal",
 			mcp: "tool",
 		},
 		{
 			name: "start",
 			usage: "start <id> [--branch <name> | --clear]",
 			summary: "Claim a goal on a branch, or release its branch claim",
+			mcpTitle: "Start project goal",
 			mcp: "tool",
 		},
 		{
 			name: "set_active",
 			usage: "set_active <id>",
 			summary: "Make a goal the single active goal",
+			mcpTitle: "Set active project goal",
 			mcp: "tool",
 		},
 		{
 			name: "complete",
 			usage: "complete <id> --confirm",
 			summary: "Mark a goal done",
+			mcpTitle: "Complete project goal",
 			mcp: "tool",
 			confirmRequired: true,
 		},
@@ -345,6 +375,7 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "reopen",
 			usage: "reopen <id> --confirm",
 			summary: "Reopen a done or archived goal",
+			mcpTitle: "Reopen project goal",
 			mcp: "tool",
 			confirmRequired: true,
 		},
@@ -352,6 +383,7 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "archive",
 			usage: "archive <id> --confirm",
 			summary: "Archive a goal",
+			mcpTitle: "Archive project goal",
 			mcp: "tool",
 			confirmRequired: true,
 		},
@@ -359,6 +391,7 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "delete",
 			usage: "delete <id> --confirm",
 			summary: "Delete a goal permanently",
+			mcpTitle: "Delete project goal",
 			mcp: "tool",
 			confirmRequired: true,
 		},

@@ -432,6 +432,15 @@ function normalizeDescriptionUpdate(operation: WorklistOperation): ProjectGoalUp
 			},
 		);
 	}
+	if (operation.title !== undefined) {
+		throw validationError(
+			"title and appendDescription cannot be combined; appending never changes the title.",
+			{
+				fields: ["appendDescription", "title"],
+				resolution: "remove-title-or-replace-description",
+			},
+		);
+	}
 	const appendDescription = operation.appendDescription.trim();
 	if (!appendDescription) {
 		throw validationError("appendDescription must not be blank.", {
