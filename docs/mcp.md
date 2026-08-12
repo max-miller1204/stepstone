@@ -70,13 +70,14 @@ The server publishes six resources under the `stepstone://worklist` URI prefix.
 | --- | --- |
 | `stepstone://worklist/list` | List the repository's Project Goals. |
 | `stepstone://worklist/show/{id}` | Read one goal selected by a complete ID or unique ID prefix, including whether it is blocked and the goal IDs it blocks. |
-| `stepstone://worklist/find/{query}` | Find goals whose title or description contains the query. |
+| `stepstone://worklist/find/{query}` | Find goals whose title or description contains the query, which must not be blank. |
 | `stepstone://worklist/next` | Read the first ready goal in canonical file order. |
 | `stepstone://worklist/ready` | Read every unblocked, unclaimed open goal in the parallel frontier. |
 | `stepstone://worklist/waves` | Read unfinished goals grouped into their earliest dependency waves, plus any unreachable goals. |
 
 Each resource has MIME type `application/json` and contains one JSON-serialized application-service envelope.
 An empty `next` or `ready` is a successful answer, represented by an absent `result.goal` or an empty `result.goals` array.
+A `find` query that is empty or only whitespace is not, because matching every goal is never what a blank search asked for: it returns a `VALIDATION_FAILED` envelope naming the `query` field, and a client holding no search text should read `list` instead.
 Resource reads do not mutate the roadmap.
 
 ## Mutation tools
@@ -89,7 +90,7 @@ JSON field names use the camel-case MCP forms shown below rather than CLI flag n
 | --- | --- | --- | --- |
 | `add` | `title` | `description`, `group`, `dependsOn`, `links` | Add an open goal. |
 | `apply-plan` | `plan` | `dryRun` | Validate and atomically add a JSON array of goal plan entries, or only validate it when `dryRun` is true. |
-| `update` | `id` | `title`, `description`, `appendDescription`, `group`, `dependsOn`, `links`, `expectedUpdatedAt` | Edit a goal and replace any supplied dependency or link set. |
+| `update` | `id` | `group`, `dependsOn`, `links`, `expectedUpdatedAt`, plus either `title` and `description`, or `appendDescription` alone | Edit a goal and replace any supplied dependency or link set. |
 | `move` | `id` | One of `direction`, `beforeId`, or `afterId` | Move a goal in canonical file order, with `direction` set to `up` or `down`. |
 | `start` | `id`, and one of `branch` or `clear` | `expectedUpdatedAt` | Claim a goal for `branch`, or release its claim with `clear` set to true. |
 | `set_active` | `id` | `expectedUpdatedAt` | Make a goal the single active goal. |
@@ -101,6 +102,9 @@ JSON field names use the camel-case MCP forms shown below rather than CLI flag n
 An `id` may be a complete goal ID or a unique ID prefix.
 `dependsOn` is an array of goal IDs or unique prefixes.
 `links` is an array of absolute HTTP or HTTPS URLs kept for a reader rather than for any machine semantics, and an `update` replaces the whole set exactly as `dependsOn` does, so send every URL the goal should end up with and send an empty array to clear them.
+`description` replaces a goal's whole description, while `appendDescription` adds one paragraph to the stored prose without replaying it, so an `update` carries at most one of them.
+`appendDescription` also cannot be combined with `title`, because appending never renames a goal; send the rename as its own `update`.
+Either combination is refused with a `VALIDATION_FAILED` envelope before any write, naming both conflicting fields in `error.details.fields`.
 `start` records which branch is working on a goal without changing its status, and a goal carrying that claim is left out of `next` and `ready` so work already in flight is never handed out twice; send `clear: true` with no `branch` to release an abandoned claim, and note that `complete` releases it too.
 The `plan` format and its deterministic reference rules are documented in [goals.md](goals.md#json-goal-plans).
 Pass the `updatedAt` value from the caller's last read as `expectedUpdatedAt` when changing an existing goal, so a concurrent edit returns a conflict instead of being overwritten.

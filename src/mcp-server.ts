@@ -8,7 +8,12 @@ import {
 	WorklistApplicationService,
 	type WorklistOperation,
 } from "./application-service.ts";
-import { CLI_COMMAND_CONTRACT, type CliActionContract, mcpActionDescription } from "./cli-contract.ts";
+import {
+	CLI_COMMAND_CONTRACT,
+	type CliActionContract,
+	type CliMcpActionContract,
+	mcpActionDescription,
+} from "./cli-contract.ts";
 import { dependencyWaves, dependentGoals, isGoalBlocked, nextGoal, readyGoals } from "./dependencies.ts";
 import { createWorklistLocator, resolveGitRoot } from "./git.ts";
 import { matchesGoalQuery, resolveGoalSelector, type UnresolvedGoalSelector } from "./goal-selection.ts";
@@ -23,8 +28,6 @@ if (typeof packageJson.version !== "string") {
 
 const SERVER_VERSION = packageJson.version;
 const RESOURCE_URI_PREFIX = `${CLI_COMMAND_CONTRACT.binary}://worklist`;
-
-type McpActionContract = CliActionContract & { mcp: "resource" | "tool"; mcpTitle: string };
 
 type ToolArguments = {
 	id?: string;
@@ -52,19 +55,17 @@ export interface StepstoneMcpServerOptions {
 	env?: NodeJS.ProcessEnv;
 }
 
-function isMcpAction(action: CliActionContract): action is McpActionContract {
-	if (action.mcp !== "resource" && action.mcp !== "tool") return false;
-	if (!action.mcpTitle) throw new Error(`The ${action.name} MCP action must define mcpTitle`);
-	return true;
+function isMcpAction(action: CliActionContract): action is CliMcpActionContract {
+	return action.mcp === "resource" || action.mcp === "tool";
 }
 
-function mcpActions(kind: McpActionContract["mcp"]): McpActionContract[] {
+function mcpActions(kind: CliMcpActionContract["mcp"]): CliMcpActionContract[] {
 	return (CLI_COMMAND_CONTRACT.actions as readonly CliActionContract[])
 		.filter(isMcpAction)
 		.filter((action) => action.mcp === kind);
 }
 
-function inputSchemaFor(action: McpActionContract) {
+function inputSchemaFor(action: CliMcpActionContract) {
 	const id = z.string().trim().min(1).describe("A complete goal ID or unique ID prefix");
 	const expectedUpdatedAt = z
 		.string()

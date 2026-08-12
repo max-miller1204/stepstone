@@ -8,7 +8,7 @@
  * structure so they cannot drift from each other or the implemented surface.
  */
 
-export interface CliActionContract {
+interface CliActionContractBase {
 	name: string;
 	usage: string;
 	summary: string;
@@ -18,13 +18,28 @@ export interface CliActionContract {
 	interactive?: boolean;
 	/** Generate this action as an installable Claude Code slash command. */
 	claudePlugin?: "read-only" | "human-interactive";
-	/** Human-readable MCP title, without CLI argv syntax. Required whenever mcp is set. */
-	mcpTitle?: string;
-	/** Expose this command through the matching MCP primitive. */
-	mcp?: "resource" | "tool";
 	/** Agent workflow attached to the one action that atomically applies an approved capture plan. */
 	captureWorkflow?: CliCaptureWorkflowContract;
 }
+
+/** An action exposed through MCP, which always names the primitive and its title. */
+export interface CliMcpActionContract extends CliActionContractBase {
+	/** Expose this command through the matching MCP primitive. */
+	mcp: "resource" | "tool";
+	/** Human-readable MCP title, without CLI argv syntax. */
+	mcpTitle: string;
+}
+
+/**
+ * An action, with the MCP primitive and its title paired in the type itself.
+ *
+ * The pairing is a union rather than two optional fields so a contract entry
+ * that sets one without the other fails `satisfies CliActionContract[]` below,
+ * where the omission is written, instead of at MCP server construction.
+ */
+export type CliActionContract =
+	| (CliActionContractBase & { mcp?: never; mcpTitle?: never })
+	| CliMcpActionContract;
 
 export interface CliCaptureWorkflowContract {
 	title: string;
