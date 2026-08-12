@@ -1,0 +1,69 @@
+=== 1. The server publishes a start tool with its input schema ===
+tool names: add, apply-plan, update, move, start, set_active, complete, reopen, archive, delete
+{
+  "name": "start",
+  "title": "start <id> [--branch <name> | --clear]",
+  "description": "Claim a goal on a branch, or release its branch claim",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A complete goal ID or unique ID prefix"
+      },
+      "branch": {
+        "type": "string",
+        "minLength": 1
+      },
+      "clear": {
+        "type": "boolean"
+      },
+      "expectedUpdatedAt": {
+        "description": "The target goal's updatedAt value from the caller's last read",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false
+  }
+}
+
+=== 2. Add a goal, then claim it for a branch (status untouched) ===
+> tools/call add {"title":"Dispatchable goal"}
+< isError=false
+{"ok":true,"scope":"project","action":"add","result":{"scope":"project","action":"add","goal":{"id":"dispatchable-goal","title":"Dispatchable goal","status":"open","createdAt":"2026-08-12T07:01:23.302Z","updatedAt":"2026-08-12T07:01:23.302Z"},"goals":[{"id":"dispatchable-goal","title":"Dispatchable goal","status":"open","createdAt":"2026-08-12T07:01:23.302Z","updatedAt":"2026-08-12T07:01:23.302Z"}]},"meta":{"changed":true,"semanticNoOp":false,"changedFields":["/goals"],"changedEntities":{"projectGoalIds":["dispatchable-goal"],"sessionTaskIds":[]},"revisions":{"project":"1"}}}
+
+> tools/call start {"id":"dispatchable","branch":"feat/dispatch"}
+< isError=false
+{"ok":true,"scope":"project","action":"start","result":{"scope":"project","action":"start","goal":{"id":"dispatchable-goal","title":"Dispatchable goal","status":"open","createdAt":"2026-08-12T07:01:23.302Z","updatedAt":"2026-08-12T07:01:23.308Z","branch":"feat/dispatch"},"goals":[{"id":"dispatchable-goal","title":"Dispatchable goal","status":"open","createdAt":"2026-08-12T07:01:23.302Z","updatedAt":"2026-08-12T07:01:23.308Z","branch":"feat/dispatch"}]},"meta":{"changed":true,"semanticNoOp":false,"changedFields":["/goals"],"changedEntities":{"projectGoalIds":["dispatchable-goal"],"sessionTaskIds":[]},"revisions":{"project":"2"}}}
+
+=== 3. The ready resource no longer offers the claimed goal ===
+> resources/read stepstone://worklist/ready
+{"ok":true,"scope":"project","action":"ready","result":{"scope":"project","action":"ready","goals":[]},"meta":{"changed":false,"semanticNoOp":false,"changedFields":[],"revisions":{"project":"2"}}}
+
+=== 4. A stale expectedUpdatedAt is refused as a conflict, nothing written ===
+> tools/call start {"id":"dispatchable","branch":"feat/second","expectedUpdatedAt":"2020-01-01T00:00:00.000Z"}
+< isError=true
+{"ok":false,"scope":"project","action":"start","error":{"code":"CONFLICT","message":"Project goal dispatchable-goal changed from 2020-01-01T00:00:00.000Z to 2026-08-12T07:01:23.308Z.","retryable":true,"conflict":{"type":"goal-updated-at","id":"dispatchable-goal","expectedUpdatedAt":"2020-01-01T00:00:00.000Z","actualUpdatedAt":"2026-08-12T07:01:23.308Z","resolution":"refresh-and-retry"}},"meta":{"changed":false,"semanticNoOp":false,"changedFields":[]}}
+
+=== 5. clear releases the claim and the goal returns to the frontier ===
+> tools/call start {"id":"dispatchable","clear":true,"expectedUpdatedAt":"2026-08-12T07:01:23.308Z"}
+< isError=false
+{"ok":true,"scope":"project","action":"start","result":{"scope":"project","action":"start","goal":{"id":"dispatchable-goal","title":"Dispatchable goal","status":"open","createdAt":"2026-08-12T07:01:23.302Z","updatedAt":"2026-08-12T07:01:23.312Z"},"goals":[{"id":"dispatchable-goal","title":"Dispatchable goal","status":"open","createdAt":"2026-08-12T07:01:23.302Z","updatedAt":"2026-08-12T07:01:23.312Z"}]},"meta":{"changed":true,"semanticNoOp":false,"changedFields":["/goals"],"changedEntities":{"projectGoalIds":["dispatchable-goal"],"sessionTaskIds":[]},"revisions":{"project":"3"}}}
+
+> resources/read stepstone://worklist/ready
+{"ok":true,"scope":"project","action":"ready","result":{"scope":"project","action":"ready","goals":[{"id":"dispatchable-goal","title":"Dispatchable goal","status":"open","createdAt":"2026-08-12T07:01:23.302Z","updatedAt":"2026-08-12T07:01:23.312Z"}]},"meta":{"changed":false,"semanticNoOp":false,"changedFields":[],"revisions":{"project":"3"}}}
+
+=== 6. Schema guards: branch must be non-empty, unknown fields refused ===
+> tools/call start {"id":"dispatchable","branch":"   "}
+< isError=true
+MCP error -32602: Input validation error: Invalid arguments for tool start: Too small: expected string to have >=1 characters at branch
+
+> tools/call start {"id":"dispatchable","branch":"feat/x","group":"Foundation"}
+< isError=true
+MCP error -32602: Input validation error: Invalid arguments for tool start: Unrecognized key: "group"

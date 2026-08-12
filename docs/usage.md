@@ -87,6 +87,7 @@ npx -y stepstone@latest project apply-plan plan.json --json
 `--link <url>` stores an informational absolute HTTP or HTTPS URL such as the issue or design a goal came from, behaves the same way - repeatable, replaced whole by an update, cleared by `--link ''` alone - and rejects anything that is not an absolute HTTP or HTTPS URL, so the field never accumulates text a reader cannot follow.
 `start` records which branch is working on a goal, as a dispatch claim rather than a status change: the goal keeps whatever status it had, and `--branch <name>` names the branch while an omitted flag uses the current Git branch, which is read and never created, so a run on a detached HEAD asks for `--branch` instead of guessing.
 A claimed goal drops out of `ready` and `next`, which is the point - see [docs/dependencies.md](dependencies.md#sequencing-reads) - so every claim needs a release: `start <id> --clear` un-claims an abandoned dispatch and `complete` clears the branch on its way to done.
+A done or archived goal refuses a new claim until it is reopened, while `--clear` still releases a claim it is holding, so settled work can never keep a dispatch nobody is able to undo.
 `apply-plan` adds an approved batch of goals through one locked mutation; the plan schema is in [docs/goals.md](goals.md#json-goal-plans).
 A `--dry-run` is a preview rather than the user's approval, and the brainstorm-to-approved-plan workflow an agent runs before that single mutating call is in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
 
