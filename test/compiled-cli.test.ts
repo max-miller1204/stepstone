@@ -12,11 +12,12 @@ import {
 	type ClaudePluginMcpServer,
 	type ClaudePluginPackageMetadata,
 	renderClaudePluginArtifacts,
+	renderSkillMarkdown,
 	resolveClaudePluginMcpServer,
 	SKILL_PATH,
 } from "../src/cli-contract.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
-import { documentationPages } from "./docs-pages.ts";
+import { DOCS_DIRECTORY, documentationPages } from "./docs-pages.ts";
 import { buildPackage, packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
@@ -317,6 +318,31 @@ describe("published stepstone package", () => {
 			dangling,
 			`packaged pages link to files an install does not carry: ${dangling.join("; ")}`,
 		).toEqual([]);
+	}, 60_000);
+
+	it("sends the installed skill only to documentation pages an install carries", async () => {
+		// The skill points its reader at pages by name rather than by Markdown link,
+		// so the dangling-link pass above cannot see those references: it is read from
+		// `~/.claude/skills`, where a relative link resolves against the consumer's
+		// repository instead of the package. Those named paths are the same promise a
+		// link makes, and they break the same way - a page renamed, or held back from
+		// the tarball, leaves an agent looking for a file no install has.
+		const paths = await packedFilePaths();
+		// Fenced blocks are dropped before inline spans are read: their fences are
+		// backticks too, and pairing across one shifts every span that follows it.
+		const prose = renderSkillMarkdown().replace(/```[\s\S]*?```/g, "");
+		const referenced = [...new Set([...prose.matchAll(/`([^`\n]+)`/g)].map(([, span]) => span))]
+			.filter((span) => span.startsWith(`${DOCS_DIRECTORY}/`) && span.endsWith(".md"))
+			.sort();
+		expect(
+			referenced.length,
+			"the skill names no documentation page, so this assertion pins nothing",
+		).toBeGreaterThan(0);
+		for (const page of referenced) {
+			expect(paths, `${SKILL_PATH} sends its reader to ${page}, which the tarball does not carry`).toContain(
+				page,
+			);
+		}
 	}, 60_000);
 
 	it("ships both compiled bins in the published package", async () => {

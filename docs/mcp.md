@@ -120,6 +120,9 @@ Do not infer confirmation from a general request to manage the roadmap, a confir
 Do not automatically retry an unconfirmed call with `confirm: true`.
 Ask the user for the missing exact confirmation, then retry only the action and goal they approved.
 
+A dispatch loop the user explicitly approved and asked to run is the one exception, and it reaches only `complete`, only for a goal of that plan, and only after that goal's matching PR merged.
+[dispatch.md](dispatch.md#authorization-boundary) states that boundary, which applies to this surface exactly as it applies to the CLI's `--confirm`.
+
 The four tool schemas declare `confirm` as an optional boolean, and their MCP metadata advertises `confirmRequired: true`.
 Confirmation is a guardrail the application service enforces, not a JSON Schema requirement, so an omitted `confirm` reaches the service and is refused with the same actionable envelope as `confirm: false` rather than a protocol-level validation error that carries no guidance.
 The server forwards the supplied boolean unchanged to the application service and never fills it in.

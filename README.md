@@ -112,6 +112,7 @@ That is enforced by source-level import scans and by a CI job that packs the tar
 | [docs/cli.md](docs/cli.md) | Generated command reference: every action, flag, and rule |
 | [docs/goals.md](docs/goals.md) | The goal model: fields, statuses, IDs, order, groups, JSON plans |
 | [docs/dependencies.md](docs/dependencies.md) | Dependency edges and the sequencing reads behind `next`, `ready`, and `waves` |
+| [docs/dispatch.md](docs/dispatch.md) | Harness-neutral dispatch contract and working bindings for detached Git worktrees and Herdr plus Treehouse |
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
 | [docs/skill.md](docs/skill.md) | The generated agent skill, the Claude Code plugin that bundles it, and how to install either |

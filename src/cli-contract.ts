@@ -104,6 +104,16 @@ export const GENERATOR_PATH = "scripts/generate-docs.ts";
 export const DOCS_PATH = "docs/cli.md";
 
 /**
+ * Repository-relative path of the authored dispatch recipe the skill points at.
+ *
+ * Named here so the skill renders the same qualified path it renders for the
+ * command reference: an agent reading the installed skill from a consumer
+ * repository resolves a bare `docs/` path against that repository, where the
+ * page does not exist.
+ */
+export const DISPATCH_DOCS_PATH = "docs/dispatch.md";
+
+/**
  * Repository-relative path of the generated agent skill.
  *
  * The directory name is the name agents load the skill by, so it tracks the
@@ -198,7 +208,7 @@ export const CLI_COMMAND_CONTRACT = {
 	 * repository-neutral: one skill file serves every checkout, so it must never
 	 * assume it was installed alongside this source tree.
 	 */
-	skillDescription: `Manage ${BINARY} Project Goals (the roadmap committed in a repo's ${WORKLIST_RELATIVE_PATH}) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
+	skillDescription: `Manage ${BINARY} Project Goals (the roadmap committed in a repo's ${WORKLIST_RELATIVE_PATH}) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; dispatch or fan out an approved plan, running its ready goals as parallel agent sessions in isolated worktrees; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
 	runtime: {
 		/** Node floor for the published compiled bin. Asserted against package.json engines.node. */
 		binaryNodeFloor: "20",
@@ -564,6 +574,15 @@ export const CLI_COMMAND_CONTRACT = {
 		"`waves --json` reports the layers as `result.waves`, an array of goal arrays whose position is the wave number, and adds `result.unreachableGoals` only when some goal is unreachable, so an absent field means every unfinished goal found a layer.",
 		"All three are reads derived from the stored edges the same way `blocked` is, so nothing is cached and no command has to be re-run to refresh them.",
 	],
+	dispatchRules: [
+		"Dispatch only goals returned by `ready --json`; claim each one with `start <id> --branch <name> --expect-updated-at <updatedAt>` before launching its worker.",
+		"The root session is the sole roadmap writer and runs every Stepstone mutation from the default-branch checkout; workers receive goal context but never mutate the worklist from isolated workspaces.",
+		"Session hosting and workspace isolation are independent bindings: any host that can launch and observe a command can compose with any provider that returns an isolated checkout.",
+		"Treat a merged PR whose head belongs to the claimed branch as completion evidence; worker exit or silence alone never proves the goal landed.",
+		"Launching a dispatch loop for an explicitly approved plan grants standing consent to run `complete <id> --confirm` only for a goal in that plan after its matching PR merged.",
+		"That standing consent does not cover archive, delete, reopen, unrelated goals, unmerged work, or a new plan; release an abandoned claim with `start <id> --clear`.",
+		"Re-read `ready` after each merge and stop when it is empty; distinguish finished roadmaps from blocked or claimed work by reading `waves --json`.",
+	],
 	exitCodes: [
 		{ code: 0, meaning: "success" },
 		{ code: 1, meaning: "error" },
@@ -577,7 +596,7 @@ export const CLI_COMMAND_CONTRACT = {
 		"Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
 		"Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.",
-		"Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.",
+		"Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action; an approved dispatch plan is standing consent only to complete one of its goals after its matching PR merges.",
 		"Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.",
 		"Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.",
 		"Use list for orientation, `find <text>` to locate a goal by wording, and `show <id>` when you need a goal's complete description.",
@@ -857,11 +876,18 @@ export function renderSkillMarkdown(options: { userInvocable?: boolean } = {}): 
 		"",
 		...contract.sequencingRules.map((rule) => `- ${rule}`),
 		"",
+		"## Dispatching approved plans",
+		"",
+		...contract.dispatchRules.map((rule) => `- ${rule}`),
+		"",
+		`The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in the package's \`${DISPATCH_DOCS_PATH}\`.`,
+		"",
 		"## Guardrails",
 		"",
 		`- ${actionNameList(lifecycleActions)} are reserved for explicit user intent.`,
 		"  Pass `--confirm` only for the exact action the user requested and, when the action names a goal, only for that exact goal.",
 		"  Never pass it because a goal merely looks finished or stale.",
+		"  A dispatch loop the user approved is the one narrow exception, and only for completing a goal of that plan once its matching PR merged.",
 		"- `migrate_ids` names no goal and rewrites every generated ID in the repository at once, so it needs an explicit request of its own.",
 		"  `--dry-run` reports the rewrites it would make without writing them and without `--confirm`; prefer it when you are showing the user what would change.",
 		"- `migrate_path` names no goal either and moves the whole repository's goal file, so it needs its own explicit request and has the same `--dry-run`.",

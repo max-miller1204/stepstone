@@ -3,7 +3,8 @@
 # The agent skill
 
 A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
-It carries the action and flag surface, the description-input rules, the sequencing reads, the exit-code meanings, the brainstorm-to-approved-plan capture workflow, and the rule that a lifecycle action needs an explicit request from the user.
+It carries the action and flag surface, the description-input rules, the sequencing reads, the exit-code meanings, the brainstorm-to-approved-plan capture workflow, the rules for dispatching an approved plan, and the rule that a lifecycle action needs an explicit request from the user.
+Its dispatch section states the one narrow exception to that last rule, the standing consent an approved dispatch loop carries to complete its own goals once their PRs merge, and names [docs/dispatch.md](dispatch.md) for the bindings and command sequences themselves.
 
 ## Install
 

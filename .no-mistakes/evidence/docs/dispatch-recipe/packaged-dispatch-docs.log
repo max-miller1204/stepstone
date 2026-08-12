@@ -1,0 +1,20 @@
+$ npm pack --dry-run --json --ignore-scripts   # filtered to the dispatch surface an install carries
+  .claude/skills/stepstone/SKILL.md
+  docs/board.md
+  docs/cli.md
+  docs/dependencies.md
+  docs/dispatch.md
+  docs/goals.md
+  docs/mcp.md
+  docs/pi.md
+  docs/skill.md
+  docs/storage.md
+  docs/usage.md
+  skills/stepstone/SKILL.md
+
+$ node src/cli.ts project show root-session-recipe-herdr-treehouse --json   # the canonical goal in this repo
+{"id":"root-session-recipe-herdr-treehouse","title":"root-session recipe: harness-neutral dispatch loop over the worklist","status":"done","completedAt":"2026-08-12T07:23:54.910Z"}
+
+$ grep -n 'root-session-recipe-herdr-treehouse' docs/ROADMAP.md   # rendered roadmap
+253:- **[done]** root-session recipe: harness-neutral dispatch loop over the worklist - `root-session-recipe-herdr-treehouse`
+10:45 goals: 11 open, 31 done, 3 archived.
