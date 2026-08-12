@@ -90,7 +90,7 @@ JSON field names use the camel-case MCP forms shown below rather than CLI flag n
 | --- | --- | --- | --- |
 | `add` | `title` | `description`, `group`, `dependsOn`, `links` | Add an open goal. |
 | `apply-plan` | `plan` | `dryRun` | Validate and atomically add a JSON array of goal plan entries, or only validate it when `dryRun` is true. |
-| `update` | `id` | `group`, `dependsOn`, `links`, `expectedUpdatedAt`, plus either `title` and `description`, or `appendDescription` alone | Edit a goal and replace any supplied dependency or link set. |
+| `update` | `id` | `title`, `description`, `group`, `dependsOn`, `links`, `expectedUpdatedAt`, or `appendDescription` in place of `title` and `description` | Edit a goal and replace any supplied dependency or link set. |
 | `move` | `id` | One of `direction`, `beforeId`, or `afterId` | Move a goal in canonical file order, with `direction` set to `up` or `down`. |
 | `start` | `id`, and one of `branch` or `clear` | `expectedUpdatedAt` | Claim a goal for `branch`, or release its claim with `clear` set to true. |
 | `set_active` | `id` | `expectedUpdatedAt` | Make a goal the single active goal. |
