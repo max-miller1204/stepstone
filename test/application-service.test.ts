@@ -400,6 +400,33 @@ describe("worklist application service", () => {
 				details: { fields: ["expectedUpdatedAt"], resolution: "remove-expected-updated-at" },
 			},
 		});
+
+		// The Pi tool schema is not scope-discriminated, so every project-only
+		// field reaches a session call. Silently dropping one leaves the caller
+		// believing it stored something it never did, which is the whole reason
+		// this rejection exists, so no field may be left off the list.
+		for (const [field, value, resolution] of [
+			["branch", "feat/x", "use-project-start"],
+			["clear", true, "use-project-start"],
+			["links", ["https://example.com/spec"], "remove-links"],
+			["group", "Foundation", "remove-group"],
+		] as const) {
+			// Each call shares the one session service, so they stay sequential.
+			// pi-lens-ignore: await-in-loop
+			const dropped = await sessionService.execute(
+				{ scope: "session", action: "add", title: "Session task", [field]: value },
+				{ source: "tool" },
+			);
+			expect(dropped).toMatchObject({
+				ok: false,
+				error: {
+					code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+					message: `${field} is only supported for project goals.`,
+					details: { fields: [field], resolution },
+				},
+			});
+		}
+		expect(sessionService.getSessionTasks()).toEqual([]);
 	});
 
 	it("preserves Project Goal files, revisions, and timestamps for semantic no-ops", async () => {
@@ -1364,9 +1391,9 @@ describe("worklist application service", () => {
 		);
 		const service = new WorklistApplicationService({ projectPath });
 
-		for (const [action, status] of [
-			["complete", "done"],
-			["archive", "archived"],
+		for (const { action, status, retainsClaim } of [
+			{ action: "complete", status: "done", retainsClaim: false },
+			{ action: "archive", status: "archived", retainsClaim: true },
 		] as const) {
 			const added = await service.execute(
 				{ scope: "project", action: "add", title: `Finished by ${action}` },
@@ -1374,15 +1401,25 @@ describe("worklist application service", () => {
 			);
 			const id = unwrapWorklistApplicationResult(added).goal?.id;
 			await expect(
+				service.execute({ scope: "project", action: "start", id, branch: "feat/claim" }, { source: "cli" }),
+			).resolves.toMatchObject({ ok: true, result: { goal: { id, branch: "feat/claim" } } });
+			await expect(
 				service.execute({ scope: "project", action, id, confirm: true }, { source: "cli" }),
 			).resolves.toMatchObject({ ok: true, result: { goal: { id, status } } });
+
+			// Only done releases the claim on its way through; archiving keeps it,
+			// which is the state a release has to still be able to reach.
+			const finished = (await service.getProjectGoals()).find((goal) => goal.id === id);
+			expect(finished).toMatchObject({ status });
+			if (retainsClaim) expect(finished).toMatchObject({ branch: "feat/claim" });
+			else expect(finished).not.toHaveProperty("branch");
 
 			// A dispatcher told `retryable: true` retries a refusal that can never
 			// succeed, and the persistence wording sends a human to check repository
 			// access and the lock for a condition that is neither. `set_active`
 			// already answers this correctly, so `start` has to match it.
 			const refused = await service.execute(
-				{ scope: "project", action: "start", id, branch: "feat/claim" },
+				{ scope: "project", action: "start", id, branch: "feat/second" },
 				{ source: "cli" },
 			);
 			expect(refused).toMatchObject({
@@ -1396,16 +1433,16 @@ describe("worklist application service", () => {
 				},
 				meta: { changed: false },
 			});
+			expect((await service.getProjectGoals()).find((goal) => goal.id === id)?.branch).toBe(
+				retainsClaim ? "feat/claim" : undefined,
+			);
 
-			const stored = (await service.getProjectGoals()).find((goal) => goal.id === id);
-			expect(stored).toMatchObject({ status });
-			expect(stored).not.toHaveProperty("branch");
-
-			// Releasing is not an activation, so a claim left on a goal that was
-			// archived while in flight can still be cleared without reopening it.
+			// Releasing is not an activation, so the claim archiving kept can still
+			// be dropped without reopening the goal first.
 			await expect(
 				service.execute({ scope: "project", action: "start", id, clear: true }, { source: "cli" }),
-			).resolves.toMatchObject({ ok: true, action: "start" });
+			).resolves.toMatchObject({ ok: true, action: "start", meta: { changed: retainsClaim } });
+			expect((await service.getProjectGoals()).find((goal) => goal.id === id)).not.toHaveProperty("branch");
 		}
 	});
 
