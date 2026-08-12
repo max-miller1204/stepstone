@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-45 goals: 11 open, 31 done, 3 archived.
+51 goals: 17 open, 31 done, 3 archived.
 
 ## Orchestrator
 
@@ -324,3 +324,33 @@ A goal's description is a record of what was decided when it was written rather 
   Replaces earlier goal future-archive-ui. Re-scoped: the project ui board already has an archived filter, so the remaining gap is browsing archived goals inside the Pi dashboard, or closing this goal if that is not worth building.
 
   Re-scoped 2026-08-08 by the harness pivot: this is Pi-surface work. Project Goals are now the cross-harness product and Session Tasks are a Pi extension feature, kept working and documented but no longer receiving investment. The goal stays open because the Pi extension stays supported, but it sits behind the Harness group and behind any goal that serves every harness rather than one.
+
+## Audit remediation
+
+- **[open]** Harden generated AGENTS guidance - `harden-generated-agents-guidance`
+
+  Make the always-loaded generated AGENTS block safe as a compact command reference. Pin the frozen marker literals so a package rename cannot orphan blocks already written into other repositories, render or explicitly document the action scopes of listed flags, and extend contract tests so this surface cannot suggest invalid exit-code-2 invocations or silently drift from the canonical command contract.
+
+- **[open]** Complete Pi capture guidance - `complete-pi-capture-guidance`
+
+  Bring the Pi worklist model tool prompt up to the same capture contract as the generated skill, AGENTS block, CLI guide, and MCP metadata. Tell Pi agents to propose broad outcomes, present the exact JSON batch for explicit approval, treat dry-run only as a preview, apply an approved batch in exactly one mutating apply-plan call, and never decompose it into per-goal add calls. Preserve the exact-confirmation guardrails and test the prompt delivered to the registered tool.
+
+- **[open]** Align MCP adapter contracts - `align-mcp-adapter-contracts`
+
+  Make the MCP resources and tools obey the same input and result contracts as the CLI and shared application service. Refuse title changes combined with appendDescription, preserve exact plan dependency-reference validation instead of trimming invalid input, reject blank find queries instead of returning every goal, replace CLI-argv tool titles with MCP-native metadata, keep schema failures and service failures predictably documented, and cover the shared envelope metadata and validation behavior through the real MCP protocol.
+
+- **[open, blocked]** Isolate Claude plugin MCP config - `isolate-claude-plugin-mcp-config`
+
+  Stop the plugin's MCP declaration from also registering a broken project-scoped server in this repository. Put the MCP configuration in a plugin-owned location or inline declaration where CLAUDE_PLUGIN_ROOT and CLAUDE_PROJECT_DIR are expanded by Claude Code, preserve generated-artifact and package coverage, and verify both a real plugin install and a contributor checkout without missing-variable diagnostics.
+
+  Depends on `align-mcp-adapter-contracts` (open).
+
+- **[open]** Repair project start semantics - `repair-project-start-semantics`
+
+  Correct the branch-claim lifecycle across the CLI, application service, persistence layer, MCP, and Pi model tool. Clearing a stale branch from an already-done goal must preserve its historical completedAt, project start --json must return a typed JSON failure on detached HEAD or branch lookup failure, and the Pi schema must expose expectedUpdatedAt so claims can use the same optimistic concurrency guard as CLI and MCP. Add observable regressions for each interface and preserve ready-frontier claim behavior.
+
+- **[open, blocked]** Make dispatch bindings safe - `make-dispatch-bindings-safe`
+
+  Repair the packaged dispatch recipe so both bindings launch bounded parallel work without leaking or corrupting claims and workspaces. Herdr prompt submission must not wait indefinitely or interpret an ambiguous wait failure as permission to abandon a submitted worker; every clear must use the updatedAt returned by its own claim; detached launches need an executable startup handshake; Herdr agents and panes must close before returning Treehouse leases; and dirty-worktree cleanup must be non-interactive, explicit, and verified. Exercise the exact documented commands rather than substitute driver commands.
+
+  Depends on `repair-project-start-semantics` (open).

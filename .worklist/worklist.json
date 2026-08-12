@@ -596,7 +596,67 @@
       "status": "open",
       "createdAt": "2026-08-10T16:38:11.883Z",
       "updatedAt": "2026-08-10T16:38:11.883Z"
+    },
+    {
+      "id": "harden-generated-agents-guidance",
+      "title": "Harden generated AGENTS guidance",
+      "description": "Make the always-loaded generated AGENTS block safe as a compact command reference. Pin the frozen marker literals so a package rename cannot orphan blocks already written into other repositories, render or explicitly document the action scopes of listed flags, and extend contract tests so this surface cannot suggest invalid exit-code-2 invocations or silently drift from the canonical command contract.",
+      "group": "Audit remediation",
+      "status": "open",
+      "createdAt": "2026-08-12T09:42:45.110Z",
+      "updatedAt": "2026-08-12T09:42:45.110Z"
+    },
+    {
+      "id": "complete-pi-capture-guidance",
+      "title": "Complete Pi capture guidance",
+      "description": "Bring the Pi worklist model tool prompt up to the same capture contract as the generated skill, AGENTS block, CLI guide, and MCP metadata. Tell Pi agents to propose broad outcomes, present the exact JSON batch for explicit approval, treat dry-run only as a preview, apply an approved batch in exactly one mutating apply-plan call, and never decompose it into per-goal add calls. Preserve the exact-confirmation guardrails and test the prompt delivered to the registered tool.",
+      "group": "Audit remediation",
+      "status": "open",
+      "createdAt": "2026-08-12T09:42:45.110Z",
+      "updatedAt": "2026-08-12T09:42:45.110Z"
+    },
+    {
+      "id": "align-mcp-adapter-contracts",
+      "title": "Align MCP adapter contracts",
+      "description": "Make the MCP resources and tools obey the same input and result contracts as the CLI and shared application service. Refuse title changes combined with appendDescription, preserve exact plan dependency-reference validation instead of trimming invalid input, reject blank find queries instead of returning every goal, replace CLI-argv tool titles with MCP-native metadata, keep schema failures and service failures predictably documented, and cover the shared envelope metadata and validation behavior through the real MCP protocol.",
+      "group": "Audit remediation",
+      "status": "open",
+      "createdAt": "2026-08-12T09:42:45.110Z",
+      "updatedAt": "2026-08-12T09:42:45.110Z"
+    },
+    {
+      "id": "isolate-claude-plugin-mcp-config",
+      "title": "Isolate Claude plugin MCP config",
+      "description": "Stop the plugin's MCP declaration from also registering a broken project-scoped server in this repository. Put the MCP configuration in a plugin-owned location or inline declaration where CLAUDE_PLUGIN_ROOT and CLAUDE_PROJECT_DIR are expanded by Claude Code, preserve generated-artifact and package coverage, and verify both a real plugin install and a contributor checkout without missing-variable diagnostics.",
+      "group": "Audit remediation",
+      "dependsOn": [
+        "align-mcp-adapter-contracts"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-12T09:42:45.110Z",
+      "updatedAt": "2026-08-12T09:42:45.110Z"
+    },
+    {
+      "id": "repair-project-start-semantics",
+      "title": "Repair project start semantics",
+      "description": "Correct the branch-claim lifecycle across the CLI, application service, persistence layer, MCP, and Pi model tool. Clearing a stale branch from an already-done goal must preserve its historical completedAt, project start --json must return a typed JSON failure on detached HEAD or branch lookup failure, and the Pi schema must expose expectedUpdatedAt so claims can use the same optimistic concurrency guard as CLI and MCP. Add observable regressions for each interface and preserve ready-frontier claim behavior.",
+      "group": "Audit remediation",
+      "status": "open",
+      "createdAt": "2026-08-12T09:42:45.110Z",
+      "updatedAt": "2026-08-12T09:42:45.110Z"
+    },
+    {
+      "id": "make-dispatch-bindings-safe",
+      "title": "Make dispatch bindings safe",
+      "description": "Repair the packaged dispatch recipe so both bindings launch bounded parallel work without leaking or corrupting claims and workspaces. Herdr prompt submission must not wait indefinitely or interpret an ambiguous wait failure as permission to abandon a submitted worker; every clear must use the updatedAt returned by its own claim; detached launches need an executable startup handshake; Herdr agents and panes must close before returning Treehouse leases; and dirty-worktree cleanup must be non-interactive, explicit, and verified. Exercise the exact documented commands rather than substitute driver commands.",
+      "group": "Audit remediation",
+      "dependsOn": [
+        "repair-project-start-semantics"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-12T09:42:45.110Z",
+      "updatedAt": "2026-08-12T09:42:45.110Z"
     }
   ],
-  "revision": 252
+  "revision": 253
 }
