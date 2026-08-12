@@ -150,6 +150,12 @@ type OptionalGoalField = "group" | "completedAt" | "dependsOn" | "links";
  * here" and a reader cannot tell "cleared" apart from "never set". Taking the
  * fields together keeps every name beside the value it is written from, however
  * many of them one mutation resolves.
+ *
+ * A field is named to be written or cleared: `{ group: undefined }` clears the
+ * group, while omitting `group` entirely leaves whatever the goal already had.
+ * So a caller names every field its mutation resolves, and builds the value
+ * conditionally rather than the key, because spreading the key away asks for the
+ * stored field to survive rather than for it to be cleared.
  */
 function withOptionalFields(
 	goal: ProjectGoal,
