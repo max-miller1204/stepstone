@@ -602,9 +602,10 @@
       "title": "Harden generated AGENTS guidance",
       "description": "Make the always-loaded generated AGENTS block safe as a compact command reference. Pin the frozen marker literals so a package rename cannot orphan blocks already written into other repositories, render or explicitly document the action scopes of listed flags, and extend contract tests so this surface cannot suggest invalid exit-code-2 invocations or silently drift from the canonical command contract.",
       "group": "Audit remediation",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-12T09:42:45.110Z",
-      "updatedAt": "2026-08-12T09:42:45.110Z"
+      "updatedAt": "2026-08-12T18:52:42.870Z",
+      "completedAt": "2026-08-12T18:52:42.870Z"
     },
     {
       "id": "complete-pi-capture-guidance",
@@ -658,5 +659,5 @@
       "updatedAt": "2026-08-12T09:42:45.110Z"
     }
   ],
-  "revision": 253
+  "revision": 255
 }

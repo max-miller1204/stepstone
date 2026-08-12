@@ -644,7 +644,12 @@ export function renderAgentsMarkdownBlock(): string {
 		"```text",
 		...contract.actions.map((action) => action.usage),
 		"```",
-		`Flags: ${contract.flags.map((flag) => `\`${flag.usage}\``).join(", ")}.`,
+		`Flags: ${contract.flags
+			.map((flag) => {
+				const scope = flagActionScope(flag);
+				return `\`${flag.usage}\`${scope ? ` (${scope})` : ""}`;
+			})
+			.join(", ")}.`,
 		"",
 		`Confirmation guardrail: ${actionNameList(lifecycleActions)} and the mutating forms of ${actionNameList(migrationActions)} require \`--confirm\`; migration \`--dry-run\` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.`,
 		`Capture workflow: ${captureWorkflow.steps.join(" ")}`,
@@ -703,14 +708,21 @@ export function mcpActionDescription(action: CliActionContract): string {
 }
 
 /**
- * A flag's summary, stating which actions accept it.
+ * The action limit a flag carries, or an empty string when it has none.
  *
  * The applicable actions are rendered from the same list the CLI enforces, so
- * no surface can promise a flag the command line rejects.
+ * no surface can promise a flag the command line rejects, and every surface
+ * words the limit identically because they all render it from here.
  */
+export function flagActionScope(flag: CliFlagContract): string {
+	if (!flag.actions) return "";
+	return `only for ${CLI_COMMAND_CONTRACT.scope} ${joinWithAnd(flag.actions)}`;
+}
+
+/** A flag's summary, stating which actions accept it. */
 function flagSummary(flag: CliFlagContract): string {
-	if (!flag.actions) return flag.summary;
-	return `${flag.summary}; only for ${CLI_COMMAND_CONTRACT.scope} ${joinWithAnd(flag.actions)}`;
+	const scope = flagActionScope(flag);
+	return scope ? `${flag.summary}; ${scope}` : flag.summary;
 }
 
 /**
