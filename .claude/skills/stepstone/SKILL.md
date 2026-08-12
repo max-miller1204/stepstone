@@ -188,7 +188,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - That standing consent does not cover archive, delete, reopen, unrelated goals, unmerged work, or a new plan; release an abandoned claim with `start <id> --clear`.
 - Re-read `ready` after each merge and stop when it is empty; distinguish finished roadmaps from blocked or claimed work by reading `waves --json`.
 
-The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in `docs/dispatch.md`.
+The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in the package's `docs/dispatch.md`.
 
 ## Guardrails
 

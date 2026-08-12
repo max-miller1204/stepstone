@@ -20,9 +20,11 @@ npx -y stepstone@latest project start "$goal_id" \
 
 5. Launch the configured agent command in that checkout with the full goal as its prompt.
 6. Observe the worker, but treat only a merged PR from the claimed branch as completion evidence.
-7. Pull the default branch, re-read the goal, then complete it from the root checkout:
+7. Pull the default branch, re-read the goal, then complete it from the root checkout.
+   The claim in step 4 stored the branch on the goal and bumped its `updatedAt`, so the value read in step 2 is already spent; reusing it fails the completion with exit code 4.
 
 ```sh
+updated_at=$(npx -y stepstone@latest project show "$goal_id" --json | jq -r '.result.goal.updatedAt')
 npx -y stepstone@latest project complete "$goal_id" \
   --expect-updated-at "$updated_at" \
   --confirm
@@ -31,6 +33,8 @@ npx -y stepstone@latest project complete "$goal_id" \
 8. Release the workspace and read `ready --json` again.
 9. Stop when `ready` is empty.
 Read `waves --json` to distinguish a finished roadmap from goals that are blocked or already claimed.
+
+The snippets below read envelopes with `jq`, but any JSON reader works: every value they take comes from a documented `result` field.
 
 `--max-parallel N` is a driver policy, not stored roadmap state.
 Dispatch at most $N$ entries from each ready result.
@@ -62,20 +66,31 @@ workspace="../stepstone-$goal_id"
 git worktree add -b "$branch" "$workspace" HEAD
 ```
 
-Claim the goal from the root checkout, then launch the configured command with standard output captured for inspection:
+Claim the goal from the root checkout, and launch only if the claim succeeded.
+A failed claim means another driver holds the goal, so the workspace is discarded rather than staffed:
 
 ```sh
-npx -y stepstone@latest project start "$goal_id" \
+if ! npx -y stepstone@latest project start "$goal_id" \
   --branch "$branch" \
   --expect-updated-at "$updated_at"
+then
+  git worktree remove "$workspace"
+  git branch -D "$branch"
+  exit 1
+fi
 
+runtime="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
+mkdir -p "$runtime"
 (
   cd "$workspace"
   nohup sh -c 'exec "$@"' sh "$AGENT_COMMAND" "$goal_prompt" \
-    >.stepstone-agent.log 2>&1 </dev/null &
-  echo $! >.stepstone-agent.pid
+    >"$runtime/agent.log" 2>&1 </dev/null &
+  echo $! >"$runtime/agent.pid"
 )
 ```
+
+The log and pid file belong to the driver, not to the branch under review.
+Keeping them outside `$workspace` leaves the worker's checkout clean, so an agent that stages everything cannot commit its own transcript into the PR and the worktree stays removable.
 
 `AGENT_COMMAND` is configuration.
 It may name Pi, Claude Code, Codex, Cursor, or another CLI.
@@ -87,6 +102,9 @@ After the PR merges and the goal is completed on the default branch, remove the 
 git worktree remove "$workspace"
 ```
 
+That removal refuses to discard a checkout holding modified or untracked files.
+When the worker left build artifacts behind and its branch is already merged, re-run it with `--force`.
+
 If the run is abandoned, release the Stepstone claim before removing the worktree.
 
 ## Binding B: Herdr panes and Treehouse leases
@@ -94,27 +112,37 @@ If the run is abandoned, release the Stepstone claim before removing the worktre
 This binding uses Treehouse only for workspace isolation and Herdr only for session hosting.
 Neither tool owns roadmap state.
 
-Acquire a durable workspace lease and discover its checkout:
+Acquire a durable workspace lease, and choose the branch name here rather than reading it back from the leased checkout.
+A pooled worktree can arrive on a detached HEAD, where `git branch --show-current` prints nothing and the claim below is rejected for a missing branch:
 
 ```sh
 lease_holder="stepstone:$goal_id"
+branch="stepstone/$goal_id"
+base=$(git rev-parse HEAD)
 workspace=$(treehouse get --lease --lease-holder "$lease_holder")
-branch=$(git -C "$workspace" branch --show-current)
 ```
 
-Claim the goal from the root checkout.
-Create a Herdr pane in the leased checkout, start the configured supported agent, and submit the goal prompt:
+Claim the goal from the root checkout, returning the lease if another driver claimed it first.
+Only a successful claim creates the branch, splits a Herdr pane in the leased checkout, starts the configured supported agent, and submits the goal prompt:
 
 ```sh
-npx -y stepstone@latest project start "$goal_id" \
+if ! npx -y stepstone@latest project start "$goal_id" \
   --branch "$branch" \
   --expect-updated-at "$updated_at"
+then
+  treehouse return "$workspace" --if-lease-holder "$lease_holder"
+  exit 1
+fi
 
-pane_id=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus)
+git -C "$workspace" checkout -b "$branch" "$base"
+pane_id=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus \
+  | jq -r '.result.pane.pane_id')
 agent_name="stepstone-$goal_id"
 herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id"
 herdr agent prompt "$agent_name" "$goal_prompt" --wait
 ```
+
+Herdr answers over its socket API in a JSON envelope, so the pane ID is read out of `.result.pane.pane_id`; passing the whole response to `--pane` starts nothing.
 
 Use `herdr agent wait "$agent_name"` and `herdr agent read "$agent_name"` for liveness and diagnostics.
 Those signals never replace merged-PR evidence.
@@ -132,7 +160,8 @@ On abandonment, run `project start "$goal_id" --clear` before returning the leas
 - Only the root session mutates Project Goals, and it does so from the default-branch checkout.
 - Workers never edit `.worklist/worklist.json` or run mutating Stepstone commands.
 - Claim before launch, and release every abandoned claim.
-- Use each goal's `updatedAt` precondition for claim and completion.
+- Treat a rejected claim as a stop: release the workspace instead of launching a worker, because the claim is the only thing preventing a second driver from dispatching the same goal.
+- Use each goal's `updatedAt` precondition for claim and completion, re-reading it before each one rather than reusing a spent value.
 - Keep the approved plan's goal IDs as the authorization allow-list.
 - Match merge evidence to the branch stored on that exact goal.
 - Re-read canonical state after every merge instead of caching the ready frontier.

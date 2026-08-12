@@ -104,6 +104,16 @@ export const GENERATOR_PATH = "scripts/generate-docs.ts";
 export const DOCS_PATH = "docs/cli.md";
 
 /**
+ * Repository-relative path of the authored dispatch recipe the skill points at.
+ *
+ * Named here so the skill renders the same qualified path it renders for the
+ * command reference: an agent reading the installed skill from a consumer
+ * repository resolves a bare `docs/` path against that repository, where the
+ * page does not exist.
+ */
+export const DISPATCH_DOCS_PATH = "docs/dispatch.md";
+
+/**
  * Repository-relative path of the generated agent skill.
  *
  * The directory name is the name agents load the skill by, so it tracks the
@@ -870,7 +880,7 @@ export function renderSkillMarkdown(options: { userInvocable?: boolean } = {}): 
 		"",
 		...contract.dispatchRules.map((rule) => `- ${rule}`),
 		"",
-		"The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in `docs/dispatch.md`.",
+		`The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in the package's \`${DISPATCH_DOCS_PATH}\`.`,
 		"",
 		"## Guardrails",
 		"",
