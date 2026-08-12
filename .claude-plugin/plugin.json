@@ -1,7 +1,7 @@
 {
 	"name": "stepstone",
 	"displayName": "Stepstone",
-	"version": "0.6.2",
+	"version": "0.6.3",
 	"description": "A shared roadmap of project goals for coding agents and the humans working beside them.",
 	"author": {
 		"name": "Max Miller"
