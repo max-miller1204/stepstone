@@ -1,6 +1,6 @@
 {
 	"name": "stepstone",
-	"version": "0.6.4",
+	"version": "0.7.0",
 	"description": "A shared roadmap of project goals for coding agents and the humans working beside them.",
 	"type": "module",
 	"keywords": [
