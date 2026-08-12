@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-45 goals: 16 open, 26 done, 3 archived.
+45 goals: 15 open, 27 done, 3 archived.
 
 ## Orchestrator
 
@@ -132,7 +132,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `slug-ids-human-readable-goal-ids-and` (done), `schema-fields-group-completedat-links` (done), `dependency-graph-dependson-edges-with` (done).
 
-- **[open]** capture-skill: brainstorm to approved plan to one apply - `capture-skill-brainstorm-to-approved`
+- **[done]** capture-skill: brainstorm to approved plan to one apply - `capture-skill-brainstorm-to-approved`
 
   Extend the worklist skill with a capture flow: draft a JSON plan document from a brainstorm session, show it for approval, then apply it with a single apply-plan call. Teach the skill to add a dependsOn edge between goals that will collide on the same modules even without a logical dependency, choosing the more natural order, since edges mean must-land-before.
 

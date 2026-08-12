@@ -24,6 +24,7 @@
 ## stepstone Project Goals
 
 Project Goals are the repository's shared roadmap for humans and coding agents. Store them in `<git-root>/.worklist/worklist.json`, commit them with the code, and use the CLI rather than editing the JSON by hand so validation, locking, and atomic writes remain intact.
+Capture plan entry shape: `{"title":"required broad outcome","description":"optional context","group":"optional section","dependsOn":["optional goal reference"]}`. No other fields are accepted.
 Run `npx -y stepstone@latest project <action> [arguments] [flags]` inside the target Git repository, or pass `--cwd <dir>`. Goal-file overrides (`--file` and `$STEPSTONE_WORKLIST`) follow the documented location order; they never change the `<git-root>/AGENTS.md` target of `project init`.
 
 Command surface:
@@ -53,6 +54,7 @@ help
 Flags: `--json`, `--confirm`, `--cwd <dir>`, `--file <path>`, `--description <text>`, `--append-description <text>`, `--append`, `--group <name>`, `--depends-on <id>`, `--expect-updated-at <timestamp>`, `--dry-run`.
 
 Confirmation guardrail: `complete`, `reopen`, `archive`, and `delete` and the mutating forms of `migrate_ids` and `migrate_path` require `--confirm`; migration `--dry-run` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.
+Capture workflow: Brainstorm broad outcomes for the roadmap rather than internal implementation steps. Draft the exact plain JSON array that represents the complete proposed goal batch. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists. Present that exact JSON array to the user and wait for explicit approval before making any mutation. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.
 Human-only command: `ui` requires an interactive terminal; agents must not run it.
 Exit codes: `0` success; `1` error; `2` usage error; `3` confirmation required; `4` conflict.
 

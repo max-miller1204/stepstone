@@ -77,7 +77,7 @@ Resource reads do not mutate the roadmap.
 ## Mutation tools
 
 The server publishes nine mutation tools.
-Tool names, titles, descriptions, and confirmation metadata come from the same command contract as the CLI's agent-facing surface.
+Tool names, titles, descriptions, confirmation metadata, capture-workflow metadata, and apply-plan schema descriptions come from the same command contract as the CLI's agent-facing surface.
 JSON field names use the camel-case MCP forms shown below rather than CLI flag names.
 
 | Tool | Required input | Optional input | Effect |
@@ -97,6 +97,15 @@ An `id` may be a complete goal ID or a unique ID prefix.
 The `plan` format and its deterministic reference rules are documented in [goals.md](goals.md#json-goal-plans).
 Pass the `updatedAt` value from the caller's last read as `expectedUpdatedAt` when changing an existing goal, so a concurrent edit returns a conflict instead of being overwritten.
 Every mutation runs through the shared cross-process lock and atomic file replacement.
+
+## Capturing a brainstorm
+
+Brainstorm broad roadmap outcomes rather than internal implementation steps.
+Draft the exact plain JSON array for the complete proposed goal batch.
+When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even without a logical dependency.
+Present that exact JSON array to the user and wait for explicit approval before mutating the roadmap.
+An optional `apply-plan` call with `dryRun: true` previews validation, projected IDs, dependencies, and warnings, but the preview is not approval.
+After explicit approval, make exactly one mutating `apply-plan` call with the entire approved array and never replace it with per-goal `add` calls.
 
 ## Exact confirmation guardrails
 

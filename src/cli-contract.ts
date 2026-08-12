@@ -18,6 +18,22 @@ export interface CliActionContract {
 	interactive?: boolean;
 	/** Expose this command through the matching MCP primitive. */
 	mcp?: "resource" | "tool";
+	/** Agent workflow attached to the one action that atomically applies an approved capture plan. */
+	captureWorkflow?: CliCaptureWorkflowContract;
+}
+
+export interface CliCaptureWorkflowContract {
+	title: string;
+	steps: readonly string[];
+	schemaDescriptions: {
+		plan: string;
+		entry: string;
+		title: string;
+		description: string;
+		group: string;
+		dependsOn: string;
+		dryRun: string;
+	};
 }
 
 export interface CliFlagContract {
@@ -196,6 +212,28 @@ export const CLI_COMMAND_CONTRACT = {
 			usage: "apply-plan <plan.json>",
 			summary: "Validate and atomically add every goal in a JSON plan",
 			mcp: "tool",
+			captureWorkflow: {
+				title: "Capture brainstorms as approved goal plans",
+				steps: [
+					"Brainstorm broad outcomes for the roadmap rather than internal implementation steps.",
+					"Draft the exact plain JSON array that represents the complete proposed goal batch.",
+					"When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists.",
+					"Present that exact JSON array to the user and wait for explicit approval before making any mutation.",
+					"An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step.",
+					"After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.",
+				],
+				schemaDescriptions: {
+					plan: "The exact plain JSON goal array presented for approval, or the same approved array to add atomically",
+					entry: "One broad Project Goal outcome in the exact capture plan",
+					title: "The broad outcome this Project Goal should achieve",
+					description: "Optional outcome-level context, not an internal step-by-step implementation plan",
+					group: "Optional free-form roadmap section for this goal",
+					dependsOn:
+						"Exact pre-collision slugs of batch goals or exact current or former IDs of existing goals that must land first; for module or file collisions, the later naturally ordered goal names the earlier goal",
+					dryRun:
+						"Preview validation, projected IDs, dependencies, and warnings without writing; a dry-run is not user approval",
+				},
+			},
 		},
 		{
 			name: "update",
@@ -462,8 +500,6 @@ export const CLI_COMMAND_CONTRACT = {
 		"Record a real must-land-before relationship with `--depends-on <id>`, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.",
 		"Send the complete set of edges on every --depends-on update, because it replaces the stored set rather than adding to it.",
 		"Pass --expect-updated-at with the updatedAt from your own read whenever you change a goal, so your mutation conflicts if the goal changed in the meantime.",
-		"Use apply-plan for an approved JSON goal batch, and run it with --dry-run first when the user needs to review predicted IDs, dependencies, or shadow warnings.",
-		"Broad outcomes belong in Project Goals; do not mirror your internal step-by-step plan into them.",
 	],
 } as const;
 
@@ -481,12 +517,14 @@ export function renderAgentsMarkdownBlock(): string {
 	const interactive = contract.actions.filter((action) => action.interactive);
 	const migrationActions = confirmed.filter((action) => action.name.startsWith("migrate_"));
 	const lifecycleActions = confirmed.filter((action) => !action.name.startsWith("migrate_"));
+	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
 	return [
 		AGENTS_BLOCK_START,
 		"",
 		`## ${contract.binary} Project Goals`,
 		"",
 		`Project Goals are the repository's shared roadmap for humans and coding agents. Store them in \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, commit them with the code, and use the CLI rather than editing the JSON by hand so validation, locking, and atomic writes remain intact.`,
+		`Capture plan entry shape: \`{"title":"required broad outcome","description":"optional context","group":"optional section","dependsOn":["optional goal reference"]}\`. No other fields are accepted.`,
 		`Run \`${publishedInvocation} <action> [arguments] [flags]\` inside the target Git repository, or pass \`--cwd <dir>\`. Goal-file overrides (\`--file\` and \`$${WORKLIST_PATH_ENV}\`) follow the documented location order; they never change the \`<git-root>/AGENTS.md\` target of \`project init\`.`,
 		"",
 		"Command surface:",
@@ -497,6 +535,7 @@ export function renderAgentsMarkdownBlock(): string {
 		`Flags: ${contract.flags.map((flag) => `\`${flag.usage}\``).join(", ")}.`,
 		"",
 		`Confirmation guardrail: ${actionNameList(lifecycleActions)} and the mutating forms of ${actionNameList(migrationActions)} require \`--confirm\`; migration \`--dry-run\` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.`,
+		`Capture workflow: ${captureWorkflow.steps.join(" ")}`,
 		`Human-only command: ${actionNameList(interactive)} requires an interactive terminal; agents must not run it.`,
 		`Exit codes: ${contract.exitCodes.map(({ code, meaning }) => `\`${code}\` ${meaning}`).join("; ")}.`,
 		"",
@@ -530,6 +569,25 @@ function joinWithAnd(items: readonly string[]): string {
 /** Render `a`, `b`, and `c` from a set of actions. */
 function actionNameList(actions: readonly CliActionContract[]): string {
 	return joinWithAnd(actions.map((action) => `\`${action.name}\``));
+}
+
+type CaptureWorkflowAction = CliActionContract & { captureWorkflow: CliCaptureWorkflowContract };
+
+/** Find the one contract action that owns the brainstorm-to-approved-plan workflow. */
+function captureWorkflowAction(actions: readonly CliActionContract[]): CaptureWorkflowAction {
+	const matches = actions.filter(
+		(action): action is CaptureWorkflowAction => action.captureWorkflow !== undefined,
+	);
+	if (matches.length !== 1) {
+		throw new Error(`Expected exactly one capture workflow action, found ${matches.length}`);
+	}
+	return matches[0];
+}
+
+/** Render the MCP description from the same action and workflow used by every agent guide. */
+export function mcpActionDescription(action: CliActionContract): string {
+	if (!action.captureWorkflow) return action.summary;
+	return `${action.summary}. ${action.captureWorkflow.steps.join(" ")}`;
 }
 
 /**
@@ -588,9 +646,14 @@ export function renderSkillMarkdown(): string {
 	const publishedBinary = `${contract.binary}@latest`;
 	const lifecycleActions = contract.actions.filter((action) => action.confirmRequired);
 	const safeActions = contract.actions.filter(
-		(action) => !action.confirmRequired && !action.interactive && action.name !== "help",
+		(action) =>
+			!action.confirmRequired &&
+			!action.interactive &&
+			action.name !== "help" &&
+			action.name !== "apply-plan",
 	);
 	const interactiveActions = contract.actions.filter((action) => action.interactive);
+	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
 	// A title-derived ID in the shape `add` actually mints, so the examples show
 	// what `list` and `find` hand back rather than a placeholder.
 	const exampleId = "support-goal-templates";
@@ -604,7 +667,7 @@ export function renderSkillMarkdown(): string {
 		"list --json",
 		'add Support goal templates --description "Let teams share reusable goal outlines"',
 		"apply-plan plan.json --dry-run --json",
-		"apply-plan plan.json --json",
+		"apply-plan plan.json --json # only after explicit approval of this exact plan",
 		"find templates --json",
 		"next --json",
 		"ready --json",
@@ -679,6 +742,10 @@ export function renderSkillMarkdown(): string {
 		"",
 		...contract.planRules.map((rule) => `- ${rule}`),
 		"",
+		`## ${captureWorkflow.title}`,
+		"",
+		...captureWorkflow.steps.map((step, index) => `${index + 1}. ${step}`),
+		"",
 		"## Goal IDs",
 		"",
 		...contract.idRules.map((rule) => `- ${rule}`),
@@ -708,6 +775,7 @@ export function renderSkillMarkdown(): string {
 		`- Exit code 4 (${exitCodeMeaning(4)}) means a concurrent change conflicted with yours; re-read current state with \`list\` or \`show\` before retrying.`,
 		"  A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.",
 		`- ${actionNameList(safeActions)} are safe to run whenever they serve the user's request.`,
+		"- `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.",
 		`- ${actionNameList(interactiveActions)} opens a full-screen board for the human at the keyboard, not for you.`,
 		"  Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.",
 		`  Suggest \`npx -y ${publishedBinary} ${contract.scope} ui\` when the user wants to browse or edit goals themselves; read state with \`list\` and \`show\` instead.`,
@@ -731,6 +799,7 @@ export function renderSkillMarkdown(): string {
 export function renderCliGuide(): string {
 	const contract = CLI_COMMAND_CONTRACT;
 	const publishedBinary = `${contract.binary}@latest`;
+	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
 	const actionRows = contract.actions.map((action) => {
 		const notes = [
 			action.confirmRequired ? ". Requires explicit user confirmation" : "",
@@ -777,6 +846,10 @@ export function renderCliGuide(): string {
 		"## JSON plans",
 		"",
 		...contract.planRules.map((rule) => `- ${rule}`),
+		"",
+		`## ${captureWorkflow.title}`,
+		"",
+		...captureWorkflow.steps.map((step, index) => `${index + 1}. ${step}`),
 		"",
 		"## Goal IDs",
 		"",

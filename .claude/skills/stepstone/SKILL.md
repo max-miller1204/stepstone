@@ -78,7 +78,7 @@ Examples:
 npx -y stepstone@latest project list --json
 npx -y stepstone@latest project add Support goal templates --description "Let teams share reusable goal outlines"
 npx -y stepstone@latest project apply-plan plan.json --dry-run --json
-npx -y stepstone@latest project apply-plan plan.json --json
+npx -y stepstone@latest project apply-plan plan.json --json # only after explicit approval of this exact plan
 npx -y stepstone@latest project find templates --json
 npx -y stepstone@latest project next --json
 npx -y stepstone@latest project ready --json
@@ -119,6 +119,15 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - A non-empty plan appends every goal in document order through one locked atomic replacement and increments the project revision exactly once; an empty plan is a valid no-op.
 - `apply-plan --dry-run` performs the same locked validation and ID projection without writing or incrementing the revision; its prediction is advisory after the command exits because another writer may change the worklist before a later apply.
 - The plan path is resolved from the process working directory, independently of `--cwd`, which only selects the target Git repository.
+
+## Capture brainstorms as approved goal plans
+
+1. Brainstorm broad outcomes for the roadmap rather than internal implementation steps.
+2. Draft the exact plain JSON array that represents the complete proposed goal batch.
+3. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists.
+4. Present that exact JSON array to the user and wait for explicit approval before making any mutation.
+5. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step.
+6. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.
 
 ## Goal IDs
 
@@ -174,7 +183,8 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - Exit code 3 (confirmation required) means the command needs `--confirm`; stop and ask the user instead of retrying with the flag.
 - Exit code 4 (conflict) means a concurrent change conflicted with yours; re-read current state with `list` or `show` before retrying.
   A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.
-- `init`, `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `apply-plan`, `update`, `move`, and `set_active` are safe to run whenever they serve the user's request.
+- `init`, `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, and `set_active` are safe to run whenever they serve the user's request.
+- `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.
 - `ui` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.
   Suggest `npx -y stepstone@latest project ui` when the user wants to browse or edit goals themselves; read state with `list` and `show` instead.

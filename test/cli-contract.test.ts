@@ -10,6 +10,7 @@ import {
 	CLI_COMMAND_CONTRACT,
 	DOCS_PATH,
 	LEGACY_WORKLIST_DIRECTORY,
+	mcpActionDescription,
 	renderAgentsMarkdownBlock,
 	renderCliGuide,
 	renderCliUsage,
@@ -301,6 +302,28 @@ describe("single CLI command contract", () => {
 				`agent guidance never names the confirm-gated action \`${action.name}\``,
 			).toBe(true);
 		}
+	});
+
+	it("propagates the single capture workflow to every agent-facing renderer", () => {
+		const workflowActions = CLI_COMMAND_CONTRACT.actions.filter(
+			(action) => action.captureWorkflow !== undefined,
+		);
+		expect(workflowActions).toHaveLength(1);
+		const action = workflowActions[0];
+		if (!action?.captureWorkflow) throw new Error("apply-plan capture workflow is missing");
+		expect(action.name).toBe("apply-plan");
+
+		const surfaces = [
+			renderSkillMarkdown(),
+			renderAgentsMarkdownBlock(),
+			renderCliGuide(),
+			mcpActionDescription(action),
+		];
+		for (const step of action.captureWorkflow.steps) {
+			for (const surface of surfaces) expect(surface).toContain(step);
+		}
+		expect(renderSkillMarkdown()).toContain(`## ${action.captureWorkflow.title}`);
+		expect(renderCliGuide()).toContain(`## ${action.captureWorkflow.title}`);
 	});
 
 	it("derives the repository-neutral AGENTS.md block from the same contract", async () => {
