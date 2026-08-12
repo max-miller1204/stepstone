@@ -1133,6 +1133,33 @@ describe("project goal CLI", () => {
 		expect(wrongAction.stderr).toContain("--group is only supported by project add, update");
 	});
 
+	it("sets, replaces, clears, validates, and preserves goal links", async () => {
+		const root = await tempGitRepo();
+		const added = await runCli(root, [
+			"project",
+			"add",
+			"Linked",
+			"--link",
+			"https://example.com/one",
+			"--link",
+			"https://example.com/two",
+		]);
+		expect(added.code).toBe(0);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/one", "https://example.com/two"]);
+
+		await runCli(root, ["project", "update", "linked", "--group", "Foundation"]);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/one", "https://example.com/two"]);
+		const invalid = await runCli(root, ["project", "update", "linked", "--link", "github.com/example"]);
+		expect(invalid.code).toBe(1);
+		expect(invalid.stderr).toContain("absolute HTTP or HTTPS URL");
+		expect((await readGoals(root))[0].links).toHaveLength(2);
+
+		await runCli(root, ["project", "update", "linked", "--link", "https://example.com/two"]);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/two"]);
+		await runCli(root, ["project", "update", "linked", "--link", ""]);
+		expect((await readGoals(root))[0]).not.toHaveProperty("links");
+	});
+
 	it("records dependency edges and derives what a goal blocks", async () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Slug", "ids"]);
@@ -1280,7 +1307,7 @@ describe("project goal CLI", () => {
 
 		const nothingToDo = await runCli(root, ["project", "update", "slug-ids"]);
 		expect(nothingToDo.code).toBe(2);
-		expect(nothingToDo.stderr).toContain("--group, or --depends-on");
+		expect(nothingToDo.stderr).toContain("--depends-on, or --link");
 	});
 
 	it("reports malformed files without overwriting them", async () => {

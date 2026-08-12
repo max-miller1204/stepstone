@@ -98,6 +98,8 @@ interface CliInvocation {
 	group?: string;
 	/** Goals that must land first, as written; an empty entry clears every edge. */
 	dependsOn?: string[];
+	/** Informational URLs; an empty entry clears every link. */
+	links?: string[];
 	expectedUpdatedAt?: string;
 	/** Report what a mutation would do without writing it. */
 	dryRun: boolean;
@@ -221,6 +223,7 @@ interface ParsedCliHead {
 	positionals: string[];
 	flagsUsed: Set<string>;
 	dependsOn: string[];
+	links: string[];
 	/** Positionals written after the --description value, which a title must not be built from. */
 	positionalsAfterDescription: number;
 	/** Positionals written after the --append-description value, which a title must not be built from. */
@@ -241,6 +244,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	const positionals: string[] = [];
 	const flagsUsed = new Set<string>();
 	const dependsOn: string[] = [];
+	const links: string[] = [];
 	let json = false;
 	let confirm = false;
 	let append = false;
@@ -302,6 +306,12 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 				dependsOn.push(readClearableFlagValue(head, index, part, "a goal id, or '' to clear every edge"));
 				index++;
 				break;
+			case "--link":
+				links.push(
+					readClearableFlagValue(head, index, part, "an absolute HTTP(S) URL, or '' to clear every link"),
+				);
+				index++;
+				break;
 			case "--expect-updated-at":
 				expectedUpdatedAt = readFlagValue(head, index, part, "a timestamp");
 				index++;
@@ -317,6 +327,9 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	if (dependsOn.some((entry) => entry.trim() === "") && dependsOn.length > 1) {
 		fail(`--depends-on '' clears every edge and cannot be combined with another --depends-on\n\n${USAGE}`, 2);
 	}
+	if (links.some((entry) => entry.trim() === "") && links.length > 1) {
+		fail(`--link '' clears every link and cannot be combined with another --link\n\n${USAGE}`, 2);
+	}
 	const positionalsAfter = (flag: string): number => {
 		const before = positionalsBeforeFlag.get(flag);
 		return before === undefined ? 0 : positionals.length - before;
@@ -325,6 +338,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		positionals,
 		flagsUsed,
 		dependsOn,
+		links,
 		positionalsAfterDescription: positionalsAfter("--description"),
 		positionalsAfterAppendDescription: positionalsAfter("--append-description"),
 		directDescription,
@@ -369,7 +383,7 @@ function parseArgs(argv: string[]): CliInvocation {
 	const parsed = parseCliHead(head);
 	const hasSeparatorDescription = separator !== -1;
 	validateDescriptionInputs(parsed, hasSeparatorDescription);
-	const { positionals, directDescription, dependsOn, ...carried } = parsed;
+	const { positionals, directDescription, dependsOn, links, ...carried } = parsed;
 	const [scope, action, ...rest] = positionals;
 	if (!scope || !action) fail(USAGE, 2);
 	return {
@@ -381,6 +395,7 @@ function parseArgs(argv: string[]): CliInvocation {
 		...(carried.flagsUsed.has("--depends-on")
 			? { dependsOn: dependsOn.filter((entry) => entry.trim() !== "") }
 			: {}),
+		...(carried.flagsUsed.has("--link") ? { links: links.filter((entry) => entry.trim() !== "") } : {}),
 	};
 }
 
@@ -1153,6 +1168,7 @@ async function run(invocation: CliInvocation): Promise<void> {
 				description,
 				group: invocation.group,
 				dependsOn: invocation.dependsOn,
+				links: invocation.links,
 			});
 			const goal = envelope.ok ? envelope.result.goal : undefined;
 			if (!goal) throw new Error("Added Project Goal was not returned");
@@ -1213,10 +1229,11 @@ async function run(invocation: CliInvocation): Promise<void> {
 				invocation.description === undefined &&
 				invocation.appendDescription === undefined &&
 				invocation.group === undefined &&
-				invocation.dependsOn === undefined
+				invocation.dependsOn === undefined &&
+				invocation.links === undefined
 			) {
 				fail(
-					`project update requires a new title, --description, --append-description, --group, or --depends-on\n\n${USAGE}`,
+					`project update requires a new title, --description, --append-description, --group, --depends-on, or --link\n\n${USAGE}`,
 					2,
 				);
 			}
@@ -1227,6 +1244,7 @@ async function run(invocation: CliInvocation): Promise<void> {
 				title,
 				group: invocation.group,
 				dependsOn: invocation.dependsOn,
+				links: invocation.links,
 				...(appendedText !== undefined
 					? { appendDescription: appendedText }
 					: { description: invocation.description }),

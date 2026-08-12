@@ -68,6 +68,8 @@ export interface WorklistOperation {
 	appendDescription?: string;
 	/** Project Goal only: the section it belongs to. The empty string clears it. */
 	group?: string;
+	/** Project Goal only: the complete set of informational HTTP(S) URLs. An empty array clears it. */
+	links?: string[];
 	/**
 	 * Project Goal only: the complete set of goals that must land first.
 	 *
@@ -505,6 +507,12 @@ function rejectUnsupportedProjectOptions(operation: WorklistOperation): void {
 			resolution: "use-project-add-or-update",
 		});
 	}
+	if (operation.links !== undefined && !GROUP_ACTIONS.has(operation.action)) {
+		throw validationError("links is only supported for project add and update.", {
+			fields: ["links"],
+			resolution: "use-project-add-or-update",
+		});
+	}
 }
 
 /**
@@ -523,6 +531,31 @@ function normalizeDependsOn(operation: WorklistOperation): string[] | undefined 
 		});
 	}
 	return operation.dependsOn.map((entry) => entry.trim());
+}
+
+function normalizeLinks(operation: WorklistOperation): string[] | undefined {
+	if (operation.links === undefined) return undefined;
+	const links: string[] = [];
+	for (const entry of operation.links) {
+		const value = entry.trim();
+		let parsed: URL;
+		try {
+			parsed = new URL(value);
+		} catch {
+			throw validationError("links entries must be absolute HTTP or HTTPS URLs.", {
+				fields: ["links"],
+				resolution: "provide-absolute-http-or-https-urls",
+			});
+		}
+		if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.href !== value) {
+			throw validationError("links entries must be absolute HTTP or HTTPS URLs.", {
+				fields: ["links"],
+				resolution: "provide-absolute-http-or-https-urls",
+			});
+		}
+		if (!links.includes(value)) links.push(value);
+	}
+	return links;
 }
 
 interface SuccessMetadataInput {
@@ -1110,6 +1143,7 @@ export class WorklistApplicationService {
 						description: operation.description,
 						group: operation.group,
 						dependsOn: operation.dependsOn,
+						links: normalizeLinks(operation),
 					},
 					options,
 				);
@@ -1136,6 +1170,7 @@ export class WorklistApplicationService {
 						title: operation.title,
 						group: operation.group,
 						dependsOn: operation.dependsOn,
+						links: normalizeLinks(operation),
 						...normalizeDescriptionUpdate(operation),
 					},
 					options,

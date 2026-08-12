@@ -199,10 +199,15 @@ describe("Stepstone MCP server", () => {
 				title: "Alpha goal",
 				description: "First foundation",
 				group: "Foundation",
+				links: ["https://example.com/alpha"],
 			});
 			expect(added).toMatchObject({
 				isError: false,
-				envelope: { ok: true, action: "add", result: { goal: { id: "alpha-goal" } } },
+				envelope: {
+					ok: true,
+					action: "add",
+					result: { goal: { id: "alpha-goal", links: ["https://example.com/alpha"] } },
+				},
 			});
 
 			const plan = [

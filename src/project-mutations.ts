@@ -116,6 +116,8 @@ export interface ProjectGoalUpdate {
 	appendDescription?: string;
 	/** Free-form section name. The empty string clears the field. */
 	group?: string;
+	/** The complete set of informational HTTP(S) URLs. An empty array clears it. */
+	links?: string[];
 	/** The complete set of existing goals that must land first. Naming this goal is a cycle. */
 	dependsOn?: string[];
 }
@@ -144,7 +146,7 @@ function nextGoalUpdatedAt(previous: string): string {
  * the file, so the JSON never accumulates properties that only say "nothing
  * here" and a reader cannot tell "cleared" apart from "never set".
  */
-function withOptionalField<Field extends "group" | "completedAt" | "dependsOn">(
+function withOptionalField<Field extends "group" | "completedAt" | "dependsOn" | "links">(
 	goal: ProjectGoal,
 	field: Field,
 	value: ProjectGoal[Field],
@@ -158,6 +160,11 @@ function withOptionalField<Field extends "group" | "completedAt" | "dependsOn">(
 function resolveGroup(current: string | undefined, next: string | undefined): string | undefined {
 	if (next === undefined) return current;
 	return next.trim() || undefined;
+}
+
+function resolveLinks(current: string[] | undefined, next: string[] | undefined): string[] | undefined {
+	if (next === undefined) return current;
+	return next.length > 0 ? next : undefined;
 }
 
 /**
@@ -258,6 +265,7 @@ function mutationOutcome(result: {
 export interface ProjectGoalDraft {
 	description?: string;
 	group?: string;
+	links?: string[];
 	/** Existing goal IDs only; the new goal's ID has not been minted when these resolve. */
 	dependsOn?: string[];
 }
@@ -398,6 +406,7 @@ export async function addProjectGoal(
 ): Promise<ProjectMutationOutcome> {
 	const now = new Date().toISOString();
 	const group = resolveGroup(undefined, draft.group);
+	const links = resolveLinks(undefined, draft.links);
 	const result = await mutateProjectWorklist(
 		path,
 		(worklist) => {
@@ -409,6 +418,7 @@ export async function addProjectGoal(
 				title,
 				description: draft.description,
 				...(group !== undefined ? { group } : {}),
+				...(links !== undefined ? { links } : {}),
 				...(dependsOn !== undefined ? { dependsOn } : {}),
 				status: "open",
 				createdAt: now,
@@ -543,11 +553,13 @@ export async function updateProjectGoal(
 			const title = updates.title ?? current.title;
 			const description = resolveDescription(current.description, updates);
 			const group = resolveGroup(current.group, updates.group);
+			const links = resolveLinks(current.links, updates.links);
 			const dependsOn = resolveDependsOn(worklist, current.dependsOn, updates.dependsOn);
 			if (
 				title === current.title &&
 				description === current.description &&
 				group === current.group &&
+				sameDependsOn(links, current.links) &&
 				sameDependsOn(dependsOn, current.dependsOn)
 			) {
 				return {
@@ -558,17 +570,21 @@ export async function updateProjectGoal(
 			}
 			const updated = withOptionalField(
 				withOptionalField(
-					{
-						...current,
-						title,
-						...(description !== undefined ? { description } : {}),
-						updatedAt: nextGoalUpdatedAt(current.updatedAt),
-					},
-					"group",
-					group,
+					withOptionalField(
+						{
+							...current,
+							title,
+							...(description !== undefined ? { description } : {}),
+							updatedAt: nextGoalUpdatedAt(current.updatedAt),
+						},
+						"group",
+						group,
+					),
+					"dependsOn",
+					dependsOn,
 				),
-				"dependsOn",
-				dependsOn,
+				"links",
+				links,
 			);
 			const goals = [...worklist.goals];
 			goals[index] = updated;
