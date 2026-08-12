@@ -55,7 +55,7 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME matches package.json version $pkg_version"
 
-      - run: npm ci
+      - run: npm install --ignore-scripts
 
       # Same gates as CI, re-run against the exact commit being published so a
       # green tag cannot outrun a red main.

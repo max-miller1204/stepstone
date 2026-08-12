@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm install --ignore-scripts
       - run: npm run check
       # Audit the shipped production tree only: the dev/peer tree pins a known
       # brace-expansion finding via @earendil-works/pi-coding-agent's published
@@ -43,5 +43,5 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm install --ignore-scripts
       - run: npm run no-pi-install:check
