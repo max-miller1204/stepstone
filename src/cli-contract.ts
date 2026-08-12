@@ -93,7 +93,16 @@ export const DOCS_PATH = "docs/cli.md";
  */
 export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 
-/** Stable delimiters around the only bytes Stepstone owns in a repository's AGENTS.md. */
+/**
+ * Stable delimiters around the only bytes Stepstone owns in a repository's AGENTS.md.
+ *
+ * These two strings spell the name as frozen literal text rather than reading it
+ * from `BINARY`, and they are the one deliberate exception to naming the
+ * published package from the contract: `init` has already written them into
+ * other repositories' files, and a rename that moved them would leave a later
+ * `init` unable to find the block it wrote, appending a second one beside a
+ * stale copy nothing refreshes again. A rename leaves these two strings alone.
+ */
 export const AGENTS_BLOCK_START = "<!-- stepstone:project-goals:start -->";
 export const AGENTS_BLOCK_END = "<!-- stepstone:project-goals:end -->";
 
