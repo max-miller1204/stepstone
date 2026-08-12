@@ -2,9 +2,10 @@
  * The single command contract for the stepstone CLI and MCP server.
  *
  * CLI usage text, the command reference in docs/cli.md, the installable agent
- * skill in .claude/skills/stepstone/SKILL.md, and MCP resource and tool
- * metadata are all rendered from this structure so they cannot drift from each
- * other or from the implemented command surface.
+ * skill in .claude/skills/stepstone/SKILL.md, the marker-delimited block
+ * `project init` writes into a repository's AGENTS.md, and MCP resource and
+ * tool metadata are all rendered from this structure so they cannot drift from
+ * each other or from the implemented command surface.
  */
 
 export interface CliActionContract {

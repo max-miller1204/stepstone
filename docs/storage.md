@@ -14,7 +14,7 @@ One resolution order applies everywhere, in the CLI, the MCP server, the termina
 Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps.
 A repository with neither file writes `.worklist/worklist.json`.
 
-When both files exist, the current path wins and every command warns, because quietly ignoring a populated legacy file would look exactly like data loss.
+When both files exist, the current path wins and every goal operation warns, because quietly ignoring a populated legacy file would look exactly like data loss.
 Merge them by hand; no command picks a winner for you.
 A caller that reads envelopes rather than prose, `--json` on the CLI or any MCP response, gets that warning as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
 

@@ -13,7 +13,7 @@ Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to sta
 ## Install
 
 **Any coding harness.**
-Initialize or refresh the repository's harness-neutral `AGENTS.md` guidance, then follow whichever optional integration instructions apply to your client:
+Initialize or refresh the repository's [harness-neutral `AGENTS.md` guidance](docs/usage.md#initializing-agent-guidance), then follow whichever optional integration instructions apply to your client:
 
 ```sh
 npx -y stepstone@latest project init
