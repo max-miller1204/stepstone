@@ -8,9 +8,9 @@
  * someone running `npx` on the published name without Pi - the install this
  * package's own agent skill prescribes. So the check refuses to trust the local
  * tree: it packs the real tarball, installs it into a scratch directory with
- * no dev dependencies and no Pi packages, and drives every executable the
- * manifest publishes, asserting exit codes, `--json` envelopes, and JSON-RPC
- * replies rather than only that a process started.
+ * no dev dependencies and no Pi packages, and drives every executable plus the
+ * installed Claude Code plugin MCP configuration, asserting exit codes,
+ * `--json` envelopes, and JSON-RPC replies rather than only that a process started.
  *
  * Which executables those are comes from package.json's `bin` map rather than
  * from a list written here, so a newly published bin cannot be packed and left
@@ -27,8 +27,8 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
+import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { CLAUDE_PLUGIN_MCP_PATH, CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -327,11 +327,20 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 }
 
 /** Initializes the packaged stdio server and proves reads and writes survive a Pi-free install. */
-async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
+async function exerciseMcp(
+	binPath: string,
+	workspace: string,
+	_version?: string,
+	args: string[] = [],
+	processCwd = workspace,
+	env?: Record<string, string>,
+): Promise<void> {
 	const command = basename(binPath);
 	const transport = new StdioClientTransport({
 		command: binPath,
-		cwd: workspace,
+		args,
+		cwd: processCwd,
+		env,
 		stderr: "pipe",
 	});
 	let stderr = "";
@@ -377,6 +386,42 @@ async function exerciseMcp(binPath: string, workspace: string): Promise<void> {
 	assertNothingUnresolved(command, stderr);
 	assert.equal(stderr, "", `${command} wrote outside the JSON-RPC stdout channel:\n${stderr}`);
 	if (failure !== undefined) throw failure;
+}
+
+/** Starts the installed tarball through the exact MCP process configuration Claude Code reads. */
+async function exerciseClaudePluginMcp(pluginRoot: string, workspace: string): Promise<void> {
+	const config = JSON.parse(await readFile(join(pluginRoot, CLAUDE_PLUGIN_MCP_PATH), "utf8")) as {
+		mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
+	};
+	assert.deepEqual(config, {
+		mcpServers: {
+			[binary]: {
+				command: "node",
+				args: [`\${CLAUDE_PLUGIN_ROOT}/dist/mcp.js`],
+				env: {
+					STEPSTONE_PLUGIN_PROJECT_ROOT: `\${CLAUDE_PROJECT_DIR}`,
+				},
+			},
+		},
+	});
+	const server = config.mcpServers[binary];
+	assert.ok(server, "installed Claude plugin config must declare the Stepstone MCP server");
+	await exerciseMcp(
+		server.command,
+		workspace,
+		undefined,
+		server.args.map((argument) => argument.replaceAll(`\${CLAUDE_PLUGIN_ROOT}`, pluginRoot)),
+		pluginRoot,
+		{
+			...getDefaultEnvironment(),
+			...Object.fromEntries(
+				Object.entries(server.env).map(([key, value]) => [
+					key,
+					value.replaceAll(`\${CLAUDE_PROJECT_DIR}`, workspace),
+				]),
+			),
+		},
+	);
 }
 
 /**
@@ -433,6 +478,12 @@ try {
 		// pi-lens-ignore: await-in-loop
 		await exercise(join(installDir, "node_modules", ".bin", command), workspace, version);
 	}
+
+	const pluginWorkspace = join(scratch, "workspace-claude-plugin");
+	await mkdir(pluginWorkspace, { recursive: true });
+	await run("git", ["init", "-q", "."], pluginWorkspace);
+	step("Driving the installed Claude Code plugin MCP config");
+	await exerciseClaudePluginMcp(join(installDir, "node_modules", name), pluginWorkspace);
 
 	succeeded = true;
 	step(`${name} ${version} runs from a Pi-free install.`);

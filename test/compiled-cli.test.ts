@@ -4,8 +4,15 @@ import { glob, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { beforeAll, describe, expect, it } from "vitest";
-import { CLI_COMMAND_CONTRACT, SKILL_PATH } from "../src/cli-contract.ts";
+import {
+	CLI_COMMAND_CONTRACT,
+	type ClaudePluginPackageMetadata,
+	renderClaudePluginArtifacts,
+	SKILL_PATH,
+} from "../src/cli-contract.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
 import { documentationPages } from "./docs-pages.ts";
 import { buildPackage, packedFilePaths } from "./npm-pack.ts";
@@ -77,6 +84,46 @@ describe("published stepstone package", () => {
 		}
 		expect(compiledCli).toContain('from "./application-service.js"');
 		expect(compiledMcp).toContain('from "./mcp-server.js"');
+	});
+
+	it("starts the compiled MCP server through the Claude plugin config", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-plugin-mcp-"));
+		await execFileAsync("git", ["init", "-q"], { cwd: root });
+		const config = parseJson<{
+			mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
+		}>(await readFile(resolve(".mcp.json"), "utf8"));
+		const configured = config.mcpServers[CLI_COMMAND_CONTRACT.binary];
+		if (!configured) throw new Error("Claude plugin config has no Stepstone MCP server");
+		const pluginRoot = resolve(".");
+		const transport = new StdioClientTransport({
+			command: configured.command,
+			args: configured.args.map((argument) => argument.replaceAll(`\${CLAUDE_PLUGIN_ROOT}`, pluginRoot)),
+			cwd: pluginRoot,
+			stderr: "pipe",
+			env: {
+				...getDefaultEnvironment(),
+				...Object.fromEntries(
+					Object.entries(configured.env).map(([key, value]) => [
+						key,
+						value.replaceAll(`\${CLAUDE_PROJECT_DIR}`, root),
+					]),
+				),
+			},
+		});
+		const client = new Client({ name: "stepstone-claude-plugin-test", version: "1.0.0" });
+		try {
+			await client.connect(transport);
+			const listed = await client.readResource({ uri: `${CLI_COMMAND_CONTRACT.binary}://worklist/list` });
+			const content = listed.contents[0];
+			expect(content && "text" in content ? parseJson(content.text) : undefined).toMatchObject({
+				ok: true,
+				scope: "project",
+				action: "list",
+				result: { goals: [] },
+			});
+		} finally {
+			await client.close();
+		}
 	});
 
 	it("imports only declared dependencies, never a Pi peer", async () => {
@@ -221,6 +268,17 @@ describe("published stepstone package", () => {
 			expect(paths, `${path} is written for this checkout and must not be packaged`).not.toContain(path);
 		}
 		expect(paths, `${SKILL_PATH} must be packaged so an install carries the skill`).toContain(SKILL_PATH);
+		const packageMetadata = parseJson<ClaudePluginPackageMetadata>(
+			await readFile(resolve("package.json"), "utf8"),
+		);
+		for (const artifact of renderClaudePluginArtifacts(packageMetadata)) {
+			expect(paths, `${artifact.path} must be present in the installable Claude Code plugin`).toContain(
+				artifact.path,
+			);
+		}
+		expect(paths, "the isolated Claude plugin cache needs its runtime dependency lock").toContain(
+			"npm-shrinkwrap.json",
+		);
 		expect(paths, "README.md must be packaged; it is the package's front page").toContain("README.md");
 		// Every other documentation page ships, because it documents the package for
 		// somebody using it. Classified by walking the directory rather than from a

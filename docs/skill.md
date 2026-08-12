@@ -19,6 +19,20 @@ The tarball carries `.claude/skills/stepstone/SKILL.md` so the published package
 
 The skill installs no code and pins no version: it invokes the published CLI as `npx -y stepstone@latest`, so an agent that loads it is always driving the current release.
 
+## Claude Code plugin versus the standalone skill
+
+Claude Code users can instead install the complete Stepstone plugin:
+
+```text
+/plugin marketplace add max-miller1204/stepstone
+/plugin install stepstone@stepstone
+```
+
+The plugin includes the same generated skill bytes plus a cache-local MCP server and five namespaced commands: the read-only `/stepstone:list`, `/stepstone:next`, `/stepstone:ready`, and `/stepstone:waves`, and the human-only interactive `/stepstone:ui`.
+It intentionally includes no slash commands for mutations, `show`, or `find`.
+Use the `npx skills add` command above when you want only portable guidance for one or more supported agents.
+Use the Claude Code plugin when you also want the bundled protocol server and namespaced commands.
+
 ## How it is produced
 
 `SKILL.md` is generated from `src/cli-contract.ts` by `scripts/generate-docs.ts`, the same contract that renders the CLI help and [docs/cli.md](cli.md).

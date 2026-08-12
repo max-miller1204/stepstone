@@ -30,8 +30,21 @@ There is nothing to install: the CLI runs from npm on demand, in any Git reposit
 npx -y stepstone@latest project list
 ```
 
-**Claude Code, and other agents the [`skills` CLI](https://github.com/vercel-labs/skills) supports.**
-Install the [agent skill](docs/skill.md), which teaches that CLI and its guardrails:
+**Claude Code plugin.**
+Add this repository's marketplace, then install the self-contained plugin:
+
+```text
+/plugin marketplace add max-miller1204/stepstone
+/plugin install stepstone@stepstone
+```
+
+The plugin bundles the Stepstone skill, a cache-local MCP server, and the namespaced read commands `/stepstone:list`, `/stepstone:next`, `/stepstone:ready`, and `/stepstone:waves`.
+`/stepstone:ui` opens the existing interactive board for a human at the keyboard.
+The read commands cannot mutate the roadmap, and the plugin deliberately provides no mutation slash commands.
+Ask Claude to change goals in natural language when you want it to use the guarded MCP tools.
+
+**Skill-only install for Claude Code and other agents the [`skills` CLI](https://github.com/vercel-labs/skills) supports.**
+Install only the [agent skill](docs/skill.md) when you want CLI guidance without the Claude Code plugin's bundled MCP server and slash commands:
 
 ```sh
 npx skills add max-miller1204/stepstone --skill stepstone -g
@@ -47,8 +60,9 @@ Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a mo
 pi install npm:stepstone
 ```
 
-Installing the npm package does not install the skill, and installing the skill does not install a copy of the CLI.
-The skill is guidance that invokes the published CLI; see [docs/skill.md](docs/skill.md).
+Installing the Claude Code plugin, installing the npm package, and installing the standalone skill are separate choices.
+The plugin includes a generated copy of the skill and the compiled MCP server; the standalone skill installs guidance that invokes the published CLI.
+See [docs/skill.md](docs/skill.md) for the distinction.
 
 ## Try it
 

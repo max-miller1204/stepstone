@@ -1,7 +1,7 @@
 /**
- * Writes every artifact generated from src/cli-contract.ts, refreshes only the
- * marker-delimited Stepstone block in this repository's AGENTS.md, and renders
- * the roadmap from this repository's own goal file.
+ * Writes every artifact generated from src/cli-contract.ts and package metadata,
+ * refreshes only the marker-delimited Stepstone block in this repository's
+ * AGENTS.md, and renders the roadmap from this repository's own goal file.
  *
  *   npm run docs         # write the files
  *   npm run docs:check   # exit 1 if a committed file is stale
@@ -11,15 +11,26 @@
  * without the explicit check.
  */
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { AGENTS_PATH, AgentsBlockError, agentsFileNeedsRefresh, refreshAgentsFile } from "../src/agents.ts";
-import { DOCS_PATH, renderCliGuide, renderSkillMarkdown, SKILL_PATH } from "../src/cli-contract.ts";
+import {
+	CLAUDE_PLUGIN_COMMANDS_DIRECTORY,
+	type ClaudePluginPackageMetadata,
+	DOCS_PATH,
+	renderClaudePluginArtifacts,
+	renderCliGuide,
+	renderSkillMarkdown,
+	SKILL_PATH,
+} from "../src/cli-contract.ts";
 import { createWorklistLocator } from "../src/git.ts";
 import { readProjectWorklist } from "../src/project-store.ts";
 import { ROADMAP_PATH, renderRoadmapMarkdown } from "../src/roadmap.ts";
 
 const repoRoot = resolve(import.meta.dirname, "..");
+const packageMetadata = JSON.parse(
+	await readFile(resolve(repoRoot, "package.json"), "utf8"),
+) as ClaudePluginPackageMetadata;
 
 /**
  * This repository's goals, read through the resolution order every interface
@@ -48,6 +59,10 @@ if (worklist.error) {
 const artifacts = [
 	{ path: DOCS_PATH, render: renderCliGuide },
 	{ path: SKILL_PATH, render: renderSkillMarkdown },
+	...renderClaudePluginArtifacts(packageMetadata).map(({ path, content }) => ({
+		path,
+		render: () => content,
+	})),
 	{ path: ROADMAP_PATH, render: () => renderRoadmapMarkdown(worklist.data) },
 ];
 const check = process.argv.includes("--check");
@@ -70,6 +85,29 @@ for (const artifact of artifacts) {
 	// pi-lens-ignore: await-in-loop
 	await writeFile(target, expected, "utf8");
 	process.stdout.write(`Wrote ${target}\n`);
+}
+
+const expectedPluginCommands = new Set(
+	artifacts
+		.map((artifact) => artifact.path)
+		.filter((path) => dirname(path) === CLAUDE_PLUGIN_COMMANDS_DIRECTORY),
+);
+const commandDirectory = resolve(repoRoot, CLAUDE_PLUGIN_COMMANDS_DIRECTORY);
+const commandEntries = await readdir(commandDirectory).catch((error: NodeJS.ErrnoException) => {
+	if (error.code === "ENOENT") return [];
+	throw error;
+});
+for (const entry of commandEntries) {
+	const path = `${CLAUDE_PLUGIN_COMMANDS_DIRECTORY}/${entry}`;
+	if (expectedPluginCommands.has(path)) continue;
+	if (check) {
+		stale.push(path);
+		continue;
+	}
+	// The root commands directory is wholly generated and supports no authored entries.
+	// pi-lens-ignore: await-in-loop
+	await rm(resolve(commandDirectory, entry), { recursive: true, force: true });
+	process.stdout.write(`Removed stale generated command ${path}\n`);
 }
 
 /**
