@@ -5,9 +5,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
+	AGENTS_BLOCK_END,
+	AGENTS_BLOCK_START,
 	CLI_COMMAND_CONTRACT,
 	DOCS_PATH,
 	LEGACY_WORKLIST_DIRECTORY,
+	renderAgentsMarkdownBlock,
 	renderCliGuide,
 	renderCliUsage,
 	renderSkillMarkdown,
@@ -56,6 +59,21 @@ function absolutePathsIn(text: string): string[] {
 	return [...text.matchAll(/(?<![\w>:~./-])\/[A-Za-z0-9_.~-]+(?:\/[A-Za-z0-9_.~-]+)*/g)].map(
 		(match) => match[0],
 	);
+}
+
+/**
+ * Every angle-bracket placeholder a rendered document hands to GFM as raw HTML.
+ *
+ * Fenced blocks, code spans, and HTML comments are the three places a rendered
+ * document means its angle brackets literally, so they are removed before the
+ * remaining prose is read for anything CommonMark would accept as an open tag.
+ */
+function rawHtmlPlaceholdersIn(markdown: string): string[] {
+	const prose = markdown
+		.replaceAll(/^```[\s\S]*?^```/gm, "")
+		.replaceAll(/<!--[\s\S]*?-->/g, "")
+		.replaceAll(/`[^`\n]*`/g, "");
+	return [...prose.matchAll(/<[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/g)].map((match) => match[0]);
 }
 
 /** Escape a contract value so a pattern built around it matches it literally. */
@@ -285,6 +303,40 @@ describe("single CLI command contract", () => {
 		}
 	});
 
+	it("derives the repository-neutral AGENTS.md block from the same contract", async () => {
+		const block = renderAgentsMarkdownBlock();
+		expect(block).toContain("shared roadmap");
+		expect(block.startsWith(AGENTS_BLOCK_START)).toBe(true);
+		expect(block.endsWith(AGENTS_BLOCK_END)).toBe(true);
+		expect(block).toContain(`<git-root>/${WORKLIST_DIRECTORY}/${WORKLIST_FILENAME}`);
+		expect(block).toContain("--file");
+		expect(block).toContain(`$${WORKLIST_PATH_ENV}`);
+		expect(absolutePathsIn(block)).toEqual([]);
+		for (const action of CLI_COMMAND_CONTRACT.actions) {
+			expect(block, `AGENTS.md is missing action usage \`${action.usage}\``).toContain(action.usage);
+		}
+		for (const flag of CLI_COMMAND_CONTRACT.flags) {
+			expect(block, `AGENTS.md is missing flag usage \`${flag.usage}\``).toContain(flag.usage);
+		}
+		for (const action of CLI_COMMAND_CONTRACT.actions.filter((entry) => entry.confirmRequired)) {
+			expect(block, `AGENTS.md is missing confirmation guardrail for ${action.name}`).toContain(
+				`\`${action.name}\``,
+			);
+		}
+		for (const { code, meaning } of CLI_COMMAND_CONTRACT.exitCodes) {
+			expect(block).toContain(`\`${code}\` ${meaning}`);
+		}
+
+		const committed = await readFile(resolve("AGENTS.md"), "utf8");
+		const start = committed.indexOf(AGENTS_BLOCK_START);
+		const end = committed.indexOf(AGENTS_BLOCK_END);
+		expect(start, "AGENTS.md is missing the generated Stepstone block").toBeGreaterThanOrEqual(0);
+		expect(end, "AGENTS.md is missing the generated Stepstone block end").toBeGreaterThan(start);
+		expect(committed.slice(start, end + AGENTS_BLOCK_END.length)).toBe(block);
+		expect(committed.indexOf(AGENTS_BLOCK_START, start + AGENTS_BLOCK_START.length)).toBe(-1);
+		expect(committed.indexOf(AGENTS_BLOCK_END, end + AGENTS_BLOCK_END.length)).toBe(-1);
+	});
+
 	it("keeps every guide table two columns wide despite pipes in the contract's own wording", () => {
 		// `move <id> up|down|...` and the description alternatives spell their choices
 		// with a pipe, which GFM reads as a cell delimiter even inside a code span.
@@ -306,6 +358,23 @@ describe("single CLI command contract", () => {
 				).toHaveLength(2);
 			}
 			expect(rows.map((cells) => cells[0])).toEqual(expectedFirstCells);
+		}
+	});
+
+	it("leaves no angle-bracket placeholder for GFM to parse away as raw HTML", () => {
+		// `<git-root>` and `<text>` satisfy CommonMark's open tag production, so a
+		// placeholder written outside a code span parses as an HTML tag and GitHub's
+		// sanitizer drops it, deleting the very token the sentence is about.
+		const surfaces = {
+			[DOCS_PATH]: renderCliGuide(),
+			[SKILL_PATH]: renderSkillMarkdown(),
+			"the AGENTS.md block": renderAgentsMarkdownBlock(),
+		};
+		for (const [name, rendered] of Object.entries(surfaces)) {
+			expect(
+				rawHtmlPlaceholdersIn(rendered),
+				`${name} spells a placeholder GFM would swallow as raw HTML`,
+			).toEqual([]);
 		}
 	});
 
@@ -579,6 +648,7 @@ describe("single CLI command contract", () => {
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
 		const documented = CLI_COMMAND_CONTRACT.actions.map((action) => action.name);
 		expect(documented).toEqual([
+			"init",
 			"list",
 			"show",
 			"find",

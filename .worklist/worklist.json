@@ -368,9 +368,10 @@
         "harness-identity-rename-off-the-pi",
         "worklist-path-move-the-goal-file-out-of"
       ],
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-08T23:53:23.024Z",
-      "updatedAt": "2026-08-08T23:53:23.024Z"
+      "updatedAt": "2026-08-12T00:20:15.935Z",
+      "completedAt": "2026-08-12T00:20:15.935Z"
     },
     {
       "id": "capture-skill-brainstorm-to-approved",
@@ -592,5 +593,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 246
+  "revision": 247
 }

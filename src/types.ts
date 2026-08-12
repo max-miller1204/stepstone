@@ -126,6 +126,25 @@ export interface RevisionedProjectWorklist extends ProjectWorklist {
 	revision: number;
 }
 
+/**
+ * Setup an interface describes for the caller to perform rather than performing.
+ *
+ * Installation scope and client configuration locations belong to the harness,
+ * so the canonical commands are reported and never run.
+ */
+export interface AgentIntegrationGuidance {
+	skill: {
+		command: string;
+		guidance: string;
+	};
+	mcp: {
+		config: {
+			mcpServers: Record<string, { command: string; args: string[]; cwd: string }>;
+		};
+		guidance: string;
+	};
+}
+
 export interface WorklistOperationResult {
 	scope: "session" | "project";
 	action: string;
@@ -143,6 +162,10 @@ export interface WorklistOperationResult {
 	migrations?: GoalIdMigration[];
 	/** Absolute path the goal file is read from and written to after this operation. */
 	worklistPath?: string;
+	/** Absolute path of the AGENTS.md an initialization wrote or found already current. */
+	agentsPath?: string;
+	/** Optional integrations an initialization offers, none of which it performs. */
+	integrations?: AgentIntegrationGuidance;
 	/**
 	 * Absolute path a path migration moved the goal file away from.
 	 *

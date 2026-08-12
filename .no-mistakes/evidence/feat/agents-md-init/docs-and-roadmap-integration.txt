@@ -1,0 +1,107 @@
+
+===== 1. The committed AGENTS.md block is current =====
+
+$ npm run --silent docs:check
+Generated files are up to date.
+[exit 0]
+
+===== 2. A hand-edited generated block is reported stale rather than accepted =====
+
+$ sed -i "s/^Command surface:$/Command surface (hand-edited):/" AGENTS.md
+$ git diff --stat -- AGENTS.md
+ AGENTS.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+$ npm run --silent docs:check
+Stale generated file(s): AGENTS.md
+Run `npm run docs` and commit the result.
+[exit 1]
+
+===== 3. npm run docs restores only the generated block =====
+
+$ npm run --silent docs
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/docs/cli.md
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/.claude/skills/stepstone/SKILL.md
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/docs/ROADMAP.md
+Refreshed the generated Stepstone block in /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/AGENTS.md
+[exit 0]
+$ git diff --stat -- AGENTS.md   # back to the committed bytes
+(no output above means the file matches the commit)
+$ npm run --silent docs:check
+Generated files are up to date.
+[exit 0]
+
+===== 4. Authored instructions above the block survive a regeneration =====
+
+$ head -3 AGENTS.md
+# stepstone agent notes
+
+- Read Pi's installed `docs/extensions.md`, `docs/tui.md`, `docs/packages.md`, and `docs/session-format.md` before changing extension APIs.
+$ printf "\n- Locally authored rule that must survive.\n" >> AGENTS.md   # authored prose after the block
+$ npm run --silent docs
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/docs/cli.md
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/.claude/skills/stepstone/SKILL.md
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/docs/ROADMAP.md
+Generated Stepstone block is up to date in /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/AGENTS.md
+[exit 0]
+$ tail -3 AGENTS.md
+<!-- stepstone:project-goals:end -->
+
+- Locally authored rule that must survive.
+$ git checkout -- AGENTS.md
+
+===== 5. A marker layout no regeneration can resolve fails the script by name =====
+
+$ sed -i "0,/stepstone:project-goals:end/s//stepstone:project-goals:start/" AGENTS.md   # two starts, no end
+$ npm run --silent docs
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/docs/cli.md
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/.claude/skills/stepstone/SKILL.md
+Wrote /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/docs/ROADMAP.md
+Refusing to update /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZSNJ1SHEN6HW33ZR60MXVJ4/AGENTS.md: duplicate Stepstone AGENTS markers were found. Keep exactly one start marker and one end marker.
+Repair it by hand, then rerun.
+[exit 1]
+$ git checkout -- AGENTS.md && git status --short
+(clean worktree above)
+
+===== 6. The roadmap page and the goal file agree that the goal is complete =====
+
+$ node ./src/cli.ts project show agents-md-generate-a-harness-neutral --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "show",
+  "result": {
+    "scope": "project",
+    "action": "show",
+    "goal": {
+      "id": "agents-md-generate-a-harness-neutral",
+      "title": "agents-md: generate a harness-neutral AGENTS.md block",
+      "description": "The only shipped agent-facing rendering is .claude/skills/worklist/SKILL.md, installed via `npx skills add`. That covers harnesses that scan .claude/skills, and misses the ones that read AGENTS.md instead, which is the convention Codex and several others follow. The command contract in src/cli-contract.ts already generates two targets from one source, so this is a third renderer, not a second source of truth.\n\nAdd a generated AGENTS.md section covering what Project Goals are, where the file lives, the command surface, the confirmation guardrails, and the exit-code contract, compressed harder than the skill because AGENTS.md is always in context rather than loaded on demand. Ship it behind an init command that writes or refreshes the block in the target repository's AGENTS.md between stable marker comments, so re-running it updates in place instead of appending a duplicate, and so a user with existing AGENTS.md content never has it clobbered. The same init command is the natural place to offer skill installation and MCP registration, making one entry point for \"set this repository up for my harness\".\n\nKeep the block repository-neutral for the same reason the skill is: one generated artifact serves every checkout. Regeneration must be enforced by npm run docs:check and the test suite exactly as docs/cli.md and the skill already are.",
+      "group": "Harness",
+      "dependsOn": [
+        "harness-identity-rename-off-the-pi",
+        "worklist-path-move-the-goal-file-out-of"
+      ],
+      "status": "done",
+      "createdAt": "2026-08-08T23:53:23.024Z",
+      "updatedAt": "2026-08-12T00:20:15.935Z",
+      "completedAt": "2026-08-12T00:20:15.935Z"
+    },
+    "blocked": false,
+    "blocks": []
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "247"
+    },
+    "cliVersion": "0.3.0"
+  }
+}
+[exit 0]
+
+$ grep -n "agents-md-generate-a-harness-neutral" docs/ROADMAP.md
+207:- **[done]** agents-md: generate a harness-neutral AGENTS.md block - `agents-md-generate-a-harness-neutral`
+$ grep -n "goals: " docs/ROADMAP.md
+10:45 goals: 16 open, 26 done, 3 archived.

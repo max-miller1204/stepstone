@@ -1,6 +1,6 @@
 ---
 name: stepstone
-description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json) from any agent session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
+description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
 ---
 
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
@@ -25,6 +25,7 @@ Inside a stepstone development checkout, prefer the TypeScript entry point so un
 Actions:
 
 ```text
+init
 list
 show <id>
 find <text...>
@@ -51,7 +52,7 @@ Flags:
 - `--json` - Print the deterministic result envelope as JSON (stdout on success, stderr on failure).
 - `--confirm` - Acknowledge an action that requires confirmation; pass it only for an explicit user request.
 - `--cwd <dir>` - Resolve the git root from this directory instead of the working directory.
-- `--file <path>` - Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST.
+- `--file <path>` - Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST; ignored by init, whose target is always the repository root's AGENTS.md.
 - `--description <text>` - Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update.
 - `--append-description <text>` - Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update.
 - `--append` - Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update.
@@ -101,11 +102,11 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- One resolution order applies everywhere, in the CLI, the MCP server, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- One goal-file resolution order applies in every roadmap interface, in the CLI, the MCP server, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
-- When both files exist the current path wins and every command warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
+- When both files exist the current path wins and every goal operation warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
 - With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
-- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, which only selects the target Git repository.
+- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, for goal operations. `init` ignores both overrides and always writes `<git-root>/AGENTS.md` in the repository selected by `--cwd`.
 - `migrate_path` moves a legacy file to `.worklist/worklist.json` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.
 - `migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.
 
@@ -173,7 +174,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - Exit code 3 (confirmation required) means the command needs `--confirm`; stop and ask the user instead of retrying with the flag.
 - Exit code 4 (conflict) means a concurrent change conflicted with yours; re-read current state with `list` or `show` before retrying.
   A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.
-- `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `apply-plan`, `update`, `move`, and `set_active` are safe to run whenever they serve the user's request.
+- `init`, `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `apply-plan`, `update`, `move`, and `set_active` are safe to run whenever they serve the user's request.
 - `ui` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.
   Suggest `npx -y stepstone@latest project ui` when the user wants to browse or edit goals themselves; read state with `list` and `show` instead.

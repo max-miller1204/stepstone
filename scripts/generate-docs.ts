@@ -1,6 +1,7 @@
 /**
- * Writes every artifact generated from src/cli-contract.ts and this repository's
- * own goal file.
+ * Writes every artifact generated from src/cli-contract.ts, refreshes only the
+ * marker-delimited Stepstone block in this repository's AGENTS.md, and renders
+ * the roadmap from this repository's own goal file.
  *
  *   npm run docs         # write the files
  *   npm run docs:check   # exit 1 if a committed file is stale
@@ -12,6 +13,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { AGENTS_PATH, AgentsBlockError, agentsFileNeedsRefresh, refreshAgentsFile } from "../src/agents.ts";
 import { DOCS_PATH, renderCliGuide, renderSkillMarkdown, SKILL_PATH } from "../src/cli-contract.ts";
 import { createWorklistLocator } from "../src/git.ts";
 import { readProjectWorklist } from "../src/project-store.ts";
@@ -68,6 +70,29 @@ for (const artifact of artifacts) {
 	// pi-lens-ignore: await-in-loop
 	await writeFile(target, expected, "utf8");
 	process.stdout.write(`Wrote ${target}\n`);
+}
+
+/**
+ * A marker layout, encoding, or file type no regeneration can resolve, reported
+ * as this script's own failure rather than as an unhandled rejection: the file
+ * holds authored prose, so naming what has to be repaired by hand is the whole
+ * of the remedy.
+ */
+try {
+	if (check) {
+		if (await agentsFileNeedsRefresh(repoRoot)) stale.push(AGENTS_PATH);
+	} else {
+		const refreshed = await refreshAgentsFile(repoRoot);
+		process.stdout.write(
+			refreshed.changed
+				? `Refreshed the generated Stepstone block in ${refreshed.path}\n`
+				: `Generated Stepstone block is up to date in ${refreshed.path}\n`,
+		);
+	}
+} catch (error) {
+	if (!(error instanceof AgentsBlockError)) throw error;
+	process.stderr.write(`${error.message}\nRepair it by hand, then rerun.\n`);
+	process.exit(1);
 }
 
 if (check) {

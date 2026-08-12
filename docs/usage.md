@@ -25,6 +25,23 @@ In a development checkout, `node src/cli.ts project <action>` runs the same CLI 
 Running the TypeScript entry point directly needs Node 22.18 or newer, which strips types natively.
 On older versions, including this package's own floor, that entry point fails with an `Unknown file extension ".ts"` error while the compiled bin has no such requirement.
 
+## Initializing agent guidance
+
+```sh
+npx -y stepstone@latest project init
+```
+
+`init` writes or refreshes only the generated Stepstone block between stable markers in `<git-root>/AGENTS.md`.
+If the file has no block, the command appends one; if exactly one marker pair exists, it replaces that pair while preserving every outside byte.
+Incomplete, reversed, or duplicate markers are refused without a write, and an already current block is not rewritten.
+The read, marker validation, and atomic replacement run under a cross-process repository lock, so concurrent initializers serialize rather than append duplicate blocks.
+
+Run `init` inside the target repository or pass `--cwd <dir>`.
+`--file <path>` and `$STEPSTONE_WORKLIST` affect goal-file resolution for other actions but never the `AGENTS.md` target.
+
+After refreshing the block, `init` prints the canonical optional skill installation command and MCP client process configuration.
+It does not execute the skill installer or edit MCP client configuration because installation scope and configuration location are choices owned by each harness.
+
 ## Reading the roadmap
 
 ```sh

@@ -2,7 +2,7 @@
 
 # stepstone CLI
 
-Manage a repository's Project Goals in <git-root>/.worklist/worklist.json from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, an MCP client, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
+Manage a repository's Project Goals in `<git-root>/.worklist/worklist.json` from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, an MCP client, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
 
 ## Invocation
 
@@ -17,11 +17,11 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- One resolution order applies everywhere, in the CLI, the MCP server, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- One goal-file resolution order applies in every roadmap interface, in the CLI, the MCP server, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
-- When both files exist the current path wins and every command warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
+- When both files exist the current path wins and every goal operation warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
 - With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
-- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, which only selects the target Git repository.
+- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, for goal operations. `init` ignores both overrides and always writes `<git-root>/AGENTS.md` in the repository selected by `--cwd`.
 - `migrate_path` moves a legacy file to `.worklist/worklist.json` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.
 - `migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.
 
@@ -29,6 +29,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 
 | Command | Description |
 | --- | --- |
+| `npx -y stepstone@latest project init` | Write or refresh the generated stepstone block in the repository root's AGENTS.md |
 | `npx -y stepstone@latest project list` | Show a compact bounded list of project goals |
 | `npx -y stepstone@latest project show <id>` | Show one goal with its full description |
 | `npx -y stepstone@latest project find <text...>` | List the goals whose title or description contains the text |
@@ -56,7 +57,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 | `--json` | Print the deterministic result envelope as JSON (stdout on success, stderr on failure) |
 | `--confirm` | Acknowledge an action that requires confirmation; pass it only for an explicit user request |
 | `--cwd <dir>` | Resolve the git root from this directory instead of the working directory |
-| `--file <path>` | Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST |
+| `--file <path>` | Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST; ignored by init, whose target is always the repository root's AGENTS.md |
 | `--description <text>` | Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update |
 | `--append-description <text>` | Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update |
 | `--append` | Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update |
@@ -140,13 +141,14 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 ## Agent guidance
 
 - Prefer --json and read the deterministic result envelope instead of parsing human output.
-- Use --description <text> and --append-description <text> for every programmatic description input; reserve the -- separator for a human typing prose interactively.
+- Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill and MCP setup guidance but never installs or registers either integration.
+- Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.
 - Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.
 - Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.
 - Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.
 - Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.
-- Use list for orientation, find <text> to locate a goal by wording, and show <id> when you need a goal's complete description.
+- Use list for orientation, `find <text>` to locate a goal by wording, and `show <id>` when you need a goal's complete description.
 - Ask next for the goal to start, ready for everything that could run in parallel, and waves for how the rest of the roadmap is layered; never pick a goal off list yourself, because list cannot tell you what is blocked or already claimed.
 - Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.
 - Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.
@@ -154,8 +156,8 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - Leave the goal file where it is unless the user asks to move it: a repository still on `.pi/worklist.json` works untouched, and migrate_path is theirs to request.
 - Report the two-worklist warning to the user rather than working around it; only stepstone reads the file it names, and merging them is a decision about which goals survive.
 - Add a note with --append-description instead of resending a description you did not write, so nothing in the existing text can be lost in transcription.
-- Group related goals with --group <name> on add or update, and leave the file order alone unless the user asked for a different sequence.
-- Record a real must-land-before relationship with --depends-on <id>, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.
+- Group related goals with `--group <name>` on add or update, and leave the file order alone unless the user asked for a different sequence.
+- Record a real must-land-before relationship with `--depends-on <id>`, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.
 - Send the complete set of edges on every --depends-on update, because it replaces the stored set rather than adding to it.
 - Pass --expect-updated-at with the updatedAt from your own read whenever you change a goal, so your mutation conflicts if the goal changed in the meantime.
 - Use apply-plan for an approved JSON goal batch, and run it with --dry-run first when the user needs to review predicted IDs, dependencies, or shadow warnings.

@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-45 goals: 17 open, 25 done, 3 archived.
+45 goals: 16 open, 26 done, 3 archived.
 
 ## Orchestrator
 
@@ -204,7 +204,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `apply-plan-atomic-batch-import-of-a` (done).
 
-- **[open]** agents-md: generate a harness-neutral AGENTS.md block - `agents-md-generate-a-harness-neutral`
+- **[done]** agents-md: generate a harness-neutral AGENTS.md block - `agents-md-generate-a-harness-neutral`
 
   The only shipped agent-facing rendering is .claude/skills/worklist/SKILL.md, installed via `npx skills add`. That covers harnesses that scan .claude/skills, and misses the ones that read AGENTS.md instead, which is the convention Codex and several others follow. The command contract in src/cli-contract.ts already generates two targets from one source, so this is a third renderer, not a second source of truth.
 
