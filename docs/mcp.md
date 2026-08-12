@@ -87,9 +87,9 @@ JSON field names use the camel-case MCP forms shown below rather than CLI flag n
 
 | Tool | Required input | Optional input | Effect |
 | --- | --- | --- | --- |
-| `add` | `title` | `description`, `group`, `dependsOn` | Add an open goal. |
+| `add` | `title` | `description`, `group`, `dependsOn`, `links` | Add an open goal. |
 | `apply-plan` | `plan` | `dryRun` | Validate and atomically add a JSON array of goal plan entries, or only validate it when `dryRun` is true. |
-| `update` | `id` | `title`, `description`, `appendDescription`, `group`, `dependsOn`, `expectedUpdatedAt` | Edit a goal and replace any supplied dependency set. |
+| `update` | `id` | `title`, `description`, `appendDescription`, `group`, `dependsOn`, `links`, `expectedUpdatedAt` | Edit a goal and replace any supplied dependency or link set. |
 | `move` | `id` | One of `direction`, `beforeId`, or `afterId` | Move a goal in canonical file order, with `direction` set to `up` or `down`. |
 | `set_active` | `id` | `expectedUpdatedAt` | Make a goal the single active goal. |
 | `complete` | `id`, `confirm` | `expectedUpdatedAt` | Mark a goal done. |
@@ -99,6 +99,7 @@ JSON field names use the camel-case MCP forms shown below rather than CLI flag n
 
 An `id` may be a complete goal ID or a unique ID prefix.
 `dependsOn` is an array of goal IDs or unique prefixes.
+`links` is an array of absolute HTTP or HTTPS URLs kept for a reader rather than for any machine semantics, and an `update` replaces the whole set exactly as `dependsOn` does, so send every URL the goal should end up with and send an empty array to clear them.
 The `plan` format and its deterministic reference rules are documented in [goals.md](goals.md#json-goal-plans).
 Pass the `updatedAt` value from the caller's last read as `expectedUpdatedAt` when changing an existing goal, so a concurrent edit returns a conflict instead of being overwritten.
 Every mutation runs through the shared cross-process lock and atomic file replacement.

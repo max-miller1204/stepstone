@@ -70,6 +70,7 @@ npx -y stepstone@latest project update <id> Replace the title \
 npx -y stepstone@latest project update <id> --append-description "Add a note as a new paragraph"
 npx -y stepstone@latest project update <id> --group Foundation
 npx -y stepstone@latest project update <id> --depends-on <other-id> --depends-on <third-id>
+npx -y stepstone@latest project update <id> --link https://example.com/spec --link https://example.com/issue
 npx -y stepstone@latest project move <id> up
 npx -y stepstone@latest project move <id> before <anchor-id>
 npx -y stepstone@latest project set_active <id>
@@ -80,6 +81,7 @@ npx -y stepstone@latest project apply-plan plan.json --json
 `add` appends to the roadmap's canonical order and `move` is the only action that rearranges it; `move <id> up|down` steps one place and `move <id> before|after <anchor-id>` lands beside a named goal, and a move that would change nothing succeeds without writing.
 `--group <name>` files a goal under a free-form section and `--group ''` clears it; a group exists exactly when some goal names it, so there is no separate list to keep in step.
 `--depends-on <id>` records a goal that must land first and may be repeated, `--depends-on ''` alone clears every edge, and an update replaces the stored set rather than adding to it.
+`--link <url>` stores an informational absolute HTTP or HTTPS URL such as the issue or design a goal came from, behaves the same way - repeatable, replaced whole by an update, cleared by `--link ''` alone - and rejects anything that is not an absolute HTTP or HTTPS URL, so the field never accumulates text a reader cannot follow.
 `apply-plan` adds an approved batch of goals through one locked mutation; the plan schema is in [docs/goals.md](goals.md#json-goal-plans).
 A `--dry-run` is a preview rather than the user's approval, and the brainstorm-to-approved-plan workflow an agent runs before that single mutating call is in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
 

@@ -1135,6 +1135,8 @@ describe("project goal CLI", () => {
 
 	it("sets, replaces, clears, validates, and preserves goal links", async () => {
 		const root = await tempGitRepo();
+		// The repeated URL is stored once, so re-passing the complete set on an
+		// update never has to be deduplicated by the caller.
 		const added = await runCli(root, [
 			"project",
 			"add",
@@ -1143,6 +1145,8 @@ describe("project goal CLI", () => {
 			"https://example.com/one",
 			"--link",
 			"https://example.com/two",
+			"--link",
+			"https://example.com/one",
 		]);
 		expect(added.code).toBe(0);
 		expect((await readGoals(root))[0].links).toEqual(["https://example.com/one", "https://example.com/two"]);
@@ -1156,6 +1160,22 @@ describe("project goal CLI", () => {
 
 		await runCli(root, ["project", "update", "linked", "--link", "https://example.com/two"]);
 		expect((await readGoals(root))[0].links).toEqual(["https://example.com/two"]);
+
+		// Clearing is the whole instruction, so pairing it with a URL is a usage
+		// error rather than a silent choice between the two.
+		const clearWithAnother = await runCli(root, [
+			"project",
+			"update",
+			"linked",
+			"--link",
+			"",
+			"--link",
+			"https://example.com/three",
+		]);
+		expect(clearWithAnother.code).toBe(2);
+		expect(clearWithAnother.stderr).toContain("--link '' clears every link and cannot be combined");
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/two"]);
+
 		await runCli(root, ["project", "update", "linked", "--link", ""]);
 		expect((await readGoals(root))[0]).not.toHaveProperty("links");
 	});
