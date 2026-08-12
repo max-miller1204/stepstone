@@ -533,27 +533,34 @@ function normalizeDependsOn(operation: WorklistOperation): string[] | undefined 
 	return operation.dependsOn.map((entry) => entry.trim());
 }
 
+/**
+ * The links an operation carries, refused when one is not an absolute HTTP(S) URL.
+ *
+ * Every absolute HTTP(S) URL is accepted however it was spelled - a bare origin,
+ * an uppercase scheme, a non-ASCII path - and stored in its canonical spelling,
+ * so the field still never holds text a reader cannot follow, and two spellings
+ * of one address deduplicate against each other.
+ */
 function normalizeLinks(operation: WorklistOperation): string[] | undefined {
 	if (operation.links === undefined) return undefined;
 	const links: string[] = [];
 	for (const entry of operation.links) {
-		const value = entry.trim();
 		let parsed: URL;
 		try {
-			parsed = new URL(value);
+			parsed = new URL(entry.trim());
 		} catch {
 			throw validationError("links entries must be absolute HTTP or HTTPS URLs.", {
 				fields: ["links"],
 				resolution: "provide-absolute-http-or-https-urls",
 			});
 		}
-		if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.href !== value) {
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
 			throw validationError("links entries must be absolute HTTP or HTTPS URLs.", {
 				fields: ["links"],
 				resolution: "provide-absolute-http-or-https-urls",
 			});
 		}
-		if (!links.includes(value)) links.push(value);
+		if (!links.includes(parsed.href)) links.push(parsed.href);
 	}
 	return links;
 }

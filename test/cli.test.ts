@@ -1180,6 +1180,44 @@ describe("project goal CLI", () => {
 		expect((await readGoals(root))[0]).not.toHaveProperty("links");
 	});
 
+	it("accepts an absolute URL however it is spelled and stores it canonically", async () => {
+		const root = await tempGitRepo();
+		// A bare origin is how a person types a homepage or an issue-tracker root,
+		// and a scheme's case or a non-ASCII path is a spelling rather than a
+		// different address, so each is stored in its canonical form instead of
+		// being refused as though it were not an absolute HTTP(S) URL.
+		const added = await runCli(root, [
+			"project",
+			"add",
+			"Spelled",
+			"--link",
+			"https://example.com",
+			"--link",
+			"HTTPS://example.com/spec",
+			"--link",
+			"https://example.com/spéc",
+		]);
+		expect(added.code).toBe(0);
+		expect((await readGoals(root))[0].links).toEqual([
+			"https://example.com/",
+			"https://example.com/spec",
+			"https://example.com/sp%C3%A9c",
+		]);
+
+		// Two spellings of one address name one link, so the set stores it once.
+		const deduped = await runCli(root, [
+			"project",
+			"update",
+			"spelled",
+			"--link",
+			"https://example.com",
+			"--link",
+			"https://example.com/",
+		]);
+		expect(deduped.code).toBe(0);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/"]);
+	});
+
 	it("records dependency edges and derives what a goal blocks", async () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Slug", "ids"]);

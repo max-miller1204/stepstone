@@ -69,9 +69,10 @@ function inputSchemaFor(action: McpActionContract) {
 		.optional()
 		.describe("The target goal's updatedAt value from the caller's last read");
 	const dependsOn = z.array(z.string().trim().min(1)).optional();
-	const links = z
-		.array(z.url().refine((value) => value.startsWith("http://") || value.startsWith("https://")))
-		.optional();
+	// The scheme is matched case-insensitively so the schema refuses exactly what
+	// the service refuses; a prefix test would reject `HTTPS://…` here and answer
+	// with a schema error the service would have accepted.
+	const links = z.array(z.url({ protocol: /^https?$/i })).optional();
 
 	switch (action.name) {
 		case "add":

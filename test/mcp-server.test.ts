@@ -328,6 +328,62 @@ describe("Stepstone MCP server", () => {
 		});
 	});
 
+	it("replaces, preserves, and clears a link set through the update tool", async () => {
+		const root = await createGitRepository();
+		const worklistPath = join(root, ".worklist", "worklist.json");
+		await withMcpClient(root, async (client) => {
+			await callTool(client, "add", { title: "Linked goal", links: ["https://example.com/one"] });
+
+			// The whole set is replaced rather than added to, and a URL named twice
+			// in one call is stored once, so a caller re-sending its complete set
+			// never has to deduplicate first.
+			const replaced = await callTool(client, "update", {
+				id: "linked",
+				links: ["https://example.com/two", "https://example.com/three", "https://example.com/two"],
+			});
+			expect(replaced.envelope).toMatchObject({
+				ok: true,
+				action: "update",
+				result: { goal: { links: ["https://example.com/two", "https://example.com/three"] } },
+			});
+
+			// An update that never names links leaves the stored ones alone: the
+			// regression that would silently drop them.
+			const unrelated = await callTool(client, "update", { id: "linked", group: "Foundation" });
+			expect(unrelated.envelope).toMatchObject({
+				result: { goal: { group: "Foundation", links: ["https://example.com/two", "https://example.com/three"] } },
+			});
+
+			const beforeRefusal = await readFile(worklistPath, "utf8");
+			const refused = await client.callTool({
+				name: "update",
+				arguments: { id: "linked", links: ["github.com/example"] },
+			});
+			expect(refused).toMatchObject({ isError: true });
+			expect(await readFile(worklistPath, "utf8")).toBe(beforeRefusal);
+
+			// Cleared means gone from the file rather than stored as an empty array,
+			// so a reader cannot tell "cleared" apart from "never set".
+			const cleared = await callTool(client, "update", { id: "linked", links: [] });
+			expect(cleared.envelope).toMatchObject({ ok: true, action: "update" });
+			const [stored] = resultGoals(cleared.envelope);
+			expect(stored).not.toHaveProperty("links");
+			expect(JSON.parse(await readFile(worklistPath, "utf8")).goals[0]).not.toHaveProperty("links");
+
+			// The tool's schema admits every absolute HTTP(S) URL the service
+			// accepts, so a bare origin or an uppercase scheme reaches the writer
+			// instead of being turned away by the schema first.
+			const spelled = await callTool(client, "update", {
+				id: "linked",
+				links: ["https://example.com", "HTTPS://example.com/spec"],
+			});
+			expect(spelled.envelope).toMatchObject({
+				ok: true,
+				result: { goal: { links: ["https://example.com/", "https://example.com/spec"] } },
+			});
+		});
+	});
+
 	it("decodes an encoded template value and answers a malformed one with an envelope", async () => {
 		const root = await createGitRepository();
 		await withMcpClient(root, async (client) => {
