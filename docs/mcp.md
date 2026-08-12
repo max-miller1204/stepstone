@@ -100,12 +100,9 @@ Every mutation runs through the shared cross-process lock and atomic file replac
 
 ## Capturing a brainstorm
 
-Brainstorm broad roadmap outcomes rather than internal implementation steps.
-Draft the exact plain JSON array for the complete proposed goal batch.
-When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even without a logical dependency.
-Present that exact JSON array to the user and wait for explicit approval before mutating the roadmap.
-An optional `apply-plan` call with `dryRun: true` previews validation, projected IDs, dependencies, and warnings, but the preview is not approval.
-After explicit approval, make exactly one mutating `apply-plan` call with the entire approved array and never replace it with per-goal `add` calls.
+The `apply-plan` tool carries the brainstorm-to-approved-plan workflow itself: in its description, in `_meta.captureWorkflow`, and in the `plan`, plan-entry, and `dryRun` schema descriptions, all rendered from the contract, so a client reads the steps off the tool it is about to call.
+Those steps are written once, in [cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
+On this surface the preview they allow is an `apply-plan` call with `dryRun: true`, which is never the user's approval, and the approved array is applied by exactly one call with `dryRun` omitted rather than by a sequence of `add` calls.
 
 ## Exact confirmation guardrails
 

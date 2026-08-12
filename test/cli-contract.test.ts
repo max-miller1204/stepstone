@@ -326,6 +326,26 @@ describe("single CLI command contract", () => {
 		expect(renderCliGuide()).toContain(`## ${action.captureWorkflow.title}`);
 	});
 
+	it("keeps the mutating capture action out of the unconditionally safe actions", () => {
+		// The skill's guardrails tell an agent which actions need no user approval,
+		// so the action that only runs against a plan the user approved must not be
+		// listed there however the surrounding prose is rewritten.
+		const safeLine = renderSkillMarkdown()
+			.split("\n")
+			.find((line) => line.includes("are safe to run whenever they serve the user's request."));
+		if (!safeLine) throw new Error("the skill names no unconditionally safe actions");
+		const unconditionallySafe = new Set([...safeLine.matchAll(/`([a-z_-]+)`/g)].map(([, name]) => name));
+
+		for (const action of CLI_COMMAND_CONTRACT.actions) {
+			const gated = action.confirmRequired || action.interactive || action.name === "help";
+			const owned = action.captureWorkflow !== undefined;
+			expect(
+				unconditionallySafe.has(action.name),
+				`\`${action.name}\` is ${unconditionallySafe.has(action.name) ? "" : "not "}listed as unconditionally safe`,
+			).toBe(!gated && !owned);
+		}
+	});
+
 	it("derives the repository-neutral AGENTS.md block from the same contract", async () => {
 		const block = renderAgentsMarkdownBlock();
 		expect(block).toContain("shared roadmap");

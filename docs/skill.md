@@ -3,7 +3,7 @@
 # The agent skill
 
 A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
-It carries the action and flag surface, the description-input rules, the sequencing reads, the exit-code meanings, and the rule that a lifecycle action needs an explicit request from the user.
+It carries the action and flag surface, the description-input rules, the sequencing reads, the exit-code meanings, the brainstorm-to-approved-plan capture workflow, and the rule that a lifecycle action needs an explicit request from the user.
 
 ## Install
 
