@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-45 goals: 12 open, 30 done, 3 archived.
+45 goals: 11 open, 31 done, 3 archived.
 
 ## Orchestrator
 
@@ -250,7 +250,7 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Automation
 
-- **[open]** root-session recipe: harness-neutral dispatch loop over the worklist - `root-session-recipe-herdr-treehouse`
+- **[done]** root-session recipe: harness-neutral dispatch loop over the worklist - `root-session-recipe-herdr-treehouse`
 
   A skill plus documented recipe implementing the fan-out loop purely as a consumer of the CLI contract; nothing in src/ knows about any particular tool. Loop: apply-plan, then repeatedly read project ready --json, project start each dispatched goal, claim an isolated workspace for it, launch an agent session there with the goal as its prompt, detect completion primarily via PR merge with session liveness as a secondary signal, run project complete on main, and continue until the plan is done. A --max-parallel N knob sets concurrency per run; N=1 is a first-class auto-chain mode for serial projects. Worklist mutations happen on main only; the root session is the sole writer.
 

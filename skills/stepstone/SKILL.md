@@ -179,6 +179,18 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - `waves --json` reports the layers as `result.waves`, an array of goal arrays whose position is the wave number, and adds `result.unreachableGoals` only when some goal is unreachable, so an absent field means every unfinished goal found a layer.
 - All three are reads derived from the stored edges the same way `blocked` is, so nothing is cached and no command has to be re-run to refresh them.
 
+## Dispatching approved plans
+
+- Dispatch only goals returned by `ready --json`; claim each one with `start <id> --branch <name> --expect-updated-at <updatedAt>` before launching its worker.
+- The root session is the sole roadmap writer and runs every Stepstone mutation from the default-branch checkout; workers receive goal context but never mutate the worklist from isolated workspaces.
+- Session hosting and workspace isolation are independent bindings: any host that can launch and observe a command can compose with any provider that returns an isolated checkout.
+- Treat a merged PR whose head belongs to the claimed branch as completion evidence; worker exit or silence alone never proves the goal landed.
+- Launching a dispatch loop for an explicitly approved plan grants standing consent to run `complete <id> --confirm` only for a goal in that plan after its matching PR merged.
+- That standing consent does not cover archive, delete, reopen, unrelated goals, unmerged work, or a new plan; release an abandoned claim with `start <id> --clear`.
+- Re-read `ready` after each merge and stop when it is empty; distinguish finished roadmaps from blocked or claimed work by reading `waves --json`.
+
+The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in `docs/dispatch.md`.
+
 ## Guardrails
 
 - `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` are reserved for explicit user intent.

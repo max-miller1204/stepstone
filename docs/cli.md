@@ -160,7 +160,7 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.
 - Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.
-- Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.
+- Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action; an approved dispatch plan is standing consent only to complete one of its goals after its matching PR merges.
 - Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.
 - Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.
 - Use list for orientation, `find <text>` to locate a goal by wording, and `show <id>` when you need a goal's complete description.
