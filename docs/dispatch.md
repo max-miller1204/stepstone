@@ -82,15 +82,26 @@ then
   exit 1
 fi
 
+abandon() {
+  npx -y stepstone@latest project start "$goal_id" --clear
+  git worktree remove "$workspace"
+  git branch -D "$branch"
+  exit 1
+}
+
 runtime="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
-mkdir -p "$runtime"
+mkdir -p "$runtime" || abandon
 (
   cd "$workspace" || exit 1
   nohup sh -c 'exec "$@"' sh "$AGENT_COMMAND" "$goal_prompt" \
     >"$runtime/agent.log" 2>&1 </dev/null &
   echo $! >"$runtime/agent.pid"
-)
+) || abandon
 ```
+
+The subshell's `exit` only leaves the subshell, so the launch is gated on the subshell's status from outside it; a guard that returned no status to the parent could not release anything.
+`mkdir -p` is checked for the same reason: the redirect that captures the worker's output fails when the runtime directory is missing, and an unchecked failure there leaves the goal claimed with nobody working it.
+Because that check runs first, the only failure left inside the subshell is the `cd`, which happens before anything launches.
 
 The log and pid file belong to the driver, not to the branch under review.
 Keeping them outside `$workspace` leaves the worker's checkout clean, so an agent that stages everything cannot commit its own transcript into the PR and the worktree stays removable.
@@ -147,19 +158,23 @@ git -C "$workspace" checkout -b "$branch" "$base" || abandon
 pane_id=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus \
   | jq -r '.result.pane.pane_id')
 case "$pane_id" in "" | null) abandon ;; esac
-agent_name="stepstone-$goal_id"
+agent_name=$(printf 'ss-%.18s-%s' "$goal_id" "$(printf %s "$goal_id" | cksum | cut -d' ' -f1)")
 herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id" || abandon
-herdr agent prompt "$agent_name" "$goal_prompt" --wait || abandon
+herdr agent prompt "$pane_id" "$goal_prompt" --wait || abandon
 ```
 
 Herdr answers over its socket API in a JSON envelope, so the pane ID is read out of `.result.pane.pane_id`; passing the whole response to `--pane` starts nothing.
-A failed `pane split` still leaves that pipeline exiting 0, because `jq` reads the error envelope successfully and prints `null`, so the pane ID is checked for a value rather than the pipeline for a status.
+A failed `pane split` writes its error to stderr and exits 1, but the pipeline reports `jq`'s status rather than Herdr's, and `jq` succeeds with empty output; the pane ID is therefore checked for a value rather than the pipeline for a status.
+
+Herdr requires an agent name matching `[a-z][a-z0-9_-]{0,31}` and unique among live agents, so the goal ID cannot be the name: most IDs on a real roadmap exceed the 32 characters, and `agent start` would fail every dispatch.
+The derived name keeps a readable prefix of the ID inside that limit and appends a checksum of the full ID, which stays unique where truncation alone would collide.
+Once the agent is running, Herdr accepts the hosting pane ID wherever it accepts a name, so the calls after `agent start` target `$pane_id` and never depend on that derivation.
 
 `stepstone/$goal_id` is deterministic, and neither `start --clear` nor returning a lease deletes a branch, so re-dispatching a goal whose earlier attempt still has its branch fails at `checkout -b`.
 That failure releases the claim and the lease instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
 Delete or rename the stale branch deliberately, once you know whether its commits are still wanted.
 
-Use `herdr agent wait "$agent_name"` and `herdr agent read "$agent_name"` for liveness and diagnostics.
+Use `herdr agent wait "$pane_id"` and `herdr agent read "$pane_id"` for liveness and diagnostics.
 Those signals never replace merged-PR evidence.
 
 After merge and completion, close or reuse the pane according to local Herdr policy, then return the lease safely:
