@@ -83,12 +83,58 @@ export interface AgentsRefreshResult {
 	changed: boolean;
 }
 
+interface AgentsFileState {
+	path: string;
+	/** Permission bits of an existing regular file, absent when there is no file yet. */
+	mode?: number;
+	contents: string;
+}
+
+/**
+ * Read one repository's AGENTS.md, refusing every shape a refresh could not
+ * preserve.
+ *
+ * The refusals live with the read rather than with the write so a caller that
+ * only inspects the file, such as the documentation check, reports the same
+ * problem the writer would rather than the replacement characters a lossy
+ * decode invents for bytes that are not UTF-8.
+ */
+async function readAgentsState(root: string): Promise<AgentsFileState> {
+	const path = resolve(root, AGENTS_PATH);
+	const existing = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+		if (error.code === "ENOENT") return undefined;
+		throw error;
+	});
+	if (existing && !existing.isFile()) {
+		throw new AgentsBlockError(
+			"unsupported-file",
+			`Refusing to update ${AGENTS_PATH}: the existing path is not a regular file.`,
+		);
+	}
+	const bytes = existing ? await readFile(path) : Buffer.alloc(0);
+	if (!isUtf8(bytes)) {
+		throw new AgentsBlockError(
+			"invalid-encoding",
+			`Refusing to update ${AGENTS_PATH}: the existing file is not valid UTF-8.`,
+		);
+	}
+	return {
+		path,
+		...(existing ? { mode: existing.mode & 0o7777 } : {}),
+		contents: bytes.toString("utf8"),
+	};
+}
+
+/** One repository's AGENTS.md, as the refresher itself reads it. */
+export async function readAgentsContents(root: string): Promise<string> {
+	return (await readAgentsState(root)).contents;
+}
+
 /**
  * Refresh one repository's generated block under a cross-process lock, then
  * atomically rename the complete file over its prior version.
  */
 export async function refreshAgentsFile(root: string): Promise<AgentsRefreshResult> {
-	const path = resolve(root, AGENTS_PATH);
 	const release = await lockfile.lock(root, {
 		lockfilePath: resolve(root, AGENTS_LOCK_PATH),
 		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
@@ -96,30 +142,13 @@ export async function refreshAgentsFile(root: string): Promise<AgentsRefreshResu
 	});
 	let tempPath: string | undefined;
 	try {
-		const existing = await lstat(path).catch((error: NodeJS.ErrnoException) => {
-			if (error.code === "ENOENT") return undefined;
-			throw error;
-		});
-		if (existing && !existing.isFile()) {
-			throw new AgentsBlockError(
-				"unsupported-file",
-				`Refusing to update ${AGENTS_PATH}: the existing path is not a regular file.`,
-			);
-		}
-		const bytes = existing ? await readFile(path) : Buffer.alloc(0);
-		if (!isUtf8(bytes)) {
-			throw new AgentsBlockError(
-				"invalid-encoding",
-				`Refusing to update ${AGENTS_PATH}: the existing file is not valid UTF-8.`,
-			);
-		}
-		const contents = bytes.toString("utf8");
+		const { path, mode, contents } = await readAgentsState(root);
 		const updated = updateAgentsContents(contents);
 		if (updated === contents) return { path, changed: false };
 
 		tempPath = resolve(root, `.stepstone-agents-${randomBytes(8).toString("hex")}.tmp`);
 		await writeFile(tempPath, updated, { encoding: "utf8" });
-		if (existing) await chmod(tempPath, existing.mode & 0o7777);
+		if (mode !== undefined) await chmod(tempPath, mode);
 		await rename(tempPath, path);
 		tempPath = undefined;
 		return { path, changed: true };

@@ -106,7 +106,7 @@ export const MCP_SERVER_ARGS = ["-y", "--package", `${BINARY}@latest`, `${BINARY
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
 	scope: "project",
-	intro: `Manage a repository's Project Goals in <git-root>/${WORKLIST_RELATIVE_PATH} from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, an MCP client, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.`,
+	intro: `Manage a repository's Project Goals in \`<git-root>/${WORKLIST_RELATIVE_PATH}\` from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, an MCP client, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.`,
 	/**
 	 * Trigger text agents match against to auto-load the skill. Deliberately
 	 * repository-neutral: one skill file serves every checkout, so it must never
@@ -131,7 +131,7 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "init",
 			usage: "init",
-			summary: `Write or refresh the generated ${BINARY} block in <git-root>/AGENTS.md`,
+			summary: `Write or refresh the generated ${BINARY} block in the repository root's AGENTS.md`,
 		},
 		{
 			name: "list",
@@ -270,7 +270,7 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "--file",
 			usage: "--file <path>",
-			summary: `Read and write this goal file instead of the one the repository resolves to, overriding $${WORKLIST_PATH_ENV}; ignored by init, whose target is always <git-root>/AGENTS.md`,
+			summary: `Read and write this goal file instead of the one the repository resolves to, overriding $${WORKLIST_PATH_ENV}; ignored by init, whose target is always the repository root's AGENTS.md`,
 		},
 		{
 			name: "--description",
@@ -434,13 +434,13 @@ export const CLI_COMMAND_CONTRACT = {
 	agentGuidelines: [
 		"Prefer --json and read the deterministic result envelope instead of parsing human output.",
 		"Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill and MCP setup guidance but never installs or registers either integration.",
-		"Use --description <text> and --append-description <text> for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
+		"Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
 		"Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.",
 		"Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.",
 		"Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.",
 		"Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.",
-		"Use list for orientation, find <text> to locate a goal by wording, and show <id> when you need a goal's complete description.",
+		"Use list for orientation, `find <text>` to locate a goal by wording, and `show <id>` when you need a goal's complete description.",
 		"Ask next for the goal to start, ready for everything that could run in parallel, and waves for how the rest of the roadmap is layered; never pick a goal off list yourself, because list cannot tell you what is blocked or already claimed.",
 		"Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.",
 		"Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.",
@@ -448,8 +448,8 @@ export const CLI_COMMAND_CONTRACT = {
 		`Leave the goal file where it is unless the user asks to move it: a repository still on \`${LEGACY_WORKLIST_RELATIVE_PATH}\` works untouched, and migrate_path is theirs to request.`,
 		`Report the two-worklist warning to the user rather than working around it; only ${BINARY} reads the file it names, and merging them is a decision about which goals survive.`,
 		"Add a note with --append-description instead of resending a description you did not write, so nothing in the existing text can be lost in transcription.",
-		"Group related goals with --group <name> on add or update, and leave the file order alone unless the user asked for a different sequence.",
-		"Record a real must-land-before relationship with --depends-on <id>, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.",
+		"Group related goals with `--group <name>` on add or update, and leave the file order alone unless the user asked for a different sequence.",
+		"Record a real must-land-before relationship with `--depends-on <id>`, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.",
 		"Send the complete set of edges on every --depends-on update, because it replaces the stored set rather than adding to it.",
 		"Pass --expect-updated-at with the updatedAt from your own read whenever you change a goal, so your mutation conflicts if the goal changed in the meantime.",
 		"Use apply-plan for an approved JSON goal batch, and run it with --dry-run first when the user needs to review predicted IDs, dependencies, or shadow warnings.",

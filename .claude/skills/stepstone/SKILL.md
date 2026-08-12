@@ -52,7 +52,7 @@ Flags:
 - `--json` - Print the deterministic result envelope as JSON (stdout on success, stderr on failure).
 - `--confirm` - Acknowledge an action that requires confirmation; pass it only for an explicit user request.
 - `--cwd <dir>` - Resolve the git root from this directory instead of the working directory.
-- `--file <path>` - Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST; ignored by init, whose target is always <git-root>/AGENTS.md.
+- `--file <path>` - Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST; ignored by init, whose target is always the repository root's AGENTS.md.
 - `--description <text>` - Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update.
 - `--append-description <text>` - Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update.
 - `--append` - Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update.

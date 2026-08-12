@@ -61,6 +61,21 @@ function absolutePathsIn(text: string): string[] {
 	);
 }
 
+/**
+ * Every angle-bracket placeholder a rendered document hands to GFM as raw HTML.
+ *
+ * Fenced blocks, code spans, and HTML comments are the three places a rendered
+ * document means its angle brackets literally, so they are removed before the
+ * remaining prose is read for anything CommonMark would accept as an open tag.
+ */
+function rawHtmlPlaceholdersIn(markdown: string): string[] {
+	const prose = markdown
+		.replaceAll(/^```[\s\S]*?^```/gm, "")
+		.replaceAll(/<!--[\s\S]*?-->/g, "")
+		.replaceAll(/`[^`\n]*`/g, "");
+	return [...prose.matchAll(/<[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/g)].map((match) => match[0]);
+}
+
 /** Escape a contract value so a pattern built around it matches it literally. */
 function literal(value: string): string {
 	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
@@ -343,6 +358,23 @@ describe("single CLI command contract", () => {
 				).toHaveLength(2);
 			}
 			expect(rows.map((cells) => cells[0])).toEqual(expectedFirstCells);
+		}
+	});
+
+	it("leaves no angle-bracket placeholder for GFM to parse away as raw HTML", () => {
+		// `<git-root>` and `<text>` satisfy CommonMark's open tag production, so a
+		// placeholder written outside a code span parses as an HTML tag and GitHub's
+		// sanitizer drops it, deleting the very token the sentence is about.
+		const surfaces = {
+			[DOCS_PATH]: renderCliGuide(),
+			[SKILL_PATH]: renderSkillMarkdown(),
+			"the AGENTS.md block": renderAgentsMarkdownBlock(),
+		};
+		for (const [name, rendered] of Object.entries(surfaces)) {
+			expect(
+				rawHtmlPlaceholdersIn(rendered),
+				`${name} spells a placeholder GFM would swallow as raw HTML`,
+			).toEqual([]);
 		}
 	});
 

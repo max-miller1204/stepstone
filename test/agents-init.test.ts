@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { AgentsBlockError, readAgentsContents } from "../src/agents.ts";
 import {
 	AGENTS_BLOCK_END,
 	AGENTS_BLOCK_START,
@@ -229,6 +230,28 @@ describe("project init AGENTS.md generation", () => {
 			meta: { changed: boolean; semanticNoOp: boolean };
 		}>(second.stdout);
 		expect(envelope.meta).toMatchObject({ changed: false, semanticNoOp: true });
+	});
+
+	it("refuses on inspection whatever a refresh would refuse to overwrite", async () => {
+		// The documentation check inspects the file without writing it, so a lossy
+		// decode there would report a repairable staleness for storage the writer
+		// then declines to touch at all.
+		const root = await tempGitRepo();
+		const path = join(root, "AGENTS.md");
+		expect(await readAgentsContents(root)).toBe("");
+
+		await writeFile(path, Buffer.from([0xff]));
+		await expect(readAgentsContents(root)).rejects.toThrow(AgentsBlockError);
+		await expect(readAgentsContents(root)).rejects.toMatchObject({ problem: "invalid-encoding" });
+		await unlink(path);
+
+		await writeFile(join(root, "shared-agents.md"), "shared guidance", "utf8");
+		await symlink("shared-agents.md", path);
+		await expect(readAgentsContents(root)).rejects.toMatchObject({ problem: "unsupported-file" });
+		await unlink(path);
+
+		await writeFile(path, "authored\n", "utf8");
+		expect(await readAgentsContents(root)).toBe("authored\n");
 	});
 
 	it("serializes concurrent initializers into one complete block", async () => {
