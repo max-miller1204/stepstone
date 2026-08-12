@@ -351,7 +351,9 @@ describe("Stepstone MCP server", () => {
 			// regression that would silently drop them.
 			const unrelated = await callTool(client, "update", { id: "linked", group: "Foundation" });
 			expect(unrelated.envelope).toMatchObject({
-				result: { goal: { group: "Foundation", links: ["https://example.com/two", "https://example.com/three"] } },
+				result: {
+					goal: { group: "Foundation", links: ["https://example.com/two", "https://example.com/three"] },
+				},
 			});
 
 			const beforeRefusal = await readFile(worklistPath, "utf8");
