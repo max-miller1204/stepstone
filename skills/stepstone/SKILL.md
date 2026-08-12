@@ -196,6 +196,7 @@ The zero-dependency and Herdr plus Treehouse bindings, including copy-paste comm
 - `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` are reserved for explicit user intent.
   Pass `--confirm` only for the exact action the user requested and, when the action names a goal, only for that exact goal.
   Never pass it because a goal merely looks finished or stale.
+  A dispatch loop the user approved is the one narrow exception, and only for completing a goal of that plan once its matching PR merged.
 - `migrate_ids` names no goal and rewrites every generated ID in the repository at once, so it needs an explicit request of its own.
   `--dry-run` reports the rewrites it would make without writing them and without `--confirm`; prefer it when you are showing the user what would change.
 - `migrate_path` names no goal either and moves the whole repository's goal file, so it needs its own explicit request and has the same `--dry-run`.

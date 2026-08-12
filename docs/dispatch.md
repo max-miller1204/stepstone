@@ -37,8 +37,8 @@ Read `waves --json` to distinguish a finished roadmap from goals that are blocke
 The snippets below read envelopes with `jq`, but any JSON reader works: every value they take comes from a documented `result` field.
 
 `--max-parallel N` is a driver policy, not stored roadmap state.
-Dispatch at most $N$ entries from each ready result.
-With $N=1$, the same loop is a serial auto-chain.
+Dispatch at most `N` entries from each ready result.
+With `--max-parallel 1`, the same loop is a serial auto-chain.
 
 ## Authorization boundary
 
@@ -63,8 +63,11 @@ Create the isolated workspace and branch:
 ```sh
 branch="stepstone/$goal_id"
 workspace="../stepstone-$goal_id"
-git worktree add -b "$branch" "$workspace" HEAD
+git worktree add -b "$branch" "$workspace" HEAD || exit 1
 ```
+
+This runs before the claim, so a failure here has nothing to release.
+It fails when an earlier attempt on the same goal left `stepstone/$goal_id` behind, which is deliberate: resolve that branch before dispatching the goal again.
 
 Claim the goal from the root checkout, and launch only if the claim succeeded.
 A failed claim means another driver holds the goal, so the workspace is discarded rather than staffed:
@@ -82,7 +85,7 @@ fi
 runtime="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
 mkdir -p "$runtime"
 (
-  cd "$workspace"
+  cd "$workspace" || exit 1
   nohup sh -c 'exec "$@"' sh "$AGENT_COMMAND" "$goal_prompt" \
     >"$runtime/agent.log" 2>&1 </dev/null &
   echo $! >"$runtime/agent.pid"
@@ -123,7 +126,7 @@ workspace=$(treehouse get --lease --lease-holder "$lease_holder")
 ```
 
 Claim the goal from the root checkout, returning the lease if another driver claimed it first.
-Only a successful claim creates the branch, splits a Herdr pane in the leased checkout, starts the configured supported agent, and submits the goal prompt:
+Every step between a successful claim and a running worker can still fail, and each one leaves the goal claimed with nobody working it, so they share one release path:
 
 ```sh
 if ! npx -y stepstone@latest project start "$goal_id" \
@@ -134,15 +137,27 @@ then
   exit 1
 fi
 
-git -C "$workspace" checkout -b "$branch" "$base"
+abandon() {
+  npx -y stepstone@latest project start "$goal_id" --clear
+  treehouse return "$workspace" --if-lease-holder "$lease_holder"
+  exit 1
+}
+
+git -C "$workspace" checkout -b "$branch" "$base" || abandon
 pane_id=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus \
   | jq -r '.result.pane.pane_id')
+case "$pane_id" in "" | null) abandon ;; esac
 agent_name="stepstone-$goal_id"
-herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id"
-herdr agent prompt "$agent_name" "$goal_prompt" --wait
+herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id" || abandon
+herdr agent prompt "$agent_name" "$goal_prompt" --wait || abandon
 ```
 
 Herdr answers over its socket API in a JSON envelope, so the pane ID is read out of `.result.pane.pane_id`; passing the whole response to `--pane` starts nothing.
+A failed `pane split` still leaves that pipeline exiting 0, because `jq` reads the error envelope successfully and prints `null`, so the pane ID is checked for a value rather than the pipeline for a status.
+
+`stepstone/$goal_id` is deterministic, and neither `start --clear` nor returning a lease deletes a branch, so re-dispatching a goal whose earlier attempt still has its branch fails at `checkout -b`.
+That failure releases the claim and the lease instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
+Delete or rename the stale branch deliberately, once you know whether its commits are still wanted.
 
 Use `herdr agent wait "$agent_name"` and `herdr agent read "$agent_name"` for liveness and diagnostics.
 Those signals never replace merged-PR evidence.
@@ -161,6 +176,7 @@ On abandonment, run `project start "$goal_id" --clear` before returning the leas
 - Workers never edit `.worklist/worklist.json` or run mutating Stepstone commands.
 - Claim before launch, and release every abandoned claim.
 - Treat a rejected claim as a stop: release the workspace instead of launching a worker, because the claim is the only thing preventing a second driver from dispatching the same goal.
+- Check every step between a successful claim and a running worker, and release both the claim and the workspace when one fails; a claim held with nobody working it keeps the goal out of `ready` until someone notices.
 - Use each goal's `updatedAt` precondition for claim and completion, re-reading it before each one rather than reusing a spent value.
 - Keep the approved plan's goal IDs as the authorization allow-list.
 - Match merge evidence to the branch stored on that exact goal.
