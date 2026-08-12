@@ -1,0 +1,27 @@
+$ git init consumer-repo && cat AGENTS.md
+# Consumer Repo
+
+Existing house rules that init must not touch.
+
+$ npx -y stepstone@latest project init      # run here as: node src/cli.ts project init
+Refreshed the Stepstone block in /tmp/ss-init/AGENTS.md.
+
+Optional integrations were not installed or registered:
+Skill installation: npx skills add max-miller1204/stepstone --skill stepstone -g
+MCP client configuration:
+{
+  "mcpServers": {
+    "stepstone": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package",
+        "stepstone@latest",
+        "stepstone-mcp"
+      ],
+      "cwd": "/tmp/ss-init"
+    }
+  }
+}
+Choose the skill installation scope and MCP client configuration location for your harness.
+exit=0

@@ -1,0 +1,30 @@
+# Frozen marker check: does a package rename orphan a block init already wrote?
+
+$ grep -c 'stepstone:project-goals' /tmp/ss-init/AGENTS.md   # block written by the real init above
+2
+
+$ sed -i 's/const BINARY = "stepstone"/const BINARY = "roadmapper"/' src/cli-contract.ts   # simulate a future package rename
+64:const BINARY = "roadmapper";
+
+$ node src/cli.ts --cwd /tmp/ss-init project init   # the renamed CLI, run over the existing block
+Refreshed the Stepstone block in /tmp/ss-init/AGENTS.md.
+
+
+$ grep -n 'project-goals:start\|project-goals:end' /tmp/ss-init/AGENTS.md   # markers after the rename
+5:<!-- stepstone:project-goals:start -->
+45:<!-- stepstone:project-goals:end -->
+
+$ diff /tmp/ss-init/AGENTS.before-rename.md /tmp/ss-init/AGENTS.md | head -20   # body renamed, markers untouched
+< ## stepstone Project Goals
+> ## roadmapper Project Goals
+< Run `npx -y stepstone@latest project <action> [arguments] [flags]` inside the target Git repository, or pass `--cwd <dir>`. Goal-file over
+> Run `npx -y roadmapper@latest project <action> [arguments] [flags]` inside the target Git repository, or pass `--cwd <dir>`. Goal-file ove
+
+$ git checkout -- src/cli-contract.ts && node src/cli.ts --cwd /tmp/ss-init project init   # rename reverted
+Refreshed the Stepstone block in /tmp/ss-init/AGENTS.md.
+
+
+$ grep -c 'project-goals:start' /tmp/ss-init/AGENTS.md   # still exactly one block, no stale second copy
+1
+$ diff /tmp/ss-init/AGENTS.before-rename.md /tmp/ss-init/AGENTS.md && echo 'identical to the pre-rename file'
+identical to the pre-rename file

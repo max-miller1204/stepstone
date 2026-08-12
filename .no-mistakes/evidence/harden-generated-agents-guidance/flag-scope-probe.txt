@@ -1,0 +1,49 @@
+Advertised scopes in the generated AGENTS.md block, run against the real CLI
+
+  --description <text> on project add                    exit 0  accepted
+  --description <text> on project update                 exit 0  accepted
+  --append-description <text> on project update          exit 0  accepted
+  --append on project update                             exit 0  accepted
+  --group <name> on project add                          exit 0  accepted
+  --group <name> on project update                       exit 0  accepted
+  --depends-on <id> on project add                       exit 0  accepted
+  --depends-on <id> on project update                    exit 0  accepted
+  --link <url> on project add                            exit 0  accepted
+  --link <url> on project update                         exit 0  accepted
+  --branch <name> on project start                       exit 0  accepted
+  --clear on project start                               exit 0  accepted
+  --expect-updated-at <timestamp> on project update      exit 0  accepted
+  --expect-updated-at <timestamp> on project start       exit 0  accepted
+  --expect-updated-at <timestamp> on project set_active  exit 0  accepted
+  --expect-updated-at <timestamp> on project complete    exit 4  accepted
+  --expect-updated-at <timestamp> on project reopen      exit 4  accepted
+  --expect-updated-at <timestamp> on project archive     exit 4  accepted
+  --expect-updated-at <timestamp> on project delete      exit 4  accepted
+  --dry-run on project apply-plan                        exit 0  accepted
+  --dry-run on project migrate_ids                       exit 0  accepted
+  --dry-run on project migrate_path                      exit 0  accepted
+
+Actions the block does not list for a flag (the exit code 2 it steers readers away from)
+
+  --description <text> on project list                   exit 2  exit 2 as the block implies
+      --description is only supported by project add, update
+  --append-description <text> on project list            exit 2  exit 2 as the block implies
+      --append-description is only supported by project update
+  --append on project list                               exit 2  exit 2 as the block implies
+      --append is only supported by project update
+  --group <name> on project list                         exit 2  exit 2 as the block implies
+      --group is only supported by project add, update
+  --depends-on <id> on project list                      exit 2  exit 2 as the block implies
+      --depends-on is only supported by project add, update
+  --link <url> on project list                           exit 2  exit 2 as the block implies
+      --link is only supported by project add, update
+  --branch <name> on project list                        exit 2  exit 2 as the block implies
+      --branch is only supported by project start
+  --clear on project list                                exit 2  exit 2 as the block implies
+      --clear is only supported by project start
+  --expect-updated-at <timestamp> on project list        exit 2  exit 2 as the block implies
+      --expect-updated-at is only supported by project update, start, set_active, complete, reopen, archive, delete
+  --dry-run on project list                              exit 2  exit 2 as the block implies
+      --dry-run is only supported by project apply-plan, migrate_ids, migrate_path
+
+22 advertised flag/action pairs exercised, 10 unlisted pairs checked, 0 mismatch(es).

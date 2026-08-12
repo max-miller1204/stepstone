@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><style>
+	body{margin:0;background:#0d1117;color:#e6edf3;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+	.wrap{max-width:1180px;margin:0 auto;padding:28px 36px 44px}
+	.caption{font-size:13px;color:#8b949e;border-bottom:1px solid #30363d;padding-bottom:12px;margin-bottom:22px}
+	h1{font-size:26px;border-bottom:1px solid #30363d;padding-bottom:8px}h2{font-size:21px;margin-top:26px}
+	code{background:#161b22;border-radius:6px;padding:.15em .4em;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#79c0ff}
+	pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;overflow:auto}
+	pre code{background:none;padding:0;color:#e6edf3}
+	p{margin:12px 0}
+	</style><div class="wrap"><div class="caption">AGENTS.md of a consumer repository after running: npx -y stepstone@latest project init</div><h1>Consumer Repo</h1>
+<p>Existing house rules that init must not touch.</p>
+<p><code>&lt;!-- stepstone:project-goals:start --&gt;</code></p>
+<h2>stepstone Project Goals</h2>
+<p>Project Goals are the repository&#39;s shared roadmap for humans and coding agents. Store them in <code>&lt;git-root&gt;/.worklist/worklist.json</code>, commit them with the code, and use the CLI rather than editing the JSON by hand so validation, locking, and atomic writes remain intact.
+Capture plan entry shape: <code>{&quot;title&quot;:&quot;required broad outcome&quot;,&quot;description&quot;:&quot;optional context&quot;,&quot;group&quot;:&quot;optional section&quot;,&quot;dependsOn&quot;:[&quot;optional goal reference&quot;]}</code>. No other fields are accepted.
+Run <code>npx -y stepstone@latest project &lt;action&gt; [arguments] [flags]</code> inside the target Git repository, or pass <code>--cwd &lt;dir&gt;</code>. Goal-file overrides (<code>--file</code> and <code>$STEPSTONE_WORKLIST</code>) follow the documented location order; they never change the <code>&lt;git-root&gt;/AGENTS.md</code> target of <code>project init</code>.</p>
+<p>Command surface:</p>
+<pre><code class="language-text">init
+list
+show &lt;id&gt;
+find &lt;text...&gt;
+next
+ready
+waves
+ui
+add &lt;title...&gt; [--description &lt;text&gt; | -- &lt;description...&gt;]
+apply-plan &lt;plan.json&gt;
+update &lt;id&gt; [title...] [--description &lt;text&gt; | -- &lt;description...&gt;]
+move &lt;id&gt; up|down|before &lt;id&gt;|after &lt;id&gt;
+start &lt;id&gt; [--branch &lt;name&gt; | --clear]
+set_active &lt;id&gt;
+complete &lt;id&gt; --confirm
+reopen &lt;id&gt; --confirm
+archive &lt;id&gt; --confirm
+delete &lt;id&gt; --confirm
+migrate_ids --confirm
+migrate_path --confirm
+help
+</code></pre>
+<p>Flags: <code>--json</code>, <code>--confirm</code>, <code>--cwd &lt;dir&gt;</code>, <code>--file &lt;path&gt;</code>, <code>--description &lt;text&gt;</code> (only for project add and update), <code>--append-description &lt;text&gt;</code> (only for project update), <code>--append</code> (only for project update), <code>--group &lt;name&gt;</code> (only for project add and update), <code>--depends-on &lt;id&gt;</code> (only for project add and update), <code>--link &lt;url&gt;</code> (only for project add and update), <code>--branch &lt;name&gt;</code> (only for project start), <code>--clear</code> (only for project start), <code>--expect-updated-at &lt;timestamp&gt;</code> (only for project update, start, set_active, complete, reopen, archive, and delete), <code>--dry-run</code> (only for project apply-plan, migrate_ids, and migrate_path).</p>
+<p>Confirmation guardrail: <code>complete</code>, <code>reopen</code>, <code>archive</code>, and <code>delete</code> and the mutating forms of <code>migrate_ids</code> and <code>migrate_path</code> require <code>--confirm</code>; migration <code>--dry-run</code> previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.
+Capture workflow: Brainstorm broad outcomes for the roadmap rather than internal implementation steps. Draft the exact plain JSON array that represents the complete proposed goal batch. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal&#39;s pre-collision slug to the later goal&#39;s <code>dependsOn</code> array even when no logical dependency exists. Present that exact JSON array to the user and wait for explicit approval before making any mutation. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step. After explicit approval, perform exactly one mutating <code>apply-plan</code> call for the entire approved array; never turn the batch into per-goal <code>add</code> calls.
+Human-only command: <code>ui</code> requires an interactive terminal; agents must not run it.
+Exit codes: <code>0</code> success; <code>1</code> error; <code>2</code> usage error; <code>3</code> confirmation required; <code>4</code> conflict.</p>
+<p><code>&lt;!-- stepstone:project-goals:end --&gt;</code></p>
+</div>

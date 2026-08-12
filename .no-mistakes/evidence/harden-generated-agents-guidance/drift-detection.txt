@@ -1,0 +1,25 @@
+# Do the extended contract tests actually catch marker and scope drift?
+# Each mutation is applied to src/cli-contract.ts, the test is run, then the file is restored.
+
+== A. marker drift: AGENTS_BLOCK_START renamed with the package ==
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/cli-contract.test.ts > single CLI command contract > derives the repository-neutral AGENTS.md block from the same contract
+AssertionError: expected '<!-- roadmapper:project-goals:start -…' to be '<!-- stepstone:project-goals:start -->' // Object.is equality
+      Tests  1 failed | 19 passed (20)
+
+== B. scope drift: the AGENTS.md block drops the limit for single-action flags only ==
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/cli-contract.test.ts > single CLI command contract > scopes action-limited flags to documented actions and states the limit everywhere
+AssertionError: the AGENTS.md block omits "only for project update" beside --append-description <text>; it renders ["`, `"]: expected false to be true // Object.is equality
+      Tests  1 failed | 19 skipped (20)
+
+== C. scope truncation: the rendered limit names only the first action ==
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/cli-contract.test.ts > single CLI command contract > scopes action-limited flags to documented actions and states the limit everywhere
+AssertionError: --description's rendered limit does not name every action it applies to: expected [ 'add' ] to deeply equal [ 'add', 'update' ]
+      Tests  1 failed | 19 skipped (20)
+
+== restored ==
+modified files: 0
+ Test Files  2 passed (2)
+      Tests  35 passed (35)

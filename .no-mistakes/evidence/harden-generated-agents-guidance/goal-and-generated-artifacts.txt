@@ -1,0 +1,16 @@
+$ stepstone project show harden-generated-agents-guidance
+harden-generated-agents-guidance: Harden generated AGENTS guidance
+status: done
+group: Audit remediation
+created: 2026-08-12T09:42:45.110Z
+updated: 2026-08-12T18:52:42.870Z
+completed: 2026-08-12T18:52:42.870Z
+description:
+Make the always-loaded generated AGENTS block safe as a compact command reference. Pin the frozen marker literals so a package rename cannot orphan blocks already written into other repositories, render or explicitly document the action scopes of listed flags, and extend contract tests so this surface cannot suggest invalid exit-code-2 invocations or silently drift from the canonical command contract.
+
+$ npm run docs:check    # every artifact generated from src/cli-contract.ts is byte-identical to what is committed
+> stepstone@0.9.0 docs:check
+> node ./scripts/generate-docs.ts --check
+
+Generated files are up to date.
+exit=0
