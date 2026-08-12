@@ -84,6 +84,7 @@ Resource reads do not mutate the roadmap.
 
 The server publishes ten mutation tools.
 Tool names, titles, descriptions, confirmation metadata, capture-workflow metadata, and apply-plan schema descriptions come from the same command contract as the CLI's agent-facing surface.
+Each resource and tool title is written for MCP in that contract rather than reused from the CLI's argv usage line, so a client lists readable names rather than command syntax.
 JSON field names use the camel-case MCP forms shown below rather than CLI flag names.
 
 | Tool | Required input | Optional input | Effect |
