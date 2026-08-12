@@ -650,7 +650,7 @@ export function renderSkillMarkdown(): string {
 			!action.confirmRequired &&
 			!action.interactive &&
 			action.name !== "help" &&
-			action.name !== "apply-plan",
+			action.captureWorkflow === undefined,
 	);
 	const interactiveActions = contract.actions.filter((action) => action.interactive);
 	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
