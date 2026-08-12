@@ -51,7 +51,7 @@ migrate_ids --confirm
 migrate_path --confirm
 help
 ```
-Flags: `--json`, `--confirm`, `--cwd <dir>`, `--file <path>`, `--description <text>`, `--append-description <text>`, `--append`, `--group <name>`, `--depends-on <id>`, `--expect-updated-at <timestamp>`, `--dry-run`.
+Flags: `--json`, `--confirm`, `--cwd <dir>`, `--file <path>`, `--description <text>`, `--append-description <text>`, `--append`, `--group <name>`, `--depends-on <id>`, `--link <url>`, `--expect-updated-at <timestamp>`, `--dry-run`.
 
 Confirmation guardrail: `complete`, `reopen`, `archive`, and `delete` and the mutating forms of `migrate_ids` and `migrate_path` require `--confirm`; migration `--dry-run` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.
 Capture workflow: Brainstorm broad outcomes for the roadmap rather than internal implementation steps. Draft the exact plain JSON array that represents the complete proposed goal batch. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists. Present that exact JSON array to the user and wait for explicit approval before making any mutation. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.

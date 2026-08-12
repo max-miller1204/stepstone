@@ -12,7 +12,7 @@ Beyond that it may carry:
 
 - `group`, a free-form section name such as `Foundation`, which exists exactly when some goal names it.
 - `completedAt`, stamped by `complete` and cleared by `reopen`.
-- `links`, an informational array.
+- `links`, an informational array of absolute HTTP or HTTPS URLs written with `--link`, which carries no machine semantics; each entry is stored in its canonical spelling, so `https://example.com` is kept as `https://example.com/` and two spellings of one address collapse into a single entry.
 - `branch`, naming where the work is happening, which also marks the goal as claimed.
 - `dependsOn`, the goals that must land first, documented in [docs/dependencies.md](dependencies.md).
 

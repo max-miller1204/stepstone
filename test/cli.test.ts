@@ -1133,6 +1133,91 @@ describe("project goal CLI", () => {
 		expect(wrongAction.stderr).toContain("--group is only supported by project add, update");
 	});
 
+	it("sets, replaces, clears, validates, and preserves goal links", async () => {
+		const root = await tempGitRepo();
+		// The repeated URL is stored once, so re-passing the complete set on an
+		// update never has to be deduplicated by the caller.
+		const added = await runCli(root, [
+			"project",
+			"add",
+			"Linked",
+			"--link",
+			"https://example.com/one",
+			"--link",
+			"https://example.com/two",
+			"--link",
+			"https://example.com/one",
+		]);
+		expect(added.code).toBe(0);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/one", "https://example.com/two"]);
+
+		await runCli(root, ["project", "update", "linked", "--group", "Foundation"]);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/one", "https://example.com/two"]);
+		const invalid = await runCli(root, ["project", "update", "linked", "--link", "github.com/example"]);
+		expect(invalid.code).toBe(1);
+		expect(invalid.stderr).toContain("absolute HTTP or HTTPS URL");
+		expect((await readGoals(root))[0].links).toHaveLength(2);
+
+		await runCli(root, ["project", "update", "linked", "--link", "https://example.com/two"]);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/two"]);
+
+		// Clearing is the whole instruction, so pairing it with a URL is a usage
+		// error rather than a silent choice between the two.
+		const clearWithAnother = await runCli(root, [
+			"project",
+			"update",
+			"linked",
+			"--link",
+			"",
+			"--link",
+			"https://example.com/three",
+		]);
+		expect(clearWithAnother.code).toBe(2);
+		expect(clearWithAnother.stderr).toContain("--link '' clears every link and cannot be combined");
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/two"]);
+
+		await runCli(root, ["project", "update", "linked", "--link", ""]);
+		expect((await readGoals(root))[0]).not.toHaveProperty("links");
+	});
+
+	it("accepts an absolute URL however it is spelled and stores it canonically", async () => {
+		const root = await tempGitRepo();
+		// A bare origin is how a person types a homepage or an issue-tracker root,
+		// and a scheme's case or a non-ASCII path is a spelling rather than a
+		// different address, so each is stored in its canonical form instead of
+		// being refused as though it were not an absolute HTTP(S) URL.
+		const added = await runCli(root, [
+			"project",
+			"add",
+			"Spelled",
+			"--link",
+			"https://example.com",
+			"--link",
+			"HTTPS://example.com/spec",
+			"--link",
+			"https://example.com/spéc",
+		]);
+		expect(added.code).toBe(0);
+		expect((await readGoals(root))[0].links).toEqual([
+			"https://example.com/",
+			"https://example.com/spec",
+			"https://example.com/sp%C3%A9c",
+		]);
+
+		// Two spellings of one address name one link, so the set stores it once.
+		const deduped = await runCli(root, [
+			"project",
+			"update",
+			"spelled",
+			"--link",
+			"https://example.com",
+			"--link",
+			"https://example.com/",
+		]);
+		expect(deduped.code).toBe(0);
+		expect((await readGoals(root))[0].links).toEqual(["https://example.com/"]);
+	});
+
 	it("records dependency edges and derives what a goal blocks", async () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Slug", "ids"]);
@@ -1280,7 +1365,7 @@ describe("project goal CLI", () => {
 
 		const nothingToDo = await runCli(root, ["project", "update", "slug-ids"]);
 		expect(nothingToDo.code).toBe(2);
-		expect(nothingToDo.stderr).toContain("--group, or --depends-on");
+		expect(nothingToDo.stderr).toContain("--depends-on, or --link");
 	});
 
 	it("reports malformed files without overwriting them", async () => {

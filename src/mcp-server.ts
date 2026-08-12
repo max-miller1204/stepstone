@@ -33,6 +33,7 @@ type ToolArguments = {
 	appendDescription?: string;
 	group?: string;
 	dependsOn?: string[];
+	links?: string[];
 	plan?: unknown;
 	dryRun?: boolean;
 	direction?: "up" | "down";
@@ -68,6 +69,10 @@ function inputSchemaFor(action: McpActionContract) {
 		.optional()
 		.describe("The target goal's updatedAt value from the caller's last read");
 	const dependsOn = z.array(z.string().trim().min(1)).optional();
+	// The scheme is matched case-insensitively so the schema refuses exactly what
+	// the service refuses; a prefix test would reject `HTTPS://…` here and answer
+	// with a schema error the service would have accepted.
+	const links = z.array(z.url({ protocol: /^https?$/i })).optional();
 
 	switch (action.name) {
 		case "add":
@@ -76,6 +81,7 @@ function inputSchemaFor(action: McpActionContract) {
 				description: z.string().optional(),
 				group: z.string().optional(),
 				dependsOn,
+				links,
 			});
 		case "apply-plan": {
 			const workflow = action.captureWorkflow;
@@ -102,6 +108,7 @@ function inputSchemaFor(action: McpActionContract) {
 				appendDescription: z.string().optional(),
 				group: z.string().optional(),
 				dependsOn,
+				links,
 				expectedUpdatedAt,
 			});
 		case "move":
@@ -140,6 +147,7 @@ function operationFor(action: string, args: ToolArguments): WorklistOperation {
 				description: args.description,
 				group: args.group,
 				dependsOn: args.dependsOn,
+				links: args.links,
 			};
 		case "apply-plan":
 			return { ...base, plan: args.plan, dryRun: args.dryRun };
@@ -152,6 +160,7 @@ function operationFor(action: string, args: ToolArguments): WorklistOperation {
 				appendDescription: args.appendDescription,
 				group: args.group,
 				dependsOn: args.dependsOn,
+				links: args.links,
 				expectedUpdatedAt: args.expectedUpdatedAt,
 			};
 		case "move":

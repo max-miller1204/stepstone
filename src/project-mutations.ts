@@ -116,6 +116,8 @@ export interface ProjectGoalUpdate {
 	appendDescription?: string;
 	/** Free-form section name. The empty string clears the field. */
 	group?: string;
+	/** The complete set of informational HTTP(S) URLs. An empty array clears it. */
+	links?: string[];
 	/** The complete set of existing goals that must land first. Naming this goal is a cycle. */
 	dependsOn?: string[];
 }
@@ -137,27 +139,50 @@ function nextGoalUpdatedAt(previous: string): string {
 	return new Date(nextTime).toISOString();
 }
 
+/** The goal fields a mutation either writes or drops, never stores as empty. */
+type OptionalGoalField = "group" | "completedAt" | "dependsOn" | "links";
+
 /**
- * A goal with one optional field set, or dropped entirely when it is cleared.
+ * A goal with each named optional field set, or dropped entirely when it is cleared.
  *
  * Removing the key rather than storing `undefined` keeps a cleared field out of
  * the file, so the JSON never accumulates properties that only say "nothing
- * here" and a reader cannot tell "cleared" apart from "never set".
+ * here" and a reader cannot tell "cleared" apart from "never set". Taking the
+ * fields together keeps every name beside the value it is written from, however
+ * many of them one mutation resolves.
+ *
+ * A field is named to be written or cleared: `{ group: undefined }` clears the
+ * group, while omitting `group` entirely leaves whatever the goal already had.
+ * So a caller names every field its mutation resolves, and builds the value
+ * conditionally rather than the key, because spreading the key away asks for the
+ * stored field to survive rather than for it to be cleared.
  */
-function withOptionalField<Field extends "group" | "completedAt" | "dependsOn">(
+function withOptionalFields(
 	goal: ProjectGoal,
-	field: Field,
-	value: ProjectGoal[Field],
+	fields: { [Field in OptionalGoalField]?: ProjectGoal[Field] },
 ): ProjectGoal {
-	if (value !== undefined) return { ...goal, [field]: value };
-	const { [field]: _cleared, ...rest } = goal;
-	return rest as ProjectGoal;
+	let next = goal;
+	for (const field of Object.keys(fields) as OptionalGoalField[]) {
+		const value = fields[field];
+		if (value !== undefined) {
+			next = { ...next, [field]: value };
+			continue;
+		}
+		const { [field]: _cleared, ...rest } = next;
+		next = rest as ProjectGoal;
+	}
+	return next;
 }
 
 /** A group name as stored: trimmed, or absent once the caller clears it. */
 function resolveGroup(current: string | undefined, next: string | undefined): string | undefined {
 	if (next === undefined) return current;
 	return next.trim() || undefined;
+}
+
+function resolveLinks(current: string[] | undefined, next: string[] | undefined): string[] | undefined {
+	if (next === undefined) return current;
+	return next.length > 0 ? next : undefined;
 }
 
 /**
@@ -186,8 +211,8 @@ function resolveDependsOn(
 	return canonical.length > 0 ? canonical : undefined;
 }
 
-/** Two edge sets naming the same goals in the same order. */
-function sameDependsOn(left: string[] | undefined, right: string[] | undefined): boolean {
+/** Two lists carrying the same entries in the same order. */
+function sameStringList(left: string[] | undefined, right: string[] | undefined): boolean {
 	if (left === right) return true;
 	if (!left || !right) return false;
 	return left.length === right.length && left.every((id, index) => id === right[index]);
@@ -258,6 +283,7 @@ function mutationOutcome(result: {
 export interface ProjectGoalDraft {
 	description?: string;
 	group?: string;
+	links?: string[];
 	/** Existing goal IDs only; the new goal's ID has not been minted when these resolve. */
 	dependsOn?: string[];
 }
@@ -398,6 +424,7 @@ export async function addProjectGoal(
 ): Promise<ProjectMutationOutcome> {
 	const now = new Date().toISOString();
 	const group = resolveGroup(undefined, draft.group);
+	const links = resolveLinks(undefined, draft.links);
 	const result = await mutateProjectWorklist(
 		path,
 		(worklist) => {
@@ -409,6 +436,7 @@ export async function addProjectGoal(
 				title,
 				description: draft.description,
 				...(group !== undefined ? { group } : {}),
+				...(links !== undefined ? { links } : {}),
 				...(dependsOn !== undefined ? { dependsOn } : {}),
 				status: "open",
 				createdAt: now,
@@ -543,12 +571,14 @@ export async function updateProjectGoal(
 			const title = updates.title ?? current.title;
 			const description = resolveDescription(current.description, updates);
 			const group = resolveGroup(current.group, updates.group);
+			const links = resolveLinks(current.links, updates.links);
 			const dependsOn = resolveDependsOn(worklist, current.dependsOn, updates.dependsOn);
 			if (
 				title === current.title &&
 				description === current.description &&
 				group === current.group &&
-				sameDependsOn(dependsOn, current.dependsOn)
+				sameStringList(links, current.links) &&
+				sameStringList(dependsOn, current.dependsOn)
 			) {
 				return {
 					worklist,
@@ -556,19 +586,14 @@ export async function updateProjectGoal(
 					changed: false,
 				};
 			}
-			const updated = withOptionalField(
-				withOptionalField(
-					{
-						...current,
-						title,
-						...(description !== undefined ? { description } : {}),
-						updatedAt: nextGoalUpdatedAt(current.updatedAt),
-					},
-					"group",
-					group,
-				),
-				"dependsOn",
-				dependsOn,
+			const updated = withOptionalFields(
+				{
+					...current,
+					title,
+					...(description !== undefined ? { description } : {}),
+					updatedAt: nextGoalUpdatedAt(current.updatedAt),
+				},
+				{ group, dependsOn, links },
 			);
 			const goals = [...worklist.goals];
 			goals[index] = updated;
@@ -684,10 +709,9 @@ export async function transitionProjectGoal(
 				};
 			}
 			const updatedAt = nextGoalUpdatedAt(current.updatedAt);
-			const updated = withOptionalField(
+			const updated = withOptionalFields(
 				{ ...current, status, updatedAt },
-				"completedAt",
-				nextCompletedAt(current, status, updatedAt),
+				{ completedAt: nextCompletedAt(current, status, updatedAt) },
 			);
 			const goals = [...worklist.goals];
 			goals[index] = updated;
@@ -807,10 +831,9 @@ function stripDependenciesOn(
 		if (!goal.dependsOn?.some((dependencyId) => retired.has(dependencyId))) return goal;
 		const dependsOn = goal.dependsOn.filter((dependencyId) => !retired.has(dependencyId));
 		strippedGoalIds.push(goal.id);
-		return withOptionalField(
+		return withOptionalFields(
 			{ ...goal, updatedAt: nextGoalUpdatedAt(goal.updatedAt) },
-			"dependsOn",
-			dependsOn.length > 0 ? dependsOn : undefined,
+			{ dependsOn: dependsOn.length > 0 ? dependsOn : undefined },
 		);
 	});
 	return { goals: next, strippedGoalIds };
@@ -896,7 +919,7 @@ export async function migrateProjectGoalIds(
 			const goals = worklist.goals.map((goal) => {
 				const migration = byPreviousId.get(goal.id);
 				const dependsOn = goal.dependsOn?.map((id) => byPreviousId.get(id)?.to ?? id);
-				const edgesRewritten = !sameDependsOn(dependsOn, goal.dependsOn);
+				const edgesRewritten = !sameStringList(dependsOn, goal.dependsOn);
 				if (!migration && !edgesRewritten) return goal;
 				const migratedGoal: ProjectGoal = {
 					...goal,

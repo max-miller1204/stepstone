@@ -420,6 +420,13 @@ export const CLI_COMMAND_CONTRACT = {
 			actions: ["add", "update"],
 		},
 		{
+			name: "--link",
+			usage: "--link <url>",
+			summary:
+				"Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link",
+			actions: ["add", "update"],
+		},
+		{
 			name: "--expect-updated-at",
 			usage: "--expect-updated-at <timestamp>",
 			summary: "Refuse the change as a conflict unless the goal's updatedAt still matches this value",
@@ -510,6 +517,8 @@ export const CLI_COMMAND_CONTRACT = {
 	dependencyRules: [
 		"`--depends-on <id>` on `add` and `update` records that the named goal must land before this one; repeat the flag to name several, and `--depends-on ''` on its own clears every edge.",
 		"An `update` replaces the whole set rather than adding to it, so name every edge the goal should end up with, not just the new one.",
+		"`--link <url>` on `add` and `update` stores an informational absolute HTTP or HTTPS URL; repeat it for the complete set, and use `--link ''` alone to clear every link.",
+		"An update replaces the whole link set, matching `--depends-on`; links carry no machine semantics.",
 		"An edge means must-land-before whatever its reason, so a logical prerequisite and two goals that would collide in the same files are recorded the same way.",
 		"A dependency is satisfied once its target is done or archived, and a goal with an unsatisfied dependency is blocked.",
 		"Blocked is derived from the edges on every read and never stored: there is no blocked status, and `set_active` warns about a blocked goal instead of refusing it.",
@@ -564,6 +573,7 @@ export const CLI_COMMAND_CONTRACT = {
 		"Group related goals with `--group <name>` on add or update, and leave the file order alone unless the user asked for a different sequence.",
 		"Record a real must-land-before relationship with `--depends-on <id>`, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.",
 		"Send the complete set of edges on every --depends-on update, because it replaces the stored set rather than adding to it.",
+		"Send the complete set of URLs on every --link update, because it replaces the stored set rather than adding to it.",
 		"Pass --expect-updated-at with the updatedAt from your own read whenever you change a goal, so your mutation conflicts if the goal changed in the meantime.",
 	],
 } as const;

@@ -411,9 +411,10 @@
       "dependsOn": [
         "description-flag-order-independent"
       ],
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-05T15:33:01.104Z",
-      "updatedAt": "2026-08-05T15:33:01.104Z"
+      "updatedAt": "2026-08-12T04:52:47.734Z",
+      "completedAt": "2026-08-12T04:52:47.734Z"
     },
     {
       "id": "project-start-mark-a-goal-in-flight-and",
@@ -595,5 +596,5 @@
       "updatedAt": "2026-08-10T16:38:11.883Z"
     }
   ],
-  "revision": 249
+  "revision": 250
 }
