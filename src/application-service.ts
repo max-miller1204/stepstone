@@ -1049,7 +1049,7 @@ export class WorklistApplicationService {
 						: projectWorklistMergeRequiredError(error.toPath, error.fromPath).toResultError();
 			} else if (error instanceof ProjectGoalActivationBlockedError) {
 				typedError = validationError(
-					"A done or archived Project Goal must be reopened with confirm=true before activation.",
+					"A done or archived Project Goal must be reopened with confirm=true before it can be started or activated.",
 					{
 						confirmation: "confirm=true",
 						id: operation.id,

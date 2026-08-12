@@ -31,6 +31,9 @@ No interface may add a path around that, and an agent must never pass the flag b
 
 `archived` settles a goal without claiming it was delivered, which is why an archived dependency satisfies the goals waiting on it just as a done one does.
 
+A settled goal - `done` or `archived` - refuses both ways of taking it back up: `set_active` and a `start` branch claim are turned down until `reopen` puts it back in play, so work the roadmap already recorded as finished is never quietly resumed under a status that says otherwise.
+Releasing is not taking up, so `start --clear` still drops a claim a settled goal is holding, because a dispatch that outlived its goal has to keep a way out.
+
 ## Goal identifiers
 
 A goal's ID is derived from its title when the goal is created: lowercase, hyphenated, and capped near 40 characters at a word boundary.

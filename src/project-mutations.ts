@@ -52,10 +52,16 @@ export class ProjectGoalNotFoundError extends Error {
  * `mutateProjectWorklist` only re-throws that family; anything else it catches
  * is reported as a persistence failure, which would tell a caller to retry a
  * refusal that will never succeed.
+ *
+ * `set_active` and a `start` branch claim both raise it, so the message names
+ * both rather than activation alone. The class name predates `start` and stays
+ * as it is because the type is exported and callers narrow on it.
  */
 export class ProjectGoalActivationBlockedError extends ProjectMutationRefusedError {
 	constructor(id: string) {
-		super(`Project goal ${id} is done or archived and must be reopened before activation`);
+		super(
+			`Project goal ${id} is done or archived and must be reopened before it can be started or activated`,
+		);
 		this.name = "ProjectGoalActivationBlockedError";
 	}
 }
