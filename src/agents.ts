@@ -64,7 +64,7 @@ function markerOffsets(contents: string, marker: string, path: string): number[]
  * append one block, while every ambiguous layout is refused rather than repaired.
  * The path is passed rather than assumed so a refusal names the file it read.
  */
-export function updateAgentsContents(
+function updateAgentsContents(
 	path: string,
 	contents: string,
 	block: string = renderAgentsMarkdownBlock(),

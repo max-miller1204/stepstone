@@ -99,7 +99,7 @@ describe("project init AGENTS.md generation", () => {
 					};
 				};
 			};
-			meta: { changed: boolean; semanticNoOp: boolean };
+			meta: { changed: boolean; semanticNoOp: boolean; cliVersion: string };
 		}>(result.stdout);
 		expect(envelope.result.agentsPath).toBe(join(root, "AGENTS.md"));
 		expect(envelope.result.integrations.skill.command).toBe(
@@ -114,7 +114,14 @@ describe("project init AGENTS.md generation", () => {
 				},
 			},
 		});
-		expect(envelope.meta).toMatchObject({ changed: true, semanticNoOp: false });
+		// init reports through the same envelope boundary as every other action, so
+		// the metadata the CLI stamps for all of them has to reach this one too.
+		const manifest = JSON.parse(await readFile(resolve("package.json"), "utf8")) as { version: string };
+		expect(envelope.meta).toMatchObject({
+			changed: true,
+			semanticNoOp: false,
+			cliVersion: manifest.version,
+		});
 	});
 
 	it("appends one block without changing any existing byte", async () => {

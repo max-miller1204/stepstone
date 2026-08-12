@@ -754,7 +754,7 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 	const mcp = CLI_COMMAND_CONTRACT.agentSetup.mcp;
 	const mcpProcess = { command: mcp.command, args: [...mcp.args], cwd: root };
 	const mcpConfig = { mcpServers: { [mcp.name]: mcpProcess } };
-	const envelope = {
+	const envelope: WorklistApplicationResult = {
 		ok: true,
 		scope: "project",
 		action: "init",
@@ -778,17 +778,14 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 			changed: refreshed.changed,
 			semanticNoOp: !refreshed.changed,
 			changedFields: [],
-			cliVersion: packageVersion,
 		},
-	} as const;
-	if (invocation.json) {
-		process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
-		return;
-	}
+	};
 	const status = refreshed.changed
 		? `Refreshed the Stepstone block in ${refreshed.path}.`
 		: `The Stepstone block in ${refreshed.path} is already up to date.`;
-	process.stdout.write(
+	report(
+		invocation,
+		envelope,
 		[
 			status,
 			"",
@@ -797,7 +794,6 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 			"MCP client configuration:",
 			JSON.stringify(mcpConfig, null, 2),
 			"Choose the skill installation scope and MCP client configuration location for your harness.",
-			"",
 		].join("\n"),
 	);
 }
