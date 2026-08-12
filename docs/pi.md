@@ -88,7 +88,8 @@ The model-facing tool instead requires `confirm=true`, and its prompt rules proh
 
 The `worklist` tool accepts `scope=session|project` and actions including `list`, `add`, `apply-plan`, `move`, `update`, `set_status`, `set_active`, `complete`, `reopen`, `archive`, and `delete`.
 For Session Tasks, `add` optionally accepts exactly one of `beforeId` or `afterId`, while `move` requires exactly one.
-Project Goal `move` takes the same anchors and reorders the roadmap; `add` and `update` also accept a `group`, where an empty string clears it, and a `dependsOn` array that replaces the goal's edges, where an empty array clears them.
+Project Goal `move` takes the same anchors and reorders the roadmap; `add` and `update` also accept a `group`, where an empty string clears it, a `dependsOn` array that replaces the goal's edges, and a `links` array of absolute HTTP or HTTPS URLs that replaces its informational links.
+Empty arrays clear dependencies or links.
 
 Moves preserve the task ID, title, status, and Project Goal association.
 Self-placement, already-satisfied placement, identical Session Task updates, and repeated status changes succeed without writing another session snapshot.
