@@ -99,6 +99,9 @@ Session Tasks use concise, self-contained titles without descriptions.
 Agents are instructed to split non-trivial work into several concrete, independently completable Session Tasks instead of copying the broad end goal into one task.
 Session Task statuses are `todo`, `doing`, and `done`, while Project Goal statuses are `open`, `active`, `done`, and `archived`, and only activation is a non-destructive direct Project Goal status change.
 
+The tool's prompt carries the brainstorm-to-approved-plan capture workflow for Project Goals, rendered from the same command contract as the CLI guide, the generated skill, the AGENTS block, and the MCP metadata, so the steps stay written once, in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
+On this surface the preview they allow is an `apply-plan` call with `dryRun=true`, which is never the user's approval, and an approved batch is applied by exactly one mutating `apply-plan` call rather than a sequence of `add` calls.
+
 The tool's schema uses `StringEnum` for string enums, which keeps it compatible with Google providers.
 
 ## Session Task storage
