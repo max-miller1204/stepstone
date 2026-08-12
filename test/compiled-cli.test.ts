@@ -9,8 +9,10 @@ import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotoc
 import { beforeAll, describe, expect, it } from "vitest";
 import {
 	CLI_COMMAND_CONTRACT,
+	type ClaudePluginMcpServer,
 	type ClaudePluginPackageMetadata,
 	renderClaudePluginArtifacts,
+	resolveClaudePluginMcpServer,
 	SKILL_PATH,
 } from "../src/cli-contract.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
@@ -89,26 +91,19 @@ describe("published stepstone package", () => {
 	it("starts the compiled MCP server through the Claude plugin config", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-plugin-mcp-"));
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
-		const config = parseJson<{
-			mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;
-		}>(await readFile(resolve(".mcp.json"), "utf8"));
+		const config = parseJson<{ mcpServers: Record<string, ClaudePluginMcpServer> }>(
+			await readFile(resolve(".mcp.json"), "utf8"),
+		);
 		const configured = config.mcpServers[CLI_COMMAND_CONTRACT.binary];
 		if (!configured) throw new Error("Claude plugin config has no Stepstone MCP server");
 		const pluginRoot = resolve(".");
+		const server = resolveClaudePluginMcpServer(configured, { pluginRoot, projectDir: root });
 		const transport = new StdioClientTransport({
-			command: configured.command,
-			args: configured.args.map((argument) => argument.replaceAll(`\${CLAUDE_PLUGIN_ROOT}`, pluginRoot)),
+			command: server.command,
+			args: server.args,
 			cwd: pluginRoot,
 			stderr: "pipe",
-			env: {
-				...getDefaultEnvironment(),
-				...Object.fromEntries(
-					Object.entries(configured.env).map(([key, value]) => [
-						key,
-						value.replaceAll(`\${CLAUDE_PROJECT_DIR}`, root),
-					]),
-				),
-			},
+			env: { ...getDefaultEnvironment(), ...server.env },
 		});
 		const client = new Client({ name: "stepstone-claude-plugin-test", version: "1.0.0" });
 		try {

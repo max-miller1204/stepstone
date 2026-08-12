@@ -120,6 +120,43 @@ export const CLAUDE_PLUGIN_SKILL_PATH = `skills/${BINARY}/SKILL.md`;
 /** Private environment handoff from Claude Code to the bundled MCP process. */
 export const CLAUDE_PLUGIN_PROJECT_ROOT_ENV = "STEPSTONE_PLUGIN_PROJECT_ROOT";
 
+/**
+ * The two placeholders Claude Code substitutes before it starts a plugin's MCP
+ * server: the directory the plugin was cached into, and the repository the user
+ * is working in. Nothing generated here may spell them a second time, because a
+ * misspelled placeholder survives every JSON check and only fails when a real
+ * install tries to launch the server against a path that was never expanded.
+ */
+export const CLAUDE_PLUGIN_ROOT_PLACEHOLDER = `\${CLAUDE_PLUGIN_ROOT}`;
+export const CLAUDE_PROJECT_DIR_PLACEHOLDER = `\${CLAUDE_PROJECT_DIR}`;
+
+/** One MCP server process as the plugin configuration declares it. */
+export interface ClaudePluginMcpServer {
+	command: string;
+	args: string[];
+	env: Record<string, string>;
+}
+
+/**
+ * Expands the plugin placeholders the way Claude Code's MCP launcher does, so a
+ * caller that wants to actually start the configured server resolves it through
+ * the contract that wrote the placeholders rather than re-deriving them.
+ */
+export function resolveClaudePluginMcpServer(
+	server: ClaudePluginMcpServer,
+	locations: { pluginRoot: string; projectDir: string },
+): ClaudePluginMcpServer {
+	const expand = (value: string): string =>
+		value
+			.replaceAll(CLAUDE_PLUGIN_ROOT_PLACEHOLDER, locations.pluginRoot)
+			.replaceAll(CLAUDE_PROJECT_DIR_PLACEHOLDER, locations.projectDir);
+	return {
+		command: expand(server.command),
+		args: server.args.map((argument) => expand(argument)),
+		env: Object.fromEntries(Object.entries(server.env).map(([key, value]) => [key, expand(value)])),
+	};
+}
+
 /** Package metadata consumed by the plugin renderers. */
 export interface ClaudePluginPackageMetadata {
 	name: string;
@@ -905,18 +942,22 @@ export function renderClaudePluginMarketplace(metadata: ClaudePluginPackageMetad
 	});
 }
 
+/** The MCP server process the plugin declares, before Claude Code expands it. */
+function claudePluginMcpServer(): ClaudePluginMcpServer {
+	return {
+		command: "node",
+		args: [`${CLAUDE_PLUGIN_ROOT_PLACEHOLDER}/dist/mcp.js`],
+		env: {
+			[CLAUDE_PLUGIN_PROJECT_ROOT_ENV]: CLAUDE_PROJECT_DIR_PLACEHOLDER,
+		},
+	};
+}
+
 /** Render the cache-safe MCP process configuration at the plugin root. */
 export function renderClaudePluginMcpConfig(): string {
-	const binary = CLI_COMMAND_CONTRACT.binary;
 	return renderGeneratedJson({
 		mcpServers: {
-			[binary]: {
-				command: "node",
-				args: [`\${CLAUDE_PLUGIN_ROOT}/dist/mcp.js`],
-				env: {
-					[CLAUDE_PLUGIN_PROJECT_ROOT_ENV]: `\${CLAUDE_PROJECT_DIR}`,
-				},
-			},
+			[CLI_COMMAND_CONTRACT.binary]: claudePluginMcpServer(),
 		},
 	});
 }
@@ -937,7 +978,7 @@ export function renderClaudePluginCommand(
 			generatedNotice,
 			"This command is only for a human at the keyboard.",
 			"Return the following command verbatim so the user can paste it into the current repository's interactive terminal:",
-			`node "\${CLAUDE_PLUGIN_ROOT}/dist/cli.js" ${contract.scope} ${action.usage}`,
+			`node "${CLAUDE_PLUGIN_ROOT_PLACEHOLDER}/dist/cli.js" ${contract.scope} ${action.usage}`,
 			"Do not run it inside Claude Code's Bash tool because that process does not own the user's TTY.",
 			"The board may mutate Project Goals only through its existing explicit keyboard interactions.",
 			"Do not translate this request into a non-interactive mutation or invoke any mutation slash command.",
