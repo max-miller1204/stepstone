@@ -644,7 +644,14 @@ export function renderAgentsMarkdownBlock(): string {
 		"```text",
 		...contract.actions.map((action) => action.usage),
 		"```",
-		`Flags: ${contract.flags.map((flag) => `\`${flag.usage}\``).join(", ")}.`,
+		`Flags: ${contract.flags
+			.map((flag) => {
+				const actionScope = flag.actions
+					? ` (only for ${contract.scope} ${joinWithAnd(flag.actions)})`
+					: "";
+				return `\`${flag.usage}\`${actionScope}`;
+			})
+			.join(", ")}.`,
 		"",
 		`Confirmation guardrail: ${actionNameList(lifecycleActions)} and the mutating forms of ${actionNameList(migrationActions)} require \`--confirm\`; migration \`--dry-run\` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.`,
 		`Capture workflow: ${captureWorkflow.steps.join(" ")}`,

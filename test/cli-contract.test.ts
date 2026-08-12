@@ -347,6 +347,8 @@ describe("single CLI command contract", () => {
 	});
 
 	it("derives the repository-neutral AGENTS.md block from the same contract", async () => {
+		expect(AGENTS_BLOCK_START).toBe("<!-- stepstone:project-goals:start -->");
+		expect(AGENTS_BLOCK_END).toBe("<!-- stepstone:project-goals:end -->");
 		const block = renderAgentsMarkdownBlock();
 		expect(block).toContain("shared roadmap");
 		expect(block.startsWith(AGENTS_BLOCK_START)).toBe(true);
@@ -425,7 +427,12 @@ describe("single CLI command contract", () => {
 		const actionNames = CLI_COMMAND_CONTRACT.actions.map((action) => action.name);
 		const scoped = CLI_COMMAND_CONTRACT.flags.filter((flag) => flag.actions !== undefined);
 		expect(scoped.length, "no flag declares the actions it applies to").toBeGreaterThan(0);
-		const surfaces = [renderCliUsage(), renderCliGuide(), renderSkillMarkdown()];
+		const surfaces = [
+			renderCliUsage(),
+			renderCliGuide(),
+			renderSkillMarkdown(),
+			renderAgentsMarkdownBlock(),
+		];
 		for (const flag of scoped) {
 			const actions = flag.actions ?? [];
 			expect(actions.length, `${flag.name} scopes to no action at all`).toBeGreaterThan(0);

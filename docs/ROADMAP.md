@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-51 goals: 17 open, 31 done, 3 archived.
+51 goals: 16 open, 32 done, 3 archived.
 
 ## Orchestrator
 
@@ -327,7 +327,7 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Audit remediation
 
-- **[open]** Harden generated AGENTS guidance - `harden-generated-agents-guidance`
+- **[done]** Harden generated AGENTS guidance - `harden-generated-agents-guidance`
 
   Make the always-loaded generated AGENTS block safe as a compact command reference. Pin the frozen marker literals so a package rename cannot orphan blocks already written into other repositories, render or explicitly document the action scopes of listed flags, and extend contract tests so this surface cannot suggest invalid exit-code-2 invocations or silently drift from the canonical command contract.
 
