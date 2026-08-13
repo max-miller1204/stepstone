@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,7 +7,6 @@ import {
 	CLAUDE_PLUGIN_COMMANDS_DIRECTORY,
 	CLAUDE_PLUGIN_MANIFEST_PATH,
 	CLAUDE_PLUGIN_MARKETPLACE_PATH,
-	CLAUDE_PLUGIN_MCP_PATH,
 	CLAUDE_PLUGIN_SKILL_PATH,
 	CLI_COMMAND_CONTRACT,
 	type ClaudePluginPackageMetadata,
@@ -29,6 +29,22 @@ const authorSchema = z
 		url: z.url().optional(),
 	})
 	.strict();
+const mcpServersSchema = z
+	.record(
+		kebabCase,
+		z
+			.object({
+				command: z.literal("node"),
+				args: z.tuple([z.literal(`\${CLAUDE_PLUGIN_ROOT}/dist/mcp.js`)]),
+				env: z
+					.object({
+						STEPSTONE_PLUGIN_PROJECT_ROOT: z.literal(`\${CLAUDE_PROJECT_DIR}`),
+					})
+					.strict(),
+			})
+			.strict(),
+	)
+	.refine((servers) => Object.keys(servers).length === 1);
 const pluginManifestSchema = z
 	.object({
 		name: kebabCase,
@@ -40,6 +56,7 @@ const pluginManifestSchema = z
 		repository: z.url(),
 		license: z.string().min(1),
 		keywords: z.array(z.string().min(1)).min(1),
+		mcpServers: mcpServersSchema,
 	})
 	.strict();
 const marketplaceSchema = z
@@ -65,26 +82,6 @@ const marketplaceSchema = z
 					.strict(),
 			)
 			.length(1),
-	})
-	.strict();
-const mcpConfigSchema = z
-	.object({
-		mcpServers: z
-			.record(
-				kebabCase,
-				z
-					.object({
-						command: z.literal("node"),
-						args: z.tuple([z.literal(`\${CLAUDE_PLUGIN_ROOT}/dist/mcp.js`)]),
-						env: z
-							.object({
-								STEPSTONE_PLUGIN_PROJECT_ROOT: z.literal(`\${CLAUDE_PROJECT_DIR}`),
-							})
-							.strict(),
-					})
-					.strict(),
-			)
-			.refine((servers) => Object.keys(servers).length === 1),
 	})
 	.strict();
 
@@ -159,9 +156,13 @@ describe("Claude Code plugin", () => {
 		expect(commandFiles).toEqual(["list.md", "next.md", "ready.md", "ui.md", "waves.md"]);
 		const metadataFiles = (await readdir(resolve(".claude-plugin"))).sort();
 		expect(metadataFiles).toEqual(["marketplace.json", "plugin.json"]);
+		expect(
+			existsSync(resolve(".mcp.json")),
+			"the plugin MCP declaration must not register as project-scoped config in this checkout",
+		).toBe(false);
 	});
 
-	it("conforms semantically to the official manifest, marketplace, and MCP schemas", () => {
+	it("conforms semantically to the official manifest and marketplace schemas", () => {
 		const artifacts = new Map(
 			renderClaudePluginArtifacts(packageMetadata).map(({ path, content }) => [path, content]),
 		);
@@ -184,10 +185,7 @@ describe("Claude Code plugin", () => {
 		});
 		expect(marketplace.name).toBe(manifest.name);
 
-		const mcpConfig = mcpConfigSchema.parse(
-			parseGeneratedJson(CLAUDE_PLUGIN_MCP_PATH, artifacts.get(CLAUDE_PLUGIN_MCP_PATH) ?? ""),
-		);
-		expect(mcpConfig.mcpServers).toEqual({
+		expect(manifest.mcpServers).toEqual({
 			stepstone: {
 				command: "node",
 				args: [`\${CLAUDE_PLUGIN_ROOT}/dist/mcp.js`],

@@ -37,7 +37,7 @@ That is why a Pi type belongs in an `import type` statement rather than an inlin
 It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and asserts the exit codes and `--json` envelopes of the installed CLI bin across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
 It then speaks MCP over stdio to the installed server bin, reading a resource and calling a mutation tool, so the second executable is proven to load from the same Pi-free install rather than only being packed into it.
 Which bins it drives comes from the manifest's `bin` map compared against `BIN_EXERCISES` in the script, so publishing a third executable without teaching this check to start it fails the job rather than shipping a bin nobody ever loaded.
-It finally starts that server once more the way Claude Code starts a plugin: from the installed `.mcp.json`, with the plugin placeholders expanded through `resolveClaudePluginMcpServer` and the process left in the plugin's own cache directory rather than in the repository, which is the only arrangement in which a plugin configuration that was never packed, or that drifted from the contract, actually fails.
+It finally starts that server once more the way Claude Code starts a plugin: from the installed manifest's inline MCP declaration, with the plugin placeholders expanded through `resolveClaudePluginMcpServer` and the process left in the plugin's own cache directory rather than in the repository, which is the only arrangement in which a plugin declaration that was never packed, or that drifted from the contract, actually fails.
 It runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 ## Generated files
@@ -47,8 +47,10 @@ It runs as its own CI job and again before publishing, because this checkout ins
 Never hand-edit a fully generated file or the generated block: run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
 The AGENTS renderer replaces only its one valid marker pair, preserves all authored bytes outside it, and refuses malformed or duplicate markers instead of clobbering prose.
 
-The plugin files are `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.mcp.json`, one command per plugin action under `commands/`, and `skills/stepstone/SKILL.md`.
-That last one is the installable skill plus a `user-invocable: false` line, so a Claude Code user gets the same guidance without the plugin adding a skill they can invoke themselves.
+The plugin files are `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, one command per plugin action under `commands/`, and `skills/stepstone/SKILL.md`.
+The manifest declares the bundled MCP server inline, in its own `mcpServers` field, and nothing generates a repository-root `.mcp.json`.
+Claude Code reads that path as this checkout's own project-scoped configuration, where `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` are never expanded, so the same bytes that start the server for a plugin install register one a contributor's session cannot start: `test/claude-plugin.test.ts` fails if that file reappears here, and `test/compiled-cli.test.ts` fails if it reappears in the tarball.
+`skills/stepstone/SKILL.md` is the installable skill plus a `user-invocable: false` line, so a Claude Code user gets the same guidance without the plugin adding a skill they can invoke themselves.
 Which actions become commands is a `claudePlugin` field on the contract action rather than a list kept here, and a mutating or confirmation-guarded action may never carry it.
 The two `.claude-plugin` manifests are the only generated files rendered from `package.json` rather than from the contract, which checks only that the package still carries the contract's name, so the plugin's own name, version, description, and author cannot drift from the published package's.
 `commands/` is generated whole: `npm run docs` deletes any entry the contract no longer renders and `npm run docs:check` reports it instead, so an action that stops being a plugin command cannot leave a working slash command behind.

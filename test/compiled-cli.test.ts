@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+	CLAUDE_PLUGIN_MANIFEST_PATH,
 	CLI_COMMAND_CONTRACT,
 	type ClaudePluginMcpServer,
 	type ClaudePluginPackageMetadata,
@@ -92,11 +93,11 @@ describe("published stepstone package", () => {
 	it("starts the compiled MCP server through the Claude plugin config", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-plugin-mcp-"));
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
-		const config = parseJson<{ mcpServers: Record<string, ClaudePluginMcpServer> }>(
-			await readFile(resolve(".mcp.json"), "utf8"),
+		const manifest = parseJson<{ mcpServers: Record<string, ClaudePluginMcpServer> }>(
+			await readFile(resolve(CLAUDE_PLUGIN_MANIFEST_PATH), "utf8"),
 		);
-		const configured = config.mcpServers[CLI_COMMAND_CONTRACT.binary];
-		if (!configured) throw new Error("Claude plugin config has no Stepstone MCP server");
+		const configured = manifest.mcpServers[CLI_COMMAND_CONTRACT.binary];
+		if (!configured) throw new Error("Claude plugin manifest has no Stepstone MCP server");
 		const pluginRoot = resolve(".");
 		const server = resolveClaudePluginMcpServer(configured, { pluginRoot, projectDir: root });
 		const transport = new StdioClientTransport({
@@ -272,6 +273,7 @@ describe("published stepstone package", () => {
 				artifact.path,
 			);
 		}
+		expect(paths, "project-scoped .mcp.json must not ship with the Claude plugin").not.toContain(".mcp.json");
 		for (const dependency of ["@modelcontextprotocol/sdk", "proper-lockfile", "zod"]) {
 			expect(paths, `the isolated Claude plugin cache needs bundled ${dependency}`).toContain(
 				`node_modules/${dependency}/package.json`,

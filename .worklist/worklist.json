@@ -635,9 +635,10 @@
       "dependsOn": [
         "align-mcp-adapter-contracts"
       ],
-      "status": "active",
+      "status": "done",
       "createdAt": "2026-08-12T09:42:45.110Z",
-      "updatedAt": "2026-08-13T00:15:12.937Z"
+      "updatedAt": "2026-08-13T00:35:46.269Z",
+      "completedAt": "2026-08-13T00:35:46.269Z"
     },
     {
       "id": "repair-project-start-semantics",
@@ -661,5 +662,5 @@
       "updatedAt": "2026-08-12T09:42:45.110Z"
     }
   ],
-  "revision": 265
+  "revision": 267
 }

@@ -29,10 +29,11 @@ import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
-	CLAUDE_PLUGIN_MCP_PATH,
+	CLAUDE_PLUGIN_MANIFEST_PATH,
 	CLI_COMMAND_CONTRACT,
 	type ClaudePluginMcpServer,
-	renderClaudePluginMcpConfig,
+	type ClaudePluginPackageMetadata,
+	renderClaudePluginManifest,
 	resolveClaudePluginMcpServer,
 } from "../src/cli-contract.ts";
 
@@ -397,22 +398,25 @@ async function exerciseMcp({ binPath, args = [], cwd, env }: McpProcess): Promis
 	if (failure !== undefined) throw failure;
 }
 
-/** Starts the installed tarball through the exact MCP process configuration Claude Code reads. */
+/** Starts the installed tarball through the exact inline MCP declaration Claude Code reads. */
 async function exerciseClaudePluginMcp(pluginRoot: string, workspace: string): Promise<void> {
-	const installedPath = join(pluginRoot, CLAUDE_PLUGIN_MCP_PATH);
-	const config = JSON.parse(await readFile(installedPath, "utf8")) as {
+	const installedPath = join(pluginRoot, CLAUDE_PLUGIN_MANIFEST_PATH);
+	const manifest = JSON.parse(await readFile(installedPath, "utf8")) as {
 		mcpServers: Record<string, ClaudePluginMcpServer>;
 	};
-	// What the tarball carries has to be what this source renders: a plugin
-	// config generated here but stale or unpacked in the install is a server
-	// Claude Code cannot start, and the install is the only place that shows it.
+	const packageMetadata = JSON.parse(
+		await readFile(join(pluginRoot, "package.json"), "utf8"),
+	) as ClaudePluginPackageMetadata;
+	// What the tarball carries has to be what this source renders: an inline
+	// declaration generated here but stale or unpacked in the install is a
+	// server Claude Code cannot start, and the install is the only place that shows it.
 	assert.deepEqual(
-		config,
-		JSON.parse(renderClaudePluginMcpConfig()),
-		`${CLAUDE_PLUGIN_MCP_PATH} in the installed package is not what src/cli-contract.ts renders`,
+		manifest,
+		JSON.parse(renderClaudePluginManifest(packageMetadata)),
+		`${CLAUDE_PLUGIN_MANIFEST_PATH} in the installed package is not what src/cli-contract.ts renders`,
 	);
-	const declared = config.mcpServers[binary];
-	assert.ok(declared, "installed Claude plugin config must declare the Stepstone MCP server");
+	const declared = manifest.mcpServers[binary];
+	assert.ok(declared, "installed Claude plugin manifest must declare the Stepstone MCP server");
 	const server = resolveClaudePluginMcpServer(declared, { pluginRoot, projectDir: workspace });
 	await exerciseMcp({
 		binPath: server.command,
