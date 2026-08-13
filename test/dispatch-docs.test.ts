@@ -108,6 +108,7 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 		'case " $* " in',
 		'  *" --clear "*) printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"cleared-at"}}}\' ;;',
 		"  *)",
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template
 		'    case "${STEPSTONE_CLAIM_RESULT:-ok}" in',
 		'      ok) printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"claimed-at"}}}\' ;;',
 		"      malformed) printf '%s\\n' '{\"result\":{}}' ;;",
@@ -134,6 +135,7 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 		'printf "herdr:%s\\n" "$*" >>"$EVENTS"',
 		'case "$1:$2" in',
 		"  pane:split)",
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template
 		'    case "${HERDR_SPLIT_RESULT:-ok}" in',
 		'      ok) printf \'%s\\n\' \'{"result":{"pane":{"pane_id":"pane-1"}}}\' ;;',
 		"      malformed) printf '%s\\n' '{\"result\":{}}' ;;",
@@ -148,7 +150,9 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 		'      printf \'%s\\n\' \'{"result":{"panes":[{"pane_id":"pane-1"}]}}\'',
 		"    fi",
 		"    ;;",
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template
 		'  agent:start) test "${HERDR_START_RESULT:-ok}" = ok ;;',
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template
 		'  agent:prompt) test "${HERDR_PROMPT_RESULT:-ok}" = ok ;;',
 		"  agent:wait) : ;;",
 		"  *) exit 95 ;;",

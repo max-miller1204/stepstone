@@ -59,7 +59,7 @@ npx -y stepstone@latest project start "$goal_id" --clear \
 
 ## Binding A: Git worktrees and detached processes
 
-This baseline needs Git, a shell, and the configured agent executable.
+This baseline needs Git, a shell, a JSON reader, and the configured agent executable.
 The root session remains in the default-branch checkout.
 
 Create the isolated workspace and branch:
@@ -259,8 +259,10 @@ On abandonment the same verified close happens before claim release and lease re
 - Workers never edit `.worklist/worklist.json` or run mutating Stepstone commands.
 - Claim before launch, and release every abandoned claim.
 - Treat a rejected claim as a stop: release the workspace instead of launching a worker, because the claim is the only thing preventing a second driver from dispatching the same goal.
-- Check every step between a successful claim and a running worker, and release both the claim and the workspace when one fails; a claim held with nobody working it keeps the goal out of `ready` until someone notices.
-- Use each goal's `updatedAt` precondition for claim and completion, re-reading it before each one rather than reusing a spent value.
+- Check every step between a successful claim and a running worker, and release both the claim and the workspace only when the failure proves no worker was launched; a claim held with nobody working it keeps the goal out of `ready` until someone notices, while a claim released under a worker that may be running hands the same goal to a second driver.
+- Keep the claim, the workspace, and any hosting session when a failure leaves custody ambiguous, and say on stderr what is being held, because an outcome nobody can read is a case for inspection rather than for automatic cleanup.
+- Use each goal's `updatedAt` precondition for claim and completion, re-reading it before each one rather than reusing a spent value, and release a claim with the `updatedAt` that same claim returned, because a re-read value may already belong to somebody else's newer claim.
+- Scrub a workspace and verify it reports clean before forcing its removal or return, and force only after the goal is completed or its exact claim is released, so cleanup neither stops on an interactive refusal nor discards a checkout somebody still holds.
 - Keep the approved plan's goal IDs as the authorization allow-list.
 - Match merge evidence to the branch stored on that exact goal.
 - Re-read canonical state after every merge instead of caching the ready frontier.
