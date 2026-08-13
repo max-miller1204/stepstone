@@ -29,6 +29,9 @@ The package ships TypeScript source directly because Pi loads extensions through
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
 
+`test/dispatch-docs.test.ts` runs the shell recipes in [docs/dispatch.md](dispatch.md) rather than a driver written beside it: each block is selected by its `# dispatch-example:` marker comment and executed over real Git worktrees, with fake `npx`, `herdr`, and `treehouse` executables ahead of them on `PATH` standing in for the boundaries this project does not own.
+Editing one of those blocks therefore changes what is executed, and renaming or dropping a marker fails that file instead of quietly leaving a binding unexercised.
+
 `npm run imports:check` reads the merged module graph behind both published entry points, `src/cli.ts` and `src/mcp.ts`, and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
 Both entry points are named in `executableEntryPoints` in `scripts/cli-import-graph.ts`, which this check and the test suite both walk, so a new executable joins the scan by being added there.
 That is why a Pi type belongs in an `import type` statement rather than an inline `import { type Foo }`: the latter is a runtime import the scan will reject.
