@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const dispatchMarkdown = await readFile(resolve("docs/dispatch.md"), "utf8");
@@ -27,6 +27,19 @@ interface DispatchFixture {
 	bin: string;
 	events: string;
 }
+
+/**
+ * Every sandbox this file created, discarded once the file finishes.
+ *
+ * A scenario is a real repository with real worktrees rather than a couple of
+ * files, so a run that walked away from its fixtures would leave megabytes of
+ * checkouts in the temporary directory every time the suite executes.
+ */
+const sandboxes: string[] = [];
+
+afterAll(async () => {
+	await Promise.all(sandboxes.map((sandbox) => rm(sandbox, { recursive: true, force: true })));
+});
 
 function dispatchExample(name: string): string {
 	const marker = `# dispatch-example: ${name}`;
@@ -69,6 +82,7 @@ async function writeExecutable(path: string, lines: string[]): Promise<void> {
 
 async function createRepository(): Promise<DispatchFixture> {
 	const sandbox = await realpath(await mkdtemp(join(tmpdir(), "stepstone-dispatch-docs-")));
+	sandboxes.push(sandbox);
 	const root = join(sandbox, "root");
 	const leasedWorkspace = join(sandbox, "worker");
 	const detachedWorkspace = join(sandbox, `stepstone-${goalId}`);
@@ -153,7 +167,6 @@ function baseEnvironment(fixture: DispatchFixture): Record<string, string> {
 		goal_prompt: "Implement the selected goal",
 		updated_at: "ready-at",
 		HERDR_AGENT_KIND: "claude",
-		HERDR_PROMPT_TIMEOUT_MS: "17",
 	};
 }
 
@@ -378,6 +391,28 @@ describe("documented dispatch bindings", () => {
 		expect(await readEvents(fixture)).toEqual(["herdr:agent wait pane-1 --timeout 300000"]);
 	});
 
+	it("bounds the documented Herdr prompt when no timeout is configured", async () => {
+		const fixture = await createRepository();
+		await installFakeBoundaries(fixture.bin);
+		await execFileAsync("git", ["worktree", "add", "--detach", fixture.leasedWorkspace, "HEAD"], {
+			cwd: fixture.root,
+		});
+		const result = await runShell(
+			fixture.root,
+			`${bindingBWorkspace}\n${bindingBLaunch}`,
+			baseEnvironment(fixture),
+		);
+
+		expect(result.code).toBe(0);
+		const events = await readEvents(fixture);
+		expect(eventsMatching(events, "herdr:agent prompt")).toEqual([
+			"herdr:agent prompt pane-1 Implement the selected goal --wait --timeout 300000",
+		]);
+		await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
+			cwd: fixture.root,
+		});
+	});
+
 	it("preserves Binding B custody after an ambiguous bounded prompt failure", async () => {
 		const fixture = await createRepository();
 		await installFakeBoundaries(fixture.bin);
@@ -386,6 +421,7 @@ describe("documented dispatch bindings", () => {
 		});
 		const result = await runShell(fixture.root, `${bindingBWorkspace}\n${bindingBLaunch}`, {
 			...baseEnvironment(fixture),
+			HERDR_PROMPT_TIMEOUT_MS: "17",
 			HERDR_PROMPT_RESULT: "fail",
 		});
 
