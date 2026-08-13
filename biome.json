@@ -19,7 +19,7 @@
 	},
 	"overrides": [
 		{
-			"includes": [".claude-plugin/*.json", ".mcp.json"],
+			"includes": [".claude-plugin/*.json"],
 			"formatter": {
 				"enabled": false
 			}

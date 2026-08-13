@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+	CLAUDE_PLUGIN_MANIFEST_PATH,
 	CLI_COMMAND_CONTRACT,
 	type ClaudePluginMcpServer,
 	type ClaudePluginPackageMetadata,
@@ -93,7 +94,7 @@ describe("published stepstone package", () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-plugin-mcp-"));
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
 		const manifest = parseJson<{ mcpServers: Record<string, ClaudePluginMcpServer> }>(
-			await readFile(resolve(".claude-plugin/plugin.json"), "utf8"),
+			await readFile(resolve(CLAUDE_PLUGIN_MANIFEST_PATH), "utf8"),
 		);
 		const configured = manifest.mcpServers[CLI_COMMAND_CONTRACT.binary];
 		if (!configured) throw new Error("Claude plugin manifest has no Stepstone MCP server");
