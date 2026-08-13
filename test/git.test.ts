@@ -140,7 +140,7 @@ describe("git root", () => {
 	});
 
 	it("asks Git again only while Git has not answered", async () => {
-		const root = await mkdtemp(join(tmpdir(), "stepstone-root-lookup-"));
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-root-lookup-")));
 		execFileSync("git", ["init", "-q"], { cwd: root });
 
 		// A Git that never answered must not settle the lookup: a later operation in
