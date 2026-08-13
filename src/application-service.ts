@@ -39,6 +39,7 @@ import {
 	type ProjectGoalPrecondition,
 	type ProjectMutationOptions,
 	ProjectRevisionConflictError,
+	ProjectWorklistLinkedWorktreeRefusedError,
 	ProjectWorklistMoveRefusedError,
 } from "./project-store.ts";
 import {
@@ -1119,6 +1120,13 @@ export class WorklistApplicationService {
 					},
 				};
 				failureMeta = { ...failureMeta, revisions: { session: error.actualRevision } };
+			} else if (error instanceof ProjectWorklistLinkedWorktreeRefusedError) {
+				typedError = createApplicationError(WORKLIST_ERROR_CODES.UNAVAILABLE, error.message, {
+					path: error.worklistPath,
+					currentWorktree: error.currentWorktree,
+					mainWorktree: error.mainWorktree,
+					resolution: "run-from-main-worktree",
+				}).toResultError();
 			} else if (error instanceof ProjectWorklistMoveRefusedError) {
 				// Neither reason is retryable and neither is a stale baseline: one names
 				// a file that is gone, the other a second roadmap only a person can

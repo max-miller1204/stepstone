@@ -1,7 +1,11 @@
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import lockfile from "proper-lockfile";
+import { LEGACY_WORKLIST_DIRECTORY, WORKLIST_DIRECTORY, WORKLIST_FILENAME } from "./cli-contract.ts";
+import { GIT_COMMAND_TIMEOUT_MS } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import type { ProjectWorklist, RevisionedProjectWorklist } from "./types.ts";
 import { PROJECT_WORKLIST_VERSION } from "./types.ts";
@@ -79,6 +83,29 @@ export class ProjectWorklistMoveRefusedError extends ProjectMutationRefusedError
 		this.reason = reason;
 		this.fromPath = fromPath;
 		this.toPath = toPath;
+	}
+}
+/**
+ * A committed roadmap write attempted from a linked worktree.
+ *
+ * Reads and explicit files outside the two repository roadmap locations remain
+ * available there. A canonical write would instead create a second valid
+ * roadmap and a second lock, so the refusal names the sole worktree that may
+ * perform it.
+ */
+export class ProjectWorklistLinkedWorktreeRefusedError extends ProjectMutationRefusedError {
+	readonly worklistPath: string;
+	readonly currentWorktree: string;
+	readonly mainWorktree: string;
+
+	constructor(worklistPath: string, currentWorktree: string, mainWorktree: string) {
+		super(
+			`Project worklist ${worklistPath} cannot be changed from linked worktree ${currentWorktree}. Run this mutation from the main worktree ${mainWorktree}.`,
+		);
+		this.name = "ProjectWorklistLinkedWorktreeRefusedError";
+		this.worklistPath = worklistPath;
+		this.currentWorktree = currentWorktree;
+		this.mainWorktree = mainWorktree;
 	}
 }
 
@@ -216,6 +243,47 @@ export async function readProjectWorklist(
 		};
 	}
 }
+/**
+ * Refuse a changed write to either committed roadmap path from a linked
+ * worktree.
+ *
+ * `git worktree list` defines its first entry as the main worktree. Deriving
+ * this from `--git-common-dir` would be wrong for repositories created with
+ * `git init --separate-git-dir`, whose Git directory can live anywhere.
+ *
+ * Paths outside the current and legacy roadmap locations are explicit
+ * non-roadmap stores. They intentionally remain writable from any worktree.
+ */
+function assertCommittedRoadmapWriteAllowed(path: string): void {
+	const worklistPath = resolve(path);
+	const worklistDirectory = dirname(worklistPath);
+	const directoryName = basename(worklistDirectory);
+	if (
+		basename(worklistPath) !== WORKLIST_FILENAME ||
+		(directoryName !== WORKLIST_DIRECTORY && directoryName !== LEGACY_WORKLIST_DIRECTORY)
+	) {
+		return;
+	}
+
+	const currentWorktree = realpathSync(dirname(worklistDirectory));
+	if (!existsSync(resolve(currentWorktree, ".git"))) return;
+	const raw = execFileSync("git", ["worktree", "list", "--porcelain", "-z"], {
+		cwd: currentWorktree,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+		timeout: GIT_COMMAND_TIMEOUT_MS,
+	});
+	const firstFieldEnd = raw.indexOf("\0");
+	const firstField = firstFieldEnd === -1 ? raw : raw.slice(0, firstFieldEnd);
+	const prefix = "worktree ";
+	if (!firstField.startsWith(prefix)) {
+		throw new Error("git worktree list named no main worktree");
+	}
+	const mainWorktree = realpathSync(firstField.slice(prefix.length));
+	if (currentWorktree !== mainWorktree) {
+		throw new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, mainWorktree);
+	}
+}
 
 /** Name of the cross-process lock every writer to one worklist directory takes. */
 const LOCK_FILENAME = ".worklist.lock";
@@ -286,6 +354,8 @@ export async function moveProjectWorklist(
 		const destination = await stat(toPath).catch(() => undefined);
 		if (destination) throw new ProjectWorklistMoveRefusedError("destination-exists", fromPath, toPath);
 
+		assertCommittedRoadmapWriteAllowed(fromPath);
+
 		tempName = resolve(toDir, `.worklist-${randomBytes(8).toString("hex")}.tmp`);
 		await writeFile(tempName, contents, "utf8");
 		await rename(tempName, toPath);
@@ -337,6 +407,8 @@ export async function mutateProjectWorklist<T>(
 			};
 		}
 		if (!changed) return { data: result, revision: readResult.data.revision, changed: false };
+
+		assertCommittedRoadmapWriteAllowed(path);
 
 		const revision = readResult.data.revision + 1;
 		if (!Number.isSafeInteger(revision)) {

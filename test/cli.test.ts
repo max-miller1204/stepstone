@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -1928,6 +1928,92 @@ describe("project goal file resolution", () => {
 		const root = await tempGitRepo();
 		expect((await runCli(root, ["project", "add", "First"])).code).toBe(0);
 		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["first"]);
+	});
+
+	it("refuses committed-roadmap writes from a linked worktree without restricting reads or explicit files", async () => {
+		const root = await tempGitRepo();
+		expect((await runCli(root, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: root },
+		);
+
+		const linkedParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-linked-")));
+		const linked = join(linkedParent, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/linked-roadmap", linked, "HEAD"], {
+			cwd: root,
+		});
+
+		try {
+			const rootPath = join(root, ".worklist", "worklist.json");
+			const linkedPath = join(linked, ".worklist", "worklist.json");
+			const rootBefore = await readFile(rootPath, "utf8");
+			const linkedBefore = await readFile(linkedPath, "utf8");
+
+			const listed = await runCli(linked, ["project", "list", "--json"]);
+			expect(listed.code).toBe(0);
+			expect(parseJson(listed.stdout).result.goals).toMatchObject([{ id: "canonical" }]);
+
+			const noOp = await runCli(linked, ["project", "move", "canonical", "up", "--json"]);
+			expect(noOp.code).toBe(0);
+			expect(parseJson(noOp.stdout).meta).toMatchObject({ changed: false, semanticNoOp: true });
+
+			const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
+			expect(refused.code).toBe(1);
+			expect(parseJson(refused.stderr)).toMatchObject({
+				ok: false,
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: {
+						path: linkedPath,
+						currentWorktree: linked,
+						mainWorktree: root,
+						resolution: "run-from-main-worktree",
+					},
+				},
+				meta: { changed: false, semanticNoOp: false, changedFields: [] },
+			});
+			expect(await readFile(rootPath, "utf8")).toBe(rootBefore);
+			expect(await readFile(linkedPath, "utf8")).toBe(linkedBefore);
+
+			const explicitPath = join(linked, "scratch", "worklist.json");
+			const explicit = await runCli(linked, [
+				"project",
+				"add",
+				"Explicit store",
+				"--file",
+				explicitPath,
+				"--json",
+			]);
+			expect(explicit.code).toBe(0);
+			expect((parseJson(await readFile(explicitPath, "utf8")) as ProjectWorklist).goals).toMatchObject([
+				{ id: "explicit-store" },
+			]);
+
+			await rm(linkedPath);
+			const legacyPath = await seedWorklistAt(linked, ".pi", "legacy");
+			const legacyBefore = await readFile(legacyPath, "utf8");
+			const migration = await runCli(linked, ["project", "migrate_path", "--confirm", "--json"]);
+			expect(migration.code).toBe(1);
+			expect(parseJson(migration.stderr)).toMatchObject({
+				error: {
+					code: "UNAVAILABLE",
+					details: {
+						path: legacyPath,
+						currentWorktree: linked,
+						mainWorktree: root,
+						resolution: "run-from-main-worktree",
+					},
+				},
+			});
+			expect(await readFile(legacyPath, "utf8")).toBe(legacyBefore);
+			await expect(readFile(linkedPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			await execFileAsync("git", ["worktree", "remove", "--force", linked], { cwd: root });
+		}
 	});
 
 	it("reads and writes a legacy file rather than splitting the roadmap in two", async () => {

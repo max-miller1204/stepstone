@@ -593,9 +593,9 @@
       "title": "worktree-guard: stop a linked worktree silently forking the roadmap",
       "description": "The root-session-on-main convention is already the roadmap's answer to branch sessions writing the worklist: merge-driver defers to it explicitly, and root-session-recipe states that worklist mutations happen on main only with the root session as the sole writer. Nothing enforces it. resolveGitRoot calls git rev-parse --show-toplevel (src/git.ts:13), which inside a linked worktree returns that worktree, so an agent running in a treehouse worktree resolves its own checked-out copy of the goal file and writes there. The lock is scoped to the resolved directory (src/project-store.ts:191), so two worktrees hold two independent locks and nothing serializes them against each other.\n\nThe consequence is worse than the merge conflict merge-driver is scoped to prevent. With one copy, two writers collide loudly at merge time. Across worktrees they diverge silently: two goal files, two locks, both valid, drifting until someone notices. This is not hypothetical - ipod-shuffle-linux carries worklist(active) and worklist(done) commits landed on feature branches, because marking a goal started or finished naturally happens while that feature branch is checked out. The convention is hardest to honour in exactly the moments the workflow most wants to write.\n\nMake a mutation from a linked worktree loud instead of silent, and decide the behaviour explicitly rather than by default: refuse and name the main worktree, warn and proceed, or redirect the write to the main worktree's file under its lock. Refusal is safest and matches the sole-writer rule, but it breaks any adapter that expects project start or project complete to run from inside a dispatched worktree, so root-session-recipe's claim-in-the-worktree, complete-on-main contract must be checked against whichever behaviour is chosen; redirect preserves that contract at the cost of a write crossing directories. Reads stay unrestricted in every case, since only mutations can fork the roadmap. Detect the linked worktree with git worktree list --porcelain, whose first entry is the main worktree, rather than deriving it from --git-common-dir, which under git init --separate-git-dir points outside the working tree entirely and whose parent is then unrelated to the checkout.\n\nSequencing against worklist-path: both change the same resolution path, and worklist-path already requires one resolution order shared by the CLI, the board, the Pi extension and the MCP server. If worklist-path is scheduled first, fold this guard into that single resolution rather than landing it separately and rewriting it. Landing this first is still worthwhile if worklist-path is far out, because the divergence hazard goes live the moment a treehouse fan-out runs. Either way the guard covers the committed goal file only: worklist-path's gitignored siblings under .worklist/ are deliberately per-worktree local state for dispatch claims, branch-scoped focus and ephemeral board state, and must keep resolving per-worktree rather than collapsing to one shared directory.",
       "group": "Harness",
-      "status": "open",
+      "status": "active",
       "createdAt": "2026-08-10T16:38:11.883Z",
-      "updatedAt": "2026-08-10T16:38:11.883Z"
+      "updatedAt": "2026-08-13T19:01:33.550Z"
     },
     {
       "id": "harden-generated-agents-guidance",
@@ -664,5 +664,5 @@
       "completedAt": "2026-08-13T18:25:36.652Z"
     }
   ],
-  "revision": 271
+  "revision": 272
 }
