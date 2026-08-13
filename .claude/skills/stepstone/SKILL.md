@@ -185,7 +185,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - Session hosting and workspace isolation are independent bindings: any host that can launch and observe a command can compose with any provider that returns an isolated checkout.
 - Treat a merged PR whose head belongs to the claimed branch as completion evidence; worker exit or silence alone never proves the goal landed.
 - Launching a dispatch loop for an explicitly approved plan grants standing consent to run `complete <id> --confirm` only for a goal in that plan after its matching PR merged.
-- That standing consent does not cover archive, delete, reopen, unrelated goals, unmerged work, or a new plan; release an abandoned claim with `start <id> --clear`.
+- That standing consent does not cover archive, delete, reopen, unrelated goals, unmerged work, or a new plan; release an abandoned claim with `start <id> --clear --expect-updated-at <updatedAt>`, passing the `updatedAt` that same claim returned rather than a re-read value that may already belong to somebody else's newer claim.
 - Re-read `ready` after each merge and stop when it is empty; distinguish finished roadmaps from blocked or claimed work by reading `waves --json`.
 
 The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in the package's `docs/dispatch.md`.
