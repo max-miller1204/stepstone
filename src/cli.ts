@@ -656,6 +656,18 @@ function formatPlanWarning(warning: ProjectPlanWarning): string {
 	);
 }
 
+/**
+ * A Git diagnostic reduced to one line, so the same text can ride inside a
+ * sentence a person reads and inside a JSON envelope a dispatcher parses.
+ *
+ * The underlying message is whatever Git wrote to stderr, prefixed by the failed
+ * command, which is what tells a timeout apart from a permissions error or a Git
+ * too old for the flag being used.
+ */
+function condenseGitDiagnostic(message: string): string {
+	return message.replace(/\s+/g, " ").trim();
+}
+
 /** A failed operation, carrying the full deterministic failure envelope for --json output. */
 class WorklistCliFailure extends Error {
 	readonly envelope: WorklistApplicationFailure;
@@ -1280,16 +1292,16 @@ async function run(invocation: CliInvocation): Promise<void> {
 			if (!invocation.clear && branch === undefined) {
 				const current = currentGitBranch(invocation.cwd);
 				if (current.error) {
+					const gitError = condenseGitDiagnostic(current.error);
 					throw new WorklistCliFailure({
 						ok: false,
 						scope: "project",
 						action: "start",
 						error: {
 							code: WORKLIST_ERROR_CODES.UNAVAILABLE,
-							message:
-								"Git could not determine the current branch. Retry, or pass --branch <name> explicitly.",
+							message: `Git could not determine the current branch: ${gitError}. Retry, or pass --branch <name> explicitly.`,
 							retryable: true,
-							details: { resolution: "retry-or-provide-project-start-branch" },
+							details: { resolution: "retry-or-provide-project-start-branch", gitError },
 						},
 						meta: { changed: false, semanticNoOp: false, changedFields: [] },
 					});

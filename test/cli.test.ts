@@ -1525,7 +1525,10 @@ describe("project goal CLI", () => {
 		});
 		expect(unavailable.code).toBe(1);
 		expect(unavailable.stdout).toBe("");
-		expect(parseJson(unavailable.stderr)).toMatchObject({
+		const unavailableEnvelope = parseJson(unavailable.stderr) as {
+			error: { message: string; details: { gitError: string } };
+		};
+		expect(unavailableEnvelope).toMatchObject({
 			ok: false,
 			scope: "project",
 			action: "start",
@@ -1536,6 +1539,16 @@ describe("project goal CLI", () => {
 			},
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
+		// Retryable is a claim about the failure, so what Git actually said has to
+		// survive: a caller cannot tell a timeout from a permissions error otherwise.
+		expect(unavailableEnvelope.error.details.gitError).toContain("simulated branch lookup failure");
+		expect(unavailableEnvelope.error.details.gitError).not.toContain("\n");
+		expect(unavailableEnvelope.error.message).toContain("simulated branch lookup failure");
+
+		// The same diagnostic reaches a person, who has no envelope to read.
+		const humanUnavailable = await runCli(root, ["project", "start", "claim-target"], { PATH: fakeBin });
+		expect(humanUnavailable.code).toBe(1);
+		expect(humanUnavailable.stderr).toContain("simulated branch lookup failure");
 	});
 
 	it("never suggests a goal someone has already taken on", async () => {

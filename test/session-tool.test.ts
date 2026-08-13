@@ -858,6 +858,21 @@ describe("registered model tool", () => {
 		restart: (reason: "new" | "resume" | "fork") => Promise<void>;
 	}
 
+	/**
+	 * The arguments a model can actually send, which is the tool's declared
+	 * parameter schema and nothing else.
+	 *
+	 * A tool call is composed from the schema pi advertises, so a field the schema
+	 * never names cannot arrive at `execute` no matter what the service behind it
+	 * would accept. Dropping undeclared keys here keeps a session test measuring
+	 * the surface the model can reach rather than the wider one reachable only by
+	 * calling `execute` directly.
+	 */
+	function declaredArguments(parameters: unknown, params: Record<string, unknown>): Record<string, unknown> {
+		const declared = new Set(Object.keys((parameters as { properties: Record<string, unknown> }).properties));
+		return Object.fromEntries(Object.entries(params).filter(([name]) => declared.has(name)));
+	}
+
 	/** A live session on a repository, left exactly as `session_start` leaves one. */
 	async function startSession(cwd: string): Promise<LiveSession> {
 		const { tool, handlers } = registerExtension();
@@ -873,7 +888,8 @@ describe("registered model tool", () => {
 		await sessionStart({ reason: "new" }, sessionContext);
 		const execute = tool.execute as ToolExecute;
 		return {
-			call: (params) => execute("call", params, undefined, undefined, sessionContext),
+			call: (params) =>
+				execute("call", declaredArguments(tool.parameters, params), undefined, undefined, sessionContext),
 			notifications,
 			restart: async (reason) => {
 				await handlers.get("session_shutdown")?.({}, sessionContext);
@@ -1034,7 +1050,8 @@ describe("registered model tool", () => {
 	it("exposes the session ordering surface to the model", () => {
 		const { tool } = registerExtension();
 		const parameters = tool.parameters as {
-			properties: Record<string, { enum?: string[]; description?: string }>;
+			properties: Record<string, { type?: string; enum?: string[]; description?: string }>;
+			required?: string[];
 		};
 		expect(parameters.properties.action.enum).toContain("move");
 		expect(parameters.properties.action.enum).toContain("apply-plan");
@@ -1043,7 +1060,11 @@ describe("registered model tool", () => {
 		expect(parameters.properties.afterId).toBeDefined();
 		expect(parameters.properties.plan).toBeDefined();
 		expect(parameters.properties.dryRun).toBeDefined();
-		expect(parameters.properties.expectedUpdatedAt).toBeDefined();
+		// The optimistic concurrency guard is only usable if the model is told it
+		// exists, which action it guards, and that it is an optional string.
+		expect(parameters.properties.expectedUpdatedAt?.type).toBe("string");
+		expect(parameters.properties.expectedUpdatedAt?.description).toContain("start");
+		expect(parameters.required ?? []).not.toContain("expectedUpdatedAt");
 		expect(tool.description).toContain("Project move requires exactly one of beforeId or afterId");
 		expect(tool.description).not.toContain("Project Goals cannot be reordered");
 	});
