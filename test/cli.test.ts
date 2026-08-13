@@ -109,6 +109,25 @@ function fakeGitFailingWorktreeLookup(worktreeScript: string[]): Promise<string>
 	]);
 }
 
+/**
+ * A PATH whose `git` is the real one with `-z` taken away from `worktree list`,
+ * the way every Git before 2.36 answers that invocation.
+ */
+async function fakeGitWithoutNulSeparatedWorktreeList(): Promise<string> {
+	const realGit = (await execFileAsync("which", ["git"])).stdout.trim();
+	return fakeGitPath([
+		'if [ "$1" = "worktree" ]; then',
+		'  for argument in "$@"; do',
+		'    if [ "$argument" = "-z" ]; then',
+		"      echo 'error: unknown switch -z' >&2",
+		"      exit 129",
+		"    fi",
+		"  done",
+		"fi",
+		`exec ${realGit} "$@"`,
+	]);
+}
+
 /** A PATH with no `git` on it at all, the way a machine without Git looks. */
 async function pathWithoutGit(): Promise<string> {
 	return mkdtemp(join(tmpdir(), "stepstone-no-git-bin-"));
@@ -2076,7 +2095,7 @@ describe("project goal file resolution", () => {
 					path: roadmap,
 					currentWorktree: checkout,
 					gitDirectory,
-					resolution: "create-main-worktree-checkout",
+					resolution: "provide-main-worktree",
 				},
 			},
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
@@ -2087,6 +2106,77 @@ describe("project goal file resolution", () => {
 		expect(envelope.error.details.mainWorktree).toBeUndefined();
 		expect(envelope.error.details.resolution).not.toBe("run-from-main-worktree");
 		expect(await readFile(roadmap, "utf8")).toBe(before);
+
+		// Every way out it names can be taken. `git worktree add` cannot make a main
+		// worktree here, so the message must not ask for one to be created.
+		const added = await execFileAsync("git", ["worktree", "add", join(home, "second"), "HEAD"], {
+			cwd: gitDirectory,
+		});
+		expect(added).toBeDefined();
+		const stillRefused = await runCli(checkout, ["project", "add", "Must not diverge", "--json"]);
+		expect(parseJson(stillRefused.stderr).error.details).toMatchObject({
+			gitDirectory,
+			resolution: "provide-main-worktree",
+		});
+		// The clone it points at instead does have one, and writes there land.
+		const clone = join(home, "clone");
+		await execFileAsync("git", ["clone", gitDirectory, clone]);
+		expect((await runCli(clone, ["project", "add", "Written in the clone"])).code).toBe(0);
+		expect((await readGoals(clone)).map((goal) => goal.id)).toEqual(["canonical", "written-in-the-clone"]);
+
+		// So does the other way out it names, from this very checkout.
+		expect(envelope.error.message).toContain(`$${WORKLIST_PATH_ENV}`);
+		const explicitPath = join(checkout, "scratch", "worklist.json");
+		const explicit = await runCli(checkout, ["project", "add", "Explicit store", "--json"], {
+			[WORKLIST_PATH_ENV]: explicitPath,
+		});
+		expect(explicit.code).toBe(0);
+		expect((parseJson(await readFile(explicitPath, "utf8")) as ProjectWorklist).goals).toMatchObject([
+			{ id: "explicit-store" },
+		]);
+	});
+
+	it("reads the newline-delimited listing on a Git that does not take -z", async () => {
+		const root = await tempGitRepo();
+		const olderGit = await fakeGitWithoutNulSeparatedWorktreeList();
+
+		// The lookup stands in front of every committed-roadmap write, so a Git
+		// without `-z` refuses a plain single-worktree repository too, not just the
+		// linked worktrees the rule is about.
+		const added = await runCli(root, ["project", "add", "Written on an older Git"], { PATH: olderGit });
+		expect(added.code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["written-on-an-older-git"]);
+
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: root },
+		);
+		const linkedParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-legacy-list-")));
+		const linked = join(linkedParent, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/legacy-list", linked, "HEAD"], {
+			cwd: root,
+		});
+
+		try {
+			// And the rule itself still holds through the fallback: the older format
+			// names the same main worktree.
+			const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"], {
+				PATH: olderGit,
+			});
+			expect(refused.code).toBe(1);
+			expect(parseJson(refused.stderr)).toMatchObject({
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: { currentWorktree: linked, mainWorktree: root, resolution: "run-from-main-worktree" },
+				},
+			});
+			expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["written-on-an-older-git"]);
+		} finally {
+			await execFileAsync("git", ["worktree", "remove", "--force", linked], { cwd: root });
+		}
 	});
 
 	it("asks Git where the main worktree is before it takes the worklist lock", async () => {

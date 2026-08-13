@@ -56,7 +56,8 @@ Reading is unrestricted, and so is anything that cannot fork the roadmap: a `--d
 An explicit `--file` or `$STEPSTONE_WORKLIST` store outside those two committed locations is not the committed roadmap and stays writable from any worktree.
 
 Two repositories cannot answer the question at all, and each says so in its own way rather than under the refusal above.
-A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no checkout to send anyone to: it is refused with `resolution: create-main-worktree-checkout`, naming the Git directory, because a bare directory holds no file anyone can commit.
+A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no checkout to send anyone to: it is refused with `resolution: provide-main-worktree`, naming the Git directory, because a bare directory holds no file anyone can commit.
+No `git worktree add` changes that - it only ever adds another linked worktree - so the ways out are to restore a main worktree that was removed, to work in a clone that has one, or to keep that roadmap in a `--file` or `$STEPSTONE_WORKLIST` store, which this rule never covered.
 A `git worktree list` that does not answer leaves the question open, and the write is refused rather than let through: `resolution: retry-main-worktree-lookup` when Git was killed before it answered and the same call may answer next time, `repair-main-worktree-lookup` when Git returned a verdict of its own, carrying what Git said in `details.gitError`.
 
 ## Revisions and preconditions

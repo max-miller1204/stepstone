@@ -3,7 +3,12 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import lockfile from "proper-lockfile";
-import { LEGACY_WORKLIST_DIRECTORY, WORKLIST_DIRECTORY, WORKLIST_FILENAME } from "./cli-contract.ts";
+import {
+	LEGACY_WORKLIST_DIRECTORY,
+	WORKLIST_DIRECTORY,
+	WORKLIST_FILENAME,
+	WORKLIST_PATH_ENV,
+} from "./cli-contract.ts";
 import {
 	canonicalPath,
 	GIT_MARKER,
@@ -126,6 +131,13 @@ export class ProjectWorklistLinkedWorktreeRefusedError extends ProjectMutationRe
  * roadmap, and telling someone to run the change there would name a destination
  * that cannot exist.
  *
+ * Nor can one be conjured: `git worktree add` on a bare repository only ever adds
+ * another linked worktree, and the first record stays the Git directory however
+ * many are added. So the ways out named are the ones that can actually be taken -
+ * a main worktree that was removed can be restored, a bare repository can be
+ * cloned into one that has a checkout, and a store outside the two committed
+ * roadmap locations was never covered by this rule in the first place.
+ *
  * The write is still refused. Every checkout of such a repository is one of many
  * equals, so letting them all write is exactly the silent fork the guard exists
  * to prevent, and picking one of them would make the roadmap's sole writer
@@ -138,7 +150,7 @@ export class ProjectWorklistNoMainWorktreeError extends ProjectMutationRefusedEr
 
 	constructor(worklistPath: string, currentWorktree: string, gitDirectory: string) {
 		super(
-			`Project worklist ${worklistPath} cannot be changed from ${currentWorktree}: the repository at ${gitDirectory} has no main worktree, so no checkout of it is the roadmap's sole writer. Give ${gitDirectory} a main worktree checkout and make this change there.`,
+			`Project worklist ${worklistPath} cannot be changed from ${currentWorktree}: the repository at ${gitDirectory} has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $${WORKLIST_PATH_ENV}, stays writable here.`,
 		);
 		this.name = "ProjectWorklistNoMainWorktreeError";
 		this.worklistPath = worklistPath;

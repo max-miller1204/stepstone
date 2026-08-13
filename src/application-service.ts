@@ -1132,12 +1132,13 @@ export class WorklistApplicationService {
 			} else if (error instanceof ProjectWorklistNoMainWorktreeError) {
 				// A repository with no main worktree has no checkout to send anyone to,
 				// so this carries its own resolution rather than naming a destination
-				// that cannot be walked into.
+				// that cannot be walked into. It does not say to create one: no Git
+				// command gives a bare repository a main worktree.
 				typedError = createApplicationError(WORKLIST_ERROR_CODES.UNAVAILABLE, error.message, {
 					path: error.worklistPath,
 					currentWorktree: error.currentWorktree,
 					gitDirectory: error.gitDirectory,
-					resolution: "create-main-worktree-checkout",
+					resolution: "provide-main-worktree",
 				}).toResultError();
 			} else if (error instanceof ProjectWorklistWorktreeLookupError) {
 				// A lookup that never answered is an availability failure, not a write

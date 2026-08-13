@@ -301,44 +301,46 @@ export type MainWorktreeResult =
 const WORKTREE_ATTRIBUTE = "worktree ";
 
 /**
- * The main worktree of the repository containing `cwd`.
- *
- * `git worktree list` defines its first record as the main worktree, which is the
- * only reason this is answerable at all: `--git-common-dir` names the shared Git
- * directory, and for a repository created with `git init --separate-git-dir` that
- * directory is nowhere near any checkout.
- *
- * `-z` terminates each attribute with a NUL instead of a newline, so the first
- * field is the whole first `worktree <path>` attribute even for a worktree whose
- * path contains a newline - the one case the newline-delimited form cannot be
- * parsed out of.
- *
- * Git is run directly rather than through a shell, for the same reason every
- * other lookup here is: a shell answers for Git, turning an absent Git into its
- * own exit status 127 and a signalled Git into 128 + n, which would make a run
- * that never reached a verdict look like a verdict Git reached.
- *
- * Whether that first record holds a checkout is asked of the directory rather
- * than of the porcelain `bare` attribute, which is not there to be read in every
- * layout: a repository whose config says `core.bare` can still print a `HEAD` and
- * a `branch` for its first record and no `bare` line at all. The `.git` entry Git
- * itself looks for is present in every worktree that has one, including one whose
- * Git directory lives elsewhere, and absent from a Git directory standing alone.
+ * The status Git's option parser exits with when it will not take the command
+ * line it was given.
  */
-export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}): MainWorktreeResult {
-	let raw: string;
+const GIT_USAGE_ERROR_STATUS = 129;
+
+type WorktreeListRun =
+	| { output: string; failure?: undefined }
+	| { output?: undefined; failure: GitCommandFailure };
+
+/** One `git worktree list` run, kept as either its output or how it ended. */
+function runWorktreeList(cwd: string, args: string[], timeoutMs: number): WorktreeListRun {
 	try {
-		raw = execFileSync("git", ["worktree", "list", "--porcelain", "-z"], {
-			cwd,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
-		});
+		return {
+			output: execFileSync("git", ["worktree", "list", ...args], {
+				cwd,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: timeoutMs,
+			}),
+		};
 	} catch (error) {
-		const command = describeCommandFailure(error);
-		return { kind: "unavailable", failure: { message: describeGitFailure(command), command } };
+		return { failure: describeCommandFailure(error) };
 	}
-	const attributeEnd = raw.indexOf("\0");
+}
+
+/**
+ * What the first record of a porcelain listing says the main worktree is.
+ *
+ * Only the first attribute is read, and it is the same `worktree <path>` line in
+ * both spellings of the format: the separator is all that differs.
+ *
+ * Whether that worktree holds a checkout is asked of the directory rather than of
+ * the porcelain `bare` attribute, which is not there to be read in every layout: a
+ * repository whose config says `core.bare` can still print a `HEAD` and a `branch`
+ * for its first record and no `bare` line at all. The `.git` entry Git itself looks
+ * for is present in every worktree that has one, including one whose Git directory
+ * lives elsewhere, and absent from a Git directory standing alone.
+ */
+function mainWorktreeFromListing(raw: string, separator: string): MainWorktreeResult {
+	const attributeEnd = raw.indexOf(separator);
 	const attribute = attributeEnd === -1 ? raw : raw.slice(0, attributeEnd);
 	if (!attribute.startsWith(WORKTREE_ATTRIBUTE)) {
 		return {
@@ -349,6 +351,53 @@ export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}
 	const main = canonicalPath(attribute.slice(WORKTREE_ATTRIBUTE.length));
 	if (!existsSync(join(main, GIT_MARKER))) return { kind: "no-checkout", gitDirectory: main };
 	return { kind: "checkout", path: main };
+}
+
+/**
+ * The main worktree of the repository containing `cwd`.
+ *
+ * `git worktree list` defines its first record as the main worktree, which is the
+ * only reason this is answerable at all: `--git-common-dir` names the shared Git
+ * directory, and for a repository created with `git init --separate-git-dir` that
+ * directory is nowhere near any checkout.
+ *
+ * `-z` terminates each attribute with a NUL instead of a newline, so the first
+ * field is the whole first `worktree <path>` attribute even for a worktree whose
+ * path contains a newline - the one case the newline-delimited form cannot be
+ * parsed out of. Git has only taken `-z` here since 2.36, and this lookup stands
+ * in front of every committed roadmap write, so an older Git would refuse them
+ * all rather than the linked ones. It is therefore asked again without `-z`, and
+ * only in the one case that can mean: a status Git's option parser exits with,
+ * having read the command line and declined it, for an invocation whose only
+ * other option long predates that parser knowing this one. Any other way the
+ * first run ended is Git's answer and is returned as it stands, and a second run
+ * that fails too reports the first failure rather than its own, so nothing about
+ * a Git that is broken for some unrelated reason is swapped for a story about
+ * `-z`. On that older Git a main worktree whose path contains a newline reads
+ * back truncated, which fails closed into a refusal rather than a write.
+ *
+ * Git is run directly rather than through a shell, for the same reason every
+ * other lookup here is: a shell answers for Git, turning an absent Git into its
+ * own exit status 127 and a signalled Git into 128 + n, which would make a run
+ * that never reached a verdict look like a verdict Git reached.
+ */
+export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}): MainWorktreeResult {
+	const timeoutMs = options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS;
+	const nulSeparated = runWorktreeList(cwd, ["--porcelain", "-z"], timeoutMs);
+	if (nulSeparated.output !== undefined) return mainWorktreeFromListing(nulSeparated.output, "\0");
+
+	const unavailable: MainWorktreeResult = {
+		kind: "unavailable",
+		failure: {
+			message: describeGitFailure(nulSeparated.failure),
+			command: nulSeparated.failure,
+		},
+	};
+	if (nulSeparated.failure.exitCode !== GIT_USAGE_ERROR_STATUS) return unavailable;
+
+	const lineSeparated = runWorktreeList(cwd, ["--porcelain"], timeoutMs);
+	if (lineSeparated.output === undefined) return unavailable;
+	return mainWorktreeFromListing(lineSeparated.output, "\n");
 }
 
 export interface CurrentGitBranchResult {
