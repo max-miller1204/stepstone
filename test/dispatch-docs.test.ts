@@ -7,6 +7,11 @@ import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const dispatchMarkdown = await readFile(resolve("docs/dispatch.md"), "utf8");
+const goalId = "safe-dispatch";
+const goalBranch = `stepstone/${goalId}`;
+const leaseHolder = `stepstone:${goalId}`;
+const claimEvent = `npx:-y stepstone@latest project start ${goalId} --branch ${goalBranch} --expect-updated-at ready-at --json`;
+const clearEvent = `npx:-y stepstone@latest project start ${goalId} --clear --expect-updated-at claimed-at --json`;
 
 interface CommandResult {
 	code: number;
@@ -17,7 +22,8 @@ interface CommandResult {
 interface DispatchFixture {
 	sandbox: string;
 	root: string;
-	workspace: string;
+	leasedWorkspace: string;
+	detachedWorkspace: string;
 	bin: string;
 	events: string;
 }
@@ -56,7 +62,8 @@ async function writeExecutable(path: string, lines: string[]): Promise<void> {
 async function createRepository(): Promise<DispatchFixture> {
 	const sandbox = await realpath(await mkdtemp(join(tmpdir(), "stepstone-dispatch-docs-")));
 	const root = join(sandbox, "root");
-	const workspace = join(sandbox, "worker");
+	const leasedWorkspace = join(sandbox, "worker");
+	const detachedWorkspace = join(sandbox, `stepstone-${goalId}`);
 	const bin = join(sandbox, "bin");
 	const events = join(sandbox, "events.log");
 	await mkdir(root);
@@ -70,7 +77,7 @@ async function createRepository(): Promise<DispatchFixture> {
 	await writeFile(join(root, ".gitignore"), ".cache/\n");
 	await execFileAsync("git", ["add", "."], { cwd: root });
 	await execFileAsync("git", ["commit", "-m", "fixture"], { cwd: root });
-	return { sandbox, root, workspace, bin, events };
+	return { sandbox, root, leasedWorkspace, detachedWorkspace, bin, events };
 }
 
 async function installFakeBoundaries(bin: string): Promise<void> {
@@ -78,7 +85,10 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 		'printf "npx:%s\\n" "$*" >>"$EVENTS"',
 		'case " $* " in',
 		'  *" --clear "*) printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"cleared-at"}}}\' ;;',
-		'  *) printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"claimed-at"}}}\' ;;',
+		"  *)",
+		'    test "${STEPSTONE_CLAIM_RESULT:-ok}" = ok || exit 4',
+		'    printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"claimed-at"}}}\'',
+		"    ;;",
 		"esac",
 	]);
 	await writeExecutable(join(bin, "treehouse"), [
@@ -118,10 +128,10 @@ function baseEnvironment(fixture: DispatchFixture): Record<string, string> {
 	return {
 		PATH: `${fixture.bin}:${process.env.PATH ?? ""}`,
 		EVENTS: fixture.events,
-		LEASE_WORKSPACE: fixture.workspace,
+		LEASE_WORKSPACE: fixture.leasedWorkspace,
 		PANE_CLOSED: join(fixture.sandbox, "pane-closed"),
 		XDG_STATE_HOME: join(fixture.sandbox, "state"),
-		goal_id: "safe-dispatch",
+		goal_id: goalId,
 		goal_prompt: "Implement the selected goal",
 		updated_at: "ready-at",
 		HERDR_AGENT_KIND: "claude",
@@ -162,12 +172,49 @@ describe("documented dispatch bindings", () => {
 		});
 
 		expect(result.code).toBe(1);
-		expect(await pathExists(fixture.workspace)).toBe(false);
+		expect(await pathExists(fixture.detachedWorkspace)).toBe(false);
 		const events = await readFile(fixture.events, "utf8");
-		expect(events).toContain(
-			"npx:-y stepstone@latest project start safe-dispatch --clear --expect-updated-at claimed-at --json",
-		);
-		const { stdout: branch } = await execFileAsync("git", ["branch", "--list", "stepstone/safe-dispatch"], {
+		expect(events).toContain(clearEvent);
+		const { stdout: branch } = await execFileAsync("git", ["branch", "--list", goalBranch], {
+			cwd: fixture.root,
+		});
+		expect(branch).toBe("");
+	});
+
+	it.each([
+		["Binding A", () => `${bindingAWorkspace}\n${bindingALaunch}`],
+		["Binding B", () => `${bindingBWorkspace}\n${bindingBLaunch}`],
+	])("stops %s on a rejected claim without clearing a claim it never held", async (label, buildScript) => {
+		const fixture = await createRepository();
+		await installFakeBoundaries(fixture.bin);
+		const bindingB = label === "Binding B";
+		if (bindingB) {
+			await execFileAsync("git", ["worktree", "add", "--detach", fixture.leasedWorkspace, "HEAD"], {
+				cwd: fixture.root,
+			});
+		}
+		const result = await runShell(fixture.root, buildScript(), {
+			...baseEnvironment(fixture),
+			AGENT_COMMAND: "never-launched-agent",
+			AGENT_STARTUP_GRACE_SECONDS: "0.05",
+			STEPSTONE_CLAIM_RESULT: "reject",
+		});
+
+		expect(result.code).toBe(1);
+		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		if (bindingB) {
+			expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
+			expect(events).toEqual([
+				`treehouse:get --lease --lease-holder ${leaseHolder}`,
+				claimEvent,
+				`treehouse:return ${fixture.leasedWorkspace} --force --if-lease-holder ${leaseHolder}`,
+				"treehouse:return-clean",
+			]);
+			return;
+		}
+		expect(await pathExists(fixture.detachedWorkspace)).toBe(false);
+		expect(events).toEqual([claimEvent]);
+		const { stdout: branch } = await execFileAsync("git", ["branch", "--list", goalBranch], {
 			cwd: fixture.root,
 		});
 		expect(branch).toBe("");
@@ -182,6 +229,7 @@ describe("documented dispatch bindings", () => {
 			bindingAWorkspace,
 			bindingALaunch,
 			'agent_pid=$(cat "$XDG_STATE_HOME/stepstone/dispatch/$goal_id/agent.pid")',
+			'test -d "$workspace" || exit 3',
 			"printf 'changed\\n' >\"$workspace/README.md\"",
 			'mkdir -p "$workspace/.cache"',
 			': >"$workspace/.cache/ignored"',
@@ -196,7 +244,11 @@ describe("documented dispatch bindings", () => {
 		});
 
 		expect(result.code).toBe(0);
-		expect(await pathExists(fixture.workspace)).toBe(false);
+		expect(await pathExists(fixture.detachedWorkspace)).toBe(false);
+		const { stdout: branch } = await execFileAsync("git", ["branch", "--list", goalBranch], {
+			cwd: fixture.root,
+		});
+		expect(branch).toBe("");
 		const events = await readFile(fixture.events, "utf8");
 		expect(events).not.toContain(" --clear ");
 	});
@@ -204,7 +256,7 @@ describe("documented dispatch bindings", () => {
 	it("closes Binding B before releasing a pre-submission failure", async () => {
 		const fixture = await createRepository();
 		await installFakeBoundaries(fixture.bin);
-		await execFileAsync("git", ["worktree", "add", "--detach", fixture.workspace, "HEAD"], {
+		await execFileAsync("git", ["worktree", "add", "--detach", fixture.leasedWorkspace, "HEAD"], {
 			cwd: fixture.root,
 		});
 		const result = await runShell(fixture.root, `${bindingBWorkspace}\n${bindingBLaunch}`, {
@@ -213,26 +265,24 @@ describe("documented dispatch bindings", () => {
 		});
 
 		expect(result.code).toBe(1);
-		expect(await pathExists(fixture.workspace)).toBe(false);
+		expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
 		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
 		const close = events.indexOf("herdr:pane close pane-1");
 		const verify = events.indexOf("herdr:pane list");
-		const clear = events.indexOf(
-			"npx:-y stepstone@latest project start safe-dispatch --clear --expect-updated-at claimed-at --json",
-		);
+		const clear = events.indexOf(clearEvent);
 		const returned = events.findIndex((event) => event.startsWith("treehouse:return "));
 		expect(close).toBeGreaterThanOrEqual(0);
 		expect(verify).toBeGreaterThan(close);
 		expect(clear).toBeGreaterThan(verify);
 		expect(returned).toBeGreaterThan(clear);
-		expect(events[returned]).toContain("--force --if-lease-holder stepstone:safe-dispatch");
+		expect(events[returned]).toContain(`--force --if-lease-holder ${leaseHolder}`);
 		expect(events).toContain("treehouse:return-clean");
 	});
 
 	it("preserves Binding B custody after an ambiguous bounded prompt failure", async () => {
 		const fixture = await createRepository();
 		await installFakeBoundaries(fixture.bin);
-		await execFileAsync("git", ["worktree", "add", "--detach", fixture.workspace, "HEAD"], {
+		await execFileAsync("git", ["worktree", "add", "--detach", fixture.leasedWorkspace, "HEAD"], {
 			cwd: fixture.root,
 		});
 		const result = await runShell(fixture.root, `${bindingBWorkspace}\n${bindingBLaunch}`, {
@@ -242,13 +292,13 @@ describe("documented dispatch bindings", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("Prompt outcome is ambiguous");
-		expect(await pathExists(fixture.workspace)).toBe(true);
+		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
 		const events = await readFile(fixture.events, "utf8");
 		expect(events).toContain("herdr:agent prompt pane-1 Implement the selected goal --wait --timeout 17");
 		expect(events).not.toContain("herdr:pane close");
 		expect(events).not.toContain(" --clear ");
 		expect(events).not.toContain("treehouse:return ");
-		await execFileAsync("git", ["worktree", "remove", "--force", fixture.workspace], {
+		await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
 			cwd: fixture.root,
 		});
 	});
@@ -256,7 +306,7 @@ describe("documented dispatch bindings", () => {
 	it("verifies Binding B pane closure and dirty cleanup before returning its lease", async () => {
 		const fixture = await createRepository();
 		await installFakeBoundaries(fixture.bin);
-		await execFileAsync("git", ["worktree", "add", "--detach", fixture.workspace, "HEAD"], {
+		await execFileAsync("git", ["worktree", "add", "--detach", fixture.leasedWorkspace, "HEAD"], {
 			cwd: fixture.root,
 		});
 		const dirtyThenCleanup = [
@@ -271,14 +321,15 @@ describe("documented dispatch bindings", () => {
 		const result = await runShell(fixture.root, dirtyThenCleanup, baseEnvironment(fixture));
 
 		expect(result.code).toBe(0);
-		expect(await pathExists(fixture.workspace)).toBe(false);
+		expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
 		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
 		const close = events.indexOf("herdr:pane close pane-1");
 		const verify = events.indexOf("herdr:pane list");
 		const returned = events.findIndex((event) => event.startsWith("treehouse:return "));
+		expect(close).toBeGreaterThanOrEqual(0);
 		expect(verify).toBeGreaterThan(close);
 		expect(returned).toBeGreaterThan(verify);
-		expect(events[returned]).toContain("--force --if-lease-holder stepstone:safe-dispatch");
+		expect(events[returned]).toContain(`--force --if-lease-holder ${leaseHolder}`);
 		expect(events).toContain("treehouse:return-clean");
 		expect(events).not.toContain(" --clear ");
 	});
