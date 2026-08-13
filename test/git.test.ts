@@ -7,6 +7,7 @@ import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import {
 	createProjectRootLookup,
 	currentGitBranch,
+	GIT_RETRY_HOLD_MS,
 	type GitRootFailure,
 	gitRootDiagnostic,
 	isTransientGitFailure,
@@ -195,36 +196,59 @@ describe("git root", () => {
 		expect(lookup().worklist?.path).toBe(join(root, ".worklist", "worklist.json"));
 	});
 
-	it("holds a failing answer instead of running Git for every lookup", async () => {
+	it("holds a lookup Git never answered instead of running Git for every reader", async () => {
 		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-root-hold-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const counter = join(root, "git-calls");
+		// Killed rather than answered, which is the failure that blocks a host for as
+		// long as Git is allowed to run.
+		const restore = await fakeGitOnPath([`printf 'x' >> ${counter}`, "kill -TERM $$"].join("\n"));
+
+		let clock = 0;
+		const lookup = createProjectRootLookup(root, { env: {}, now: () => clock });
+		try {
+			expect(lookup().failure?.kind).toBe("git-unavailable");
+			expect(await gitCalls(counter)).toBe(1);
+
+			// The readers a single turn makes - a widget refresh, then the operation
+			// behind it - reuse that answer rather than blocking on Git again.
+			clock = 1;
+			expect(lookup().failure?.kind).toBe("git-unavailable");
+			clock = GIT_RETRY_HOLD_MS - 1;
+			expect(lookup().failure?.kind).toBe("git-unavailable");
+			expect(await gitCalls(counter)).toBe(1);
+
+			// The hold is a pause, not a verdict.
+			clock = GIT_RETRY_HOLD_MS;
+			expect(lookup().failure?.kind).toBe("git-unavailable");
+			expect(await gitCalls(counter)).toBe(2);
+		} finally {
+			restore();
+		}
+	});
+
+	it("holds nothing when Git answered, so a repair needs no waiting", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-root-unheld-")));
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		const counter = join(root, "git-calls");
 		const restore = await fakeGitOnPath(
 			[`printf 'x' >> ${counter}`, "printf '%s\\n' 'fatal: bad config line 1' >&2", "exit 128"].join("\n"),
 		);
 
+		// A refusal Git returned by itself cost nothing to get, so the next reader asks
+		// again on the same clock tick: whether a repair has landed never waits on a
+		// timer, and no test of it depends on how fast this machine is.
 		let clock = 0;
-		const lookup = createProjectRootLookup(root, { env: {}, retryAfterMs: 5000, now: () => clock });
+		const lookup = createProjectRootLookup(root, { env: {}, now: () => clock });
 		try {
 			expect(lookup().failure?.kind).toBe("git-refused");
-			expect(await gitCalls(counter)).toBe(1);
-
-			// Git runs synchronously and a stalled one is killed only on the command
-			// timeout, so the lookups a single turn makes - a widget refresh, then the
-			// operation behind it - reuse the answer rather than blocking again.
-			clock = 1;
-			expect(lookup().failure?.kind).toBe("git-refused");
-			clock = 4999;
-			expect(lookup().failure?.kind).toBe("git-refused");
-			expect(await gitCalls(counter)).toBe(1);
-
-			// The hold is a pause, not a verdict.
-			clock = 5000;
 			expect(lookup().failure?.kind).toBe("git-refused");
 			expect(await gitCalls(counter)).toBe(2);
 		} finally {
 			restore();
 		}
+		clock = 0;
+		expect(lookup().worklist?.path).toBe(join(root, ".worklist", "worklist.json"));
 	});
 });
 

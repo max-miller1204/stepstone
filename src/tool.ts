@@ -23,16 +23,17 @@ export interface ToolDeps {
  * terminal in the same repository can never disagree about which roadmap they
  * are looking at.
  *
- * The repository a session runs in cannot change under it, so the git root is
- * found once; which file inside it holds the goals can change, because
- * `migrate_path` in another terminal moves it or a branch checkout lands a
- * second worklist beside it, so that part is re-read every time it is asked
- * for. The standing warning travels with the path it describes, so a session
- * cannot report one file while reading another.
+ * The root is remembered once Git names it, and only then: the repository a session
+ * runs in cannot change under it, but a Git that could not be run or that refused
+ * the repository is asked again rather than believed for the rest of the session.
+ * Which file inside the root holds the goals can change too, because `migrate_path`
+ * in another terminal moves it or a branch checkout lands a second worklist beside
+ * it, so that part is re-read every time it is asked for. The standing warning
+ * travels with the path it describes, so a session cannot report one file while
+ * reading another.
  *
- * A Git that never answered is neither remembered nor reported as a verdict about
- * the repository: it is raised as the availability failure it is, and asked again
- * on the next operation.
+ * A Git that never answered is not reported as a verdict about the repository
+ * either: it is raised as the availability failure it is.
  */
 export function createProjectLocator(cwd: string): () => LocatedWorklist | null {
 	const lookup = createProjectRootLookup(cwd, { env: process.env, overrideBase: cwd });

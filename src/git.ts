@@ -413,22 +413,16 @@ export interface ProjectRootLookup {
 }
 
 /**
- * How long a Git run may take before asking again is worth postponing.
+ * How long a lookup Git never answered is held before Git is asked again.
  *
- * Below this, asking again costs nobody anything noticeable, so nothing is held
- * and a repair is picked up by the very next lookup. Above it, the run is the
- * thing a person is waiting on.
+ * A run that was killed rather than answered spent the time it was allowed to
+ * spend, and asking again would spend it again, so the answer stands for that long
+ * rather than for a measured interval that depends on what else the machine was
+ * doing.
  */
-const GIT_SLOW_ATTEMPT_MS = 250;
+export const GIT_RETRY_HOLD_MS = GIT_COMMAND_TIMEOUT_MS;
 
 export interface ProjectRootLookupOptions extends WorklistLocationOptions {
-	/**
-	 * The shortest a recoverable failure is held before Git is asked again.
-	 *
-	 * Defaults to none, because a slow failure is already held for as long as it
-	 * took to fail and a fast one costs nothing to repeat.
-	 */
-	retryAfterMs?: number;
 	/** The clock the hold is measured on. Defaults to the wall clock. */
 	now?: () => number;
 }
@@ -444,17 +438,20 @@ export interface ProjectRootLookupOptions extends WorklistLocationOptions {
  * suggested was run - so it is asked again rather than settled, or the host spends
  * the rest of its life reporting a verdict Git never reached.
  *
- * Asked again, not asked constantly. Git runs synchronously and may take until the
- * command timeout to be killed, so a failure that took time to arrive is held for
- * as long as it took: a lookup killed on a ten-second timeout cannot be re-run by
- * every reader in a turn, while one that failed at once is asked again at once and
- * costs nothing for it.
+ * Asked again, not asked constantly. Git runs synchronously, so a lookup Git never
+ * answered - killed by the timeout or by a signal - is the one that blocks a host
+ * long enough to matter, and repeating it blocks again for the same reason. That
+ * one is held for `GIT_RETRY_HOLD_MS` before Git is asked once more, keyed on the
+ * evidence the failure already carries rather than on how long this machine
+ * happened to take. A failure Git returned by itself cost nothing to get and costs
+ * nothing to ask about again, so it is not held at all and a repair is picked up by
+ * the very next reader.
  */
 export function createProjectRootLookup(
 	cwd: string,
 	options: ProjectRootLookupOptions = {},
 ): () => ProjectRootLookup {
-	const { retryAfterMs = 0, now = Date.now, ...location } = options;
+	const { now = Date.now, ...location } = options;
 	let locate: (() => LocatedWorklist) | undefined;
 	let settled: GitRootFailure | undefined;
 	let held: { failure: GitRootFailure; until: number } | undefined;
@@ -462,7 +459,6 @@ export function createProjectRootLookup(
 		if (locate) return { worklist: locate() };
 		if (settled) return { failure: settled };
 		if (held && now() < held.until) return { failure: held.failure };
-		const startedAt = now();
 		const result = resolveGitRoot(cwd);
 		if (result.root) {
 			locate = createWorklistLocator(result.root, location);
@@ -477,10 +473,10 @@ export function createProjectRootLookup(
 			settled = failure;
 			return { failure };
 		}
-		const finishedAt = now();
-		const cost = finishedAt - startedAt;
-		const hold = Math.max(retryAfterMs, cost >= GIT_SLOW_ATTEMPT_MS ? cost : 0);
-		if (hold > 0) held = { failure, until: finishedAt + hold };
+		held =
+			failure.command && isTransientGitFailure(failure.command)
+				? { failure, until: now() + GIT_RETRY_HOLD_MS }
+				: undefined;
 		return { failure };
 	};
 }

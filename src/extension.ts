@@ -147,24 +147,23 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	let announcedNotice: string | undefined;
 
 	/**
-	 * The goals the widget draws, or none.
+	 * The goals the widget draws, from the resolution that named the file.
 	 *
-	 * A repository whose Git cannot be reached right now leaves the widget empty,
-	 * while the operation a user or model actually asked for still fails with the
-	 * typed availability failure the service raises. Nothing else is swallowed: a
-	 * goal file that cannot be read is a condition someone has to be told about, and
-	 * it reaches them through the same handler it always did.
+	 * A goal file that cannot be read raises: it is a condition someone has to be
+	 * told about, and it reaches them through the same handler it always did.
 	 */
 	async function refreshProject(located = locatedProject()): Promise<void> {
-		try {
-			projectGoals = await applicationService.getProjectGoals(located?.path ?? null);
-		} catch (error) {
-			if (!isProjectUnavailable(error)) throw error;
-			projectGoals = [];
-		}
+		projectGoals = await applicationService.getProjectGoals(located?.path ?? null);
 	}
 
-	/** The resolution the display reports on, which never speaks for an operation. */
+	/**
+	 * The resolution the display reports on, which never speaks for an operation.
+	 *
+	 * This is the one place the display degrades: a repository whose Git cannot be
+	 * reached right now leaves the widget empty, while the operation a user or model
+	 * actually asked for still fails with the typed availability failure the service
+	 * raises.
+	 */
 	function locatedProject(): LocatedWorklist | null {
 		try {
 			return locateProject?.() ?? null;
