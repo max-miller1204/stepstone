@@ -49,10 +49,12 @@ This is the narrow exception to the normal rule that an agent must ask immediate
 
 Standing consent does not authorize completion based on worker exit, a green unmerged PR, or session silence.
 It does not authorize `archive`, `delete`, `reopen`, a goal outside the approved plan, or a later plan.
-If a worker is abandoned or its PR closes without merging, release the claim without completing the goal:
+If a worker is abandoned or its PR closes without merging, release the claim without completing the goal.
+Use the `updatedAt` returned by the successful claim rather than re-reading and potentially clearing somebody else's newer claim:
 
 ```sh
-npx -y stepstone@latest project start "$goal_id" --clear
+npx -y stepstone@latest project start "$goal_id" --clear \
+  --expect-updated-at "$claimed_updated_at"
 ```
 
 ## Binding A: Git worktrees and detached processes
@@ -63,6 +65,7 @@ The root session remains in the default-branch checkout.
 Create the isolated workspace and branch:
 
 ```sh
+# dispatch-example: binding-a-workspace
 branch="stepstone/$goal_id"
 workspace="../stepstone-$goal_id"
 git worktree add -b "$branch" "$workspace" HEAD || exit 1
@@ -71,57 +74,73 @@ git worktree add -b "$branch" "$workspace" HEAD || exit 1
 This runs before the claim, so a failure here has nothing to release.
 It fails when an earlier attempt on the same goal left `stepstone/$goal_id` behind, which is deliberate: resolve that branch before dispatching the goal again.
 
-Claim the goal from the root checkout, and launch only if the claim succeeded.
-A failed claim means another driver holds the goal, so the workspace is discarded rather than staffed:
+Claim the goal from the root checkout, retain the returned concurrency token, and launch only if the claim succeeded.
+A failed claim means another driver holds the goal, so the workspace is scrubbed and discarded rather than staffed.
+The cleanup is non-interactive and verifies a clean checkout before forcing removal:
 
 ```sh
-if ! npx -y stepstone@latest project start "$goal_id" \
+# dispatch-example: binding-a-launch
+cleanup_workspace() {
+  git -C "$workspace" reset --hard HEAD &&
+    git -C "$workspace" clean -fdx &&
+    workspace_status=$(git -C "$workspace" status --porcelain) &&
+    test -z "$workspace_status" &&
+    git worktree remove --force "$workspace" &&
+    git branch -D "$branch"
+}
+
+if ! claim_json=$(npx -y stepstone@latest project start "$goal_id" \
   --branch "$branch" \
-  --expect-updated-at "$updated_at"
+  --expect-updated-at "$updated_at" \
+  --json)
 then
-  git worktree remove "$workspace"
-  git branch -D "$branch"
+  cleanup_workspace || exit 1
+  exit 1
+fi
+
+if ! claimed_updated_at=$(printf '%s\n' "$claim_json" | jq -er '.result.goal.updatedAt')
+then
+  printf '%s\n' "Claim succeeded but its updatedAt could not be read; custody is preserved." >&2
   exit 1
 fi
 
 abandon() {
-  npx -y stepstone@latest project start "$goal_id" --clear
-  git worktree remove "$workspace"
-  git branch -D "$branch"
+  npx -y stepstone@latest project start "$goal_id" --clear \
+    --expect-updated-at "$claimed_updated_at" \
+    --json || exit 1
+  cleanup_workspace || exit 1
   exit 1
 }
 
+command -v "$AGENT_COMMAND" >/dev/null 2>&1 || abandon
 runtime="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
 mkdir -p "$runtime" || abandon
 (
   cd "$workspace" || exit 1
-  nohup sh -c 'exec "$@"' sh "$AGENT_COMMAND" "$goal_prompt" \
-    >"$runtime/agent.log" 2>&1 </dev/null &
-  echo $! >"$runtime/agent.pid"
+  nohup "$AGENT_COMMAND" "$goal_prompt" >"$runtime/agent.log" 2>&1 </dev/null &
+  agent_pid=$!
+  printf '%s\n' "$agent_pid" >"$runtime/agent.pid" &&
+    sleep "${AGENT_STARTUP_GRACE_SECONDS:-1}" &&
+    kill -0 "$agent_pid" 2>/dev/null
 ) || abandon
 ```
 
-The subshell's `exit` only leaves the subshell, so the launch is gated on the subshell's status from outside it; a guard that returned no status to the parent could not release anything.
-`mkdir -p` is checked for the same reason: the redirect that captures the worker's output fails when the runtime directory is missing, and an unchecked failure there leaves the goal claimed with nobody working it.
-Because that check runs first, the only failure left inside the subshell is the `cd`, which happens before anything launches.
+`AGENT_COMMAND` names one executable; pass agent-specific configuration through that executable or its environment.
+The `command -v` preflight catches a missing executable before launch.
+The bounded startup grace then verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that `nohup` reports before an `exec` failure.
 
 The log and pid file belong to the driver, not to the branch under review.
-Keeping them outside `$workspace` leaves the worker's checkout clean, so an agent that stages everything cannot commit its own transcript into the PR and the worktree stays removable.
+Keeping them outside `$workspace` leaves the worker's checkout clean, so an agent that stages everything cannot commit its own transcript into the PR.
 
-`AGENT_COMMAND` is configuration.
-It may name Pi, Claude Code, Codex, Cursor, or another CLI.
-The dispatch contract does not parse its output or infer completion from its process state.
-
-After the PR merges and the goal is completed on the default branch, remove the worktree:
+After the PR merges and the goal is completed on the default branch, scrub and remove the worktree with the same checked cleanup:
 
 ```sh
-git worktree remove "$workspace"
+# dispatch-example: binding-a-cleanup
+cleanup_workspace || exit 1
 ```
 
-That removal refuses to discard a checkout holding modified or untracked files.
-When the worker left build artifacts behind and its branch is already merged, re-run it with `--force`.
-
-If the run is abandoned, release the Stepstone claim before removing the worktree.
+The forced removal is safe only after merge and completion or after the exact claim has been released.
+It prevents ignored build artifacts or other worker residue from opening an interactive cleanup path or retaining a stale worktree.
 
 ## Binding B: Herdr panes and Treehouse leases
 
@@ -132,60 +151,107 @@ Acquire a durable workspace lease, and choose the branch name here rather than r
 A pooled worktree can arrive on a detached HEAD, where `git branch --show-current` prints nothing and the claim below is rejected for a missing branch:
 
 ```sh
+# dispatch-example: binding-b-workspace
 lease_holder="stepstone:$goal_id"
 branch="stepstone/$goal_id"
-base=$(git rev-parse HEAD)
-workspace=$(treehouse get --lease --lease-holder "$lease_holder")
+base=$(git rev-parse HEAD) || exit 1
+workspace=$(treehouse get --lease --lease-holder "$lease_holder") || exit 1
+test -n "$workspace" || exit 1
 ```
 
-Claim the goal from the root checkout, returning the lease if another driver claimed it first.
-Every step between a successful claim and a running worker can still fail, and each one leaves the goal claimed with nobody working it, so they share one release path:
+Claim the goal from the root checkout and retain the `updatedAt` returned by that exact claim.
+Every safe pre-submission failure closes and verifies any pane, releases the claim with that token, scrubs the checkout, and force-returns the lease.
+Once prompt submission has been attempted, a timeout or transport failure is ambiguous, so custody is preserved for inspection instead of assuming no worker is running:
 
 ```sh
-if ! npx -y stepstone@latest project start "$goal_id" \
+# dispatch-example: binding-b-launch
+pane_id=
+
+cleanup_lease() {
+  git -C "$workspace" reset --hard HEAD &&
+    git -C "$workspace" clean -fdx &&
+    workspace_status=$(git -C "$workspace" status --porcelain) &&
+    test -z "$workspace_status" &&
+    treehouse return "$workspace" --force --if-lease-holder "$lease_holder"
+}
+
+close_pane() {
+  test -z "$pane_id" && return 0
+  herdr pane close "$pane_id" || return 1
+  pane_list=$(herdr pane list) || return 1
+  pane_present=$(printf '%s\n' "$pane_list" |
+    jq -r --arg pane "$pane_id" 'any(.result.panes[]; .pane_id == $pane)') || return 1
+  test "$pane_present" = false || return 1
+  pane_id=
+}
+
+if ! claim_json=$(npx -y stepstone@latest project start "$goal_id" \
   --branch "$branch" \
-  --expect-updated-at "$updated_at"
+  --expect-updated-at "$updated_at" \
+  --json)
 then
-  treehouse return "$workspace" --if-lease-holder "$lease_holder"
+  cleanup_lease || exit 1
+  exit 1
+fi
+
+if ! claimed_updated_at=$(printf '%s\n' "$claim_json" | jq -er '.result.goal.updatedAt')
+then
+  printf '%s\n' "Claim succeeded but its updatedAt could not be read; custody is preserved." >&2
   exit 1
 fi
 
 abandon() {
-  npx -y stepstone@latest project start "$goal_id" --clear
-  treehouse return "$workspace" --if-lease-holder "$lease_holder"
+  close_pane || exit 1
+  npx -y stepstone@latest project start "$goal_id" --clear \
+    --expect-updated-at "$claimed_updated_at" \
+    --json || exit 1
+  cleanup_lease || exit 1
   exit 1
 }
 
 git -C "$workspace" checkout -b "$branch" "$base" || abandon
-pane_id=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus \
-  | jq -r '.result.pane.pane_id')
-case "$pane_id" in "" | null) abandon ;; esac
+pane_json=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus) ||
+  abandon
+if ! pane_id=$(printf '%s\n' "$pane_json" | jq -er '.result.pane.pane_id')
+then
+  printf '%s\n' "A pane may exist but its ID could not be read; custody is preserved." >&2
+  exit 1
+fi
 agent_name=$(printf 'ss-%.18s-%s' "$goal_id" "$(printf %s "$goal_id" | cksum | cut -d' ' -f1)")
 herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id" || abandon
-herdr agent prompt "$pane_id" "$goal_prompt" --wait || abandon
+if ! herdr agent prompt "$pane_id" "$goal_prompt" --wait \
+  --timeout "${HERDR_PROMPT_TIMEOUT_MS:-300000}"
+then
+  printf '%s\n' "Prompt outcome is ambiguous; claim, pane, and lease are preserved." >&2
+  exit 1
+fi
 ```
 
 Herdr answers over its socket API in a JSON envelope, so the pane ID is read out of `.result.pane.pane_id`; passing the whole response to `--pane` starts nothing.
-A failed `pane split` writes its error to stderr and exits 1, but the pipeline reports `jq`'s status rather than Herdr's, and `jq` succeeds with empty output; the pane ID is therefore checked for a value rather than the pipeline for a status.
+If the successful split returns an unreadable envelope, the driver preserves the claim and lease because it cannot prove which pane to close.
 
 Herdr requires an agent name matching `[a-z][a-z0-9_-]{0,31}` and unique among live agents, so the goal ID cannot be the name: most IDs on a real roadmap exceed the 32 characters, and `agent start` would fail every dispatch.
 The derived name keeps a readable prefix of the ID inside that limit and appends a checksum of the full ID, which stays unique where truncation alone would collide.
 Once the agent is running, Herdr accepts the hosting pane ID wherever it accepts a name, so the calls after `agent start` target `$pane_id` and never depend on that derivation.
 
 `stepstone/$goal_id` is deterministic, and neither `start --clear` nor returning a lease deletes a branch, so re-dispatching a goal whose earlier attempt still has its branch fails at `checkout -b`.
-That failure releases the claim and the lease instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
+That failure closes any created pane, releases the claim, scrubs the checkout, and returns the lease instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
 Delete or rename the stale branch deliberately, once you know whether its commits are still wanted.
 
-Use `herdr agent wait "$pane_id"` and `herdr agent read "$pane_id"` for liveness and diagnostics.
+Use bounded waits such as `herdr agent wait "$pane_id" --timeout "$HERDR_WAIT_TIMEOUT_MS"` and use `herdr agent read "$pane_id"` for liveness and diagnostics.
+A wait timeout preserves custody because the request may have reached the agent before the client lost its response.
 Those signals never replace merged-PR evidence.
 
-After merge and completion, close or reuse the pane according to local Herdr policy, then return the lease safely:
+After merge and completion, close the pane, verify that Herdr no longer lists it, scrub the checkout, and only then force-return the lease:
 
 ```sh
-treehouse return "$workspace" --if-lease-holder "$lease_holder"
+# dispatch-example: binding-b-cleanup
+close_pane || exit 1
+cleanup_lease || exit 1
 ```
 
-On abandonment, run `project start "$goal_id" --clear` before returning the lease.
+Closing the hosting pane ends its Herdr agent.
+On abandonment the same verified close happens before claim release and lease return, so Treehouse never receives a checkout still owned by a live pane.
 
 ## Invariants for every binding
 

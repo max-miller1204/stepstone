@@ -658,10 +658,10 @@
       "dependsOn": [
         "repair-project-start-semantics"
       ],
-      "status": "open",
+      "status": "active",
       "createdAt": "2026-08-12T09:42:45.110Z",
-      "updatedAt": "2026-08-12T09:42:45.110Z"
+      "updatedAt": "2026-08-13T15:53:32.585Z"
     }
   ],
-  "revision": 269
+  "revision": 270
 }
