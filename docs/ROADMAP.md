@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-51 goals: 14 open, 34 done, 3 archived.
+51 goals: 13 open, 35 done, 3 archived.
 
 ## Orchestrator
 
@@ -339,7 +339,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Make the MCP resources and tools obey the same input and result contracts as the CLI and shared application service. Refuse title changes combined with appendDescription, preserve exact plan dependency-reference validation instead of trimming invalid input, reject blank find queries instead of returning every goal, replace CLI-argv tool titles with MCP-native metadata, keep schema failures and service failures predictably documented, and cover the shared envelope metadata and validation behavior through the real MCP protocol.
 
-- **[open]** Isolate Claude plugin MCP config - `isolate-claude-plugin-mcp-config`
+- **[done]** Isolate Claude plugin MCP config - `isolate-claude-plugin-mcp-config`
 
   Stop the plugin's MCP declaration from also registering a broken project-scoped server in this repository. Put the MCP configuration in a plugin-owned location or inline declaration where CLAUDE_PLUGIN_ROOT and CLAUDE_PROJECT_DIR are expanded by Claude Code, preserve generated-artifact and package coverage, and verify both a real plugin install and a contributor checkout without missing-variable diagnostics.
 

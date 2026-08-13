@@ -2,7 +2,7 @@
  * The single command contract for the stepstone CLI and MCP server.
  *
  * CLI usage text, the command reference in docs/cli.md, both installable agent
- * skills, the Claude Code plugin manifest, marketplace catalog, MCP config and
+ * skills, the Claude Code plugin manifest, marketplace catalog, MCP declaration and
  * commands, the marker-delimited block `project init` writes into a repository's
  * AGENTS.md, and MCP resource and tool metadata are all rendered from this
  * structure so they cannot drift from each other or the implemented surface.
@@ -141,7 +141,6 @@ export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 /** Repository-relative paths of the installable Claude Code plugin artifacts. */
 export const CLAUDE_PLUGIN_MANIFEST_PATH = ".claude-plugin/plugin.json";
 export const CLAUDE_PLUGIN_MARKETPLACE_PATH = ".claude-plugin/marketplace.json";
-export const CLAUDE_PLUGIN_MCP_PATH = ".mcp.json";
 export const CLAUDE_PLUGIN_COMMANDS_DIRECTORY = "commands";
 export const CLAUDE_PLUGIN_SKILL_PATH = `skills/${BINARY}/SKILL.md`;
 /** Private environment handoff from Claude Code to the bundled MCP process. */
@@ -1018,6 +1017,9 @@ export function renderClaudePluginManifest(metadata: ClaudePluginPackageMetadata
 		repository: packageRepositoryUrl(metadata.repository),
 		license: metadata.license,
 		keywords: metadata.keywords,
+		mcpServers: {
+			[CLI_COMMAND_CONTRACT.binary]: claudePluginMcpServer(),
+		},
 	});
 }
 
@@ -1050,15 +1052,6 @@ function claudePluginMcpServer(): ClaudePluginMcpServer {
 			[CLAUDE_PLUGIN_PROJECT_ROOT_ENV]: CLAUDE_PROJECT_DIR_PLACEHOLDER,
 		},
 	};
-}
-
-/** Render the cache-safe MCP process configuration at the plugin root. */
-export function renderClaudePluginMcpConfig(): string {
-	return renderGeneratedJson({
-		mcpServers: {
-			[CLI_COMMAND_CONTRACT.binary]: claudePluginMcpServer(),
-		},
-	});
 }
 
 /** Render one flat Claude Code command definition from its contract action. */
@@ -1110,7 +1103,6 @@ export function renderClaudePluginArtifacts(
 	return [
 		{ path: CLAUDE_PLUGIN_MANIFEST_PATH, content: renderClaudePluginManifest(metadata) },
 		{ path: CLAUDE_PLUGIN_MARKETPLACE_PATH, content: renderClaudePluginMarketplace(metadata) },
-		{ path: CLAUDE_PLUGIN_MCP_PATH, content: renderClaudePluginMcpConfig() },
 		...commandArtifacts,
 		{ path: CLAUDE_PLUGIN_SKILL_PATH, content: renderSkillMarkdown({ userInvocable: false }) },
 	];

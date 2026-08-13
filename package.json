@@ -36,7 +36,6 @@
 		"!docs/releasing.md",
 		".claude/skills/stepstone",
 		".claude-plugin",
-		".mcp.json",
 		"commands",
 		"skills/stepstone",
 		"README.md",
