@@ -8,6 +8,9 @@ import {
 	WORKLIST_PATH_ENV,
 } from "./cli-contract.ts";
 
+/** How long any Git command in this module may take before it is killed. */
+export const GIT_COMMAND_TIMEOUT_MS = 10000;
+
 export interface GitRootResult {
 	root: string | null;
 	isGit: boolean;
@@ -20,7 +23,7 @@ export function resolveGitRoot(cwd: string): GitRootResult {
 			cwd,
 			encoding: "utf8",
 			stdio: ["pipe", "pipe", "pipe"],
-			timeout: 10000,
+			timeout: GIT_COMMAND_TIMEOUT_MS,
 		});
 		const top = raw.trim();
 		if (!top) return { root: null, isGit: false, error: "not a git repository" };
@@ -32,8 +35,8 @@ export function resolveGitRoot(cwd: string): GitRootResult {
 	}
 }
 
-/** How long a Git command may take before it is killed. */
-export const GIT_COMMAND_TIMEOUT_MS = 10000;
+/** The errno a run killed for outliving its time limit is reported with. */
+const TIMED_OUT_CODE = "ETIMEDOUT";
 
 /**
  * Why a Git command did not answer, kept as the runner reported it rather than
@@ -55,14 +58,26 @@ export interface GitCommandFailure {
 	timedOut: boolean;
 }
 
-/** Keep whatever the runner reported about how the command ended. */
+/**
+ * Keep whatever the runner reported about how the command ended.
+ *
+ * A synchronous runner throws an error carrying the whole spawn result, and the
+ * timeout marker belongs to that result's own error. Node currently throws that
+ * inner error itself, which mirrors the marker to the top level as well, so both
+ * places are read rather than relying on the mirror.
+ */
 function describeCommandFailure(error: unknown): GitCommandFailure {
-	const thrown = error as { status?: unknown; signal?: unknown; code?: unknown };
+	const thrown = error as {
+		status?: unknown;
+		signal?: unknown;
+		code?: unknown;
+		error?: { code?: unknown };
+	};
 	return {
 		message: error instanceof Error ? error.message : String(error),
 		...(typeof thrown.status === "number" ? { exitCode: thrown.status } : {}),
 		...(typeof thrown.signal === "string" ? { signal: thrown.signal } : {}),
-		timedOut: thrown.code === "ETIMEDOUT",
+		timedOut: thrown.code === TIMED_OUT_CODE || thrown.error?.code === TIMED_OUT_CODE,
 	};
 }
 
