@@ -1,0 +1,46 @@
+### 1. BEFORE the fix - contributor checkout still carrying the repository-root .mcp.json
+$ git show 99baf61:.mcp.json > .mcp.json   # restore the pre-fix file
+$ claude mcp list
+Checking MCP server health…
+
+plugin:stepstone:stepstone: node /tmp/nm-plugin-e2e/marketplace/stepstone/dist/mcp.js - ✔ Connected
+stepstone: node ${CLAUDE_PLUGIN_ROOT}/dist/mcp.js - ✘ Failed to connect — -32000: MCP error -32000: Connection closed
+
+MCP config diagnostics ⚠
+
+For help configuring MCP servers, see: https://code.claude.com/docs/en/mcp
+
+[Contains warnings] Project config (shared via .mcp.json)
+Location: /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZW8YTHR6FY1J1HM1718VMJT/.mcp.json
+ └ [Warning] [stepstone] mcpServers.stepstone: Missing environment variables: CLAUDE_PLUGIN_ROOT, CLAUDE_PROJECT_DIR
+
+
+$ claude mcp get stepstone
+stepstone:
+  Scope: Project config (shared via .mcp.json)
+  Status: ✘ Failed to connect
+  Issue: -32000: MCP error -32000: Connection closed
+
+To remove this server, run: claude mcp remove stepstone -s project
+
+### 2. AFTER the fix - same contributor checkout at the target commit (no .mcp.json)
+$ ls .mcp.json
+ls: cannot access '/home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZW8YTHR6FY1J1HM1718VMJT/.mcp.json': No such file or directory
+$ claude mcp list
+Checking MCP server health…
+
+plugin:stepstone:stepstone: node /tmp/nm-plugin-e2e/marketplace/stepstone/dist/mcp.js - ✔ Connected
+
+### 3. Real plugin install (packed tarball -> local marketplace -> claude plugin install) in a fresh project
+$ claude plugin list
+Installed plugins:
+
+  ❯ stepstone@stepstone-local
+    Version: 0.9.2
+    Scope: user
+    Status: ✔ enabled
+
+$ claude mcp list
+Checking MCP server health…
+
+plugin:stepstone:stepstone: node /tmp/nm-plugin-e2e/marketplace/stepstone/dist/mcp.js - ✔ Connected

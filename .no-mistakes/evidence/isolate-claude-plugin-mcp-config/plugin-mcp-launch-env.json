@@ -1,0 +1,9 @@
+{
+  "launchedCommand": [
+    "/home/max/.local/share/fnm/node-versions/v24.18.1/installation/bin/node",
+    "/tmp/nm-plugin-e2e/marketplace/stepstone/dist/mcp.js"
+  ],
+  "cwd": "/tmp/nm-plugin-project",
+  "CLAUDE_PLUGIN_ROOT": "/tmp/nm-plugin-e2e/marketplace/stepstone",
+  "STEPSTONE_PLUGIN_PROJECT_ROOT": "/tmp/nm-plugin-project"
+}
