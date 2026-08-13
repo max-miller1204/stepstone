@@ -32,9 +32,9 @@ import { goalCount } from "./format.ts";
 import {
 	createWorklistLocator,
 	currentGitBranch,
-	describeGitFailure,
 	type GitCommandFailure,
 	type GitRootFailure,
+	gitCommandDiagnostic,
 	gitFailureDetails,
 	isTransientGitFailure,
 	resolveGitRoot,
@@ -705,7 +705,7 @@ function branchLookupFailure(failure: GitCommandFailure): WorklistCliFailure {
 		error: {
 			code: WORKLIST_ERROR_CODES.UNAVAILABLE,
 			message:
-				`Git could not determine the current branch: ${describeGitFailure(failure)}. ` +
+				`Git could not determine the current branch: ${gitCommandDiagnostic(failure)}. ` +
 				`${retryable ? "Retry, or pass" : "Pass"} --branch <name> explicitly.`,
 			retryable,
 			details: gitFailureDetails(

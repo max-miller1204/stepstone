@@ -151,9 +151,20 @@ export interface GitRootResult {
 	failure?: GitRootFailure;
 }
 
-/** What to put in front of a person: Git's own words where there are any. */
+/**
+ * What to put in front of a person about a Git command.
+ *
+ * Git's own line where Git said anything, and how the run ended where it did not,
+ * because a killed run's only information is that it was killed. The invocation
+ * and the exit status stay out of the sentence and in the envelope.
+ */
+export function gitCommandDiagnostic(failure: GitCommandFailure): string {
+	return failure.stderr ?? describeGitFailure(failure);
+}
+
+/** The same, for a root lookup that may have failed before Git was reached. */
 export function gitRootDiagnostic(failure: GitRootFailure): string {
-	return failure.command?.stderr ?? failure.message;
+	return failure.command ? gitCommandDiagnostic(failure.command) : failure.message;
 }
 
 /**
@@ -402,36 +413,74 @@ export interface ProjectRootLookup {
 }
 
 /**
+ * How long a Git run may take before asking again is worth postponing.
+ *
+ * Below this, asking again costs nobody anything noticeable, so nothing is held
+ * and a repair is picked up by the very next lookup. Above it, the run is the
+ * thing a person is waiting on.
+ */
+const GIT_SLOW_ATTEMPT_MS = 250;
+
+export interface ProjectRootLookupOptions extends WorklistLocationOptions {
+	/**
+	 * The shortest a recoverable failure is held before Git is asked again.
+	 *
+	 * Defaults to none, because a slow failure is already held for as long as it
+	 * took to fail and a fast one costs nothing to repeat.
+	 */
+	retryAfterMs?: number;
+	/** The clock the hold is measured on. Defaults to the wall clock. */
+	now?: () => number;
+}
+
+/**
  * The goal file for the repository containing `cwd`, for a host that outlives one
  * lookup.
  *
- * Two answers are remembered, because neither can change while the host runs: a
- * repository that was found, and a directory that is in no repository at all.
- * Everything else is asked again on the next lookup, because everything else is
- * something someone can fix without restarting - Git off a PATH, a stalled
- * filesystem, an owner Git did not trust until the command Git suggested was run.
- * The alternative is a session or an MCP server that spends the rest of its life
- * reporting a verdict Git never reached, which no retry could clear.
+ * Two answers are remembered for good, because neither can change while the host
+ * runs: a repository that was found, and a directory that is in no repository at
+ * all. Everything else is something someone can fix without restarting - Git off a
+ * PATH, a stalled filesystem, an owner Git did not trust until the command Git
+ * suggested was run - so it is asked again rather than settled, or the host spends
+ * the rest of its life reporting a verdict Git never reached.
+ *
+ * Asked again, not asked constantly. Git runs synchronously and may take until the
+ * command timeout to be killed, so a failure that took time to arrive is held for
+ * as long as it took: a lookup killed on a ten-second timeout cannot be re-run by
+ * every reader in a turn, while one that failed at once is asked again at once and
+ * costs nothing for it.
  */
 export function createProjectRootLookup(
 	cwd: string,
-	options: WorklistLocationOptions = {},
+	options: ProjectRootLookupOptions = {},
 ): () => ProjectRootLookup {
+	const { retryAfterMs = 0, now = Date.now, ...location } = options;
 	let locate: (() => LocatedWorklist) | undefined;
 	let settled: GitRootFailure | undefined;
+	let held: { failure: GitRootFailure; until: number } | undefined;
 	return () => {
 		if (locate) return { worklist: locate() };
 		if (settled) return { failure: settled };
+		if (held && now() < held.until) return { failure: held.failure };
+		const startedAt = now();
 		const result = resolveGitRoot(cwd);
 		if (result.root) {
-			locate = createWorklistLocator(result.root, options);
+			locate = createWorklistLocator(result.root, location);
+			held = undefined;
 			return { worklist: locate() };
 		}
 		const failure: GitRootFailure = result.failure ?? {
 			kind: "git-refused",
 			message: "git named no repository root",
 		};
-		if (failure.kind === "not-a-repository") settled = failure;
+		if (failure.kind === "not-a-repository") {
+			settled = failure;
+			return { failure };
+		}
+		const finishedAt = now();
+		const cost = finishedAt - startedAt;
+		const hold = Math.max(retryAfterMs, cost >= GIT_SLOW_ATTEMPT_MS ? cost : 0);
+		if (hold > 0) held = { failure, until: finishedAt + hold };
 		return { failure };
 	};
 }

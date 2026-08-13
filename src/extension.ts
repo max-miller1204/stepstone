@@ -155,9 +155,9 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	 * goal file that cannot be read is a condition someone has to be told about, and
 	 * it reaches them through the same handler it always did.
 	 */
-	async function refreshProject(): Promise<void> {
+	async function refreshProject(located = locatedProject()): Promise<void> {
 		try {
-			projectGoals = await applicationService.getProjectGoals();
+			projectGoals = await applicationService.getProjectGoals(located?.path ?? null);
 		} catch (error) {
 			if (!isProjectUnavailable(error)) throw error;
 			projectGoals = [];
@@ -188,17 +188,27 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	 * session: pi reuses this extension across `/new`, `/resume`, `/fork` and
 	 * `/clone`, and every session has to be told which of two roadmaps it reads.
 	 */
-	function announceLocationNotice(ctx: ExtensionContext): void {
-		const notice = locatedProject()?.notice;
+	function announceLocationNotice(ctx: ExtensionContext, located: LocatedWorklist | null): void {
+		const notice = located?.notice;
 		if (notice === announcedNotice) return;
 		announcedNotice = notice;
 		if (notice) ctx.ui.notify(notice, "warning");
 	}
 
+	/**
+	 * One refresh, one resolution.
+	 *
+	 * The widget's notice and the goals it draws come from the same answer rather
+	 * than from two questions: Git runs synchronously, and asking twice per refresh
+	 * doubles what a session pays while Git is slow or failing. It also closes the
+	 * gap where the two answers could differ - a `migrate_path` landing between
+	 * them - which is the invariant the pairing exists for.
+	 */
 	async function updateUi(ctx: ExtensionContext): Promise<void> {
 		latestContext = ctx;
-		announceLocationNotice(ctx);
-		await refreshProject();
+		const located = locatedProject();
+		announceLocationNotice(ctx, located);
+		await refreshProject(located);
 		const lines = buildWidgetLines(applicationService.getSessionTasks(), projectGoals);
 		if (!lines.length) ctx.ui.setWidget(WIDGET_ID, undefined);
 		else if (ctx.mode === "tui") {

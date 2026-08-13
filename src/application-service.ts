@@ -965,8 +965,7 @@ export class WorklistApplicationService {
 			.map((task) => ({ ...task }));
 	}
 
-	async getProjectGoals(): Promise<ProjectGoal[]> {
-		const projectPath = this.resolveProjectPath();
+	async getProjectGoals(projectPath: string | null = this.resolveProjectPath()): Promise<ProjectGoal[]> {
 		if (!projectPath) return [];
 		try {
 			return await listProjectGoals(projectPath);

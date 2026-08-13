@@ -28,6 +28,20 @@ async function fakeGitOnPath(script: string): Promise<() => void> {
 	};
 }
 
+/**
+ * How many times the fake `git` ran, from the file it appends to.
+ *
+ * A spawn count is the observable cost this bounds: the file is the fake's own
+ * output, written once per run.
+ */
+async function gitCalls(counter: string): Promise<number> {
+	try {
+		return (await readFile(counter, "utf8")).length;
+	} catch {
+		return 0;
+	}
+}
+
 /** A PATH with no `git` on it at all, the way a machine without Git looks. */
 async function noGitOnPath(): Promise<() => void> {
 	const empty = await mkdtemp(join(tmpdir(), "stepstone-no-git-bin-"));
@@ -128,7 +142,7 @@ describe("git root", () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-root-lookup-"));
 		execFileSync("git", ["init", "-q"], { cwd: root });
 
-		// A Git that never answered must not settle the lookup: the next operation in
+		// A Git that never answered must not settle the lookup: a later operation in
 		// the same session asks again, which is the only way a retry can succeed.
 		const lookup = createProjectRootLookup(root, { env: {} });
 		const restoreMissing = await noGitOnPath();
@@ -179,6 +193,38 @@ describe("git root", () => {
 		expect(lookup().failure?.kind).toBe("git-refused");
 		await writeFile(config, original);
 		expect(lookup().worklist?.path).toBe(join(root, ".worklist", "worklist.json"));
+	});
+
+	it("holds a failing answer instead of running Git for every lookup", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-root-hold-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const counter = join(root, "git-calls");
+		const restore = await fakeGitOnPath(
+			[`printf 'x' >> ${counter}`, "printf '%s\\n' 'fatal: bad config line 1' >&2", "exit 128"].join("\n"),
+		);
+
+		let clock = 0;
+		const lookup = createProjectRootLookup(root, { env: {}, retryAfterMs: 5000, now: () => clock });
+		try {
+			expect(lookup().failure?.kind).toBe("git-refused");
+			expect(await gitCalls(counter)).toBe(1);
+
+			// Git runs synchronously and a stalled one is killed only on the command
+			// timeout, so the lookups a single turn makes - a widget refresh, then the
+			// operation behind it - reuse the answer rather than blocking again.
+			clock = 1;
+			expect(lookup().failure?.kind).toBe("git-refused");
+			clock = 4999;
+			expect(lookup().failure?.kind).toBe("git-refused");
+			expect(await gitCalls(counter)).toBe(1);
+
+			// The hold is a pause, not a verdict.
+			clock = 5000;
+			expect(lookup().failure?.kind).toBe("git-refused");
+			expect(await gitCalls(counter)).toBe(2);
+		} finally {
+			restore();
+		}
 	});
 });
 

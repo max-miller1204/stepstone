@@ -1744,6 +1744,10 @@ describe("project goal CLI", () => {
 		expect(unsupportedEnvelope.error.message).toContain("unknown option");
 		expect(unsupportedEnvelope.error.message).toContain("--branch");
 		expect(unsupportedEnvelope.error.message).not.toContain("Retry");
+		// The sentence is Git's own line, the way the repository failures word theirs:
+		// the invocation and the exit status are evidence for the envelope, not prose.
+		expect(unsupportedEnvelope.error.message).not.toContain("Command failed");
+		expect(unsupportedEnvelope.error.message).not.toContain("status 129");
 
 		// The same diagnostic and the same escape hatch reach a person, who has no
 		// envelope to read.
@@ -1753,6 +1757,7 @@ describe("project goal CLI", () => {
 		expect(humanUnsupported.code).toBe(1);
 		expect(humanUnsupported.stderr).toContain("unknown option");
 		expect(humanUnsupported.stderr).toContain("--branch");
+		expect(diagnostic(humanUnsupported.stderr)).not.toContain("Command failed");
 	});
 
 	it("keeps a branch lookup that never finished retryable, unlike one Git refused", async () => {

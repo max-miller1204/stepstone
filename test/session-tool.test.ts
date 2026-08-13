@@ -1123,6 +1123,38 @@ describe("registered model tool", () => {
 		expect(added.details.goal?.title).toBe("Once the config is fixed");
 	});
 
+	it("asks Git once for a refresh, not once for every reader in it", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-git-calls-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const counter = join(root, "git-calls");
+		const bin = await mkdtemp(join(tmpdir(), "stepstone-tool-counting-git-"));
+		await writeFile(
+			join(bin, "git"),
+			// Fails the way a repository Git will not work in fails, so the lookup is
+			// not settled and every reader in the refresh would ask again.
+			[
+				"#!/bin/sh",
+				`printf 'x' >> ${counter}`,
+				"printf '%s\\n' 'fatal: bad config line 1' >&2",
+				"exit 128",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const realPath = process.env.PATH;
+
+		process.env.PATH = `${bin}:${realPath ?? ""}`;
+		try {
+			await startSession(root);
+		} finally {
+			process.env.PATH = realPath;
+		}
+
+		// Git runs synchronously: the widget's notice and the goals it draws come from
+		// one answer, so a session pays for one Git run per refresh however slow Git is.
+		expect((await readFile(counter, "utf8")).length).toBe(1);
+	});
+
 	it("still reports a goal file it cannot read when the widget refreshes", async () => {
 		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-malformed-")));
 		execFileSync("git", ["init", "-q"], { cwd: root });
