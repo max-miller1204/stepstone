@@ -1,12 +1,13 @@
 import type { ExtensionContext, ToolExecutionMode } from "@earendil-works/pi-coding-agent";
 import {
+	resolveProjectWorklist,
 	unwrapWorklistApplicationResult,
 	WorklistApplicationService,
 	type WorklistOperation,
 	type WorklistOperationSource,
 } from "./application-service.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
-import { createWorklistLocator, type LocatedWorklist, resolveGitRoot } from "./git.ts";
+import { createProjectRootLookup, type LocatedWorklist } from "./git.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { WorklistOperationResult, WorklistToolDetails } from "./types.ts";
 
@@ -28,11 +29,14 @@ export interface ToolDeps {
  * second worklist beside it, so that part is re-read every time it is asked
  * for. The standing warning travels with the path it describes, so a session
  * cannot report one file while reading another.
+ *
+ * A Git that never answered is neither remembered nor reported as a verdict about
+ * the repository: it is raised as the availability failure it is, and asked again
+ * on the next operation.
  */
 export function createProjectLocator(cwd: string): () => LocatedWorklist | null {
-	const result = resolveGitRoot(cwd);
-	if (!result.isGit || !result.root) return () => null;
-	return createWorklistLocator(result.root, { env: process.env, overrideBase: cwd });
+	const lookup = createProjectRootLookup(cwd, { env: process.env, overrideBase: cwd });
+	return () => resolveProjectWorklist(lookup());
 }
 
 function getApplicationService(deps: ToolDeps): WorklistApplicationService {

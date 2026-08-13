@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import {
+	createProjectRootLookup,
 	currentGitBranch,
 	isTransientGitFailure,
 	resolveGitRoot,
@@ -52,7 +53,25 @@ describe("git root", () => {
 		expect(result.isGit).toBe(false);
 		// Git ran and refused the directory, which is an answer: nothing here is
 		// waiting on Git to become available.
-		expect(result.unavailable).toBeUndefined();
+		expect(result.failure?.kind).toBe("git-refused");
+		expect(result.failure?.command?.exitCode).toEqual(expect.any(Number));
+	});
+
+	it("blames the path, not Git, for a directory that is not there", async () => {
+		const parent = await mkdtemp(join(tmpdir(), "stepstone-bad-cwd-"));
+		const missing = join(parent, "removed-worktree");
+		const missingResult = resolveGitRoot(missing);
+		expect(missingResult).toMatchObject({ root: null, isGit: false });
+		expect(missingResult.failure?.kind).toBe("unusable-directory");
+		expect(missingResult.failure?.message).toContain(missing);
+		// Git was never asked, so there is nothing about Git to report.
+		expect(missingResult.failure?.command).toBeUndefined();
+
+		const file = join(parent, "a-file");
+		await writeFile(file, "");
+		const fileResult = resolveGitRoot(file);
+		expect(fileResult.failure?.kind).toBe("unusable-directory");
+		expect(fileResult.failure?.message).toContain("is not a directory");
 	});
 
 	it("keeps a Git that never answered apart from a Git that refused the directory", async () => {
@@ -67,10 +86,11 @@ describe("git root", () => {
 			restoreKilled();
 		}
 		expect(killed.isGit).toBe(false);
-		const killedFailure = killed.unavailable;
-		if (!killedFailure) throw new Error("a killed root lookup reported no failure");
-		expect(killedFailure).toMatchObject({ signal: "SIGTERM", timedOut: false });
-		expect(isTransientGitFailure(killedFailure)).toBe(true);
+		const killedFailure = killed.failure;
+		if (!killedFailure?.command) throw new Error("a killed root lookup reported no Git failure");
+		expect(killedFailure.kind).toBe("git-unavailable");
+		expect(killedFailure.command).toMatchObject({ signal: "SIGTERM", timedOut: false });
+		expect(isTransientGitFailure(killedFailure.command)).toBe(true);
 
 		const restoreSlow = await fakeGitOnPath("sleep 30");
 		let timedOut: ReturnType<typeof resolveGitRoot>;
@@ -79,10 +99,11 @@ describe("git root", () => {
 		} finally {
 			restoreSlow();
 		}
-		const timedOutFailure = timedOut.unavailable;
-		if (!timedOutFailure) throw new Error("a timed-out root lookup reported no failure");
-		expect(timedOutFailure.timedOut).toBe(true);
-		expect(isTransientGitFailure(timedOutFailure)).toBe(true);
+		const timedOutFailure = timedOut.failure;
+		if (!timedOutFailure?.command) throw new Error("a timed-out root lookup reported no Git failure");
+		expect(timedOutFailure.kind).toBe("git-unavailable");
+		expect(timedOutFailure.command.timedOut).toBe(true);
+		expect(isTransientGitFailure(timedOutFailure.command)).toBe(true);
 
 		// A machine without Git learned nothing about the directory either, but no
 		// amount of retrying will change that.
@@ -93,11 +114,44 @@ describe("git root", () => {
 		} finally {
 			restoreMissing();
 		}
-		const missingFailure = missing.unavailable;
-		if (!missingFailure) throw new Error("a missing Git reported no failure");
+		const missingFailure = missing.failure;
+		if (!missingFailure?.command) throw new Error("a missing Git reported no Git failure");
+		expect(missingFailure.kind).toBe("git-unavailable");
 		expect(missingFailure.message).toContain("ENOENT");
-		expect(missingFailure.exitCode).toBeUndefined();
-		expect(isTransientGitFailure(missingFailure)).toBe(false);
+		expect(missingFailure.command.exitCode).toBeUndefined();
+		expect(isTransientGitFailure(missingFailure.command)).toBe(false);
+	});
+
+	it("asks Git again only while Git has not answered", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-root-lookup-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+
+		// A Git that never answered must not settle the lookup: the next operation in
+		// the same session asks again, which is the only way a retry can succeed.
+		const lookup = createProjectRootLookup(root, { env: {} });
+		const restoreMissing = await noGitOnPath();
+		let unavailable: ReturnType<typeof lookup>;
+		try {
+			unavailable = lookup();
+		} finally {
+			restoreMissing();
+		}
+		expect(unavailable.worklist).toBeUndefined();
+		expect(unavailable.failure?.kind).toBe("git-unavailable");
+		expect(lookup().worklist?.path).toBe(join(root, ".worklist", "worklist.json"));
+
+		// A verdict Git reached is remembered, so a session outside a repository does
+		// not spawn Git for every action it refuses.
+		const outside = await mkdtemp(join(tmpdir(), "stepstone-root-lookup-outside-"));
+		const outsideLookup = createProjectRootLookup(outside, { env: {} });
+		expect(outsideLookup().failure?.kind).toBe("git-refused");
+		const restoreBroken = await fakeGitOnPath("exit 129");
+		try {
+			expect(outsideLookup().failure?.kind).toBe("git-refused");
+			expect(outsideLookup().failure?.command?.exitCode).not.toBe(129);
+		} finally {
+			restoreBroken();
+		}
 	});
 });
 

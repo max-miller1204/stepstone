@@ -5,6 +5,7 @@ import { basename, resolve } from "node:path";
 import { AGENTS_PATH, AgentsBlockError, type AgentsRefreshResult, refreshAgentsFile } from "./agents.ts";
 import {
 	projectGoalSelectionError,
+	projectRootUnavailableError,
 	projectWorklistMergeRequiredError,
 	type WorklistApplicationFailure,
 	type WorklistApplicationResult,
@@ -31,7 +32,10 @@ import { goalCount } from "./format.ts";
 import {
 	createWorklistLocator,
 	currentGitBranch,
+	describeGitFailure,
 	type GitCommandFailure,
+	type GitRootFailure,
+	gitFailureDetails,
 	isTransientGitFailure,
 	resolveGitRoot,
 	resolveWorklistLocation,
@@ -424,23 +428,48 @@ interface ProjectLocation {
 	worklist: WorklistLocation;
 }
 
-function resolveRepositoryRoot(invocation: CliInvocation): string {
-	const result = resolveGitRoot(invocation.cwd);
-	if (result.unavailable) throw gitUnavailableFailure(invocation.action, result.unavailable);
-	if (!result.isGit || !result.root) {
-		throw new WorklistCliFailure({
+/**
+ * The typed failure a command earns when there is no repository to work in.
+ *
+ * Git refusing a directory keeps the standing answer, now carrying what Git
+ * actually said: `rev-parse` also refuses a repository whose config or object
+ * store it cannot read, and "run inside a repository" is no help to someone who
+ * already is - the diagnostic is. The other two kinds are not answers about the
+ * directory at all, so they get the shared availability failure instead, with the
+ * escape hatch this interface has.
+ */
+function repositoryRootFailure(action: string, failure?: GitRootFailure): WorklistCliFailure {
+	const meta = { changed: false, semanticNoOp: false, changedFields: [] };
+	if (!failure || failure.kind === "git-refused") {
+		return new WorklistCliFailure({
 			ok: false,
 			scope: "project",
-			action: invocation.action,
+			action,
 			error: {
 				code: WORKLIST_ERROR_CODES.UNAVAILABLE,
-				message: "Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
+				message:
+					`Project goals require a git repository${failure ? `: ${failure.message}` : ""}. ` +
+					"Run inside a repository or pass --cwd <dir>.",
 				retryable: false,
-				details: { resolution: "run-inside-git-repository" },
+				details: gitFailureDetails("run-inside-git-repository", failure?.command),
 			},
-			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+			meta,
 		});
 	}
+	const remedy =
+		failure.kind === "unusable-directory" ? "Pass --cwd <dir> with a directory that exists." : undefined;
+	return new WorklistCliFailure({
+		ok: false,
+		scope: "project",
+		action,
+		error: projectRootUnavailableError(failure, remedy).toResultError(),
+		meta,
+	});
+}
+
+function resolveRepositoryRoot(invocation: CliInvocation): string {
+	const result = resolveGitRoot(invocation.cwd);
+	if (!result.root) throw repositoryRootFailure(invocation.action, result.failure);
 	return result.root;
 }
 
@@ -657,64 +686,6 @@ function formatPlanWarning(warning: ProjectPlanWarning): string {
 		`Warning: batch dependency ${warning.reference} resolves to new goal ${warning.batchGoalId}, ` +
 		`shadowing existing goal ${warning.existingGoalId}.`
 	);
-}
-
-/**
- * What Git's failure was, on one line a person reads and a dispatcher can log.
- *
- * Whatever Git wrote to stderr comes first, then how the run ended, because a
- * killed run leaves a bare "Command failed" that says nothing about the kill.
- * Together they tell a timeout apart from a permissions error or a Git too old
- * for the flag being used.
- */
-function describeGitFailure(failure: GitCommandFailure): string {
-	const diagnostic = singleLine(failure.message);
-	if (failure.timedOut) return `${diagnostic} (the command timed out)`;
-	if (failure.signal !== undefined) return `${diagnostic} (killed by ${failure.signal})`;
-	if (failure.exitCode !== undefined) return `${diagnostic} (git exited with status ${failure.exitCode})`;
-	return diagnostic;
-}
-
-/**
- * The evidence every Git execution failure carries, so one dispatcher parser
- * reads a failed branch lookup and a Git that never ran the same way.
- */
-function gitFailureDetails(resolution: string, failure: GitCommandFailure): Record<string, unknown> {
-	return {
-		resolution,
-		gitError: describeGitFailure(failure),
-		gitTimedOut: failure.timedOut,
-		...(failure.exitCode !== undefined ? { gitExitCode: failure.exitCode } : {}),
-		...(failure.signal !== undefined ? { gitSignal: failure.signal } : {}),
-	};
-}
-
-/**
- * The typed failure every command earns when Git never said whether the working
- * directory is a repository.
- *
- * Git refusing the directory is an answer, and the repository failure below says
- * so permanently. A Git that could not be run, or was killed before answering,
- * says nothing about the directory: telling someone to run inside a repository
- * would be a guess, and telling a dispatcher the location is settled would have
- * it give up on a timeout that clears on its own.
- */
-function gitUnavailableFailure(action: string, failure: GitCommandFailure): WorklistCliFailure {
-	const retryable = isTransientGitFailure(failure);
-	return new WorklistCliFailure({
-		ok: false,
-		scope: "project",
-		action,
-		error: {
-			code: WORKLIST_ERROR_CODES.UNAVAILABLE,
-			message:
-				`Git could not be run to find the repository: ${describeGitFailure(failure)}. ` +
-				`${retryable ? "Retry, or check" : "Check"} that Git is installed and can run here.`,
-			retryable,
-			details: gitFailureDetails(retryable ? "retry-git-command" : "repair-git-availability", failure),
-		},
-		meta: { changed: false, semanticNoOp: false, changedFields: [] },
-	});
 }
 
 /**

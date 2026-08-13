@@ -1,5 +1,12 @@
 import { formatDependencyCycle, unsatisfiedDependencies } from "./dependencies.ts";
 import {
+	type GitRootFailure,
+	gitFailureDetails,
+	isTransientGitFailure,
+	type LocatedWorklist,
+	type ProjectRootLookup,
+} from "./git.ts";
+import {
 	MAX_REPORTED_GOAL_CANDIDATES,
 	resolveGoalSelector,
 	type UnresolvedGoalSelector,
@@ -206,6 +213,58 @@ function notFoundError(entity: MissingEntity, id: string) {
 		id,
 		resolution: "refresh-and-select-existing",
 	});
+}
+
+/**
+ * The typed failure every interface reports when Git never named the repository
+ * the goals live in.
+ *
+ * Separate from the refusal `requireProjectPath` raises: Git reporting that a
+ * directory is not a repository is an answer, and someone acts on it by moving or
+ * naming another directory. A Git that could not be run says nothing about the
+ * directory, and one that was killed may answer next time, which is what
+ * `retryable` has to carry rather than a flat "not a repository".
+ *
+ * `remedy` is the one part each interface words for itself, because the way out of
+ * a directory that is not there is a flag the CLI has and a session does not.
+ */
+export function projectRootUnavailableError(
+	failure: GitRootFailure,
+	remedy?: string,
+): WorklistApplicationError {
+	const sentences = (lead: string) => (remedy ? `${lead} ${remedy}` : lead);
+	if (failure.kind === "unusable-directory") {
+		return createApplicationError(
+			WORKLIST_ERROR_CODES.UNAVAILABLE,
+			sentences(`Project goals need a directory to work in: ${failure.message}.`),
+			{ resolution: "provide-existing-directory", directoryError: failure.message },
+		);
+	}
+	const retryable = failure.command !== undefined && isTransientGitFailure(failure.command);
+	return createApplicationError(
+		WORKLIST_ERROR_CODES.UNAVAILABLE,
+		sentences(
+			`Git could not be run to find the repository: ${failure.message}. ` +
+				`${retryable ? "Retry once Git responds." : "Check that Git is installed and can run here."}`,
+		),
+		gitFailureDetails(retryable ? "retry-git-command" : "repair-git-availability", failure.command),
+		retryable,
+	);
+}
+
+/**
+ * The goal file a lookup found, for the shared service's project-path resolver.
+ *
+ * Git refusing the directory stays the `null` every interface already handles, so
+ * a session outside a repository keeps working on session tasks. Anything Git
+ * never answered is raised instead of flattened into that same answer.
+ */
+export function resolveProjectWorklist(lookup: ProjectRootLookup): LocatedWorklist | null {
+	if (lookup.worklist) return lookup.worklist;
+	if (lookup.failure && lookup.failure.kind !== "git-refused") {
+		throw projectRootUnavailableError(lookup.failure);
+	}
+	return null;
 }
 
 /**
@@ -909,8 +968,12 @@ export class WorklistApplicationService {
 
 	async readProjectSnapshot(action: string): Promise<WorklistApplicationResult> {
 		const operation: WorklistOperation = { scope: "project", action };
-		const resolved = this.resolveProjectPath();
+		// Resolved inside the attempt, because a host that hands over the resolution
+		// can hand over a failure to resolve, and that is this read's outcome rather
+		// than an exception escaping the envelope.
+		let resolved: string | null = null;
 		try {
+			resolved = this.resolveProjectPath();
 			const projectPath = this.requireProjectPath(resolved);
 			const { goals, retiredIds, revision } = await readProjectGoals(projectPath);
 			return {
@@ -939,8 +1002,9 @@ export class WorklistApplicationService {
 		operation: WorklistOperation,
 		_context: WorklistOperationContext,
 	): Promise<WorklistApplicationResult> {
-		const resolvedProjectPath = operation.scope === "project" ? this.resolveProjectPath() : null;
+		let resolvedProjectPath: string | null = null;
 		try {
+			if (operation.scope === "project") resolvedProjectPath = this.resolveProjectPath();
 			const placement = normalizePlacement(operation);
 			let result: WorklistOperationResult;
 			let changed = false;

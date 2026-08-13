@@ -130,8 +130,29 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	let locateProject: (() => LocatedWorklist | null) | undefined;
 	let announcedNotice: string | undefined;
 
+	/**
+	 * The goals the widget draws, or none.
+	 *
+	 * A read for the display cannot decide the session's fate: a repository whose
+	 * Git cannot be reached right now leaves the widget empty, while the operation a
+	 * user or model actually asked for still fails with the typed availability
+	 * failure the service raises.
+	 */
 	async function refreshProject(): Promise<void> {
-		projectGoals = await applicationService.getProjectGoals();
+		try {
+			projectGoals = await applicationService.getProjectGoals();
+		} catch {
+			projectGoals = [];
+		}
+	}
+
+	/** The resolution the display reports on, which never speaks for an operation. */
+	function locatedProject(): LocatedWorklist | null {
+		try {
+			return locateProject?.() ?? null;
+		} catch {
+			return null;
+		}
 	}
 
 	/**
@@ -149,7 +170,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	 * `/clone`, and every session has to be told which of two roadmaps it reads.
 	 */
 	function announceLocationNotice(ctx: ExtensionContext): void {
-		const notice = locateProject?.()?.notice;
+		const notice = locatedProject()?.notice;
 		if (notice === announcedNotice) return;
 		announcedNotice = notice;
 		if (notice) ctx.ui.notify(notice, "warning");

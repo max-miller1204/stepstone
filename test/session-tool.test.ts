@@ -1043,6 +1043,53 @@ describe("registered model tool", () => {
 		});
 	});
 
+	it("tells a session that Git is unavailable rather than that it left the repository", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const emptyBin = await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-bin-"));
+		const realPath = process.env.PATH;
+
+		// A session that starts while Git cannot be run. The session is in the
+		// repository it has always been in, and saying otherwise would send someone
+		// looking for a repository they are standing in.
+		let unavailable: unknown;
+		let session: Awaited<ReturnType<typeof startSession>>;
+		process.env.PATH = emptyBin;
+		try {
+			session = await startSession(root);
+			unavailable = await session.call({ scope: "project", action: "add", title: "While Git is away" }).then(
+				() => undefined,
+				(error: unknown) => error,
+			);
+		} finally {
+			process.env.PATH = realPath;
+		}
+		expect(unavailable).toMatchObject({
+			code: "UNAVAILABLE",
+			retryable: false,
+			details: { resolution: "repair-git-availability" },
+		});
+		expect(String((unavailable as Error).message)).not.toContain("require a git repository");
+
+		// The session recovers on the next operation: the lookup that never got an
+		// answer is asked again rather than settling the rest of the session.
+		const added = (await session.call({
+			scope: "project",
+			action: "add",
+			title: "Once Git is back",
+		})) as { details: { goal?: ProjectGoal } };
+		expect(added.details.goal?.title).toBe("Once Git is back");
+
+		// A session genuinely outside a repository keeps the standing answer, so
+		// session tasks stay usable there.
+		const bare = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-bare-")));
+		const outside = await startSession(bare);
+		await expect(outside.call({ scope: "project", action: "list" })).rejects.toMatchObject({
+			code: "UNAVAILABLE",
+			details: { resolution: "run-inside-git-repository" },
+		});
+	});
+
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {
 		expect(registerExtension().tool.executionMode).toBe("sequential");
 	});

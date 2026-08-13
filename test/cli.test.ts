@@ -1026,8 +1026,7 @@ describe("project goal CLI", () => {
 		});
 		expect(killedEnvelope.error.message).toContain("Retry");
 
-		// Git answering that this is not a repository keeps the permanent verdict, and
-		// a human still gets the diagnostic on stderr.
+		// Git answering that this is not a repository keeps the permanent verdict.
 		const refusedPath = await fakeGitPath(["printf '%s\\n' 'fatal: not a git repository' >&2", "exit 128"]);
 		const refused = await runCli(root, ["project", "list", "--json"], { PATH: refusedPath });
 		expect(refused.code).toBe(1);
@@ -1041,6 +1040,77 @@ describe("project goal CLI", () => {
 		const humanWithoutGit = await runCli(root, ["project", "list"], { PATH: await pathWithoutGit() });
 		expect(humanWithoutGit.code).toBe(1);
 		expect(diagnostic(humanWithoutGit.stderr)).toContain("ENOENT");
+	});
+
+	it("reports a directory that is not there as the path it is, not as a broken Git", async () => {
+		const parent = await mkdtemp(join(tmpdir(), "stepstone-stale-worktree-"));
+		const removed = join(parent, "worktree-that-was-removed");
+
+		const missing = await runCli(parent, ["project", "list", "--cwd", removed, "--json"]);
+		expect(missing.code).toBe(1);
+		expect(missing.stdout).toBe("");
+		const missingEnvelope = parseJson(missing.stderr) as GitFailureEnvelope;
+		expect(missingEnvelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "list",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "provide-existing-directory" },
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		// Git was never reached, so nothing here is Git's fault and nothing about Git
+		// is reported.
+		expect(missingEnvelope.error.details.gitError).toBeUndefined();
+		expect(missingEnvelope.error.message).toContain(removed);
+		expect(missingEnvelope.error.message).toContain("--cwd");
+		expect(missingEnvelope.error.message).not.toContain("Git is installed");
+
+		const file = join(parent, "a-file");
+		await writeFile(file, "");
+		const notADirectory = await runCli(parent, ["project", "list", "--cwd", file, "--json"]);
+		expect(notADirectory.code).toBe(1);
+		expect(parseJson(notADirectory.stderr)).toMatchObject({
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				message: expect.stringContaining("is not a directory"),
+				details: { resolution: "provide-existing-directory" },
+			},
+		});
+
+		const human = await runCli(parent, ["project", "list", "--cwd", removed]);
+		expect(human.code).toBe(1);
+		expect(diagnostic(human.stderr)).toContain(removed);
+		expect(diagnostic(human.stderr)).toContain("--cwd");
+	});
+
+	it("says what Git refused when the repository itself cannot be read", async () => {
+		const root = await tempGitRepo();
+		// A repository Git will not work in, which says nothing about whether the
+		// directory is one: someone told to run inside a repository already is.
+		await writeFile(join(root, ".git", "config"), "this is not a config file\n");
+		const rawStatus = await runCli(root, ["project", "list", "--json"]);
+		expect(rawStatus.code).toBe(1);
+		const envelope = parseJson(rawStatus.stderr) as GitFailureEnvelope;
+		expect(envelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "list",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "run-inside-git-repository", gitExitCode: 128, gitTimedOut: false },
+			},
+		});
+		expect(envelope.error.details.gitError).toContain("bad config");
+		expect(envelope.error.message).toContain("bad config");
+
+		const human = await runCli(root, ["project", "list"]);
+		expect(human.code).toBe(1);
+		expect(diagnostic(human.stderr)).toContain("bad config");
 	});
 
 	it("rejects a known flag after the interactive description separator", async () => {
