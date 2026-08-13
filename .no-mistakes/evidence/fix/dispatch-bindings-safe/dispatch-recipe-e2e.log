@@ -1,0 +1,303 @@
+
+
+================================================================
+Dispatch contract step 2: read the ready frontier from the root checkout
+================================================================
+
+$ npx -y stepstone@latest project ready --json | jq -r ".result.goals[] | \"\(.id)  \(.updatedAt)\""
+ship-binding-a-worker  2026-08-13T17:28:25.541Z
+release-binding-a-claim  2026-08-13T17:28:25.655Z
+hold-binding-b-custody  2026-08-13T17:28:25.778Z
+close-binding-b-cleanly  2026-08-13T17:28:25.913Z
+[exit 0]
+
+
+================================================================
+SCENARIO 1  Binding A: claim, launch a real detached worker, complete, scrub
+================================================================
+goal_id=ship-binding-a-worker  updated_at=2026-08-13T17:28:25.541Z
+
+--- running documented examples binding-a-workspace + binding-a-launch, then the documented completion block and binding-a-cleanup
+Preparing worktree (new branch 'stepstone/ship-binding-a-worker')
+HEAD is now at f5084b1 project fixture
+
+[state after launch]
+claim recorded on the roadmap: {"id":"ship-binding-a-worker","status":"open","branch":"stepstone/ship-binding-a-worker","updatedAt":"2026-08-13T17:28:26.405Z"}
+claim token retained by the driver: 2026-08-13T17:28:26.405Z
+/tmp/stepstone-dispatch-e2e-NN4yCw/root                             f5084b1 [main]
+/tmp/stepstone-dispatch-e2e-NN4yCw/stepstone-ship-binding-a-worker  f5084b1 [stepstone/ship-binding-a-worker]
+detached worker pid 3265029 alive: yes
+worker log: worker started in /tmp/stepstone-dispatch-e2e-NN4yCw/stepstone-ship-binding-a-worker with prompt: Implement ship-binding-a-worker and open a PR.
+worker artifact in the isolated checkout: worker output
+driver log and pid file stay outside the reviewed checkout: 0
+
+[the worker leaves a dirty checkout behind, as a real agent does]
+ M README.md
+?? scratch-notes.txt
+?? worker-artifact.txt
+!! .cache/
+
+[PR merged; documented completion from the root checkout]
+Project goal ship-binding-a-worker is now done
+goal after completion: {"id":"ship-binding-a-worker","status":"done","branch":null,"completedAt":"2026-08-13T17:28:27.798Z"}
+
+[documented cleanup of the dirty workspace]
+HEAD is now at f5084b1 project fixture
+Removing .cache/
+Removing scratch-notes.txt
+Removing worker-artifact.txt
+Deleted branch stepstone/ship-binding-a-worker (was f5084b1).
+cleanup exit: 0
+worktrees now: /tmp/stepstone-dispatch-e2e-NN4yCw/root  f5084b1 [main]
+branch stepstone/ship-binding-a-worker now: []
+workspace directory still present: no
+[scenario exit 0]
+
+
+================================================================
+SCENARIO 2  Binding A: the configured agent command is not executable
+================================================================
+goal_id=release-binding-a-claim  AGENT_COMMAND=/definitely/not/installed/coding-agent
+
+--- running documented examples binding-a-workspace + binding-a-launch
+Preparing worktree (new branch 'stepstone/release-binding-a-claim')
+HEAD is now at f5084b1 project fixture
+{
+  "ok": true,
+  "scope": "project",
+  "action": "start",
+  "result": {
+    "scope": "project",
+    "action": "start",
+    "goal": {
+      "id": "release-binding-a-claim",
+      "title": "Release binding a claim",
+      "description": "Dispatch demonstration goal.",
+      "status": "open",
+      "createdAt": "2026-08-13T17:28:25.655Z",
+      "updatedAt": "2026-08-13T17:28:28.400Z"
+    },
+    "goals": [
+      {
+        "id": "ship-binding-a-worker",
+        "title": "Ship binding a worker",
+        "description": "Dispatch demonstration goal.",
+        "status": "done",
+        "createdAt": "2026-08-13T17:28:25.541Z",
+        "updatedAt": "2026-08-13T17:28:27.798Z",
+        "completedAt": "2026-08-13T17:28:27.798Z"
+      },
+      {
+        "id": "release-binding-a-claim",
+        "title": "Release binding a claim",
+        "description": "Dispatch demonstration goal.",
+        "status": "open",
+        "createdAt": "2026-08-13T17:28:25.655Z",
+        "updatedAt": "2026-08-13T17:28:28.400Z"
+      },
+      {
+        "id": "hold-binding-b-custody",
+        "title": "Hold binding b custody",
+        "description": "Dispatch demonstration goal.",
+        "status": "open",
+        "createdAt": "2026-08-13T17:28:25.778Z",
+        "updatedAt": "2026-08-13T17:28:25.778Z"
+      },
+      {
+        "id": "close-binding-b-cleanly",
+        "title": "Close binding b cleanly",
+        "description": "Dispatch demonstration goal.",
+        "status": "open",
+        "createdAt": "2026-08-13T17:28:25.913Z",
+        "updatedAt": "2026-08-13T17:28:25.913Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "release-binding-a-claim"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "8"
+    },
+    "cliVersion": "0.9.2"
+  }
+}
+HEAD is now at f5084b1 project fixture
+Deleted branch stepstone/release-binding-a-claim (was f5084b1).
+[scenario exit 1]
+
+--- state after the abandoned launch
+
+$ npx -y stepstone@latest project show release-binding-a-claim --json | jq -c ".result.goal | {id, status, branch, updatedAt}"
+{"id":"release-binding-a-claim","status":"open","branch":null,"updatedAt":"2026-08-13T17:28:28.400Z"}
+[exit 0]
+
+$ git worktree list
+/tmp/stepstone-dispatch-e2e-NN4yCw/root  f5084b1 [main]
+[exit 0]
+
+$ git branch --list "stepstone/release-binding-a-claim"
+[exit 0]
+
+$ test -e ../stepstone-release-binding-a-claim && echo "workspace still present" || echo "workspace removed"
+workspace removed
+[exit 0]
+
+
+================================================================
+SCENARIO 2b  Why the clear must carry the claim's own updatedAt
+================================================================
+
+--- a stale token from before the claim is refused with the conflict exit code
+
+$ stale=$(npx -y stepstone@latest project ready --json | jq -r ".result.goals[] | select(.id == \"release-binding-a-claim\") | .updatedAt")
+claim=$(npx -y stepstone@latest project start release-binding-a-claim --branch stepstone/release-binding-a-claim --expect-updated-at "$stale" --json | jq -r ".result.goal.updatedAt")
+printf "claimed_updated_at=%s\n" "$claim"
+printf "clearing with the pre-claim token %s:\n" "$stale"
+npx -y stepstone@latest project start release-binding-a-claim --clear --expect-updated-at "$stale" --json
+printf "[exit %s]\n" "$?"
+printf "clearing with the token the claim returned:\n"
+npx -y stepstone@latest project start release-binding-a-claim --clear --expect-updated-at "$claim" --json | jq -c ".result.goal | {id, status, branch}"
+claimed_updated_at=2026-08-13T17:28:28.949Z
+clearing with the pre-claim token 2026-08-13T17:28:28.400Z:
+{
+  "ok": false,
+  "scope": "project",
+  "action": "start",
+  "error": {
+    "code": "CONFLICT",
+    "message": "Project goal release-binding-a-claim changed from 2026-08-13T17:28:28.400Z to 2026-08-13T17:28:28.949Z.",
+    "retryable": true,
+    "conflict": {
+      "type": "goal-updated-at",
+      "id": "release-binding-a-claim",
+      "expectedUpdatedAt": "2026-08-13T17:28:28.400Z",
+      "actualUpdatedAt": "2026-08-13T17:28:28.949Z",
+      "resolution": "refresh-and-retry"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.2"
+  }
+}
+[exit 4]
+clearing with the token the claim returned:
+{"id":"release-binding-a-claim","status":"open","branch":null}
+[exit 0]
+
+
+================================================================
+SCENARIO 3  Binding B: an ambiguous prompt outcome preserves custody
+================================================================
+
+--- running documented examples binding-b-workspace + binding-b-launch against a real Treehouse lease
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root. Run 'treehouse return /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root' to release it.
+Switched to a new branch 'stepstone/hold-binding-b-custody'
+Prompt outcome is ambiguous; claim, pane, and lease are preserved.
+[scenario exit 1]
+
+--- state after the ambiguous prompt: claim, pane, and lease are all preserved
+
+$ npx -y stepstone@latest project show hold-binding-b-custody --json | jq -c ".result.goal | {id, status, branch}"
+{"id":"hold-binding-b-custody","status":"open","branch":"stepstone/hold-binding-b-custody"}
+[exit 0]
+
+$ treehouse status --json | jq -c ".[] | {path, status, lease_holder}"
+{"path":"/tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root","status":"leased","lease_holder":"stepstone:hold-binding-b-custody"}
+[exit 0]
+
+$ cat "$EVENTS"
+herdr pane split --current --direction right --cwd /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root --no-focus
+herdr agent start ss-hold-binding-b-cus-2188053717 --kind claude --pane wZ:p7
+herdr agent prompt wZ:p7 Implement hold-binding-b-custody and open a PR. --wait --timeout 300000
+[exit 0]
+
+$ herdr pane list | jq -c ".result.panes"
+[{"pane_id":"wZ:p7","agent_status":"working"}]
+[exit 0]
+
+--- harness teardown of scenario 3 (not part of the documented recipe)
+
+$ workspace=$(treehouse status --json | jq -r ".[] | select(.status == \"leased\") | .path")
+npx -y stepstone@latest project start hold-binding-b-custody --clear --json >/dev/null
+git -C "$workspace" reset --hard HEAD >/dev/null && git -C "$workspace" clean -fdxq
+treehouse return "$workspace" --force --if-lease-holder "stepstone:hold-binding-b-custody"
+🌳 Worktree returned to pool.
+[exit 0]
+
+
+================================================================
+SCENARIO 4  Binding B: pane closes and is verified before the lease returns
+================================================================
+goal_id=close-binding-b-cleanly
+
+--- running documented examples binding-b-workspace + binding-b-launch, then the documented completion block and binding-b-cleanup
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root. Run 'treehouse return /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root' to release it.
+Switched to a new branch 'stepstone/close-binding-b-cleanly'
+
+[state after a successful bounded prompt]
+{"id":"close-binding-b-cleanly","status":"open","branch":"stepstone/close-binding-b-cleanly"}
+leased workspace: /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root
+workspace branch: stepstone/close-binding-b-cleanly
+{"path":"/tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root","status":"leased","lease_holder":"stepstone:close-binding-b-cleanly"}
+
+[the worker leaves a dirty checkout behind]
+ M README.md
+?? scratch-notes.txt
+!! .cache/
+
+[PR merged; documented completion from the root checkout]
+Project goal close-binding-b-cleanly is now done
+{"id":"close-binding-b-cleanly","status":"done","branch":null,"completedAt":"2026-08-13T17:28:31.466Z"}
+
+[documented cleanup: close the pane, verify it is gone, scrub, return the lease]
+HEAD is now at f5084b1 project fixture
+Removing .cache/
+Removing scratch-notes.txt
+🌳 Worktree returned to pool.
+cleanup exit: 0
+Herdr calls in order:
+herdr pane split --current --direction right --cwd /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root --no-focus
+herdr agent start ss-close-binding-b-cl-1551566658 --kind claude --pane wZ:p7
+herdr agent prompt wZ:p7 Implement close-binding-b-cleanly and open a PR. --wait --timeout 300000
+herdr pane close wZ:p7
+herdr pane list
+lease state now: {"path":"/tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root","status":"available","lease_holder":""}
+workspace scrubbed: []
+[scenario exit 0]
+
+
+================================================================
+Final roadmap state
+================================================================
+
+$ npx -y stepstone@latest project list
+[done] ship-binding-a-worker: Ship binding a worker
+[open] release-binding-a-claim: Release binding a claim
+[open] hold-binding-b-custody: Hold binding b custody
+[done] close-binding-b-cleanly: Close binding b cleanly
+[exit 0]
+
+
+================================================================
+Sandbox teardown
+================================================================
+
+$ treehouse destroy '/tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a' --all --yes | tail -1
+  1     [disposable]  8.1 KiB  /tmp/stepstone-dispatch-e2e-NN4yCw/pool/.treehouse/root-a4830a/1/root
+[exit 0]
+sandbox /tmp/stepstone-dispatch-e2e-NN4yCw removed: yes

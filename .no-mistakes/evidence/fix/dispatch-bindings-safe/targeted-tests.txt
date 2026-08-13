@@ -1,0 +1,54 @@
+
+ RUN  v4.1.10 /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZXY22S1CNK50K1WS9VC4VQH
+
+ ✓ test/roadmap.test.ts > generated roadmap > keeps the committed roadmap page byte-identical to a render of the committed goals 8ms
+ ✓ test/roadmap.test.ts > generated roadmap > names the file it was rendered from and the script that writes it 1ms
+ ✓ test/roadmap.test.ts > generated roadmap > keeps the prose it authors free of a cache-unsafe invocation 1ms
+ ✓ test/roadmap.test.ts > generated roadmap > sections goals by group in the order the groups first appear in the file 1ms
+ ✓ test/roadmap.test.ts > generated roadmap > gives goals that name no group a section of their own 1ms
+ ✓ test/roadmap.test.ts > generated roadmap > flattens a group name so stored whitespace cannot forge a section 1ms
+ ✓ test/roadmap.test.ts > generated roadmap > states each goal's status, and that the graph has it waiting 1ms
+ ✓ test/roadmap.test.ts > generated roadmap > counts the roadmap by status without printing a status nothing is in 0ms
+ ✓ test/roadmap.test.ts > generated roadmap > names every dependency with the state of the goal it names 1ms
+ ✓ test/roadmap.test.ts > generated roadmap > resolves an edge naming an ID its goal has since been renamed off 0ms
+ ✓ test/roadmap.test.ts > generated roadmap > keeps a description's own paragraphs and lists inside the goal's item 0ms
+ ✓ test/roadmap.test.ts > generated roadmap > flattens a title so a stored newline cannot break the item line 0ms
+ ✓ test/roadmap.test.ts > generated roadmap > ends with exactly one newline and no trailing blank line 0ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > keeps the generated docs/cli.md guide in sync with the contract 4ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > derives help output, the skill guide, and agent guidance from one contract 7ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > propagates the single capture workflow to every agent-facing renderer 2ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > keeps the mutating capture action out of the unconditionally safe actions 1ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > derives the repository-neutral AGENTS.md block from the same contract 2ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > keeps every guide table two columns wide despite pipes in the contract's own wording 4ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > leaves no angle-bracket placeholder for GFM to parse away as raw HTML 2ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > scopes action-limited flags to documented actions and states the limit everywhere 11ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > renders every stated rule onto both published surfaces 3ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > keeps the committed worklist skill byte-identical to the contract render 2ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > finds the absolute paths the skill is checked against, and nothing else 1ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > renders a repository-neutral skill covering the whole contract surface 2ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > uses cache-safe invocations across every published CLI artifact 5ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > spells the names the contract owns the way the contract renders them 4ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > catches a rename the generated artifacts absorb and the prose does not 2ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > requires a declared shape to be stated and lets an optional shape be absent 1ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > declares the same Node floor the package does 0ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > states the same Node floors in the documentation the contract declares 3ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > releases Binding A safely after missing executable 131ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > prints the contract-rendered help from the CLI itself 174ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > releases Binding A safely after immediate executable failure 111ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > stops Binding A on a rejected claim without clearing a claim it never held 57ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > stops Binding B on a rejected claim without clearing a claim it never held 52ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > preserves Binding A custody when its own claim token is unreadable 48ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > preserves Binding B custody when its own claim token is unreadable 50ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > preserves Binding B custody when its pane ID is unreadable 60ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > scrubs dirty Binding A workspaces after completion 111ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > closes Binding B before releasing a pre-submission failure 79ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > bounds the documented Herdr wait when no timeout is configured 28ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > preserves Binding B custody after an ambiguous bounded prompt failure 66ms
+ ✓ test/dispatch-docs.test.ts > documented dispatch bindings > verifies Binding B pane closure and dirty cleanup before returning its lease 82ms
+ ✓ test/cli-contract.test.ts > single CLI command contract > documents every implemented action and implements every documented action 1108ms
+
+ Test Files  3 passed (3)
+      Tests  45 passed (45)
+   Start at  13:14:30
+   Duration  1.62s (transform 243ms, setup 0ms, import 362ms, tests 2.25s, environment 0ms)
+

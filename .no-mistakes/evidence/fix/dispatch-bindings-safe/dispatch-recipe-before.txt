@@ -1,0 +1,168 @@
+
+================ Fixture (identical to the after-run) ================
+   [open] base-dispatch-handshake: Base dispatch handshake
+   [open] base-dispatch-cleanup: Base dispatch cleanup
+   [open] base-dispatch-clear: Base dispatch clear
+   [open] base-dispatch-ambiguous: Base dispatch ambiguous
+
+================ BEFORE 1 - Binding A: a worker that never starts leaves the goal claimed ================
+
+-- previously documented Binding A workspace + launch, AGENT_COMMAND exits 127 immediately
+   | branch="stepstone/$goal_id"
+   | workspace="../stepstone-$goal_id"
+   | git worktree add -b "$branch" "$workspace" HEAD || exit 1
+   | if ! npx -y stepstone@latest project start "$goal_id" \
+   |   --branch "$branch" \
+   |   --expect-updated-at "$updated_at"
+   | then
+   |   git worktree remove "$workspace"
+   |   git branch -D "$branch"
+   |   exit 1
+   | fi
+   | 
+   | abandon() {
+   |   npx -y stepstone@latest project start "$goal_id" --clear
+   |   git worktree remove "$workspace"
+   |   git branch -D "$branch"
+   |   exit 1
+   | }
+   | 
+   | runtime="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
+   | mkdir -p "$runtime" || abandon
+   | (
+   |   cd "$workspace" || exit 1
+   |   nohup sh -c 'exec "$@"' sh "$AGENT_COMMAND" "$goal_prompt" \
+   |     >"$runtime/agent.log" 2>&1 </dev/null &
+   |   echo $! >"$runtime/agent.pid"
+   | ) || abandon
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Preparing worktree (new branch 'stepstone/base-dispatch-handshake')
+   HEAD is now at 2dbe396 fixture
+   Started project goal base-dispatch-handshake on stepstone/base-dispatch-handshake
+   exit status: 0
+   agent log: 
+   recorded worker pid 3218217 is not running
+   roadmap goal: {"id":"base-dispatch-handshake","status":"open","branch":"stepstone/base-dispatch-handshake","updatedAt":"2026-08-13T17:10:19.151Z"}
+   worker workspace: present on disk
+   external commands the recipe ran:
+   npx -y stepstone@latest project start base-dispatch-handshake --branch stepstone/base-dispatch-handshake --expect-updated-at 2026-08-13T17:10:18.487Z
+   npx -y stepstone@latest project show base-dispatch-handshake --json
+   >> the launch reported success, so the goal stays claimed with nobody working it.
+
+================ BEFORE 2 - Binding A: cleanup refuses a dirty checkout and leaves it behind ================
+
+-- previously documented workspace + launch, worker residue, then the previously documented cleanup
+   | branch="stepstone/$goal_id"
+   | workspace="../stepstone-$goal_id"
+   | git worktree add -b "$branch" "$workspace" HEAD || exit 1
+   | if ! npx -y stepstone@latest project start "$goal_id" \
+   |   --branch "$branch" \
+   |   --expect-updated-at "$updated_at"
+   | then
+   |   git worktree remove "$workspace"
+   |   git branch -D "$branch"
+   |   exit 1
+   | fi
+   | 
+   | abandon() {
+   |   npx -y stepstone@latest project start "$goal_id" --clear
+   |   git worktree remove "$workspace"
+   |   git branch -D "$branch"
+   |   exit 1
+   | }
+   | 
+   | runtime="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
+   | mkdir -p "$runtime" || abandon
+   | (
+   |   cd "$workspace" || exit 1
+   |   nohup sh -c 'exec "$@"' sh "$AGENT_COMMAND" "$goal_prompt" \
+   |     >"$runtime/agent.log" 2>&1 </dev/null &
+   |   echo $! >"$runtime/agent.pid"
+   | ) || abandon
+   | 
+   | # --- glue: the worker finishes and leaves residue behind ---
+   | kill "$(cat "$XDG_STATE_HOME/stepstone/dispatch/$goal_id/agent.pid")" 2>/dev/null
+   | printf "rewritten by the worker\n" >"$workspace/README.md"
+   | mkdir -p "$workspace/.cache" && : >"$workspace/.cache/build-output" && : >"$workspace/untracked.txt"
+   | # --- end glue ---
+   | 
+   | git worktree remove "$workspace"
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Preparing worktree (new branch 'stepstone/base-dispatch-cleanup')
+   HEAD is now at 2dbe396 fixture
+   Started project goal base-dispatch-cleanup on stepstone/base-dispatch-cleanup
+   fatal: '../stepstone-base-dispatch-cleanup' contains modified or untracked files, use --force to delete it
+   exit status: 128
+   worker workspace: present on disk
+   git worktrees:
+   /tmp/ss-e2e/sandbox-base/repo                               2dbe396 [main]
+   /tmp/ss-e2e/sandbox-base/stepstone-base-dispatch-cleanup    2dbe396 [stepstone/base-dispatch-cleanup]
+   /tmp/ss-e2e/sandbox-base/stepstone-base-dispatch-handshake  2dbe396 [stepstone/base-dispatch-handshake]
+   >> the worktree and its branch survive the documented cleanup.
+
+================ BEFORE 3 - Binding A: abandoning clears whatever claim it finds ================
+   another driver holds the goal:
+   roadmap goal: {"id":"base-dispatch-clear","status":"open","branch":"other-driver/branch","updatedAt":"2026-08-13T17:10:19.750Z"}
+
+-- previously documented abandon clear
+   | npx -y stepstone@latest project start "$goal_id" --clear
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Released project goal base-dispatch-clear
+   exit status: 0
+   roadmap goal: {"id":"base-dispatch-clear","status":"open","branch":null,"updatedAt":"2026-08-13T17:10:19.976Z"}
+   >> the other driver lost its claim to an unrelated abandoning driver.
+
+================ BEFORE 4 - Binding B: an ambiguous prompt drops custody and leaks the pane ================
+
+-- previously documented Binding B workspace + launch, prompt --wait fails after submission
+   | lease_holder="stepstone:$goal_id"
+   | branch="stepstone/$goal_id"
+   | base=$(git rev-parse HEAD)
+   | workspace=$(treehouse get --lease --lease-holder "$lease_holder")
+   | if ! npx -y stepstone@latest project start "$goal_id" \
+   |   --branch "$branch" \
+   |   --expect-updated-at "$updated_at"
+   | then
+   |   treehouse return "$workspace" --if-lease-holder "$lease_holder"
+   |   exit 1
+   | fi
+   | 
+   | abandon() {
+   |   npx -y stepstone@latest project start "$goal_id" --clear
+   |   treehouse return "$workspace" --if-lease-holder "$lease_holder"
+   |   exit 1
+   | }
+   | 
+   | git -C "$workspace" checkout -b "$branch" "$base" || abandon
+   | pane_id=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus \
+   |   | jq -r '.result.pane.pane_id')
+   | case "$pane_id" in "" | null) abandon ;; esac
+   | agent_name=$(printf 'ss-%.18s-%s' "$goal_id" "$(printf %s "$goal_id" | cksum | cut -d' ' -f1)")
+   | herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id" || abandon
+   | herdr agent prompt "$pane_id" "$goal_prompt" --wait || abandon
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Started project goal base-dispatch-ambiguous on stepstone/base-dispatch-ambiguous
+   Switched to a new branch 'stepstone/base-dispatch-ambiguous'
+   herdr: no response before the timeout; the prompt may have been delivered
+   Released project goal base-dispatch-ambiguous
+   treehouse: lease returned with a clean checkout
+   exit status: 1
+   roadmap goal: {"id":"base-dispatch-ambiguous","status":"open","branch":null,"updatedAt":"2026-08-13T17:10:20.523Z"}
+   leased workspace: gone from disk
+   panes Herdr still lists: [{"pane_id":"pane-1"}]
+   external commands the recipe ran:
+   treehouse get --lease --lease-holder stepstone:base-dispatch-ambiguous
+   npx -y stepstone@latest project start base-dispatch-ambiguous --branch stepstone/base-dispatch-ambiguous --expect-updated-at 2026-08-13T17:10:18.830Z
+   herdr pane split --current --direction right --cwd /tmp/ss-e2e/sandbox-base/pool-base --no-focus
+   herdr agent start ss-base-dispatch-ambi-4010017096 --kind claude --pane pane-1
+   herdr agent prompt pane-1 Implement the selected goal --wait
+   npx -y stepstone@latest project start base-dispatch-ambiguous --clear
+   treehouse return /tmp/ss-e2e/sandbox-base/pool-base --if-lease-holder stepstone:base-dispatch-ambiguous
+   npx -y stepstone@latest project show base-dispatch-ambiguous --json
+   herdr pane list
+   >> the claim is cleared and the lease is back in the pool while the pane, its agent,
+      and whatever the prompt started are still alive.

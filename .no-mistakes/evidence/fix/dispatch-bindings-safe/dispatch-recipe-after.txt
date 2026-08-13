@@ -1,0 +1,372 @@
+
+================ The documented recipe under test ================
+docs/dispatch.md, extracted verbatim by fenced-block marker:
+
+   | # dispatch-example: binding-a-workspace
+   | branch="stepstone/$goal_id"
+   | workspace="../stepstone-$goal_id"
+   | git worktree add -b "$branch" "$workspace" HEAD || exit 1
+
+   | # dispatch-example: binding-a-launch
+   | cleanup_workspace() {
+   |   git -C "$workspace" reset --hard HEAD &&
+   |     git -C "$workspace" clean -fdx &&
+   |     workspace_status=$(git -C "$workspace" status --porcelain) &&
+   |     test -z "$workspace_status" &&
+   |     git worktree remove --force "$workspace" &&
+   |     git branch -D "$branch"
+   | }
+   | 
+   | if ! claim_json=$(npx -y stepstone@latest project start "$goal_id" \
+   |   --branch "$branch" \
+   |   --expect-updated-at "$updated_at" \
+   |   --json)
+   | then
+   |   cleanup_workspace || exit 1
+   |   exit 1
+   | fi
+   | 
+   | if ! claimed_updated_at=$(printf '%s\n' "$claim_json" | jq -er '.result.goal.updatedAt')
+   | then
+   |   printf '%s\n' "Claim succeeded but its updatedAt could not be read; custody is preserved." >&2
+   |   exit 1
+   | fi
+   | 
+   | abandon() {
+   |   npx -y stepstone@latest project start "$goal_id" --clear \
+   |     --expect-updated-at "$claimed_updated_at" \
+   |     --json || exit 1
+   |   cleanup_workspace || exit 1
+   |   exit 1
+   | }
+   | 
+   | command -v "$AGENT_COMMAND" >/dev/null 2>&1 || abandon
+   | runtime="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
+   | mkdir -p "$runtime" || abandon
+   | (
+   |   cd "$workspace" || exit 1
+   |   nohup "$AGENT_COMMAND" "$goal_prompt" >"$runtime/agent.log" 2>&1 </dev/null &
+   |   agent_pid=$!
+   |   printf '%s\n' "$agent_pid" >"$runtime/agent.pid" &&
+   |     sleep "${AGENT_STARTUP_GRACE_SECONDS:-1}" &&
+   |     kill -0 "$agent_pid" 2>/dev/null
+   | ) || abandon
+
+   | # dispatch-example: binding-a-cleanup
+   | cleanup_workspace || exit 1
+
+   | # dispatch-example: binding-b-workspace
+   | lease_holder="stepstone:$goal_id"
+   | branch="stepstone/$goal_id"
+   | base=$(git rev-parse HEAD) || exit 1
+   | workspace=$(treehouse get --lease --lease-holder "$lease_holder") || exit 1
+   | test -n "$workspace" || exit 1
+
+   | # dispatch-example: binding-b-launch
+   | pane_id=
+   | 
+   | cleanup_lease() {
+   |   git -C "$workspace" reset --hard HEAD &&
+   |     git -C "$workspace" clean -fdx &&
+   |     workspace_status=$(git -C "$workspace" status --porcelain) &&
+   |     test -z "$workspace_status" &&
+   |     treehouse return "$workspace" --force --if-lease-holder "$lease_holder"
+   | }
+   | 
+   | close_pane() {
+   |   test -z "$pane_id" && return 0
+   |   herdr pane close "$pane_id" || return 1
+   |   pane_list=$(herdr pane list) || return 1
+   |   pane_present=$(printf '%s\n' "$pane_list" |
+   |     jq -r --arg pane "$pane_id" 'any(.result.panes[]; .pane_id == $pane)') || return 1
+   |   test "$pane_present" = false || return 1
+   |   pane_id=
+   | }
+   | 
+   | if ! claim_json=$(npx -y stepstone@latest project start "$goal_id" \
+   |   --branch "$branch" \
+   |   --expect-updated-at "$updated_at" \
+   |   --json)
+   | then
+   |   cleanup_lease || exit 1
+   |   exit 1
+   | fi
+   | 
+   | if ! claimed_updated_at=$(printf '%s\n' "$claim_json" | jq -er '.result.goal.updatedAt')
+   | then
+   |   printf '%s\n' "Claim succeeded but its updatedAt could not be read; custody is preserved." >&2
+   |   exit 1
+   | fi
+   | 
+   | abandon() {
+   |   close_pane || exit 1
+   |   npx -y stepstone@latest project start "$goal_id" --clear \
+   |     --expect-updated-at "$claimed_updated_at" \
+   |     --json || exit 1
+   |   cleanup_lease || exit 1
+   |   exit 1
+   | }
+   | 
+   | git -C "$workspace" checkout -b "$branch" "$base" || abandon
+   | pane_json=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus) ||
+   |   abandon
+   | if ! pane_id=$(printf '%s\n' "$pane_json" | jq -er '.result.pane.pane_id')
+   | then
+   |   printf '%s\n' "A pane may exist but its ID could not be read; custody is preserved." >&2
+   |   exit 1
+   | fi
+   | agent_name=$(printf 'ss-%.18s-%s' "$goal_id" "$(printf %s "$goal_id" | cksum | cut -d' ' -f1)")
+   | herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id" || abandon
+   | if ! herdr agent prompt "$pane_id" "$goal_prompt" --wait \
+   |   --timeout "${HERDR_PROMPT_TIMEOUT_MS:-300000}"
+   | then
+   |   printf '%s\n' "Prompt outcome is ambiguous; claim, pane, and lease are preserved." >&2
+   |   exit 1
+   | fi
+
+   | # dispatch-example: binding-b-cleanup
+   | close_pane || exit 1
+   | cleanup_lease || exit 1
+
+the documented abandon clear:
+   | npx -y stepstone@latest project start "$goal_id" --clear \
+   |   --expect-updated-at "$claimed_updated_at"
+
+the documented completion step:
+   | updated_at=$(npx -y stepstone@latest project show "$goal_id" --json | jq -r '.result.goal.updatedAt')
+   | npx -y stepstone@latest project complete "$goal_id" \
+   |   --expect-updated-at "$updated_at" \
+   |   --confirm
+
+the documented liveness wait:
+   | herdr agent wait "$pane_id" --timeout "${HERDR_WAIT_TIMEOUT_MS:-300000}"
+
+================ Fixture ================
+npx on PATH is a shim onto the real local CLI at /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZXY22S1CNK50K1WS9VC4VQH/src/cli.ts, so the documented
+`npx -y stepstone@latest ...` command lines run this branch of stepstone unchanged.
+   npx resolves to: /tmp/ss-e2e/sandbox/bin/npx
+   herdr resolves to: /tmp/ss-e2e/sandbox/bin/herdr
+   treehouse resolves to: /tmp/ss-e2e/sandbox/bin/treehouse
+real git repository:
+   32cc505 fixture
+real stepstone roadmap, seeded through the documented CLI:
+   [open] demo-dispatch-handshake: Demo dispatch handshake
+   [open] demo-dispatch-clear: Demo dispatch clear
+   [open] demo-dispatch-cleanup: Demo dispatch cleanup
+   [open] demo-dispatch-ambiguous: Demo dispatch ambiguous
+   [open] demo-dispatch-pane: Demo dispatch pane
+
+================ Scenario 1 - Binding A: the detached agent dies at startup ================
+
+-- documented Binding A workspace + launch, with an AGENT_COMMAND that exits 127 immediately
+   | <<< binding-a-workspace snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | <<< binding-a-launch snippet from docs/dispatch.md, verbatim - printed in full above >>>
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Preparing worktree (new branch 'stepstone/demo-dispatch-handshake')
+   HEAD is now at 32cc505 fixture
+   {"ok": true, "action": "start", "result.goal": {"id": "demo-dispatch-handshake", "status": "open", "updatedAt": "2026-08-13T17:11:32.398Z"}}   <- stepstone envelope, trimmed here to result.goal and error
+   HEAD is now at 32cc505 fixture
+   Deleted branch stepstone/demo-dispatch-handshake (was 32cc505).
+   exit status: 1
+   roadmap goal: {"id":"demo-dispatch-handshake","status":"open","branch":null,"updatedAt":"2026-08-13T17:11:32.398Z"}
+   worker workspace: gone from disk
+   git worktrees:
+   /tmp/ss-e2e/sandbox/repo  32cc505 [main]
+   git branches: main 
+   external commands the recipe ran:
+   npx -y stepstone@latest project start demo-dispatch-handshake --branch stepstone/demo-dispatch-handshake --expect-updated-at 2026-08-13T17:11:30.428Z --json
+   npx -y stepstone@latest project start demo-dispatch-handshake --clear --expect-updated-at 2026-08-13T17:11:31.268Z --json
+   npx -y stepstone@latest project show demo-dispatch-handshake --json
+
+================ Scenario 2 - Binding A: a rejected claim discards the workspace and clears nothing ================
+   another driver already moved this goal, so the token this driver read is stale: 2026-01-01T00:00:00.000Z
+
+-- documented Binding A workspace + launch, with a claim that loses the race
+   | <<< binding-a-workspace snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | <<< binding-a-launch snippet from docs/dispatch.md, verbatim - printed in full above >>>
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Preparing worktree (new branch 'stepstone/demo-dispatch-handshake')
+   HEAD is now at 32cc505 fixture
+   {"ok": false, "action": "start", "error": {"code": "CONFLICT", "message": "Project goal demo-dispatch-handshake changed from 2026-01-01T00:00:00.000Z to 2026-08-13T17:11:32.398Z.", "conflict": {"expectedUpdatedAt": "2026-01-01T00:00:00.000Z", "actualUpdatedAt": "2026-08-13T17:11:32.398Z", "resolution": "refresh-and-retry"}}}   <- stepstone envelope, trimmed here to result.goal and error
+   HEAD is now at 32cc505 fixture
+   Deleted branch stepstone/demo-dispatch-handshake (was 32cc505).
+   exit status: 1
+   roadmap goal: {"id":"demo-dispatch-handshake","status":"open","branch":null,"updatedAt":"2026-08-13T17:11:32.398Z"}
+   worker workspace: gone from disk
+   git worktrees:
+   /tmp/ss-e2e/sandbox/repo  32cc505 [main]
+   git branches: main 
+   external commands the recipe ran:
+   npx -y stepstone@latest project start demo-dispatch-handshake --branch stepstone/demo-dispatch-handshake --expect-updated-at 2026-01-01T00:00:00.000Z --json
+   npx -y stepstone@latest project show demo-dispatch-handshake --json
+
+================ Scenario 3 - Binding A: abandoning never clears somebody else's newer claim ================
+
+-- documented Binding A workspace + launch, with a worker that survives the startup handshake
+   | <<< binding-a-workspace snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | <<< binding-a-launch snippet from docs/dispatch.md, verbatim - printed in full above >>>
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Preparing worktree (new branch 'stepstone/demo-dispatch-clear')
+   HEAD is now at 32cc505 fixture
+   exit status: 0
+   roadmap goal: {"id":"demo-dispatch-clear","status":"open","branch":"stepstone/demo-dispatch-clear","updatedAt":"2026-08-13T17:11:33.195Z"}
+   git worktrees:
+   /tmp/ss-e2e/sandbox/repo                           32cc505 [main]
+   /tmp/ss-e2e/sandbox/stepstone-demo-dispatch-clear  32cc505 [stepstone/demo-dispatch-clear]
+   detached worker pid 3223600: sleep 45
+   worker log/pid live outside the checkout: agent.log agent.pid 
+   worker checkout stays clean for review: 0 changed files
+   token returned by this driver's own claim: 2026-08-13T17:11:33.195Z
+
+-- meanwhile another driver takes the goal over
+   roadmap goal: {"id":"demo-dispatch-clear","status":"open","branch":"other-driver/branch","updatedAt":"2026-08-13T17:11:34.750Z"}
+
+-- documented abandon clear, using the updatedAt returned by this driver's own claim
+   | npx -y stepstone@latest project start "$goal_id" --clear \
+   |   --expect-updated-at "$claimed_updated_at"
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Project goal demo-dispatch-clear changed from 2026-08-13T17:11:33.195Z to 2026-08-13T17:11:34.750Z.
+   exit status: 4
+   documented clear exit status 4 (4 = conflict), the other driver keeps custody:
+   roadmap goal: {"id":"demo-dispatch-clear","status":"open","branch":"other-driver/branch","updatedAt":"2026-08-13T17:11:34.750Z"}
+
+================ Scenario 4 - Binding A: dirty workspace cleanup is non-interactive and verified ================
+
+-- documented workspace + launch, worker residue, the documented completion step, then the documented cleanup
+   | <<< binding-a-workspace snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | <<< binding-a-launch snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | 
+   | # --- glue: the worker finishes and leaves residue behind ---
+   | kill "$(cat "$XDG_STATE_HOME/stepstone/dispatch/$goal_id/agent.pid")" 2>/dev/null
+   | printf "rewritten by the worker\n" >"$workspace/README.md"
+   | mkdir -p "$workspace/.cache" && : >"$workspace/.cache/build-output" && : >"$workspace/untracked.txt"
+   | echo "worker residue before cleanup:"
+   | git -C "$workspace" status --porcelain --ignored
+   | # --- end glue ---
+   | 
+   | updated_at=$(npx -y stepstone@latest project show "$goal_id" --json | jq -r '.result.goal.updatedAt')
+   | npx -y stepstone@latest project complete "$goal_id" \
+   |   --expect-updated-at "$updated_at" \
+   |   --confirm
+   | <<< binding-a-cleanup snippet from docs/dispatch.md, verbatim - printed in full above >>>
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Preparing worktree (new branch 'stepstone/demo-dispatch-cleanup')
+   HEAD is now at 32cc505 fixture
+   worker residue before cleanup:
+    M README.md
+   ?? untracked.txt
+   !! .cache/
+   Project goal demo-dispatch-cleanup is now done
+   HEAD is now at 32cc505 fixture
+   Removing .cache/
+   Removing untracked.txt
+   Deleted branch stepstone/demo-dispatch-cleanup (was 32cc505).
+   exit status: 0
+   worker workspace: gone from disk
+   git worktrees:
+   /tmp/ss-e2e/sandbox/repo  32cc505 [main]
+   git branches: main 
+   roadmap goal: {"id":"demo-dispatch-cleanup","status":"done","branch":null,"updatedAt":"2026-08-13T17:11:36.958Z"}
+
+================ Scenario 5 - Binding B: an ambiguous bounded prompt keeps custody ================
+   Treehouse hands out a pooled worktree on a detached HEAD: HEAD
+
+-- documented Binding B workspace + launch, where 'herdr agent prompt --wait' fails after submission
+   | <<< binding-b-workspace snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | <<< binding-b-launch snippet from docs/dispatch.md, verbatim - printed in full above >>>
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Switched to a new branch 'stepstone/demo-dispatch-ambiguous'
+   herdr: no response before the timeout; the prompt may have been delivered
+   Prompt outcome is ambiguous; claim, pane, and lease are preserved.
+   exit status: 1
+   roadmap goal: {"id":"demo-dispatch-ambiguous","status":"open","branch":"stepstone/demo-dispatch-ambiguous","updatedAt":"2026-08-13T17:11:37.454Z"}
+   leased workspace: present on disk
+   pane still open (never closed): [{"pane_id":"pane-1"}]
+   external commands the recipe ran:
+   treehouse get --lease --lease-holder stepstone:demo-dispatch-ambiguous
+   npx -y stepstone@latest project start demo-dispatch-ambiguous --branch stepstone/demo-dispatch-ambiguous --expect-updated-at 2026-08-13T17:11:30.755Z --json
+   herdr pane split --current --direction right --cwd /tmp/ss-e2e/sandbox/pool-1 --no-focus
+   herdr agent start ss-demo-dispatch-ambi-525725860 --kind claude --pane pane-1
+   herdr agent prompt pane-1 Implement the selected goal --wait --timeout 250
+   npx -y stepstone@latest project show demo-dispatch-ambiguous --json
+   herdr pane list
+
+================ Scenario 6 - Binding B: pane closes and is verified before the lease goes back ================
+
+-- documented Binding B workspace + launch, worker residue, the documented completion step, then the documented cleanup
+   | <<< binding-b-workspace snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | <<< binding-b-launch snippet from docs/dispatch.md, verbatim - printed in full above >>>
+   | 
+   | # --- glue: the worker leaves residue in the leased checkout ---
+   | echo "pane hosting the agent:"
+   | herdr pane list | jq -c ".result.panes"
+   | printf "rewritten by the worker\n" >"$workspace/README.md"
+   | mkdir -p "$workspace/.cache" && : >"$workspace/.cache/build-output" && : >"$workspace/untracked.txt"
+   | echo "worker residue before cleanup:"
+   | git -C "$workspace" status --porcelain --ignored
+   | # --- end glue ---
+   | 
+   | updated_at=$(npx -y stepstone@latest project show "$goal_id" --json | jq -r '.result.goal.updatedAt')
+   | npx -y stepstone@latest project complete "$goal_id" \
+   |   --expect-updated-at "$updated_at" \
+   |   --confirm
+   | <<< binding-b-cleanup snippet from docs/dispatch.md, verbatim - printed in full above >>>
+
+   $ sh -u scenario.sh   (stdin closed - nothing may prompt)
+   Switched to a new branch 'stepstone/demo-dispatch-pane'
+   pane hosting the agent:
+   [{"pane_id":"pane-1"}]
+   worker residue before cleanup:
+    M README.md
+   ?? untracked.txt
+   !! .cache/
+   Project goal demo-dispatch-pane is now done
+   HEAD is now at 32cc505 fixture
+   Removing .cache/
+   Removing untracked.txt
+   treehouse: lease returned with a clean checkout
+   exit status: 0
+   roadmap goal: {"id":"demo-dispatch-pane","status":"done","branch":null,"updatedAt":"2026-08-13T17:11:38.476Z"}
+   leased workspace: gone from disk
+   panes Herdr still lists: []
+   git worktrees:
+   /tmp/ss-e2e/sandbox/repo  32cc505 [main]
+   external commands the recipe ran:
+   treehouse get --lease --lease-holder stepstone:demo-dispatch-pane
+   npx -y stepstone@latest project start demo-dispatch-pane --branch stepstone/demo-dispatch-pane --expect-updated-at 2026-08-13T17:11:30.864Z --json
+   herdr pane split --current --direction right --cwd /tmp/ss-e2e/sandbox/pool-2 --no-focus
+   herdr agent start ss-demo-dispatch-pane-608169224 --kind claude --pane pane-1
+   herdr agent prompt pane-1 Implement the selected goal --wait --timeout 300000
+   herdr pane list
+   npx -y stepstone@latest project show demo-dispatch-pane --json
+   npx -y stepstone@latest project complete demo-dispatch-pane --expect-updated-at 2026-08-13T17:11:38.136Z --confirm
+   herdr pane close pane-1
+   herdr pane list
+   treehouse return /tmp/ss-e2e/sandbox/pool-2 --force --if-lease-holder stepstone:demo-dispatch-pane
+   npx -y stepstone@latest project show demo-dispatch-pane --json
+   herdr pane list
+
+================ Scenario 7 - the documented liveness wait is bounded by default ================
+
+-- documented command, with HERDR_WAIT_TIMEOUT_MS unset
+   | herdr agent wait "$pane_id" --timeout "${HERDR_WAIT_TIMEOUT_MS:-300000}"
+   exit status: 0
+   external commands the recipe ran:
+   herdr agent wait pane-1 --timeout 300000
+
+================ Final roadmap state ================
+   [open] demo-dispatch-handshake: Demo dispatch handshake
+   [open] demo-dispatch-clear: Demo dispatch clear
+   [done] demo-dispatch-cleanup: Demo dispatch cleanup
+   [open] demo-dispatch-ambiguous: Demo dispatch ambiguous
+   [done] demo-dispatch-pane: Demo dispatch pane
+
+git worktrees left behind by the demo:
+   /tmp/ss-e2e/sandbox/repo  32cc505 [main]
+git branches left behind by the demo: main stepstone/demo-dispatch-ambiguous stepstone/demo-dispatch-pane 

@@ -1,0 +1,34 @@
+# Do the new tests actually catch a regression in the shipped recipe?
+# Each block below removes one safety guarantee from docs/dispatch.md and
+# re-runs test/dispatch-docs.test.ts. The document is restored after each one.
+
+
+== regression 1: the Herdr prompt goes back to an unbounded wait ==
+removed: --timeout "${HERDR_PROMPT_TIMEOUT_MS:-300000}"
+ × bounds the documented Herdr prompt when no timeout is configured 47ms
+ × preserves Binding B custody after an ambiguous bounded prompt failure 43ms
+      Tests  2 failed | 11 passed (13)
+
+
+== regression 2: Binding A clears its claim without the token that claim returned ==
+removed: --expect-updated-at "$claimed_updated_at" from abandon()
+ × releases Binding A safely after missing executable 123ms
+ × releases Binding A safely after immediate executable failure 102ms
+      Tests  2 failed | 11 passed (13)
+
+
+== regression 3: Binding B returns the Treehouse lease without closing its pane ==
+removed: close_pane || exit 1 from the documented Binding B cleanup
+ × verifies Binding B pane closure and dirty cleanup before returning its lease 61ms
+      Tests  1 failed | 12 passed (13)
+
+
+== regression 4: the detached launch skips its startup handshake ==
+removed: the command -v preflight and the kill -0 startup grace
+ × releases Binding A safely after missing executable 125ms
+ × releases Binding A safely after immediate executable failure 54ms
+      Tests  2 failed | 11 passed (13)
+
+
+== document restored; the shipped recipe passes ==
+      Tests  13 passed (13)

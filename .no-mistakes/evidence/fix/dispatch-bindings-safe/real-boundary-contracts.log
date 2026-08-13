@@ -1,0 +1,56 @@
+# The documented commands checked against the live Herdr and Treehouse CLIs
+#
+# The dispatch recipe is only safe if the flags it prescribes exist and mean
+# what the recipe assumes. These are the real tools installed on this machine.
+
+
+== herdr agent prompt --help (the hazard the recipe now bounds) ==
+      --wait
+          Wait for the first matching state observed after submission
+
+      --until <STATUS>
+          State to match after --wait; repeat for more than one state
+          
+          [possible values: idle, working, blocked, done, unknown]
+
+      --timeout <MS>
+          Fail after this many milliseconds
+
+When submission starts from a non-working state, --wait first requires an observed state change within 5000ms; otherwise it returns agent_prompt_stalled. A shorter --timeout returns timeout instead. It then matches idle, done, or blocked by default, or any exact --until state. It does not track turns: if the agent is already working, that active turn's completion may match. Without --timeout, the settled-state wait is indefinite.
+
+
+
+== herdr agent wait --help ==
+      --timeout <MS>
+          Fail after this many milliseconds
+
+Without --until, matches idle, done, or blocked. Use --until unknown explicitly when needed. Without --timeout, waits indefinitely.
+
+
+
+== treehouse get --help ==
+Flags:
+  -h, --help                  help for get
+      --json                  Print lease allocation as JSON (requires --lease)
+      --lease                 Durably lease a worktree without opening a subshell; print only its path to stdout
+      --lease-holder string   Optional label recorded as the lease holder (defaults to $TREEHOUSE_LEASE_HOLDER)
+
+
+== treehouse return --help ==
+Flags:
+      --force                    Clean, reset, and return without prompting
+  -h, --help                     help for return
+      --if-lease-holder string   Return only if the current lease has this holder
+      --if-lease-id string       Return only if the current lease has this identity
+
+
+== the pane-closure predicate the recipe uses, evaluated against the live pane list ==
+jq expression taken from close_pane in docs/dispatch.md:
+  any(.result.panes[]; .pane_id == $pane)
+
+live pane ids reported by "herdr pane list": wM:p1P wM:p5M wM:p5P wX:pP wX:p2B wX:p2N wH:p1A wH:p1D wH:p1K wW:p4 wW:p11 wY:p1
+predicate for a live pane (wM:p1P): true
+predicate for a pane that is not open (wZ:p7): false
+
+A closed pane therefore reports false, which is exactly the condition
+close_pane requires before the recipe returns a Treehouse lease.

@@ -1,0 +1,105 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+body{max-width:52rem;margin:1.5rem auto;padding:0 1.5rem;font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:#1f2328;background:#fff}
+h2,h3{line-height:1.25;margin-top:1.4em;border-bottom:1px solid #d1d9e0;padding-bottom:.3em}
+code{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f6f8fa;padding:.15em .35em;border-radius:6px}
+pre{background:#f6f8fa;border:1px solid #d1d9e0;border-radius:6px;padding:1rem;overflow:auto}
+pre code{background:none;padding:0}
+a{color:#0969da}
+</style>
+<h2>Binding B: Herdr panes and Treehouse leases</h2>
+<p>This binding uses Treehouse only for workspace isolation and Herdr only for session hosting.
+Neither tool owns roadmap state.</p>
+<p>Acquire a durable workspace lease, and choose the branch name here rather than reading it back from the leased checkout.
+A pooled worktree can arrive on a detached HEAD, where <code>git branch --show-current</code> prints nothing and the claim below is rejected for a missing branch:</p>
+<pre><code class="language-sh"># dispatch-example: binding-b-workspace
+lease_holder=&quot;stepstone:$goal_id&quot;
+branch=&quot;stepstone/$goal_id&quot;
+base=$(git rev-parse HEAD) || exit 1
+workspace=$(treehouse get --lease --lease-holder &quot;$lease_holder&quot;) || exit 1
+test -n &quot;$workspace&quot; || exit 1
+</code></pre>
+<p>Claim the goal from the root checkout and retain the <code>updatedAt</code> returned by that exact claim.
+Every safe pre-submission failure closes and verifies any pane, releases the claim with that token, scrubs the checkout, and force-returns the lease.
+Once prompt submission has been attempted, a timeout or transport failure is ambiguous, so custody is preserved for inspection instead of assuming no worker is running:</p>
+<pre><code class="language-sh"># dispatch-example: binding-b-launch
+pane_id=
+
+cleanup_lease() {
+  git -C &quot;$workspace&quot; reset --hard HEAD &amp;&amp;
+    git -C &quot;$workspace&quot; clean -fdx &amp;&amp;
+    workspace_status=$(git -C &quot;$workspace&quot; status --porcelain) &amp;&amp;
+    test -z &quot;$workspace_status&quot; &amp;&amp;
+    treehouse return &quot;$workspace&quot; --force --if-lease-holder &quot;$lease_holder&quot;
+}
+
+close_pane() {
+  test -z &quot;$pane_id&quot; &amp;&amp; return 0
+  herdr pane close &quot;$pane_id&quot; || return 1
+  pane_list=$(herdr pane list) || return 1
+  pane_present=$(printf '%s\n' &quot;$pane_list&quot; |
+    jq -r --arg pane &quot;$pane_id&quot; 'any(.result.panes[]; .pane_id == $pane)') || return 1
+  test &quot;$pane_present&quot; = false || return 1
+  pane_id=
+}
+
+if ! claim_json=$(npx -y stepstone@latest project start &quot;$goal_id&quot; \
+  --branch &quot;$branch&quot; \
+  --expect-updated-at &quot;$updated_at&quot; \
+  --json)
+then
+  cleanup_lease || exit 1
+  exit 1
+fi
+
+if ! claimed_updated_at=$(printf '%s\n' &quot;$claim_json&quot; | jq -er '.result.goal.updatedAt')
+then
+  printf '%s\n' &quot;Claim succeeded but its updatedAt could not be read; custody is preserved.&quot; &gt;&amp;2
+  exit 1
+fi
+
+abandon() {
+  close_pane || exit 1
+  npx -y stepstone@latest project start &quot;$goal_id&quot; --clear \
+    --expect-updated-at &quot;$claimed_updated_at&quot; \
+    --json || exit 1
+  cleanup_lease || exit 1
+  exit 1
+}
+
+git -C &quot;$workspace&quot; checkout -b &quot;$branch&quot; &quot;$base&quot; || abandon
+pane_json=$(herdr pane split --current --direction right --cwd &quot;$workspace&quot; --no-focus) ||
+  abandon
+if ! pane_id=$(printf '%s\n' &quot;$pane_json&quot; | jq -er '.result.pane.pane_id')
+then
+  printf '%s\n' &quot;A pane may exist but its ID could not be read; custody is preserved.&quot; &gt;&amp;2
+  exit 1
+fi
+agent_name=$(printf 'ss-%.18s-%s' &quot;$goal_id&quot; &quot;$(printf %s &quot;$goal_id&quot; | cksum | cut -d' ' -f1)&quot;)
+herdr agent start &quot;$agent_name&quot; --kind &quot;$HERDR_AGENT_KIND&quot; --pane &quot;$pane_id&quot; || abandon
+if ! herdr agent prompt &quot;$pane_id&quot; &quot;$goal_prompt&quot; --wait \
+  --timeout &quot;${HERDR_PROMPT_TIMEOUT_MS:-300000}&quot;
+then
+  printf '%s\n' &quot;Prompt outcome is ambiguous; claim, pane, and lease are preserved.&quot; &gt;&amp;2
+  exit 1
+fi
+</code></pre>
+<p>Herdr answers over its socket API in a JSON envelope, so the pane ID is read out of <code>.result.pane.pane_id</code>; passing the whole response to <code>--pane</code> starts nothing.
+If the successful split returns an unreadable envelope, the driver preserves the claim and lease because it cannot prove which pane to close.</p>
+<p>Herdr requires an agent name matching <code>[a-z][a-z0-9_-]{0,31}</code> and unique among live agents, so the goal ID cannot be the name: most IDs on a real roadmap exceed the 32 characters, and <code>agent start</code> would fail every dispatch.
+The derived name keeps a readable prefix of the ID inside that limit and appends a checksum of the full ID, which stays unique where truncation alone would collide.
+Once the agent is running, Herdr accepts the hosting pane ID wherever it accepts a name, so the calls after <code>agent start</code> target <code>$pane_id</code> and never depend on that derivation.</p>
+<p><code>stepstone/$goal_id</code> is deterministic, and neither <code>start --clear</code> nor returning a lease deletes a branch, so re-dispatching a goal whose earlier attempt still has its branch fails at <code>checkout -b</code>.
+That failure closes any created pane, releases the claim, scrubs the checkout, and returns the lease instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
+Delete or rename the stale branch deliberately, once you know whether its commits are still wanted.</p>
+<p>Use bounded waits such as <code>herdr agent wait &quot;$pane_id&quot; --timeout &quot;${HERDR_WAIT_TIMEOUT_MS:-300000}&quot;</code> and use <code>herdr agent read &quot;$pane_id&quot;</code> for liveness and diagnostics.
+A wait timeout preserves custody because the request may have reached the agent before the client lost its response.
+Those signals never replace merged-PR evidence.</p>
+<p>After merge and completion, close the pane, verify that Herdr no longer lists it, scrub the checkout, and only then force-return the lease:</p>
+<pre><code class="language-sh"># dispatch-example: binding-b-cleanup
+close_pane || exit 1
+cleanup_lease || exit 1
+</code></pre>
+<p>Closing the hosting pane ends its Herdr agent.
+On abandonment the same verified close happens before claim release and lease return, so Treehouse never receives a checkout still owned by a live pane.</p>

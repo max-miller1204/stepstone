@@ -1,0 +1,80 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+body{max-width:52rem;margin:1.5rem auto;padding:0 1.5rem;font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:#1f2328;background:#fff}
+h2,h3{line-height:1.25;margin-top:1.4em;border-bottom:1px solid #d1d9e0;padding-bottom:.3em}
+code{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f6f8fa;padding:.15em .35em;border-radius:6px}
+pre{background:#f6f8fa;border:1px solid #d1d9e0;border-radius:6px;padding:1rem;overflow:auto}
+pre code{background:none;padding:0}
+a{color:#0969da}
+</style>
+<h2>Binding A: Git worktrees and detached processes</h2>
+<p>This baseline needs Git, a shell, and the configured agent executable.
+The root session remains in the default-branch checkout.</p>
+<p>Create the isolated workspace and branch:</p>
+<pre><code class="language-sh"># dispatch-example: binding-a-workspace
+branch=&quot;stepstone/$goal_id&quot;
+workspace=&quot;../stepstone-$goal_id&quot;
+git worktree add -b &quot;$branch&quot; &quot;$workspace&quot; HEAD || exit 1
+</code></pre>
+<p>This runs before the claim, so a failure here has nothing to release.
+It fails when an earlier attempt on the same goal left <code>stepstone/$goal_id</code> behind, which is deliberate: resolve that branch before dispatching the goal again.</p>
+<p>Claim the goal from the root checkout, retain the returned concurrency token, and launch only if the claim succeeded.
+A failed claim means another driver holds the goal, so the workspace is scrubbed and discarded rather than staffed.
+The cleanup is non-interactive and verifies a clean checkout before forcing removal:</p>
+<pre><code class="language-sh"># dispatch-example: binding-a-launch
+cleanup_workspace() {
+  git -C &quot;$workspace&quot; reset --hard HEAD &amp;&amp;
+    git -C &quot;$workspace&quot; clean -fdx &amp;&amp;
+    workspace_status=$(git -C &quot;$workspace&quot; status --porcelain) &amp;&amp;
+    test -z &quot;$workspace_status&quot; &amp;&amp;
+    git worktree remove --force &quot;$workspace&quot; &amp;&amp;
+    git branch -D &quot;$branch&quot;
+}
+
+if ! claim_json=$(npx -y stepstone@latest project start &quot;$goal_id&quot; \
+  --branch &quot;$branch&quot; \
+  --expect-updated-at &quot;$updated_at&quot; \
+  --json)
+then
+  cleanup_workspace || exit 1
+  exit 1
+fi
+
+if ! claimed_updated_at=$(printf '%s\n' &quot;$claim_json&quot; | jq -er '.result.goal.updatedAt')
+then
+  printf '%s\n' &quot;Claim succeeded but its updatedAt could not be read; custody is preserved.&quot; &gt;&amp;2
+  exit 1
+fi
+
+abandon() {
+  npx -y stepstone@latest project start &quot;$goal_id&quot; --clear \
+    --expect-updated-at &quot;$claimed_updated_at&quot; \
+    --json || exit 1
+  cleanup_workspace || exit 1
+  exit 1
+}
+
+command -v &quot;$AGENT_COMMAND&quot; &gt;/dev/null 2&gt;&amp;1 || abandon
+runtime=&quot;${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id&quot;
+mkdir -p &quot;$runtime&quot; || abandon
+(
+  cd &quot;$workspace&quot; || exit 1
+  nohup &quot;$AGENT_COMMAND&quot; &quot;$goal_prompt&quot; &gt;&quot;$runtime/agent.log&quot; 2&gt;&amp;1 &lt;/dev/null &amp;
+  agent_pid=$!
+  printf '%s\n' &quot;$agent_pid&quot; &gt;&quot;$runtime/agent.pid&quot; &amp;&amp;
+    sleep &quot;${AGENT_STARTUP_GRACE_SECONDS:-1}&quot; &amp;&amp;
+    kill -0 &quot;$agent_pid&quot; 2&gt;/dev/null
+) || abandon
+</code></pre>
+<p><code>AGENT_COMMAND</code> names one executable; pass agent-specific configuration through that executable or its environment.
+The <code>command -v</code> preflight catches a missing executable before launch.
+The bounded startup grace then verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that <code>nohup</code> reports before an <code>exec</code> failure.</p>
+<p>The log and pid file belong to the driver, not to the branch under review.
+Keeping them outside <code>$workspace</code> leaves the worker's checkout clean, so an agent that stages everything cannot commit its own transcript into the PR.</p>
+<p>After the PR merges and the goal is completed on the default branch, scrub and remove the worktree with the same checked cleanup:</p>
+<pre><code class="language-sh"># dispatch-example: binding-a-cleanup
+cleanup_workspace || exit 1
+</code></pre>
+<p>The forced removal is safe only after merge and completion or after the exact claim has been released.
+It prevents ignored build artifacts or other worker residue from opening an interactive cleanup path or retaining a stale worktree.</p>

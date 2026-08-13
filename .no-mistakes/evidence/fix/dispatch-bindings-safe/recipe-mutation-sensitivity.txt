@@ -1,0 +1,108 @@
+Mutation sensitivity of test/dispatch-docs.test.ts
+Each run copies docs/dispatch.md into a scratch tree, removes ONE safety property from the
+documented recipe, and runs the suite. The worktree itself is never modified.
+
+########## recipe mutation: unguarded-clear ##########
+ × releases Binding A safely after missing executable
+ × releases Binding A safely after immediate executable failure
+ ✓ stops Binding A on a rejected claim without clearing a claim it never held
+ ✓ stops Binding B on a rejected claim without clearing a claim it never held
+ ✓ preserves Binding A custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its pane ID is unreadable
+ ✓ scrubs dirty Binding A workspaces after completion
+ × closes Binding B before releasing a pre-submission failure
+ ✓ bounds the documented Herdr wait when no timeout is configured
+ ✓ preserves Binding B custody after an ambiguous bounded prompt failure
+ ✓ verifies Binding B pane closure and dirty cleanup before returning its lease
+      Tests  3 failed | 9 passed (12)
+
+########## recipe mutation: no-handshake ##########
+ ✓ releases Binding A safely after missing executable
+ × releases Binding A safely after immediate executable failure
+ ✓ stops Binding A on a rejected claim without clearing a claim it never held
+ ✓ stops Binding B on a rejected claim without clearing a claim it never held
+ ✓ preserves Binding A custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its pane ID is unreadable
+ ✓ scrubs dirty Binding A workspaces after completion
+ ✓ closes Binding B before releasing a pre-submission failure
+ ✓ bounds the documented Herdr wait when no timeout is configured
+ ✓ preserves Binding B custody after an ambiguous bounded prompt failure
+ ✓ verifies Binding B pane closure and dirty cleanup before returning its lease
+      Tests  1 failed | 11 passed (12)
+
+########## recipe mutation: abandon-on-ambiguous-prompt ##########
+ ✓ releases Binding A safely after missing executable
+ ✓ releases Binding A safely after immediate executable failure
+ ✓ stops Binding A on a rejected claim without clearing a claim it never held
+ ✓ stops Binding B on a rejected claim without clearing a claim it never held
+ ✓ preserves Binding A custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its pane ID is unreadable
+ ✓ scrubs dirty Binding A workspaces after completion
+ ✓ closes Binding B before releasing a pre-submission failure
+ ✓ bounds the documented Herdr wait when no timeout is configured
+ × preserves Binding B custody after an ambiguous bounded prompt failure
+ ✓ verifies Binding B pane closure and dirty cleanup before returning its lease
+      Tests  1 failed | 11 passed (12)
+
+########## recipe mutation: unchecked-worktree-removal ##########
+ ✓ releases Binding A safely after missing executable
+ ✓ releases Binding A safely after immediate executable failure
+ ✓ stops Binding A on a rejected claim without clearing a claim it never held
+ ✓ stops Binding B on a rejected claim without clearing a claim it never held
+ ✓ preserves Binding A custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its pane ID is unreadable
+ × scrubs dirty Binding A workspaces after completion
+ ✓ closes Binding B before releasing a pre-submission failure
+ ✓ bounds the documented Herdr wait when no timeout is configured
+ ✓ preserves Binding B custody after an ambiguous bounded prompt failure
+ ✓ verifies Binding B pane closure and dirty cleanup before returning its lease
+      Tests  1 failed | 11 passed (12)
+
+########## recipe mutation: lease-before-pane-close ##########
+ ✓ releases Binding A safely after missing executable
+ ✓ releases Binding A safely after immediate executable failure
+ ✓ stops Binding A on a rejected claim without clearing a claim it never held
+ ✓ stops Binding B on a rejected claim without clearing a claim it never held
+ ✓ preserves Binding A custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its pane ID is unreadable
+ ✓ scrubs dirty Binding A workspaces after completion
+ ✓ closes Binding B before releasing a pre-submission failure
+ ✓ bounds the documented Herdr wait when no timeout is configured
+ ✓ preserves Binding B custody after an ambiguous bounded prompt failure
+ × verifies Binding B pane closure and dirty cleanup before returning its lease
+      Tests  1 failed | 11 passed (12)
+
+########## recipe mutation: unbounded-wait ##########
+ ✓ releases Binding A safely after missing executable
+ ✓ releases Binding A safely after immediate executable failure
+ ✓ stops Binding A on a rejected claim without clearing a claim it never held
+ ✓ stops Binding B on a rejected claim without clearing a claim it never held
+ ✓ preserves Binding A custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its pane ID is unreadable
+ ✓ scrubs dirty Binding A workspaces after completion
+ ✓ closes Binding B before releasing a pre-submission failure
+ × bounds the documented Herdr wait when no timeout is configured
+ ✓ preserves Binding B custody after an ambiguous bounded prompt failure
+ ✓ verifies Binding B pane closure and dirty cleanup before returning its lease
+      Tests  1 failed | 11 passed (12)
+
+########## unmutated docs/dispatch.md as committed ##########
+ ✓ releases Binding A safely after missing executable
+ ✓ releases Binding A safely after immediate executable failure
+ ✓ stops Binding A on a rejected claim without clearing a claim it never held
+ ✓ stops Binding B on a rejected claim without clearing a claim it never held
+ ✓ preserves Binding A custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its own claim token is unreadable
+ ✓ preserves Binding B custody when its pane ID is unreadable
+ ✓ scrubs dirty Binding A workspaces after completion
+ ✓ closes Binding B before releasing a pre-submission failure
+ ✓ bounds the documented Herdr wait when no timeout is configured
+ ✓ preserves Binding B custody after an ambiguous bounded prompt failure
+ ✓ verifies Binding B pane closure and dirty cleanup before returning its lease
+      Tests  12 passed (12)
