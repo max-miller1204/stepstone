@@ -148,6 +148,14 @@ function baseEnvironment(fixture: DispatchFixture): Record<string, string> {
 	};
 }
 
+async function readEvents(fixture: DispatchFixture): Promise<string[]> {
+	return (await readFile(fixture.events, "utf8")).trim().split("\n");
+}
+
+function eventsMatching(events: string[], fragment: string): string[] {
+	return events.filter((event) => event.includes(fragment));
+}
+
 async function pathExists(path: string): Promise<boolean> {
 	try {
 		await access(path);
@@ -182,7 +190,7 @@ describe("documented dispatch bindings", () => {
 
 		expect(result.code).toBe(1);
 		expect(await pathExists(fixture.detachedWorkspace)).toBe(false);
-		const events = await readFile(fixture.events, "utf8");
+		const events = await readEvents(fixture);
 		expect(events).toContain(clearEvent);
 		const { stdout: branch } = await execFileAsync("git", ["branch", "--list", goalBranch], {
 			cwd: fixture.root,
@@ -210,7 +218,7 @@ describe("documented dispatch bindings", () => {
 		});
 
 		expect(result.code).toBe(1);
-		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		const events = await readEvents(fixture);
 		if (bindingB) {
 			expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
 			expect(events).toEqual([
@@ -250,7 +258,7 @@ describe("documented dispatch bindings", () => {
 
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("Claim succeeded but its updatedAt could not be read");
-		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		const events = await readEvents(fixture);
 		if (bindingB) {
 			expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
 			expect(events).toEqual([`treehouse:get --lease --lease-holder ${leaseHolder}`, claimEvent]);
@@ -281,7 +289,7 @@ describe("documented dispatch bindings", () => {
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("A pane may exist but its ID could not be read");
 		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
-		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		const events = await readEvents(fixture);
 		expect(events).toEqual([
 			`treehouse:get --lease --lease-holder ${leaseHolder}`,
 			claimEvent,
@@ -321,8 +329,8 @@ describe("documented dispatch bindings", () => {
 			cwd: fixture.root,
 		});
 		expect(branch).toBe("");
-		const events = await readFile(fixture.events, "utf8");
-		expect(events).not.toContain(" --clear ");
+		const events = await readEvents(fixture);
+		expect(eventsMatching(events, " --clear ")).toEqual([]);
 	});
 
 	it("closes Binding B before releasing a pre-submission failure", async () => {
@@ -338,7 +346,7 @@ describe("documented dispatch bindings", () => {
 
 		expect(result.code).toBe(1);
 		expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
-		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		const events = await readEvents(fixture);
 		const close = events.indexOf("herdr:pane close pane-1");
 		const verify = events.indexOf("herdr:pane list");
 		const clear = events.indexOf(clearEvent);
@@ -365,11 +373,11 @@ describe("documented dispatch bindings", () => {
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain("Prompt outcome is ambiguous");
 		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
-		const events = await readFile(fixture.events, "utf8");
+		const events = await readEvents(fixture);
 		expect(events).toContain("herdr:agent prompt pane-1 Implement the selected goal --wait --timeout 17");
-		expect(events).not.toContain("herdr:pane close");
-		expect(events).not.toContain(" --clear ");
-		expect(events).not.toContain("treehouse:return ");
+		expect(eventsMatching(events, "herdr:pane close")).toEqual([]);
+		expect(eventsMatching(events, " --clear ")).toEqual([]);
+		expect(eventsMatching(events, "treehouse:return ")).toEqual([]);
 		await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
 			cwd: fixture.root,
 		});
@@ -394,7 +402,7 @@ describe("documented dispatch bindings", () => {
 
 		expect(result.code).toBe(0);
 		expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
-		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		const events = await readEvents(fixture);
 		const close = events.indexOf("herdr:pane close pane-1");
 		const verify = events.indexOf("herdr:pane list");
 		const returned = events.findIndex((event) => event.startsWith("treehouse:return "));
@@ -403,6 +411,6 @@ describe("documented dispatch bindings", () => {
 		expect(returned).toBeGreaterThan(verify);
 		expect(events[returned]).toContain(`--force --if-lease-holder ${leaseHolder}`);
 		expect(events).toContain("treehouse:return-clean");
-		expect(events).not.toContain(" --clear ");
+		expect(eventsMatching(events, " --clear ")).toEqual([]);
 	});
 });
