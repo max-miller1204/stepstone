@@ -2073,6 +2073,11 @@ describe("project goal file resolution", () => {
 		expect(refusedEnvelope.error.message).toContain("unknown switch");
 		expect(refusedEnvelope.error.message).not.toContain("persistence");
 		expect(refusedEnvelope.error.message).not.toContain("Retry the change");
+		// The way out names the command that did not answer. A Git too old for `-z`
+		// is not a repository anyone can repair, so saying so would send them to the
+		// wrong place just as surely.
+		expect(refusedEnvelope.error.message).toContain("git worktree list --porcelain -z");
+		expect(refusedEnvelope.error.message).not.toContain("Repair the repository");
 		await expect(readFile(roadmap, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
 		// Killed before Git could answer: nothing was decided, so asking again is the

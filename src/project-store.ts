@@ -142,9 +142,7 @@ export class ProjectWorklistWorktreeLookupError extends ProjectMutationRefusedEr
 		super(
 			`Git could not determine the main worktree for ${worklistPath}: ${diagnostic}. ` +
 				`${
-					retryable
-						? "Retry the change."
-						: "Repair the repository so `git worktree list --porcelain -z` answers, then retry."
+					retryable ? "Retry the change." : "Make `git worktree list --porcelain -z` answer here, then retry."
 				}`,
 		);
 		this.name = "ProjectWorklistWorktreeLookupError";
