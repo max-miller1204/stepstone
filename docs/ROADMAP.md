@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-51 goals: 1 active, 10 open, 37 done, 3 archived.
+51 goals: 10 open, 38 done, 3 archived.
 
 ## Orchestrator
 
@@ -224,7 +224,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `harness-identity-rename-off-the-pi` (done), `mcp-server-expose-the-worklist-over-mcp` (done).
 
-- **[active]** worktree-guard: stop a linked worktree silently forking the roadmap - `worktree-guard-stop-a-linked-worktree`
+- **[done]** worktree-guard: stop a linked worktree silently forking the roadmap - `worktree-guard-stop-a-linked-worktree`
 
   The root-session-on-main convention is already the roadmap's answer to branch sessions writing the worklist: merge-driver defers to it explicitly, and root-session-recipe states that worklist mutations happen on main only with the root session as the sole writer. Nothing enforces it. resolveGitRoot calls git rev-parse --show-toplevel (src/git.ts:13), which inside a linked worktree returns that worktree, so an agent running in a treehouse worktree resolves its own checked-out copy of the goal file and writes there. The lock is scoped to the resolved directory (src/project-store.ts:191), so two worktrees hold two independent locks and nothing serializes them against each other.
 
