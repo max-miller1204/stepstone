@@ -47,8 +47,10 @@ It runs as its own CI job and again before publishing, because this checkout ins
 Never hand-edit a fully generated file or the generated block: run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
 The AGENTS renderer replaces only its one valid marker pair, preserves all authored bytes outside it, and refuses malformed or duplicate markers instead of clobbering prose.
 
-The plugin files are `.claude-plugin/plugin.json`, whose inline `mcpServers` declaration stays plugin-scoped, `.claude-plugin/marketplace.json`, one command per plugin action under `commands/`, and `skills/stepstone/SKILL.md`.
-That last one is the installable skill plus a `user-invocable: false` line, so a Claude Code user gets the same guidance without the plugin adding a skill they can invoke themselves.
+The plugin files are `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, one command per plugin action under `commands/`, and `skills/stepstone/SKILL.md`.
+The manifest declares the bundled MCP server inline, in its own `mcpServers` field, and nothing generates a repository-root `.mcp.json`.
+Claude Code reads that path as this checkout's own project-scoped configuration, where `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` are never expanded, so the same bytes that start the server for a plugin install register one a contributor's session cannot start: `test/claude-plugin.test.ts` fails if that file reappears here, and `test/compiled-cli.test.ts` fails if it reappears in the tarball.
+`skills/stepstone/SKILL.md` is the installable skill plus a `user-invocable: false` line, so a Claude Code user gets the same guidance without the plugin adding a skill they can invoke themselves.
 Which actions become commands is a `claudePlugin` field on the contract action rather than a list kept here, and a mutating or confirmation-guarded action may never carry it.
 The two `.claude-plugin` manifests are the only generated files rendered from `package.json` rather than from the contract, which checks only that the package still carries the contract's name, so the plugin's own name, version, description, and author cannot drift from the published package's.
 `commands/` is generated whole: `npm run docs` deletes any entry the contract no longer renders and `npm run docs:check` reports it instead, so an action that stops being a plugin command cannot leave a working slash command behind.
