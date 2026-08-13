@@ -1,10 +1,15 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { WorklistApplicationService, type WorklistOperationSource } from "./application-service.ts";
+import {
+	WorklistApplicationError,
+	WorklistApplicationService,
+	type WorklistOperationSource,
+} from "./application-service.ts";
 import { CLI_COMMAND_CONTRACT, captureWorkflowAction } from "./cli-contract.ts";
 import { formatProjectGoals, formatSessionTasks } from "./format.ts";
 import type { LocatedWorklist } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
+import { WORKLIST_ERROR_CODES } from "./result-envelope.ts";
 import { WorklistParamsSchema } from "./schema.ts";
 import { SessionStore } from "./session-store.ts";
 import { createProjectLocator, executeWorklist, WORKLIST_EXECUTION_MODE } from "./tool.ts";
@@ -122,6 +127,17 @@ export function parseTasksCommand(args: string): ParsedCommand | null {
 	return null;
 }
 
+/**
+ * Whether an error is "there is no goal file to read right now".
+ *
+ * The display degrades quietly for this one and only this one: it is a standing
+ * condition of the machine or the directory rather than something the read did
+ * wrong, and the operation a user asked for reports it in full.
+ */
+function isProjectUnavailable(error: unknown): boolean {
+	return error instanceof WorklistApplicationError && error.code === WORKLIST_ERROR_CODES.UNAVAILABLE;
+}
+
 export default function worklistExtension(pi: ExtensionAPI): void {
 	const sessionStore = new SessionStore(pi);
 	const applicationService = new WorklistApplicationService({ sessionStore });
@@ -133,15 +149,17 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	/**
 	 * The goals the widget draws, or none.
 	 *
-	 * A read for the display cannot decide the session's fate: a repository whose
-	 * Git cannot be reached right now leaves the widget empty, while the operation a
-	 * user or model actually asked for still fails with the typed availability
-	 * failure the service raises.
+	 * A repository whose Git cannot be reached right now leaves the widget empty,
+	 * while the operation a user or model actually asked for still fails with the
+	 * typed availability failure the service raises. Nothing else is swallowed: a
+	 * goal file that cannot be read is a condition someone has to be told about, and
+	 * it reaches them through the same handler it always did.
 	 */
 	async function refreshProject(): Promise<void> {
 		try {
 			projectGoals = await applicationService.getProjectGoals();
-		} catch {
+		} catch (error) {
+			if (!isProjectUnavailable(error)) throw error;
 			projectGoals = [];
 		}
 	}
@@ -150,7 +168,8 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	function locatedProject(): LocatedWorklist | null {
 		try {
 			return locateProject?.() ?? null;
-		} catch {
+		} catch (error) {
+			if (!isProjectUnavailable(error)) throw error;
 			return null;
 		}
 	}

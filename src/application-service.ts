@@ -2,6 +2,7 @@ import { formatDependencyCycle, unsatisfiedDependencies } from "./dependencies.t
 import {
 	type GitRootFailure,
 	gitFailureDetails,
+	gitRootDiagnostic,
 	isTransientGitFailure,
 	type LocatedWorklist,
 	type ProjectRootLookup,
@@ -240,6 +241,15 @@ export function projectRootUnavailableError(
 			{ resolution: "provide-existing-directory", directoryError: failure.message },
 		);
 	}
+	if (failure.kind === "git-refused") {
+		// What Git said is the whole of the guidance here, because Git names the
+		// repair: a config line to fix, a directory to trust.
+		return createApplicationError(
+			WORKLIST_ERROR_CODES.UNAVAILABLE,
+			sentences(`Git will not work in this repository: ${gitRootDiagnostic(failure)}.`),
+			gitFailureDetails("repair-git-repository", failure.command),
+		);
+	}
 	const retryable = failure.command !== undefined && isTransientGitFailure(failure.command);
 	return createApplicationError(
 		WORKLIST_ERROR_CODES.UNAVAILABLE,
@@ -255,13 +265,14 @@ export function projectRootUnavailableError(
 /**
  * The goal file a lookup found, for the shared service's project-path resolver.
  *
- * Git refusing the directory stays the `null` every interface already handles, so
- * a session outside a repository keeps working on session tasks. Anything Git
- * never answered is raised instead of flattened into that same answer.
+ * A directory in no repository at all stays the `null` every interface already
+ * handles, so a session outside a repository keeps working on session tasks. Every
+ * other reason there is no goal file is raised with what Git said, rather than
+ * flattened into a verdict about the directory that Git never reached.
  */
 export function resolveProjectWorklist(lookup: ProjectRootLookup): LocatedWorklist | null {
 	if (lookup.worklist) return lookup.worklist;
-	if (lookup.failure && lookup.failure.kind !== "git-refused") {
+	if (lookup.failure && lookup.failure.kind !== "not-a-repository") {
 		throw projectRootUnavailableError(lookup.failure);
 	}
 	return null;

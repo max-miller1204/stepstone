@@ -965,17 +965,29 @@ describe("project goal CLI", () => {
 		const outside = await runCli(bare, ["project", "list"]);
 		expect(outside.code).toBe(1);
 		expect(outside.stderr).toContain("git repository");
+		// The commonest failure in the CLI says the one thing a person can act on.
+		// Git's invocation and exit status are an internal detail here, and a caller
+		// that wants them reads the envelope below.
+		expect(diagnostic(outside.stderr).trim()).toBe(
+			"Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
+		);
 
 		const outsideJson = await runCli(bare, ["project", "list", "--json"]);
 		expect(outsideJson.code).toBe(1);
 		expect(outsideJson.stdout).toBe("");
-		expect(parseJson(outsideJson.stderr)).toMatchObject({
+		const outsideEnvelope = parseJson(outsideJson.stderr) as GitFailureEnvelope;
+		expect(outsideEnvelope).toMatchObject({
 			ok: false,
 			scope: "project",
 			action: "list",
-			error: { code: "UNAVAILABLE", retryable: false, details: { resolution: "run-inside-git-repository" } },
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "run-inside-git-repository", gitExitCode: 128, gitTimedOut: false },
+			},
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
+		expect(outsideEnvelope.error.details.gitError).toContain("not a git repository");
 
 		const root = await tempGitRepo();
 		const viaCwd = await runCli(bare, ["project", "add", "From", "elsewhere", "--cwd", root]);
@@ -1026,15 +1038,25 @@ describe("project goal CLI", () => {
 		});
 		expect(killedEnvelope.error.message).toContain("Retry");
 
-		// Git answering that this is not a repository keeps the permanent verdict.
+		// Git answering that a directory holding no repository is no repository keeps
+		// the standing verdict.
+		const bare = await mkdtemp(join(tmpdir(), "stepstone-refused-nogit-"));
 		const refusedPath = await fakeGitPath(["printf '%s\\n' 'fatal: not a git repository' >&2", "exit 128"]);
-		const refused = await runCli(root, ["project", "list", "--json"], { PATH: refusedPath });
+		const refused = await runCli(bare, ["project", "list", "--json"], { PATH: refusedPath });
 		expect(refused.code).toBe(1);
 		expect(parseJson(refused.stderr)).toMatchObject({
 			ok: false,
 			scope: "project",
 			action: "list",
 			error: { code: "UNAVAILABLE", retryable: false, details: { resolution: "run-inside-git-repository" } },
+		});
+
+		// The same refusal inside a repository is not that verdict: something here has
+		// to be repaired, and Git said what.
+		const inRepository = await runCli(root, ["project", "list", "--json"], { PATH: refusedPath });
+		expect(inRepository.code).toBe(1);
+		expect(parseJson(inRepository.stderr)).toMatchObject({
+			error: { code: "UNAVAILABLE", retryable: false, details: { resolution: "repair-git-repository" } },
 		});
 
 		const humanWithoutGit = await runCli(root, ["project", "list"], { PATH: await pathWithoutGit() });
@@ -1102,15 +1124,20 @@ describe("project goal CLI", () => {
 			error: {
 				code: "UNAVAILABLE",
 				retryable: false,
-				details: { resolution: "run-inside-git-repository", gitExitCode: 128, gitTimedOut: false },
+				details: { resolution: "repair-git-repository", gitExitCode: 128, gitTimedOut: false },
 			},
 		});
 		expect(envelope.error.details.gitError).toContain("bad config");
+		// The sentence carries Git's own line, which names the repair, and leaves the
+		// invocation and the exit status to the envelope.
 		expect(envelope.error.message).toContain("bad config");
+		expect(envelope.error.message).not.toContain("Command failed");
+		expect(envelope.error.message).not.toContain("status 128");
 
 		const human = await runCli(root, ["project", "list"]);
 		expect(human.code).toBe(1);
 		expect(diagnostic(human.stderr)).toContain("bad config");
+		expect(diagnostic(human.stderr)).not.toContain("Command failed");
 	});
 
 	it("rejects a known flag after the interactive description separator", async () => {

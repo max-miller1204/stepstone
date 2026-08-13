@@ -676,6 +676,35 @@ describe("Stepstone MCP server", () => {
 		});
 	});
 
+	it("recovers when the repository Git refused is repaired during the connection", async () => {
+		const root = await createGitRepository();
+		const config = join(root, ".git", "config");
+		const original = await readFile(config, "utf8");
+		await writeFile(config, "this is not a config file\n");
+
+		await withMcpClient(root, async (client) => {
+			const refused = await callTool(client, "add", { title: "While Git objects" });
+			expect(refused.envelope).toMatchObject({
+				ok: false,
+				scope: "project",
+				action: "add",
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: { resolution: "repair-git-repository" },
+				},
+			});
+			expect(refused.envelope.error?.message).toContain("bad config");
+			expect(refused.envelope.error?.message).not.toContain("require a git repository");
+
+			// The client does not have to reconnect to pick up the repair.
+			await writeFile(config, original);
+			const recovered = await callTool(client, "add", { title: "Once the config is fixed" });
+			expect(recovered.envelope.ok).toBe(true);
+			expect(resultGoals(await readEnvelope(client, `${RESOURCE_PREFIX}/list`))).toHaveLength(1);
+		});
+	});
+
 	it("keeps the standing answer for a directory Git refuses", async () => {
 		const outside = await realpath(await mkdtemp(join(tmpdir(), "stepstone-mcp-bare-")));
 		await withMcpClient(outside, async (client) => {

@@ -1090,6 +1090,55 @@ describe("registered model tool", () => {
 		});
 	});
 
+	it("recovers when the repository Git refused is repaired mid-session", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-refused-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const config = join(root, ".git", "config");
+		const original = await readFile(config, "utf8");
+		// The routine instance is dubious ownership in a container: Git prints the
+		// command to run, the user runs it, and the session has to pick that up.
+		await writeFile(config, "this is not a config file\n");
+
+		const session = await startSession(root);
+		const refused = await session.call({ scope: "project", action: "add", title: "While Git objects" }).then(
+			() => undefined,
+			(error: unknown) => error,
+		);
+		expect(refused).toMatchObject({
+			code: "UNAVAILABLE",
+			retryable: false,
+			details: { resolution: "repair-git-repository" },
+		});
+		// Not the standing verdict: the session is inside the repository, and it is
+		// told what Git actually objected to.
+		expect(String((refused as Error).message)).not.toContain("require a git repository");
+		expect(String((refused as Error).message)).toContain("bad config");
+
+		await writeFile(config, original);
+		const added = (await session.call({
+			scope: "project",
+			action: "add",
+			title: "Once the config is fixed",
+		})) as { details: { goal?: ProjectGoal } };
+		expect(added.details.goal?.title).toBe("Once the config is fixed");
+	});
+
+	it("still reports a goal file it cannot read when the widget refreshes", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-malformed-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		await mkdir(join(root, ".worklist"), { recursive: true });
+		// Persisted state the session cannot parse. Only Git being unreachable lets the
+		// widget fall quiet; a file someone has to repair must still be named.
+		await writeFile(join(root, ".worklist", "worklist.json"), "{ not json\n");
+
+		const session = await startSession(root);
+		const reported = session.notifications.filter((message) =>
+			message.includes("Malformed project worklist"),
+		);
+		expect(reported).toHaveLength(1);
+		expect(reported[0]).toContain(join(root, ".worklist", "worklist.json"));
+	});
+
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {
 		expect(registerExtension().tool.executionMode).toBe("sequential");
 	});

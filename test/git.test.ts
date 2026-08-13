@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,8 @@ import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import {
 	createProjectRootLookup,
 	currentGitBranch,
+	type GitRootFailure,
+	gitRootDiagnostic,
 	isTransientGitFailure,
 	resolveGitRoot,
 	resolveWorklistLocation,
@@ -44,16 +46,16 @@ describe("git root", () => {
 		await symlink(root, link);
 		const result = resolveGitRoot(link);
 		expect(result.root).toBe(await realpath(root));
-		expect(result.isGit).toBe(true);
+		expect(result.failure).toBeUndefined();
 	});
 
 	it("degrades cleanly outside git", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-no-git-"));
 		const result = resolveGitRoot(root);
-		expect(result.isGit).toBe(false);
-		// Git ran and refused the directory, which is an answer: nothing here is
-		// waiting on Git to become available.
-		expect(result.failure?.kind).toBe("git-refused");
+		expect(result.root).toBeNull();
+		// Git ran and answered: this directory is in no repository, which is the one
+		// verdict that cannot change while a host runs.
+		expect(result.failure?.kind).toBe("not-a-repository");
 		expect(result.failure?.command?.exitCode).toEqual(expect.any(Number));
 	});
 
@@ -61,7 +63,7 @@ describe("git root", () => {
 		const parent = await mkdtemp(join(tmpdir(), "stepstone-bad-cwd-"));
 		const missing = join(parent, "removed-worktree");
 		const missingResult = resolveGitRoot(missing);
-		expect(missingResult).toMatchObject({ root: null, isGit: false });
+		expect(missingResult.root).toBeNull();
 		expect(missingResult.failure?.kind).toBe("unusable-directory");
 		expect(missingResult.failure?.message).toContain(missing);
 		// Git was never asked, so there is nothing about Git to report.
@@ -85,7 +87,7 @@ describe("git root", () => {
 		} finally {
 			restoreKilled();
 		}
-		expect(killed.isGit).toBe(false);
+		expect(killed.root).toBeNull();
 		const killedFailure = killed.failure;
 		if (!killedFailure?.command) throw new Error("a killed root lookup reported no Git failure");
 		expect(killedFailure.kind).toBe("git-unavailable");
@@ -140,18 +142,43 @@ describe("git root", () => {
 		expect(unavailable.failure?.kind).toBe("git-unavailable");
 		expect(lookup().worklist?.path).toBe(join(root, ".worklist", "worklist.json"));
 
-		// A verdict Git reached is remembered, so a session outside a repository does
+		// The one verdict that is remembered, so a session outside a repository does
 		// not spawn Git for every action it refuses.
 		const outside = await mkdtemp(join(tmpdir(), "stepstone-root-lookup-outside-"));
 		const outsideLookup = createProjectRootLookup(outside, { env: {} });
-		expect(outsideLookup().failure?.kind).toBe("git-refused");
+		expect(outsideLookup().failure?.kind).toBe("not-a-repository");
 		const restoreBroken = await fakeGitOnPath("exit 129");
 		try {
-			expect(outsideLookup().failure?.kind).toBe("git-refused");
+			expect(outsideLookup().failure?.kind).toBe("not-a-repository");
 			expect(outsideLookup().failure?.command?.exitCode).not.toBe(129);
 		} finally {
 			restoreBroken();
 		}
+	});
+
+	it("recovers in the same lookup once a repository Git refused is repaired", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-root-repair-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const config = join(root, ".git", "config");
+		const original = await readFile(config, "utf8");
+
+		// Git refusing a repository it found is not a verdict about the directory:
+		// dubious ownership and an unparsable config both land here, and both are
+		// fixed where the caller stands rather than by starting over.
+		await writeFile(config, "this is not a config file\n");
+		const refused = resolveGitRoot(root);
+		expect(refused.root).toBeNull();
+		expect(refused.failure?.kind).toBe("git-refused");
+		expect(refused.failure?.command?.exitCode).toBe(128);
+		expect(refused.failure?.command?.stderr).toContain("bad config");
+		// The sentence a person reads is Git's own line, not the invocation.
+		expect(gitRootDiagnostic(refused.failure as GitRootFailure)).toContain("bad config");
+		expect(gitRootDiagnostic(refused.failure as GitRootFailure)).not.toContain("Command failed");
+
+		const lookup = createProjectRootLookup(root, { env: {} });
+		expect(lookup().failure?.kind).toBe("git-refused");
+		await writeFile(config, original);
+		expect(lookup().worklist?.path).toBe(join(root, ".worklist", "worklist.json"));
 	});
 });
 

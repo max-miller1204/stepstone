@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	LEGACY_WORKLIST_DIRECTORY,
 	WORKLIST_DIRECTORY,
@@ -15,6 +15,9 @@ export const GIT_COMMAND_TIMEOUT_MS = 10000;
 /** The errno a run killed for outliving its time limit is reported with. */
 const TIMED_OUT_CODE = "ETIMEDOUT";
 
+/** The entry Git looks for when it decides whether a directory is in a repository. */
+const GIT_MARKER = ".git";
+
 /**
  * Why a Git command did not answer, kept as the runner reported it rather than
  * flattened to a sentence.
@@ -27,6 +30,14 @@ const TIMED_OUT_CODE = "ETIMEDOUT";
 export interface GitCommandFailure {
 	/** Git's own diagnostic, or the runner's when Git never got to speak. */
 	message: string;
+	/**
+	 * What Git itself said, on one line, when it said anything.
+	 *
+	 * Kept apart from `message` because only this part is worth putting in front of
+	 * a person: the rest is the invocation and the exit status, which belong in a
+	 * machine-read envelope.
+	 */
+	stderr?: string;
 	/** The status Git exited with, absent when it never exited on its own. */
 	exitCode?: number;
 	/** The signal that ended the run, when one did. */
@@ -48,10 +59,13 @@ function describeCommandFailure(error: unknown): GitCommandFailure {
 		status?: unknown;
 		signal?: unknown;
 		code?: unknown;
+		stderr?: unknown;
 		error?: { code?: unknown };
 	};
+	const said = typeof thrown.stderr === "string" ? singleLine(thrown.stderr) : "";
 	return {
 		message: error instanceof Error ? error.message : String(error),
+		...(said ? { stderr: said } : {}),
 		...(typeof thrown.status === "number" ? { exitCode: thrown.status } : {}),
 		...(typeof thrown.signal === "string" ? { signal: thrown.signal } : {}),
 		timedOut: thrown.code === TIMED_OUT_CODE || thrown.error?.code === TIMED_OUT_CODE,
@@ -111,12 +125,17 @@ export interface GitCommandOptions {
 /**
  * Which kind of problem stopped a repository lookup.
  *
- * The three are answerable in different ways, which is the whole reason they are
- * kept apart: a directory that is not there is the path the caller named, a Git
- * that never answered is the machine or a moment in it, and a Git that refused is
- * a verdict about the directory.
+ * Each is answerable in a different way, which is the whole reason they are kept
+ * apart: a directory that is not there is the path the caller named, a Git that
+ * never answered is the machine or a moment in it, a Git that refused a repository
+ * it found is something to repair where it stands, and only the last is the
+ * standing verdict that this is no repository at all.
  */
-export type GitRootFailureKind = "unusable-directory" | "git-unavailable" | "git-refused";
+export type GitRootFailureKind =
+	| "unusable-directory"
+	| "git-unavailable"
+	| "git-refused"
+	| "not-a-repository";
 
 export interface GitRootFailure {
 	kind: GitRootFailureKind;
@@ -128,9 +147,13 @@ export interface GitRootFailure {
 
 export interface GitRootResult {
 	root: string | null;
-	isGit: boolean;
 	/** Why there is no root, absent when one was found. */
 	failure?: GitRootFailure;
+}
+
+/** What to put in front of a person: Git's own words where there are any. */
+export function gitRootDiagnostic(failure: GitRootFailure): string {
+	return failure.command?.stderr ?? failure.message;
 }
 
 /**
@@ -156,6 +179,33 @@ function unusableDirectory(cwd: string): GitRootFailure | undefined {
 }
 
 /**
+ * Whether anything at `cwd` or above it claims to be a repository.
+ *
+ * Git refuses with the same status 128 for two unlike things: a directory that is
+ * no repository, and a repository it will not work in until something is fixed - a
+ * config it cannot parse, an owner it does not trust. Only the first is a verdict
+ * that cannot change while a host runs, and the `.git` entry Git itself looks for
+ * is what tells them apart without reading prose Git may have translated.
+ */
+function hasRepositoryMarker(cwd: string): boolean {
+	let directory = resolve(cwd);
+	for (;;) {
+		if (existsSync(join(directory, GIT_MARKER))) return true;
+		const parent = dirname(directory);
+		if (parent === directory) return false;
+		directory = parent;
+	}
+}
+
+/** Which failure a Git run that ended without naming a root amounts to. */
+function rootFailureKind(cwd: string, command: GitCommandFailure): GitRootFailureKind {
+	// A status Git exited with is Git having run and answered. No status means Git
+	// never got that far.
+	if (command.exitCode === undefined) return "git-unavailable";
+	return hasRepositoryMarker(cwd) ? "git-refused" : "not-a-repository";
+}
+
+/**
  * The repository root `cwd` belongs to, keeping Git's verdict about the directory
  * distinct from Git never giving one.
  *
@@ -166,7 +216,7 @@ function unusableDirectory(cwd: string): GitRootFailure | undefined {
  */
 export function resolveGitRoot(cwd: string, options: GitCommandOptions = {}): GitRootResult {
 	const unusable = unusableDirectory(cwd);
-	if (unusable) return { root: null, isGit: false, failure: unusable };
+	if (unusable) return { root: null, failure: unusable };
 	try {
 		const raw = execFileSync("git", ["rev-parse", "--show-toplevel"], {
 			cwd,
@@ -178,21 +228,17 @@ export function resolveGitRoot(cwd: string, options: GitCommandOptions = {}): Gi
 		if (!top) {
 			return {
 				root: null,
-				isGit: false,
 				failure: { kind: "git-refused", message: "git named no repository root" },
 			};
 		}
 		const canonical = realpathSync(top);
-		return { root: canonical, isGit: true };
+		return { root: canonical };
 	} catch (error) {
 		const command = describeCommandFailure(error);
 		return {
 			root: null,
-			isGit: false,
 			failure: {
-				// A status Git exited with is Git having run and answered, whatever the
-				// answer was. No status means Git never got that far.
-				kind: command.exitCode === undefined ? "git-unavailable" : "git-refused",
+				kind: rootFailureKind(cwd, command),
 				message: describeGitFailure(command),
 				command,
 			},
@@ -359,21 +405,23 @@ export interface ProjectRootLookup {
  * The goal file for the repository containing `cwd`, for a host that outlives one
  * lookup.
  *
- * An answer is remembered, because neither a repository nor Git's refusal of a
- * directory changes under a running session. A Git that never answered is asked
- * again on the next lookup: the alternative is a session or an MCP server that
- * spends the rest of its life reporting a verdict Git never reached, which no
- * retry could clear.
+ * Two answers are remembered, because neither can change while the host runs: a
+ * repository that was found, and a directory that is in no repository at all.
+ * Everything else is asked again on the next lookup, because everything else is
+ * something someone can fix without restarting - Git off a PATH, a stalled
+ * filesystem, an owner Git did not trust until the command Git suggested was run.
+ * The alternative is a session or an MCP server that spends the rest of its life
+ * reporting a verdict Git never reached, which no retry could clear.
  */
 export function createProjectRootLookup(
 	cwd: string,
 	options: WorklistLocationOptions = {},
 ): () => ProjectRootLookup {
 	let locate: (() => LocatedWorklist) | undefined;
-	let answered: GitRootFailure | undefined;
+	let settled: GitRootFailure | undefined;
 	return () => {
 		if (locate) return { worklist: locate() };
-		if (answered) return { failure: answered };
+		if (settled) return { failure: settled };
 		const result = resolveGitRoot(cwd);
 		if (result.root) {
 			locate = createWorklistLocator(result.root, options);
@@ -383,7 +431,7 @@ export function createProjectRootLookup(
 			kind: "git-refused",
 			message: "git named no repository root",
 		};
-		if (failure.kind === "git-refused") answered = failure;
+		if (failure.kind === "not-a-repository") settled = failure;
 		return { failure };
 	};
 }

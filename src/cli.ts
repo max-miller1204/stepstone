@@ -431,25 +431,23 @@ interface ProjectLocation {
 /**
  * The typed failure a command earns when there is no repository to work in.
  *
- * Git refusing a directory keeps the standing answer, now carrying what Git
- * actually said: `rev-parse` also refuses a repository whose config or object
- * store it cannot read, and "run inside a repository" is no help to someone who
- * already is - the diagnostic is. The other two kinds are not answers about the
- * directory at all, so they get the shared availability failure instead, with the
- * escape hatch this interface has.
+ * The standing answer stays the standing answer, and stays short: someone in an
+ * ordinary directory needs the one sentence that names the way out, not the
+ * invocation Git was given or the status it exited with. A `--json` dispatcher
+ * still gets all of that in `details`. Every other reason there is no root says
+ * what Git said, because those are the ones where "run inside a repository" is no
+ * help to someone who already is.
  */
 function repositoryRootFailure(action: string, failure?: GitRootFailure): WorklistCliFailure {
 	const meta = { changed: false, semanticNoOp: false, changedFields: [] };
-	if (!failure || failure.kind === "git-refused") {
+	if (!failure || failure.kind === "not-a-repository") {
 		return new WorklistCliFailure({
 			ok: false,
 			scope: "project",
 			action,
 			error: {
 				code: WORKLIST_ERROR_CODES.UNAVAILABLE,
-				message:
-					`Project goals require a git repository${failure ? `: ${failure.message}` : ""}. ` +
-					"Run inside a repository or pass --cwd <dir>.",
+				message: "Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
 				retryable: false,
 				details: gitFailureDetails("run-inside-git-repository", failure?.command),
 			},
