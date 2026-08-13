@@ -1,0 +1,67 @@
+===============================================================
+ Ordinary main checkouts reached through a gitdir link
+ previous commit e1dd6d4 vs target commit d2ee9e8
+ git 2.43.0, node v24.18.1
+===============================================================
+
+=== A. git init --separate-git-dir (named in the goal description) ===
+
+$ cat separate/.git
+  gitdir: /tmp/stepstone-r3/gitdir/elsewhere.git
+$ git -C separate rev-parse --absolute-git-dir; ... --git-common-dir; ... --show-toplevel
+  /tmp/stepstone-r3/gitdir/elsewhere.git
+  /tmp/stepstone-r3/gitdir/elsewhere.git
+  /tmp/stepstone-r3/gitdir/separate
+  ^ git-dir equals git-common-dir, so this checkout IS the main worktree.
+$ git -C separate worktree list --porcelain | head -1
+  worktree /tmp/stepstone-r3/gitdir/elsewhere.git
+  ^ but the listing names the Git directory, not the checkout.
+
+previous commit e1dd6d4 $ stepstone project add "Plan the next release"
+Project worklist /tmp/stepstone-r3/gitdir/separate/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/gitdir/separate: the repository at /tmp/stepstone-r3/gitdir/elsewhere.git has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.
+[exit 1]
+
+target commit           $ stepstone project add "Plan the next release"
+Added project goal plan-the-next-release: Plan the next release
+[exit 0]
+
+roadmap in the separate-git-dir checkout:
+  - plan-the-next-release
+
+--- and a worktree added beside it is still refused ---
+
+$ git -C separate worktree add ../separate-agent -b feature/agent
+  Preparing worktree (new branch 'feature/agent')
+  HEAD is now at 6a59c35 roadmap
+
+target commit           $ stepstone project add "Would fork from a linked worktree"
+Project worklist /tmp/stepstone-r3/gitdir/separate-agent/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/gitdir/separate-agent: the repository at /tmp/stepstone-r3/gitdir/elsewhere.git has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.
+[exit 1]
+
+$ git -C separate-agent status --short
+  (clean - the linked worktree changed nothing)
+
+=== B. a Git submodule working tree ===
+
+$ cat parent/sub/.git
+  gitdir: ../.git/modules/sub
+$ git -C parent/sub rev-parse --absolute-git-dir; ... --git-common-dir; ... --show-toplevel
+  /tmp/stepstone-r3/gitdir/parent/.git/modules/sub
+  /tmp/stepstone-r3/gitdir/parent/.git/modules/sub
+  /tmp/stepstone-r3/gitdir/parent/sub
+  ^ the submodule is the only worktree of its own repository.
+$ git -C parent/sub worktree list --porcelain | head -1
+  worktree /tmp/stepstone-r3/gitdir/parent/.git/modules/sub
+
+previous commit e1dd6d4 $ stepstone project add "Track the submodule work"
+Project worklist /tmp/stepstone-r3/gitdir/parent/sub/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/gitdir/parent/sub: the repository at /tmp/stepstone-r3/gitdir/parent/.git/modules/sub has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.
+[exit 1]
+
+target commit           $ stepstone project add "Track the submodule work"
+Added project goal track-the-submodule-work: Track the submodule work
+[exit 0]
+
+roadmap in the submodule working tree:
+  - track-the-submodule-work
+roadmap in the superproject (must be untouched):
+  (no roadmap file)

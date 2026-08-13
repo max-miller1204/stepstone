@@ -1,0 +1,18 @@
+MCP server: stepstone-mcp over stdio, cwd = /tmp/stepstone-r3/after/roadmap-agent-a
+tools offered: add, apply-plan, update, move, start, set_active, complete, reopen, archive, delete
+
+--- MCP read from the linked worktree -------------------------
+["ship-the-worktree-guard"]
+
+--- MCP mutation from the linked worktree ---------------------
+isError: true
+{"ok":false,"scope":"project","action":"add","error":{"code":"UNAVAILABLE","message":"Project worklist /tmp/stepstone-r3/after/roadmap-agent-a/.worklist/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/after/roadmap-agent-a. Run this mutation from the main worktree /tmp/stepstone-r3/after/roadmap.","retryable":false,"details":{"path":"/tmp/stepstone-r3/after/roadmap-agent-a/.worklist/worklist.json","currentWorktree":"/tmp/stepstone-r3/after/roadmap-agent-a","mainWorktree":"/tmp/stepstone-r3/after/roadmap","resolution":"run-from-main-worktree"}},"meta":{"changed":false,"semanticNoOp":false,"changedFields":[]}}
+
+--- MCP mutation from the main worktree -----------------------
+isError: false
+ok: true, goal: "added-through-mcp-on-main"
+
+--- roadmaps after the MCP session ----------------------------
+main worktree:   ["ship-the-worktree-guard","added-from-the-main-worktree","added-through-mcp-on-main"]
+linked worktree: ["ship-the-worktree-guard"]
+git status in the linked worktree: (clean)

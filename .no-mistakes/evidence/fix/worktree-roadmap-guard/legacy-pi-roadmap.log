@@ -1,0 +1,81 @@
+===============================================================
+ The legacy .pi/worklist.json roadmap has the same sole writer
+ stepstone CLI: /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZY8TBFZE2AN1VZDZER70WS8/src/cli.ts
+ git 2.43.0, node v24.18.1
+===============================================================
+
+--- a repository whose roadmap still lives at .pi/worklist.json ---
+
+…/legacy $ stepstone project add Legacy roadmap goal --file /tmp/stepstone-r3/legacy/legacy/.pi/worklist.json --cwd /tmp/stepstone-r3/legacy/legacy
+Added project goal legacy-roadmap-goal: Legacy roadmap goal
+[exit 0]
+
+$ git worktree add ../legacy-agent -b feature/agent-b
+  Preparing worktree (new branch 'feature/agent-b')
+  HEAD is now at d9a2e01 roadmap: legacy location
+
+--- the linked worktree resolves and reads the legacy file ---
+
+…/legacy-agent $ stepstone project list --cwd /tmp/stepstone-r3/legacy/legacy-agent
+[open] legacy-roadmap-goal: Legacy roadmap goal
+[exit 0]
+
+--- changing it from the linked worktree is refused ---
+
+…/legacy-agent $ stepstone project add Forked legacy goal --cwd /tmp/stepstone-r3/legacy/legacy-agent --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/legacy/legacy-agent/.pi/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/legacy/legacy-agent. Run this mutation from the main worktree /tmp/stepstone-r3/legacy/legacy.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/legacy/legacy-agent/.pi/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/legacy/legacy-agent",
+      "mainWorktree": "/tmp/stepstone-r3/legacy/legacy",
+      "resolution": "run-from-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+--- so is migrating it, the other mutation interface ---
+
+…/legacy-agent $ stepstone project migrate_path --confirm --cwd /tmp/stepstone-r3/legacy/legacy-agent
+Project worklist /tmp/stepstone-r3/legacy/legacy-agent/.pi/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/legacy/legacy-agent. Run this mutation from the main worktree /tmp/stepstone-r3/legacy/legacy.
+[exit 1]
+
+--- a store outside both committed locations still writes ---
+
+…/legacy-agent $ STEPSTONE_WORKLIST=…/scratch/worklist.json stepstone project add "Scratch store goal"
+Added project goal scratch-store-goal: Scratch store goal
+[exit 0]
+
+--- the main worktree is still the sole writer ---
+
+…/legacy $ stepstone project add Added from the main worktree --cwd /tmp/stepstone-r3/legacy/legacy
+Added project goal added-from-the-main-worktree: Added from the main worktree
+[exit 0]
+
+=== afterwards ===
+
+legacy roadmap in the main worktree:
+  - legacy-roadmap-goal
+  - added-from-the-main-worktree
+
+legacy roadmap in the linked worktree:
+  - legacy-roadmap-goal
+
+$ git -C …/legacy-agent status --short
+  (clean - nothing was written or migrated here)
+
+$STEPSTONE_WORKLIST store written from the linked worktree:
+  - scratch-store-goal

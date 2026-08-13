@@ -1,0 +1,99 @@
+===============================================================
+ AFTER the fix (target commit d2ee9e8): the same session, guarded
+ stepstone CLI: /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZY8TBFZE2AN1VZDZER70WS8/src/cli.ts
+ git 2.43.0, node v24.18.1
+===============================================================
+
+--- setup: a repository whose roadmap is committed -------------
+
+…/roadmap $ stepstone project add Ship the worktree guard --cwd /tmp/stepstone-r3/after/roadmap
+Added project goal ship-the-worktree-guard: Ship the worktree guard
+[exit 0]
+
+…/roadmap $ git worktree add ../roadmap-agent-a -b feature/agent-a
+  Preparing worktree (new branch 'feature/agent-a')
+  HEAD is now at cb56329 roadmap: capture the first goal
+
+--- in the linked worktree: reads still work -------------------
+
+…/roadmap-agent-a $ stepstone project list --cwd /tmp/stepstone-r3/after/roadmap-agent-a
+[open] ship-the-worktree-guard: Ship the worktree guard
+[exit 0]
+
+--- in the linked worktree: a dry run still previews -----------
+
+…/roadmap-agent-a $ stepstone project apply-plan /tmp/stepstone-r3/after/plan.json --dry-run --cwd /tmp/stepstone-r3/after/roadmap-agent-a
+Would add 1 project goal(s); revision 1 is unchanged:
+  previewed-only -> previewed-only
+[exit 0]
+
+--- in the linked worktree: a semantic no-op still succeeds ----
+
+…/roadmap-agent-a $ stepstone project move ship-the-worktree-guard up --cwd /tmp/stepstone-r3/after/roadmap-agent-a
+Project goal ship-the-worktree-guard is already there
+[exit 0]
+
+--- in the linked worktree: a real mutation is refused ---------
+
+…/roadmap-agent-a $ stepstone project add Silently forked goal --cwd /tmp/stepstone-r3/after/roadmap-agent-a
+Project worklist /tmp/stepstone-r3/after/roadmap-agent-a/.worklist/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/after/roadmap-agent-a. Run this mutation from the main worktree /tmp/stepstone-r3/after/roadmap.
+[exit 1]
+
+…/roadmap-agent-a $ stepstone project add Silently forked goal --cwd /tmp/stepstone-r3/after/roadmap-agent-a --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/after/roadmap-agent-a/.worklist/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/after/roadmap-agent-a. Run this mutation from the main worktree /tmp/stepstone-r3/after/roadmap.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/after/roadmap-agent-a/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/after/roadmap-agent-a",
+      "mainWorktree": "/tmp/stepstone-r3/after/roadmap",
+      "resolution": "run-from-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+--- in the linked worktree: another mutation interface ---------
+
+…/roadmap-agent-a $ stepstone project update ship-the-worktree-guard --description edited from the linked worktree --cwd /tmp/stepstone-r3/after/roadmap-agent-a
+Project worklist /tmp/stepstone-r3/after/roadmap-agent-a/.worklist/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/after/roadmap-agent-a. Run this mutation from the main worktree /tmp/stepstone-r3/after/roadmap.
+[exit 1]
+
+--- in the linked worktree: an explicit --file store is fine ---
+
+…/roadmap-agent-a $ stepstone project add Scratch store goal --file /tmp/stepstone-r3/after/scratch/worklist.json --cwd /tmp/stepstone-r3/after/roadmap-agent-a
+Added project goal scratch-store-goal: Scratch store goal
+[exit 0]
+
+--- in the main worktree: the sole writer still writes ---------
+
+…/roadmap $ stepstone project add Added from the main worktree --cwd /tmp/stepstone-r3/after/roadmap
+Added project goal added-from-the-main-worktree: Added from the main worktree
+[exit 0]
+
+--- did the roadmap fork? -------------------------------------
+
+goals committed roadmap sees in the main worktree:
+  - ship-the-worktree-guard
+  - added-from-the-main-worktree
+
+goals committed roadmap sees in the linked worktree:
+  - ship-the-worktree-guard
+
+$ git -C …/roadmap-agent-a status --short
+
+RESULT: the linked worktree left the committed roadmap byte-for-byte unchanged.
+
+explicit --file store written from the linked worktree:
+  - scratch-store-goal

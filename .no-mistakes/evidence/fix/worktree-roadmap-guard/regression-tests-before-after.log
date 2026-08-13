@@ -1,0 +1,78 @@
+=== the two new regressions, run against the source at the previous commit 75b662d ===
+$ vitest run test/cli.test.ts -t "worktree added beside it"   # test file from d2ee9e8, src from 75b662d
+
+ RUN  v4.1.10 /tmp/stepstone-r3/src-prev
+ ❯ test/cli.test.ts (62 tests | 2 failed | 60 skipped) 932ms
+     × names the main checkout its Git directory records to a worktree added beside it 426ms
+     × names the submodule working tree to a worktree added beside it 504ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/cli.test.ts > project goal file resolution > names the main checkout its Git directory records to a worktree added beside it
+AssertionError: expected { ok: false, scope: 'project', …(3) } to match object { ok: false, error: { …(3) }, …(1) }
+(4 matching properties omitted from actual)
+- Expected
++ Received
+@@ -1,13 +1,12 @@
+  {
+    "error": {
+      "code": "UNAVAILABLE",
+      "details": {
+        "currentWorktree": "/tmp/stepstone-cli-recorded-checkout-7FhL6F/worktree",
+-       "mainWorktree": "/tmp/stepstone-cli-recorded-checkout-7FhL6F/checkout",
+        "path": "/tmp/stepstone-cli-recorded-checkout-7FhL6F/worktree/.worklist/worklist.json",
+-       "resolution": "run-from-main-worktree",
++       "resolution": "provide-main-worktree",
+      },
+      "retryable": false,
+    },
+    "meta": {
+      "changed": false,
+ ❯ test/cli.test.ts:2170:37
+    2168|   const refused = await runCli(linked, ["project", "add", "Must not di…
+    2169|   expect(refused.code).toBe(1);
+    2170|   expect(parseJson(refused.stderr)).toMatchObject({
+       |                                     ^
+    2171|    ok: false,
+    2172|    error: {
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+ FAIL  test/cli.test.ts > project goal file resolution > names the submodule working tree to a worktree added beside it
+AssertionError: expected { ok: false, scope: 'project', …(3) } to match object { ok: false, error: { …(3) }, …(1) }
+(4 matching properties omitted from actual)
+- Expected
++ Received
+@@ -1,13 +1,12 @@
+  {
+    "error": {
+      "code": "UNAVAILABLE",
+      "details": {
+        "currentWorktree": "/tmp/stepstone-cli-submodule-linked-5SlTJB/worktree",
+-       "mainWorktree": "/tmp/stepstone-cli-F69J7O/sub",
+        "path": "/tmp/stepstone-cli-submodule-linked-5SlTJB/worktree/.worklist/worklist.json",
+-       "resolution": "run-from-main-worktree",
++       "resolution": "provide-main-worktree",
+      },
+      "retryable": false,
+    },
+    "meta": {
+      "changed": false,
+ ❯ test/cli.test.ts:2236:38
+    2234|    const refused = await runCli(linked, ["project", "add", "Must not d…
+    2235|    expect(refused.code).toBe(1);
+    2236|    expect(parseJson(refused.stderr)).toMatchObject({
+       |                                      ^
+    2237|     ok: false,
+    2238|     error: {
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+ Test Files  1 failed (1)
+      Tests  2 failed | 60 skipped (62)
+   Start at  18:03:33
+   Duration  1.17s (transform 106ms, setup 0ms, import 129ms, tests 932ms, environment 0ms)
+
+
+=== the same two, at the target commit d2ee9e8 ===
+$ vitest run test/cli.test.ts -t "worktree added beside it"
+
+ RUN  v4.1.10 /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZY8TBFZE2AN1VZDZER70WS8
+ Test Files  1 passed (1)
+      Tests  2 passed | 60 skipped (62)
+   Start at  18:03:35
+   Duration  1.63s (transform 110ms, setup 0ms, import 132ms, tests 1.39s, environment 0ms)

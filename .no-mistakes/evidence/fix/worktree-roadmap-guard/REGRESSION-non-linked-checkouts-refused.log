@@ -1,0 +1,45 @@
+===============================================================
+ Layouts refused although they are nobody's linked worktree
+ git 2.43.0, node v24.18.1
+===============================================================
+
+=== A. git init --separate-git-dir (named in the goal description) ===
+
+$ cat separate/.git
+  gitdir: /tmp/stepstone-e2e-scratch/defect/elsewhere.git
+$ git -C separate rev-parse --git-dir --git-common-dir --show-toplevel
+  /tmp/stepstone-e2e-scratch/defect/elsewhere.git
+  /tmp/stepstone-e2e-scratch/defect/elsewhere.git
+  /tmp/stepstone-e2e-scratch/defect/separate
+  ^ git-dir equals git-common-dir, so this checkout IS the main worktree.
+$ git -C separate worktree list --porcelain | head -1
+  worktree /tmp/stepstone-e2e-scratch/defect/elsewhere.git
+  ^ but the listing names the Git directory, not the checkout.
+
+base commit e8d90f3   $ stepstone project add "Plan the next release"
+Added project goal plan-the-next-release: Plan the next release
+[exit 0]
+
+target commit e1dd6d4 $ stepstone project add "Plan the next release"
+Project worklist /tmp/stepstone-e2e-scratch/defect/separate/.worklist/worklist.json cannot be changed from /tmp/stepstone-e2e-scratch/defect/separate: the repository at /tmp/stepstone-e2e-scratch/defect/elsewhere.git has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.
+[exit 1]
+
+=== B. a Git submodule working tree ===
+
+$ cat parent/sub/.git
+  gitdir: ../.git/modules/sub
+$ git -C parent/sub rev-parse --git-dir --git-common-dir --show-toplevel
+  /tmp/stepstone-e2e-scratch/defect/parent/.git/modules/sub
+  /tmp/stepstone-e2e-scratch/defect/parent/.git/modules/sub
+  /tmp/stepstone-e2e-scratch/defect/parent/sub
+  ^ the submodule is the only worktree of its own repository.
+$ git -C parent/sub worktree list --porcelain | head -1
+  worktree /tmp/stepstone-e2e-scratch/defect/parent/.git/modules/sub
+
+base commit e8d90f3   $ stepstone project add "Plan the next release"
+Added project goal plan-the-next-release: Plan the next release
+[exit 0]
+
+target commit e1dd6d4 $ stepstone project add "Plan the next release"
+Project worklist /tmp/stepstone-e2e-scratch/defect/parent/sub/.worklist/worklist.json cannot be changed from /tmp/stepstone-e2e-scratch/defect/parent/sub: the repository at /tmp/stepstone-e2e-scratch/defect/parent/.git/modules/sub has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.
+[exit 1]

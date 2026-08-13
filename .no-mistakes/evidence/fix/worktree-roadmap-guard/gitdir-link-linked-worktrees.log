@@ -1,0 +1,266 @@
+===============================================================
+ A worktree added beside a gitdir-link checkout is sent to that
+ checkout, not told its repository has no main worktree
+ stepstone CLI: /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZY8TBFZE2AN1VZDZER70WS8/src/cli.ts
+ previous commit: /tmp/stepstone-r3/src-prev/src/cli.ts
+ git 2.43.0, node v24.18.1
+===============================================================
+
+
+### A. a submodule working tree, with a worktree added beside it
+
+The submodule's .git is a link into the superproject's Git directory:
+  …/app/parser/.git: gitdir: ../.git/modules/parser
+
+so the worktree listing names that Git directory where a checkout is expected:
+  worktree /tmp/stepstone-r3/work/app/.git/modules/parser
+  HEAD da2e2584ab538c9fc36db27e8888efd156fa1222
+  branch refs/heads/main
+  
+
+The submodule is its repository's one main checkout, so it writes its roadmap:
+
+…/app/parser $ stepstone project add Ship the parser rewrite
+Added project goal ship-the-parser-rewrite: Ship the parser rewrite
+[exit 0]
+
+An agent then takes a worktree of the submodule to work on a goal:
+
+…/parser-agent $ stepstone project list
+[open] ship-the-parser-rewrite: Ship the parser rewrite
+[exit 0]
+
+-- previous commit (src-prev): refused, but told the repository has no main worktree --
+
+…/parser-agent $ stepstone project add Forked in a worktree --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/work/parser-agent/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/work/parser-agent: the repository at /tmp/stepstone-r3/work/app/.git/modules/parser has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/work/parser-agent/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/work/parser-agent",
+      "gitDirectory": "/tmp/stepstone-r3/work/app/.git/modules/parser",
+      "resolution": "provide-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+-- target commit: refused naming the checkout the Git directory records --
+
+…/parser-agent $ stepstone project add Forked in a worktree --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/work/parser-agent/.worklist/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/work/parser-agent. Run this mutation from the main worktree /tmp/stepstone-r3/work/app/parser.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/work/parser-agent/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/work/parser-agent",
+      "mainWorktree": "/tmp/stepstone-r3/work/app/parser",
+      "resolution": "run-from-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+The named checkout can perform the change, so the remedy is one someone can take:
+
+…/app/parser $ stepstone project add Written where it belongs
+Added project goal written-where-it-belongs: Written where it belongs
+[exit 0]
+
+…/app/parser $ stepstone project list
+[open] ship-the-parser-rewrite: Ship the parser rewrite
+[open] written-where-it-belongs: Written where it belongs
+[exit 0]
+
+And the worktree that was refused kept the committed roadmap it had:
+
+…/parser-agent $ git status --porcelain
+[clean]
+
+
+### B. git init --separate-git-dir, with the checkout recorded
+
+Its .git is a link too, and the listing names the same way:
+  …/separate/.git: gitdir: /tmp/stepstone-r3/work/roadmap.git
+  worktree /tmp/stepstone-r3/work/roadmap.git
+  HEAD 25be129aeaa198115ba37263a9842455a93f4e78
+  branch refs/heads/main
+  
+
+…/separate $ stepstone project add Cut the 1.0 release
+Added project goal cut-the-1-0-release: Cut the 1.0 release
+[exit 0]
+
+-- previous commit: the same wrong remedy --
+
+…/separate-agent $ stepstone project add Forked in a worktree --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/work/separate-agent/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/work/separate-agent: the repository at /tmp/stepstone-r3/work/roadmap.git has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/work/separate-agent/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/work/separate-agent",
+      "gitDirectory": "/tmp/stepstone-r3/work/roadmap.git",
+      "resolution": "provide-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+-- target commit --
+
+…/separate-agent $ stepstone project add Forked in a worktree --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/work/separate-agent/.worklist/worklist.json cannot be changed from linked worktree /tmp/stepstone-r3/work/separate-agent. Run this mutation from the main worktree /tmp/stepstone-r3/work/separate.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/work/separate-agent/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/work/separate-agent",
+      "mainWorktree": "/tmp/stepstone-r3/work/separate",
+      "resolution": "run-from-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+The refused worktree still resolves to its own roadmap, not the main one:
+
+…/separate-agent $ git rev-parse --show-toplevel
+  /tmp/stepstone-r3/work/separate-agent
+
+And the checkout it names still writes:
+
+…/separate $ stepstone project add Written where it belongs
+Added project goal written-where-it-belongs: Written where it belongs
+[exit 0]
+
+
+### C. git init --separate-git-dir that records nothing
+
+Git writes the link from the checkout to the Git directory and nothing back,
+so this layout has a main checkout that cannot be named from the Git directory.
+The write is still refused - it would fork the roadmap like any other - and the
+refusal says what is true rather than inventing a path.
+
+…/silent $ stepstone project add Canonical goal
+Added project goal canonical-goal: Canonical goal
+[exit 0]
+
+…/silent.git $ git config core.worktree   (in the Git directory)
+  (unset)
+
+…/silent-agent $ stepstone project add Forked in a worktree --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/work/silent-agent/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/work/silent-agent: the repository at /tmp/stepstone-r3/work/silent.git has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/work/silent-agent/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/work/silent-agent",
+      "gitDirectory": "/tmp/stepstone-r3/work/silent.git",
+      "resolution": "provide-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+The store the message names as a way out is writable from that very worktree:
+
+…/silent-agent $ STEPSTONE_WORKLIST=…/silent-agent/local-plan.json stepstone project add "Local plan" --json
+Added project goal local-plan: Local plan
+[exit 0]
+
+and the committed roadmap in that worktree is untouched:
+
+…/silent-agent $ git status --porcelain
+  ?? local-plan.json
+
+
+### D. a bare clone, which really has no main checkout
+
+The new lookup must not invent a destination here: a bare Git directory
+records no working tree, and no `git worktree add` gives it one.
+
+…/bare-agent $ stepstone project add Forked in a worktree --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/work/bare-agent/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/work/bare-agent: the repository at /tmp/stepstone-r3/work/bare.git has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/work/bare-agent/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/work/bare-agent",
+      "gitDirectory": "/tmp/stepstone-r3/work/bare.git",
+      "resolution": "provide-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+===============================================================
+ end of transcript
+===============================================================

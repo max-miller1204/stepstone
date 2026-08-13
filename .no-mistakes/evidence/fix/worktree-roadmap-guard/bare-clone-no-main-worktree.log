@@ -1,0 +1,67 @@
+===============================================================
+ A bare clone plus worktrees has no sole writer to send anyone to
+ stepstone CLI: /home/max/.no-mistakes/worktrees/b8259d22ae4a/01KZY8TBFZE2AN1VZDZER70WS8/src/cli.ts
+ git 2.43.0, node v24.18.1
+===============================================================
+
+=== 1. a bare clone plus a worktree: no checkout is the sole writer ===
+
+$ git clone --bare source roadmap.git && git -C roadmap.git worktree add ../checkout HEAD
+  Preparing worktree (detached HEAD ea55bf6)
+  HEAD is now at ea55bf6 roadmap
+
+$ git -C roadmap.git worktree list --porcelain | head -3
+  worktree /tmp/stepstone-r3/bare/roadmap.git
+  bare
+  
+
+…/checkout $ stepstone project list --cwd /tmp/stepstone-r3/bare/checkout
+[open] ship-the-worktree-guard: Ship the worktree guard
+[exit 0]
+
+…/checkout $ stepstone project add Would fork the roadmap --cwd /tmp/stepstone-r3/bare/checkout --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Project worklist /tmp/stepstone-r3/bare/checkout/.worklist/worklist.json cannot be changed from /tmp/stepstone-r3/bare/checkout: the repository at /tmp/stepstone-r3/bare/roadmap.git has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $STEPSTONE_WORKLIST, stays writable here.",
+    "retryable": false,
+    "details": {
+      "path": "/tmp/stepstone-r3/bare/checkout/.worklist/worklist.json",
+      "currentWorktree": "/tmp/stepstone-r3/bare/checkout",
+      "gitDirectory": "/tmp/stepstone-r3/bare/roadmap.git",
+      "resolution": "provide-main-worktree"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 1]
+
+the way out it names, taken from this very checkout:
+Added project goal scratch-store-goal: Scratch store goal
+[exit 0]
+
+and the other way out, a clone that does have a main worktree:
+
+…/clone $ stepstone project add Added in a clone with a main worktree --cwd /tmp/stepstone-r3/bare/clone
+Added project goal added-in-a-clone-with-a-main-worktree: Added in a clone with a main worktree
+[exit 0]
+
+=== roadmaps afterwards ===
+
+…/checkout:
+  - ship-the-worktree-guard
+
+…/clone:
+  - ship-the-worktree-guard
+  - added-in-a-clone-with-a-main-worktree
+
+explicit $STEPSTONE_WORKLIST store written from the bare-clone checkout:
+  - scratch-store-goal

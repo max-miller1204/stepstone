@@ -1,0 +1,136 @@
+===============================================================
+ base commit e8d90f3 - before the guard
+ stepstone CLI: /tmp/stepstone-wtguard-evidence/src-base/src/cli.ts
+ git 2.43.0, node v24.18.1
+===============================================================
+
+--- setup: a repository whose roadmap is committed -------------
+
+…/roadmap $ stepstone project add Ship the worktree guard --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap
+Added project goal ship-the-worktree-guard: Ship the worktree guard
+[exit 0]
+
+…/roadmap $ git worktree add ../roadmap-agent-a -b feature/agent-a
+  Preparing worktree (new branch 'feature/agent-a')
+  HEAD is now at 36f3c3f roadmap: capture the first goal
+
+--- in the linked worktree: reads still work -------------------
+
+…/roadmap-agent-a $ stepstone project list --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap-agent-a
+[open] ship-the-worktree-guard: Ship the worktree guard
+[exit 0]
+
+--- in the linked worktree: a dry run still previews -----------
+
+…/roadmap-agent-a $ stepstone project apply-plan /tmp/stepstone-wtguard-evidence/linked-base/plan.json --dry-run --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap-agent-a
+Would add 1 project goal(s); revision 1 is unchanged:
+  previewed-only -> previewed-only
+[exit 0]
+
+--- in the linked worktree: a semantic no-op still succeeds ----
+
+…/roadmap-agent-a $ stepstone project move ship-the-worktree-guard up --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap-agent-a
+Project goal ship-the-worktree-guard is already there
+[exit 0]
+
+--- in the linked worktree: a real mutation is refused ---------
+
+…/roadmap-agent-a $ stepstone project add Silently forked goal --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap-agent-a
+Added project goal silently-forked-goal: Silently forked goal
+[exit 0]
+
+…/roadmap-agent-a $ stepstone project add Silently forked goal --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap-agent-a --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "add",
+  "result": {
+    "scope": "project",
+    "action": "add",
+    "goal": {
+      "id": "silently-forked-goal-2",
+      "title": "Silently forked goal",
+      "status": "open",
+      "createdAt": "2026-08-13T20:58:37.462Z",
+      "updatedAt": "2026-08-13T20:58:37.462Z"
+    },
+    "goals": [
+      {
+        "id": "ship-the-worktree-guard",
+        "title": "Ship the worktree guard",
+        "status": "open",
+        "createdAt": "2026-08-13T20:58:36.893Z",
+        "updatedAt": "2026-08-13T20:58:36.893Z"
+      },
+      {
+        "id": "silently-forked-goal",
+        "title": "Silently forked goal",
+        "status": "open",
+        "createdAt": "2026-08-13T20:58:37.349Z",
+        "updatedAt": "2026-08-13T20:58:37.349Z"
+      },
+      {
+        "id": "silently-forked-goal-2",
+        "title": "Silently forked goal",
+        "status": "open",
+        "createdAt": "2026-08-13T20:58:37.462Z",
+        "updatedAt": "2026-08-13T20:58:37.462Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "silently-forked-goal-2"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "3"
+    },
+    "cliVersion": "0.9.3"
+  }
+}
+[exit 0]
+
+--- in the linked worktree: another mutation interface ---------
+
+…/roadmap-agent-a $ stepstone project update ship-the-worktree-guard --description edited from the linked worktree --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap-agent-a
+Updated project goal ship-the-worktree-guard
+[exit 0]
+
+--- in the linked worktree: an explicit --file store is fine ---
+
+…/roadmap-agent-a $ stepstone project add Scratch store goal --file /tmp/stepstone-wtguard-evidence/linked-base/scratch/worklist.json --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap-agent-a
+Added project goal scratch-store-goal: Scratch store goal
+[exit 0]
+
+--- in the main worktree: the sole writer still writes ---------
+
+…/roadmap $ stepstone project add Added from the main worktree --cwd /tmp/stepstone-wtguard-evidence/linked-base/roadmap
+Added project goal added-from-the-main-worktree: Added from the main worktree
+[exit 0]
+
+--- did the roadmap fork? -------------------------------------
+
+goals committed roadmap sees in the main worktree:
+  - ship-the-worktree-guard
+  - added-from-the-main-worktree
+
+goals committed roadmap sees in the linked worktree:
+  - ship-the-worktree-guard
+  - silently-forked-goal
+  - silently-forked-goal-2
+
+$ git -C …/roadmap-agent-a status --short
+   M .worklist/worklist.json
+
+RESULT: the linked worktree FORKED the committed roadmap (uncommitted divergence above).
+
+explicit --file store written from the linked worktree:
+  - scratch-store-goal
