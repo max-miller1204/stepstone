@@ -238,7 +238,7 @@ Once the agent is running, Herdr accepts the hosting pane ID wherever it accepts
 That failure closes any created pane, releases the claim, scrubs the checkout, and returns the lease instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
 Delete or rename the stale branch deliberately, once you know whether its commits are still wanted.
 
-Use bounded waits such as `herdr agent wait "$pane_id" --timeout "$HERDR_WAIT_TIMEOUT_MS"` and use `herdr agent read "$pane_id"` for liveness and diagnostics.
+Use bounded waits such as `herdr agent wait "$pane_id" --timeout "${HERDR_WAIT_TIMEOUT_MS:-300000}"` and use `herdr agent read "$pane_id"` for liveness and diagnostics.
 A wait timeout preserves custody because the request may have reached the agent before the client lost its response.
 Those signals never replace merged-PR evidence.
 

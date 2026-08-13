@@ -37,6 +37,14 @@ function dispatchExample(name: string): string {
 	throw new Error(`Missing dispatch example ${name}`);
 }
 
+function dispatchCommand(fragment: string): string {
+	for (const match of dispatchMarkdown.matchAll(/`([^`\n]+)`/g)) {
+		const command = match[1] ?? "";
+		if (command.includes(fragment)) return command;
+	}
+	throw new Error(`Missing dispatch command ${fragment}`);
+}
+
 async function runShell(cwd: string, script: string, env: Record<string, string>): Promise<CommandResult> {
 	try {
 		const { stdout, stderr } = await execFileAsync("sh", ["-u", "-c", script], {
@@ -128,6 +136,7 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 		"    ;;",
 		'  agent:start) test "${HERDR_START_RESULT:-ok}" = ok ;;',
 		'  agent:prompt) test "${HERDR_PROMPT_RESULT:-ok}" = ok ;;',
+		"  agent:wait) : ;;",
 		"  *) exit 95 ;;",
 		"esac",
 	]);
@@ -357,6 +366,16 @@ describe("documented dispatch bindings", () => {
 		expect(returned).toBeGreaterThan(clear);
 		expect(events[returned]).toContain(`--force --if-lease-holder ${leaseHolder}`);
 		expect(events).toContain("treehouse:return-clean");
+	});
+
+	it("bounds the documented Herdr wait when no timeout is configured", async () => {
+		const fixture = await createRepository();
+		await installFakeBoundaries(fixture.bin);
+		const script = `pane_id=pane-1\n${dispatchCommand("herdr agent wait")}`;
+		const result = await runShell(fixture.root, script, baseEnvironment(fixture));
+
+		expect(result.code).toBe(0);
+		expect(await readEvents(fixture)).toEqual(["herdr:agent wait pane-1 --timeout 300000"]);
 	});
 
 	it("preserves Binding B custody after an ambiguous bounded prompt failure", async () => {
