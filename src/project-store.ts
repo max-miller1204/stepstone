@@ -17,6 +17,7 @@ import {
 	isTransientGitFailure,
 	type MainWorktreeFailure,
 	resolveMainWorktree,
+	resolveWorktreePlacement,
 } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import type { ProjectWorklist, RevisionedProjectWorklist } from "./types.ts";
@@ -184,9 +185,7 @@ export class ProjectWorklistWorktreeLookupError extends ProjectMutationRefusedEr
 		const diagnostic = failure.command ? gitCommandDiagnostic(failure.command) : failure.message;
 		super(
 			`Git could not determine the main worktree for ${worklistPath}: ${diagnostic}. ` +
-				`${
-					retryable ? "Retry the change." : "Make `git worktree list --porcelain -z` answer here, then retry."
-				}`,
+				`${retryable ? "Retry the change." : `Make \`${failure.invocation}\` answer here, then retry.`}`,
 		);
 		this.name = "ProjectWorklistWorktreeLookupError";
 		this.worklistPath = worklistPath;
@@ -364,13 +363,24 @@ function committedRoadmapWriteRefusal(path: string): ProjectMutationRefusedError
 	if (main.kind === "unavailable") {
 		return new ProjectWorklistWorktreeLookupError(worklistPath, main.failure);
 	}
+	if (main.kind === "checkout" && currentWorktree === main.path) return undefined;
+
+	// The listing naming some other directory is not yet an answer. It names the
+	// Git directory rather than the checkout for every repository whose `.git` is
+	// a gitdir link - a submodule working tree, a `git init --separate-git-dir`
+	// repository - and each of those is its repository's one main checkout, as
+	// entitled to write the roadmap as any other. Only Git's own placement of this
+	// checkout tells them apart from a worktree that really was added beside a
+	// main one.
+	const placement = resolveWorktreePlacement(currentWorktree);
+	if (placement.kind === "unavailable") {
+		return new ProjectWorklistWorktreeLookupError(worklistPath, placement.failure);
+	}
+	if (placement.kind === "main") return undefined;
 	if (main.kind === "no-checkout") {
 		return new ProjectWorklistNoMainWorktreeError(worklistPath, currentWorktree, main.gitDirectory);
 	}
-	if (currentWorktree !== main.path) {
-		return new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, main.path);
-	}
-	return undefined;
+	return new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, main.path);
 }
 
 /** Name of the cross-process lock every writer to one worklist directory takes. */
