@@ -32,26 +32,34 @@ export function resolveGitRoot(cwd: string): GitRootResult {
 	}
 }
 
+export interface CurrentGitBranchResult {
+	/** The checked-out branch, or null when HEAD is detached. */
+	branch: string | null;
+	/** A Git execution failure. Absent when Git successfully reports detached HEAD. */
+	error?: string;
+}
+
 /**
- * The branch checked out in `cwd`, or null when there is none to name.
+ * The branch checked out in `cwd`, keeping detached HEAD distinct from a Git
+ * command that failed.
  *
- * A detached HEAD, a directory outside any repository, and a Git that never
- * answers all collapse to the same null, because a caller defaulting to the
- * current branch has the same fallback for each. The timeout matches
- * `resolveGitRoot`, so a hung index lock or a stalled network filesystem ends
- * as "no branch" rather than as a command that never returns.
+ * `git branch --show-current` exits successfully with an empty answer for a
+ * detached HEAD. Execution failures retain their diagnostic so a caller can
+ * report a retryable availability error instead of misclassifying one as a
+ * request that merely omitted `--branch`.
  */
-export function currentGitBranch(cwd: string): string | null {
+export function currentGitBranch(cwd: string): CurrentGitBranchResult {
 	try {
 		const raw = execSync("git branch --show-current", {
 			cwd,
 			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
+			stdio: ["ignore", "pipe", "pipe"],
 			timeout: 10000,
 		});
-		return raw.trim() || null;
-	} catch {
-		return null;
+		return { branch: raw.trim() || null };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return { branch: null, error: message };
 	}
 }
 

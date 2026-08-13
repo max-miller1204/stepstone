@@ -10,6 +10,7 @@ import {
 } from "../src/application-service.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SessionStore } from "../src/session-store.ts";
+import type { ProjectWorklist } from "../src/types.ts";
 
 function createSessionStore() {
 	const entries: unknown[] = [];
@@ -1417,6 +1418,26 @@ describe("worklist application service", () => {
 			expect(finished).toMatchObject({ status });
 			if (retainsClaim) expect(finished).toMatchObject({ branch: "feat/claim" });
 			else expect(finished).not.toHaveProperty("branch");
+
+			if (action === "complete") {
+				const historicalCompletedAt = finished?.completedAt;
+				const worklist = JSON.parse(await readFile(projectPath, "utf8")) as ProjectWorklist;
+				const stored = worklist.goals.find((goal) => goal.id === id);
+				if (!stored) throw new Error(`Finished goal ${id} was not stored`);
+				stored.branch = "feat/stale-claim";
+				await writeFile(projectPath, `${JSON.stringify(worklist, null, 2)}\n`);
+
+				const cleaned = await service.execute(
+					{ scope: "project", action: "complete", id, confirm: true },
+					{ source: "cli" },
+				);
+				expect(cleaned).toMatchObject({
+					ok: true,
+					result: { goal: { status: "done", completedAt: historicalCompletedAt } },
+					meta: { changed: true },
+				});
+				if (cleaned.ok) expect(cleaned.result.goal).not.toHaveProperty("branch");
+			}
 
 			// A dispatcher told `retryable: true` retries a refusal that can never
 			// succeed, and the persistence wording sends a human to check repository

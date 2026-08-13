@@ -1278,8 +1278,40 @@ async function run(invocation: CliInvocation): Promise<void> {
 			}
 			let branch = invocation.branch;
 			if (!invocation.clear && branch === undefined) {
-				branch = currentGitBranch(invocation.cwd) ?? undefined;
-				if (!branch) fail(`project start needs --branch when Git has no current branch\n\n${USAGE}`, 1);
+				const current = currentGitBranch(invocation.cwd);
+				if (current.error) {
+					throw new WorklistCliFailure({
+						ok: false,
+						scope: "project",
+						action: "start",
+						error: {
+							code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+							message:
+								"Git could not determine the current branch. Retry, or pass --branch <name> explicitly.",
+							retryable: true,
+							details: { resolution: "retry-or-provide-project-start-branch" },
+						},
+						meta: { changed: false, semanticNoOp: false, changedFields: [] },
+					});
+				}
+				branch = current.branch ?? undefined;
+				if (!branch) {
+					throw new WorklistCliFailure({
+						ok: false,
+						scope: "project",
+						action: "start",
+						error: {
+							code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+							message: "project start needs --branch when Git HEAD is detached.",
+							retryable: false,
+							details: {
+								fields: ["branch"],
+								resolution: "provide-project-start-branch",
+							},
+						},
+						meta: { changed: false, semanticNoOp: false, changedFields: [] },
+					});
+				}
 			}
 			const envelope = await executeCliOperation(service, {
 				scope: "project",

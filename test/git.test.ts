@@ -29,15 +29,15 @@ describe("git root", () => {
 });
 
 describe("current branch", () => {
-	it("names the checked-out branch and answers null when there is none", async () => {
+	it("distinguishes a checked-out branch, detached HEAD, and Git failure", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-branch-"));
-		// Every "no branch to default to" case reads the same to a caller, so the
-		// directory outside any repository has to answer null rather than throw.
-		expect(currentGitBranch(root)).toBeNull();
+		const outside = currentGitBranch(root);
+		expect(outside.branch).toBeNull();
+		expect(outside.error).toEqual(expect.any(String));
 
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		execFileSync("git", ["switch", "-q", "-c", "feat/claim"], { cwd: root });
-		expect(currentGitBranch(root)).toBe("feat/claim");
+		expect(currentGitBranch(root)).toEqual({ branch: "feat/claim" });
 
 		execFileSync(
 			"git",
@@ -57,7 +57,7 @@ describe("current branch", () => {
 			},
 		);
 		execFileSync("git", ["checkout", "-q", "--detach"], { cwd: root });
-		expect(currentGitBranch(root)).toBeNull();
+		expect(currentGitBranch(root)).toEqual({ branch: null });
 	});
 });
 

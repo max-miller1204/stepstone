@@ -11,7 +11,7 @@ import { formatSessionTasks } from "../src/format.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SESSION_SNAPSHOT_TYPE, SessionStore } from "../src/session-store.ts";
 import { createProjectLocator, executeWorklist } from "../src/tool.ts";
-import type { ProjectWorklist } from "../src/types.ts";
+import type { ProjectGoal, ProjectWorklist } from "../src/types.ts";
 import type { DashboardResult } from "../src/ui.ts";
 
 function fakePi(entries: unknown[] = []) {
@@ -987,6 +987,46 @@ describe("registered model tool", () => {
 		).toHaveLength(2);
 	});
 
+	it("lets the registered model tool guard a branch claim with the goal timestamp", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-guarded-start-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const session = await startSession(root);
+		const added = (await session.call({
+			scope: "project",
+			action: "add",
+			title: "Guarded dispatch",
+		})) as { details: { goal?: ProjectGoal } };
+		const baseline = added.details.goal;
+		if (!baseline) throw new Error("The model tool did not return the added goal");
+
+		const claimed = (await session.call({
+			scope: "project",
+			action: "start",
+			id: baseline.id,
+			branch: "feat/guarded",
+			expectedUpdatedAt: baseline.updatedAt,
+		})) as { details: { goal?: ProjectGoal } };
+		expect(claimed.details.goal).toMatchObject({ id: baseline.id, branch: "feat/guarded" });
+
+		await expect(
+			session.call({
+				scope: "project",
+				action: "start",
+				id: baseline.id,
+				branch: "feat/stale",
+				expectedUpdatedAt: baseline.updatedAt,
+			}),
+		).rejects.toMatchObject({
+			code: "CONFLICT",
+			retryable: true,
+			conflict: {
+				type: "goal-updated-at",
+				id: baseline.id,
+				expectedUpdatedAt: baseline.updatedAt,
+			},
+		});
+	});
+
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {
 		expect(registerExtension().tool.executionMode).toBe("sequential");
 	});
@@ -1003,6 +1043,7 @@ describe("registered model tool", () => {
 		expect(parameters.properties.afterId).toBeDefined();
 		expect(parameters.properties.plan).toBeDefined();
 		expect(parameters.properties.dryRun).toBeDefined();
+		expect(parameters.properties.expectedUpdatedAt).toBeDefined();
 		expect(tool.description).toContain("Project move requires exactly one of beforeId or afterId");
 		expect(tool.description).not.toContain("Project Goals cannot be reordered");
 	});

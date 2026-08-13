@@ -34,6 +34,7 @@ export interface ParsedCommand {
 	beforeId?: string;
 	afterId?: string;
 	confirm?: boolean;
+	expectedUpdatedAt?: string;
 }
 
 export const WORKLIST_PROMPT_GUIDELINES = [

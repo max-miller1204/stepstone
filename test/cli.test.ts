@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -1475,6 +1475,67 @@ describe("project goal CLI", () => {
 		) as { result: { goal: ProjectGoal } };
 		expect(completed.result.goal).toMatchObject({ status: "done" });
 		expect(completed.result.goal.branch).toBeUndefined();
+	});
+
+	it("returns typed JSON failures when the current branch cannot supply a claim", async () => {
+		const root = await tempGitRepo();
+		await execFileAsync("git", ["switch", "-c", "feat/current"], { cwd: root });
+		await runCli(root, ["project", "add", "Claim target"]);
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--allow-empty", "-m", "root"],
+			{ cwd: root },
+		);
+		await execFileAsync("git", ["checkout", "--detach"], { cwd: root });
+
+		const detached = await runCli(root, ["project", "start", "claim-target", "--json"]);
+		expect(detached.code).toBe(1);
+		expect(detached.stdout).toBe("");
+		expect(parseJson(detached.stderr)).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: "VALIDATION_FAILED",
+				retryable: false,
+				details: { fields: ["branch"], resolution: "provide-project-start-branch" },
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+
+		const fakeBin = await mkdtemp(join(tmpdir(), "stepstone-failing-git-"));
+		const fakeGit = join(fakeBin, "git");
+		await writeFile(
+			fakeGit,
+			[
+				"#!/bin/sh",
+				'if [ "$1" = "rev-parse" ]; then',
+				"  printf '%s\\n' \"$PWD\"",
+				"  exit 0",
+				"fi",
+				"printf '%s\\n' 'simulated branch lookup failure' >&2",
+				"exit 7",
+				"",
+			].join("\n"),
+		);
+		await chmod(fakeGit, 0o755);
+
+		const unavailable = await runCli(root, ["project", "start", "claim-target", "--json"], {
+			PATH: fakeBin,
+		});
+		expect(unavailable.code).toBe(1);
+		expect(unavailable.stdout).toBe("");
+		expect(parseJson(unavailable.stderr)).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: true,
+				details: { resolution: "retry-or-provide-project-start-branch" },
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
 	});
 
 	it("never suggests a goal someone has already taken on", async () => {
