@@ -31,6 +31,8 @@ import { goalCount } from "./format.ts";
 import {
 	createWorklistLocator,
 	currentGitBranch,
+	type GitCommandFailure,
+	isTransientGitFailure,
 	resolveGitRoot,
 	resolveWorklistLocation,
 	shadowedWorklistWarning,
@@ -657,15 +659,54 @@ function formatPlanWarning(warning: ProjectPlanWarning): string {
 }
 
 /**
- * A Git diagnostic reduced to one line, so the same text can ride inside a
- * sentence a person reads and inside a JSON envelope a dispatcher parses.
+ * What Git's failure was, on one line a person reads and a dispatcher can log.
  *
- * The underlying message is whatever Git wrote to stderr, prefixed by the failed
- * command, which is what tells a timeout apart from a permissions error or a Git
- * too old for the flag being used.
+ * Whatever Git wrote to stderr comes first, then how the run ended, because a
+ * killed run leaves a bare "Command failed" that says nothing about the kill.
+ * Together they tell a timeout apart from a permissions error or a Git too old
+ * for the flag being used.
  */
-function condenseGitDiagnostic(message: string): string {
-	return message.replace(/\s+/g, " ").trim();
+function describeGitFailure(failure: GitCommandFailure): string {
+	const diagnostic = singleLine(failure.message);
+	if (failure.timedOut) return `${diagnostic} (the command timed out)`;
+	if (failure.signal !== undefined) return `${diagnostic} (killed by ${failure.signal})`;
+	if (failure.exitCode !== undefined) return `${diagnostic} (git exited with status ${failure.exitCode})`;
+	return diagnostic;
+}
+
+/**
+ * The typed failure a claim earns when Git cannot name the current branch.
+ *
+ * `retryable` follows how the run ended rather than the bare fact that it failed.
+ * By this point the repository has already been resolved, so Git exists and the
+ * worktree is readable: a status Git exited with here is a verdict it will reach
+ * again, and a dispatcher told to retry an option this Git does not support spins
+ * forever. Either way `--branch` is the way through, which is why both
+ * resolutions name it.
+ */
+function branchLookupFailure(failure: GitCommandFailure): WorklistCliFailure {
+	const retryable = isTransientGitFailure(failure);
+	const gitError = describeGitFailure(failure);
+	return new WorklistCliFailure({
+		ok: false,
+		scope: "project",
+		action: "start",
+		error: {
+			code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+			message:
+				`Git could not determine the current branch: ${gitError}. ` +
+				`${retryable ? "Retry, or pass" : "Pass"} --branch <name> explicitly.`,
+			retryable,
+			details: {
+				resolution: retryable ? "retry-or-provide-project-start-branch" : "provide-project-start-branch",
+				gitError,
+				gitTimedOut: failure.timedOut,
+				...(failure.exitCode !== undefined ? { gitExitCode: failure.exitCode } : {}),
+				...(failure.signal !== undefined ? { gitSignal: failure.signal } : {}),
+			},
+		},
+		meta: { changed: false, semanticNoOp: false, changedFields: [] },
+	});
 }
 
 /** A failed operation, carrying the full deterministic failure envelope for --json output. */
@@ -1291,21 +1332,7 @@ async function run(invocation: CliInvocation): Promise<void> {
 			let branch = invocation.branch;
 			if (!invocation.clear && branch === undefined) {
 				const current = currentGitBranch(invocation.cwd);
-				if (current.error) {
-					const gitError = condenseGitDiagnostic(current.error);
-					throw new WorklistCliFailure({
-						ok: false,
-						scope: "project",
-						action: "start",
-						error: {
-							code: WORKLIST_ERROR_CODES.UNAVAILABLE,
-							message: `Git could not determine the current branch: ${gitError}. Retry, or pass --branch <name> explicitly.`,
-							retryable: true,
-							details: { resolution: "retry-or-provide-project-start-branch", gitError },
-						},
-						meta: { changed: false, semanticNoOp: false, changedFields: [] },
-					});
-				}
+				if (current.error) throw branchLookupFailure(current.error);
 				branch = current.branch ?? undefined;
 				if (!branch) {
 					throw new WorklistCliFailure({

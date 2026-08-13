@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import {
 	currentGitBranch,
+	isTransientGitFailure,
 	resolveGitRoot,
 	resolveWorklistLocation,
 	shadowedWorklistWarning,
@@ -28,12 +29,26 @@ describe("git root", () => {
 	});
 });
 
+/** A `git` on PATH that answers however the test needs it to, shadowing the real one. */
+async function fakeGitOnPath(script: string): Promise<() => void> {
+	const bin = await mkdtemp(join(tmpdir(), "stepstone-fake-git-"));
+	await writeFile(join(bin, "git"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+	const original = process.env.PATH;
+	// Prepended rather than replacing PATH, so the script can still reach the
+	// ordinary commands it is written in.
+	process.env.PATH = `${bin}:${original ?? ""}`;
+	return () => {
+		process.env.PATH = original;
+	};
+}
+
 describe("current branch", () => {
 	it("distinguishes a checked-out branch, detached HEAD, and Git failure", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-branch-"));
 		const outside = currentGitBranch(root);
 		expect(outside.branch).toBeNull();
-		expect(outside.error).toEqual(expect.any(String));
+		expect(outside.error).toMatchObject({ exitCode: expect.any(Number), timedOut: false });
+		expect(outside.error?.message).toContain("not a git repository");
 
 		execFileSync("git", ["init", "-q"], { cwd: root });
 		execFileSync("git", ["switch", "-q", "-c", "feat/claim"], { cwd: root });
@@ -58,6 +73,45 @@ describe("current branch", () => {
 		);
 		execFileSync("git", ["checkout", "-q", "--detach"], { cwd: root });
 		expect(currentGitBranch(root)).toEqual({ branch: null });
+	});
+
+	it("keeps whether the lookup was killed or answered, because only one of those is worth retrying", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-branch-classify-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+
+		// A Git that outlives its time limit never reached a verdict, so the caller
+		// is entitled to ask again.
+		const restoreSlow = await fakeGitOnPath("sleep 30");
+		let killed: ReturnType<typeof currentGitBranch>;
+		try {
+			killed = currentGitBranch(root, { timeoutMs: 250 });
+		} finally {
+			restoreSlow();
+		}
+		expect(killed.branch).toBeNull();
+		const killedFailure = killed.error;
+		if (!killedFailure) throw new Error("a killed branch lookup reported no failure");
+		expect(killedFailure).toMatchObject({ timedOut: true, signal: "SIGTERM" });
+		expect(killedFailure.exitCode).toBeUndefined();
+		expect(isTransientGitFailure(killedFailure)).toBe(true);
+
+		// A Git too old for the option answers the same way forever: the status it
+		// chose is the verdict, and retrying only repeats it.
+		const restoreUnsupported = await fakeGitOnPath(
+			"printf '%s\\n' \"error: unknown option \\`show-current'\" >&2\nexit 129",
+		);
+		let unsupported: ReturnType<typeof currentGitBranch>;
+		try {
+			unsupported = currentGitBranch(root);
+		} finally {
+			restoreUnsupported();
+		}
+		const unsupportedFailure = unsupported.error;
+		if (!unsupportedFailure) throw new Error("an unsupported option reported no failure");
+		expect(unsupportedFailure).toMatchObject({ exitCode: 129, timedOut: false });
+		expect(unsupportedFailure.signal).toBeUndefined();
+		expect(unsupportedFailure.message).toContain("unknown option");
+		expect(isTransientGitFailure(unsupportedFailure)).toBe(false);
 	});
 });
 

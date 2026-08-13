@@ -49,6 +49,47 @@ async function tempGitRepo(): Promise<string> {
 	return root;
 }
 
+/** The failure envelope a claim earns when Git cannot name the current branch. */
+interface GitFailureEnvelope {
+	error: {
+		message: string;
+		retryable: boolean;
+		details: {
+			resolution: string;
+			gitError: string;
+			gitTimedOut: boolean;
+			gitExitCode?: number;
+			gitSignal?: string;
+		};
+	};
+}
+
+/**
+ * A PATH whose `git` resolves the repository the way the real one does and then
+ * fails the branch lookup however the caller wrote it.
+ *
+ * Prepended rather than replacing PATH, so the script keeps whatever ordinary
+ * commands it is written in.
+ */
+async function fakeGitPath(branchScript: string[]): Promise<string> {
+	const bin = await mkdtemp(join(tmpdir(), "stepstone-fake-git-"));
+	const fakeGit = join(bin, "git");
+	await writeFile(
+		fakeGit,
+		[
+			"#!/bin/sh",
+			'if [ "$1" = "rev-parse" ]; then',
+			"  printf '%s\\n' \"$PWD\"",
+			"  exit 0",
+			"fi",
+			...branchScript,
+			"",
+		].join("\n"),
+	);
+	await chmod(fakeGit, 0o755);
+	return `${bin}:${process.env.PATH ?? ""}`;
+}
+
 /**
  * The diagnostic a CLI failure prints, without the usage block appended to every
  * one. Asserting against raw stderr would let the flag list in that block stand
@@ -1503,52 +1544,85 @@ describe("project goal CLI", () => {
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
 
-		const fakeBin = await mkdtemp(join(tmpdir(), "stepstone-failing-git-"));
-		const fakeGit = join(fakeBin, "git");
-		await writeFile(
-			fakeGit,
-			[
-				"#!/bin/sh",
-				'if [ "$1" = "rev-parse" ]; then',
-				"  printf '%s\\n' \"$PWD\"",
-				"  exit 0",
-				"fi",
-				"printf '%s\\n' 'simulated branch lookup failure' >&2",
-				"exit 7",
-				"",
-			].join("\n"),
-		);
-		await chmod(fakeGit, 0o755);
-
-		const unavailable = await runCli(root, ["project", "start", "claim-target", "--json"], {
-			PATH: fakeBin,
+		// A Git too old for `branch --show-current` refuses with a status of its own,
+		// and will refuse the same way forever: unavailable, but not retryable.
+		const unsupportedPath = await fakeGitPath([
+			"printf '%s\\n' \"error: unknown option \\`show-current'\" >&2",
+			"exit 129",
+		]);
+		const unsupported = await runCli(root, ["project", "start", "claim-target", "--json"], {
+			PATH: unsupportedPath,
 		});
-		expect(unavailable.code).toBe(1);
-		expect(unavailable.stdout).toBe("");
-		const unavailableEnvelope = parseJson(unavailable.stderr) as {
-			error: { message: string; details: { gitError: string } };
-		};
-		expect(unavailableEnvelope).toMatchObject({
+		expect(unsupported.code).toBe(1);
+		expect(unsupported.stdout).toBe("");
+		const unsupportedEnvelope = parseJson(unsupported.stderr) as GitFailureEnvelope;
+		expect(unsupportedEnvelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: {
+					resolution: "provide-project-start-branch",
+					gitExitCode: 129,
+					gitTimedOut: false,
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(unsupportedEnvelope.error.details.gitSignal).toBeUndefined();
+		// Retryable is a claim about the failure, so what Git actually said has to
+		// survive: a caller cannot tell a timeout from a refusal otherwise.
+		expect(unsupportedEnvelope.error.details.gitError).toContain("unknown option");
+		expect(unsupportedEnvelope.error.details.gitError).toContain("status 129");
+		expect(unsupportedEnvelope.error.details.gitError).not.toContain("\n");
+		expect(unsupportedEnvelope.error.message).toContain("unknown option");
+		expect(unsupportedEnvelope.error.message).toContain("--branch");
+		expect(unsupportedEnvelope.error.message).not.toContain("Retry");
+
+		// The same diagnostic and the same escape hatch reach a person, who has no
+		// envelope to read.
+		const humanUnsupported = await runCli(root, ["project", "start", "claim-target"], {
+			PATH: unsupportedPath,
+		});
+		expect(humanUnsupported.code).toBe(1);
+		expect(humanUnsupported.stderr).toContain("unknown option");
+		expect(humanUnsupported.stderr).toContain("--branch");
+	});
+
+	it("keeps a branch lookup that never finished retryable, unlike one Git refused", async () => {
+		const root = await tempGitRepo();
+		await runCli(root, ["project", "add", "Claim target"]);
+
+		// Killed before Git could answer: nothing was decided, so asking again is
+		// the documented next step rather than a spin on a settled refusal.
+		const killedPath = await fakeGitPath(["kill -TERM $$"]);
+		const killed = await runCli(root, ["project", "start", "claim-target", "--json"], {
+			PATH: killedPath,
+		});
+		expect(killed.code).toBe(1);
+		expect(killed.stdout).toBe("");
+		const killedEnvelope = parseJson(killed.stderr) as GitFailureEnvelope;
+		expect(killedEnvelope).toMatchObject({
 			ok: false,
 			scope: "project",
 			action: "start",
 			error: {
 				code: "UNAVAILABLE",
 				retryable: true,
-				details: { resolution: "retry-or-provide-project-start-branch" },
+				details: {
+					resolution: "retry-or-provide-project-start-branch",
+					gitSignal: "SIGTERM",
+					gitTimedOut: false,
+				},
 			},
 			meta: { changed: false, semanticNoOp: false, changedFields: [] },
 		});
-		// Retryable is a claim about the failure, so what Git actually said has to
-		// survive: a caller cannot tell a timeout from a permissions error otherwise.
-		expect(unavailableEnvelope.error.details.gitError).toContain("simulated branch lookup failure");
-		expect(unavailableEnvelope.error.details.gitError).not.toContain("\n");
-		expect(unavailableEnvelope.error.message).toContain("simulated branch lookup failure");
-
-		// The same diagnostic reaches a person, who has no envelope to read.
-		const humanUnavailable = await runCli(root, ["project", "start", "claim-target"], { PATH: fakeBin });
-		expect(humanUnavailable.code).toBe(1);
-		expect(humanUnavailable.stderr).toContain("simulated branch lookup failure");
+		expect(killedEnvelope.error.details.gitExitCode).toBeUndefined();
+		expect(killedEnvelope.error.details.gitError).toContain("SIGTERM");
+		expect(killedEnvelope.error.message).toContain("Retry");
+		expect(killedEnvelope.error.message).toContain("--branch");
 	});
 
 	it("never suggests a goal someone has already taken on", async () => {

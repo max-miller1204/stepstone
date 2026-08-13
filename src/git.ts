@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import {
@@ -32,11 +32,63 @@ export function resolveGitRoot(cwd: string): GitRootResult {
 	}
 }
 
+/** How long a Git command may take before it is killed. */
+export const GIT_COMMAND_TIMEOUT_MS = 10000;
+
+/**
+ * Why a Git command did not answer, kept as the runner reported it rather than
+ * flattened to a sentence.
+ *
+ * The diagnostic alone cannot say which kind of failure happened: a run killed
+ * before Git could write anything leaves only "Command failed". Keeping the exit
+ * status, the signal, and the timeout separate is what lets a caller tell a
+ * verdict Git reached from a run that never reached one.
+ */
+export interface GitCommandFailure {
+	/** Git's own diagnostic, or the runner's when Git never got to speak. */
+	message: string;
+	/** The status Git exited with, absent when it never exited on its own. */
+	exitCode?: number;
+	/** The signal that ended the run, when one did. */
+	signal?: string;
+	/** Whether the run was killed for outliving its time limit. */
+	timedOut: boolean;
+}
+
+/** Keep whatever the runner reported about how the command ended. */
+function describeCommandFailure(error: unknown): GitCommandFailure {
+	const thrown = error as { status?: unknown; signal?: unknown; code?: unknown };
+	return {
+		message: error instanceof Error ? error.message : String(error),
+		...(typeof thrown.status === "number" ? { exitCode: thrown.status } : {}),
+		...(typeof thrown.signal === "string" ? { signal: thrown.signal } : {}),
+		timedOut: thrown.code === "ETIMEDOUT",
+	};
+}
+
+/**
+ * Whether asking Git again could plausibly answer differently.
+ *
+ * A status Git exited with is a verdict it reached and will reach again: an
+ * option this Git does not support, or a repository it refuses to read, answers
+ * the same way however many times it is asked, and a caller told to retry one of
+ * those never stops. A run killed by a timeout or a signal never reached a
+ * verdict at all, which is the case retrying is for.
+ */
+export function isTransientGitFailure(failure: GitCommandFailure): boolean {
+	return failure.timedOut || failure.signal !== undefined;
+}
+
 export interface CurrentGitBranchResult {
 	/** The checked-out branch, or null when HEAD is detached. */
 	branch: string | null;
 	/** A Git execution failure. Absent when Git successfully reports detached HEAD. */
-	error?: string;
+	error?: GitCommandFailure;
+}
+
+export interface CurrentGitBranchOptions {
+	/** How long to wait for Git. Defaults to `GIT_COMMAND_TIMEOUT_MS`. */
+	timeoutMs?: number;
 }
 
 /**
@@ -44,22 +96,25 @@ export interface CurrentGitBranchResult {
  * command that failed.
  *
  * `git branch --show-current` exits successfully with an empty answer for a
- * detached HEAD. Execution failures retain their diagnostic so a caller can
- * report a retryable availability error instead of misclassifying one as a
- * request that merely omitted `--branch`.
+ * detached HEAD. Execution failures retain how they ended so a caller can report
+ * an availability error that says whether retrying can help, instead of
+ * misclassifying either one as a request that merely omitted `--branch`.
+ *
+ * Git is run directly rather than through a shell: a shell reports a signalled
+ * child as its own exit status 128 + n, which would hide the one distinction
+ * this result exists to keep.
  */
-export function currentGitBranch(cwd: string): CurrentGitBranchResult {
+export function currentGitBranch(cwd: string, options: CurrentGitBranchOptions = {}): CurrentGitBranchResult {
 	try {
-		const raw = execSync("git branch --show-current", {
+		const raw = execFileSync("git", ["branch", "--show-current"], {
 			cwd,
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
-			timeout: 10000,
+			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
 		});
 		return { branch: raw.trim() || null };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		return { branch: null, error: message };
+		return { branch: null, error: describeCommandFailure(error) };
 	}
 }
 
