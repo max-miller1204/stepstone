@@ -86,8 +86,11 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 		'case " $* " in',
 		'  *" --clear "*) printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"cleared-at"}}}\' ;;',
 		"  *)",
-		'    test "${STEPSTONE_CLAIM_RESULT:-ok}" = ok || exit 4',
-		'    printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"claimed-at"}}}\'',
+		'    case "${STEPSTONE_CLAIM_RESULT:-ok}" in',
+		'      ok) printf \'%s\\n\' \'{"result":{"goal":{"updatedAt":"claimed-at"}}}\' ;;',
+		"      malformed) printf '%s\\n' '{\"result\":{}}' ;;",
+		"      *) exit 4 ;;",
+		"    esac",
 		"    ;;",
 		"esac",
 	]);
@@ -108,7 +111,13 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 	await writeExecutable(join(bin, "herdr"), [
 		'printf "herdr:%s\\n" "$*" >>"$EVENTS"',
 		'case "$1:$2" in',
-		'  pane:split) printf \'%s\\n\' \'{"result":{"pane":{"pane_id":"pane-1"}}}\' ;;',
+		"  pane:split)",
+		'    case "${HERDR_SPLIT_RESULT:-ok}" in',
+		'      ok) printf \'%s\\n\' \'{"result":{"pane":{"pane_id":"pane-1"}}}\' ;;',
+		"      malformed) printf '%s\\n' '{\"result\":{}}' ;;",
+		"      *) exit 4 ;;",
+		"    esac",
+		"    ;;",
 		'  pane:close) : >"$PANE_CLOSED" ;;',
 		"  pane:list)",
 		'    if test -f "$PANE_CLOSED"; then',
@@ -218,6 +227,69 @@ describe("documented dispatch bindings", () => {
 			cwd: fixture.root,
 		});
 		expect(branch).toBe("");
+	});
+
+	it.each([
+		["Binding A", () => `${bindingAWorkspace}\n${bindingALaunch}`],
+		["Binding B", () => `${bindingBWorkspace}\n${bindingBLaunch}`],
+	])("preserves %s custody when its own claim token is unreadable", async (label, buildScript) => {
+		const fixture = await createRepository();
+		await installFakeBoundaries(fixture.bin);
+		const bindingB = label === "Binding B";
+		if (bindingB) {
+			await execFileAsync("git", ["worktree", "add", "--detach", fixture.leasedWorkspace, "HEAD"], {
+				cwd: fixture.root,
+			});
+		}
+		const result = await runShell(fixture.root, buildScript(), {
+			...baseEnvironment(fixture),
+			AGENT_COMMAND: "never-launched-agent",
+			AGENT_STARTUP_GRACE_SECONDS: "0.05",
+			STEPSTONE_CLAIM_RESULT: "malformed",
+		});
+
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("Claim succeeded but its updatedAt could not be read");
+		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		if (bindingB) {
+			expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
+			expect(events).toEqual([`treehouse:get --lease --lease-holder ${leaseHolder}`, claimEvent]);
+			await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
+				cwd: fixture.root,
+			});
+			return;
+		}
+		expect(await pathExists(fixture.detachedWorkspace)).toBe(true);
+		expect(events).toEqual([claimEvent]);
+		const { stdout: branch } = await execFileAsync("git", ["branch", "--list", goalBranch], {
+			cwd: fixture.root,
+		});
+		expect(branch).toContain(goalBranch);
+	});
+
+	it("preserves Binding B custody when its pane ID is unreadable", async () => {
+		const fixture = await createRepository();
+		await installFakeBoundaries(fixture.bin);
+		await execFileAsync("git", ["worktree", "add", "--detach", fixture.leasedWorkspace, "HEAD"], {
+			cwd: fixture.root,
+		});
+		const result = await runShell(fixture.root, `${bindingBWorkspace}\n${bindingBLaunch}`, {
+			...baseEnvironment(fixture),
+			HERDR_SPLIT_RESULT: "malformed",
+		});
+
+		expect(result.code).toBe(1);
+		expect(result.stderr).toContain("A pane may exist but its ID could not be read");
+		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
+		const events = (await readFile(fixture.events, "utf8")).trim().split("\n");
+		expect(events).toEqual([
+			`treehouse:get --lease --lease-holder ${leaseHolder}`,
+			claimEvent,
+			`herdr:pane split --current --direction right --cwd ${fixture.leasedWorkspace} --no-focus`,
+		]);
+		await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
+			cwd: fixture.root,
+		});
 	});
 
 	it("scrubs dirty Binding A workspaces after completion", async () => {
