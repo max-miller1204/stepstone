@@ -11,7 +11,7 @@ import { formatSessionTasks } from "../src/format.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SESSION_SNAPSHOT_TYPE, SessionStore } from "../src/session-store.ts";
 import { createProjectLocator, executeWorklist } from "../src/tool.ts";
-import type { ProjectWorklist } from "../src/types.ts";
+import type { ProjectGoal, ProjectWorklist } from "../src/types.ts";
 import type { DashboardResult } from "../src/ui.ts";
 
 function fakePi(entries: unknown[] = []) {
@@ -858,6 +858,21 @@ describe("registered model tool", () => {
 		restart: (reason: "new" | "resume" | "fork") => Promise<void>;
 	}
 
+	/**
+	 * The arguments a model can actually send, which is the tool's declared
+	 * parameter schema and nothing else.
+	 *
+	 * A tool call is composed from the schema pi advertises, so a field the schema
+	 * never names cannot arrive at `execute` no matter what the service behind it
+	 * would accept. Dropping undeclared keys here keeps a session test measuring
+	 * the surface the model can reach rather than the wider one reachable only by
+	 * calling `execute` directly.
+	 */
+	function declaredArguments(parameters: unknown, params: Record<string, unknown>): Record<string, unknown> {
+		const declared = new Set(Object.keys((parameters as { properties: Record<string, unknown> }).properties));
+		return Object.fromEntries(Object.entries(params).filter(([name]) => declared.has(name)));
+	}
+
 	/** A live session on a repository, left exactly as `session_start` leaves one. */
 	async function startSession(cwd: string): Promise<LiveSession> {
 		const { tool, handlers } = registerExtension();
@@ -873,7 +888,8 @@ describe("registered model tool", () => {
 		await sessionStart({ reason: "new" }, sessionContext);
 		const execute = tool.execute as ToolExecute;
 		return {
-			call: (params) => execute("call", params, undefined, undefined, sessionContext),
+			call: (params) =>
+				execute("call", declaredArguments(tool.parameters, params), undefined, undefined, sessionContext),
 			notifications,
 			restart: async (reason) => {
 				await handlers.get("session_shutdown")?.({}, sessionContext);
@@ -987,6 +1003,174 @@ describe("registered model tool", () => {
 		).toHaveLength(2);
 	});
 
+	it("lets the registered model tool guard a branch claim with the goal timestamp", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-guarded-start-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const session = await startSession(root);
+		const added = (await session.call({
+			scope: "project",
+			action: "add",
+			title: "Guarded dispatch",
+		})) as { details: { goal?: ProjectGoal } };
+		const baseline = added.details.goal;
+		if (!baseline) throw new Error("The model tool did not return the added goal");
+
+		const claimed = (await session.call({
+			scope: "project",
+			action: "start",
+			id: baseline.id,
+			branch: "feat/guarded",
+			expectedUpdatedAt: baseline.updatedAt,
+		})) as { details: { goal?: ProjectGoal } };
+		expect(claimed.details.goal).toMatchObject({ id: baseline.id, branch: "feat/guarded" });
+
+		await expect(
+			session.call({
+				scope: "project",
+				action: "start",
+				id: baseline.id,
+				branch: "feat/stale",
+				expectedUpdatedAt: baseline.updatedAt,
+			}),
+		).rejects.toMatchObject({
+			code: "CONFLICT",
+			retryable: true,
+			conflict: {
+				type: "goal-updated-at",
+				id: baseline.id,
+				expectedUpdatedAt: baseline.updatedAt,
+			},
+		});
+	});
+
+	it("tells a session that Git is unavailable rather than that it left the repository", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const emptyBin = await mkdtemp(join(tmpdir(), "stepstone-tool-no-git-bin-"));
+		const realPath = process.env.PATH;
+
+		// A session that starts while Git cannot be run. The session is in the
+		// repository it has always been in, and saying otherwise would send someone
+		// looking for a repository they are standing in.
+		let unavailable: unknown;
+		let session: Awaited<ReturnType<typeof startSession>>;
+		process.env.PATH = emptyBin;
+		try {
+			session = await startSession(root);
+			unavailable = await session.call({ scope: "project", action: "add", title: "While Git is away" }).then(
+				() => undefined,
+				(error: unknown) => error,
+			);
+		} finally {
+			process.env.PATH = realPath;
+		}
+		expect(unavailable).toMatchObject({
+			code: "UNAVAILABLE",
+			retryable: false,
+			details: { resolution: "repair-git-availability" },
+		});
+		expect(String((unavailable as Error).message)).not.toContain("require a git repository");
+
+		// The session recovers on the next operation: the lookup that never got an
+		// answer is asked again rather than settling the rest of the session.
+		const added = (await session.call({
+			scope: "project",
+			action: "add",
+			title: "Once Git is back",
+		})) as { details: { goal?: ProjectGoal } };
+		expect(added.details.goal?.title).toBe("Once Git is back");
+
+		// A session genuinely outside a repository keeps the standing answer, so
+		// session tasks stay usable there.
+		const bare = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-bare-")));
+		const outside = await startSession(bare);
+		await expect(outside.call({ scope: "project", action: "list" })).rejects.toMatchObject({
+			code: "UNAVAILABLE",
+			details: { resolution: "run-inside-git-repository" },
+		});
+	});
+
+	it("recovers when the repository Git refused is repaired mid-session", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-refused-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const config = join(root, ".git", "config");
+		const original = await readFile(config, "utf8");
+		// The routine instance is dubious ownership in a container: Git prints the
+		// command to run, the user runs it, and the session has to pick that up.
+		await writeFile(config, "this is not a config file\n");
+
+		const session = await startSession(root);
+		const refused = await session.call({ scope: "project", action: "add", title: "While Git objects" }).then(
+			() => undefined,
+			(error: unknown) => error,
+		);
+		expect(refused).toMatchObject({
+			code: "UNAVAILABLE",
+			retryable: false,
+			details: { resolution: "repair-git-repository" },
+		});
+		// Not the standing verdict: the session is inside the repository, and it is
+		// told what Git actually objected to.
+		expect(String((refused as Error).message)).not.toContain("require a git repository");
+		expect(String((refused as Error).message)).toContain("bad config");
+
+		await writeFile(config, original);
+		const added = (await session.call({
+			scope: "project",
+			action: "add",
+			title: "Once the config is fixed",
+		})) as { details: { goal?: ProjectGoal } };
+		expect(added.details.goal?.title).toBe("Once the config is fixed");
+	});
+
+	it("asks Git once for a refresh, not once for every reader in it", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-git-calls-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const counter = join(root, "git-calls");
+		const bin = await mkdtemp(join(tmpdir(), "stepstone-tool-counting-git-"));
+		await writeFile(
+			join(bin, "git"),
+			// Fails the way a repository Git will not work in fails, so the lookup is
+			// not settled and every reader in the refresh would ask again.
+			[
+				"#!/bin/sh",
+				`printf 'x' >> ${counter}`,
+				"printf '%s\\n' 'fatal: bad config line 1' >&2",
+				"exit 128",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const realPath = process.env.PATH;
+
+		process.env.PATH = `${bin}:${realPath ?? ""}`;
+		try {
+			await startSession(root);
+		} finally {
+			process.env.PATH = realPath;
+		}
+
+		// Git runs synchronously: the widget's notice and the goals it draws come from
+		// one answer, so a session pays for one Git run per refresh however slow Git is.
+		expect((await readFile(counter, "utf8")).length).toBe(1);
+	});
+
+	it("still reports a goal file it cannot read when the widget refreshes", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-malformed-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		await mkdir(join(root, ".worklist"), { recursive: true });
+		// Persisted state the session cannot parse. Only Git being unreachable lets the
+		// widget fall quiet; a file someone has to repair must still be named.
+		await writeFile(join(root, ".worklist", "worklist.json"), "{ not json\n");
+
+		const session = await startSession(root);
+		const reported = session.notifications.filter((message) =>
+			message.includes("Malformed project worklist"),
+		);
+		expect(reported).toHaveLength(1);
+		expect(reported[0]).toContain(join(root, ".worklist", "worklist.json"));
+	});
+
 	it("keeps model tool execution sequential so ordering mutations stay serialized", () => {
 		expect(registerExtension().tool.executionMode).toBe("sequential");
 	});
@@ -994,7 +1178,8 @@ describe("registered model tool", () => {
 	it("exposes the session ordering surface to the model", () => {
 		const { tool } = registerExtension();
 		const parameters = tool.parameters as {
-			properties: Record<string, { enum?: string[]; description?: string }>;
+			properties: Record<string, { type?: string; enum?: string[]; description?: string }>;
+			required?: string[];
 		};
 		expect(parameters.properties.action.enum).toContain("move");
 		expect(parameters.properties.action.enum).toContain("apply-plan");
@@ -1003,6 +1188,11 @@ describe("registered model tool", () => {
 		expect(parameters.properties.afterId).toBeDefined();
 		expect(parameters.properties.plan).toBeDefined();
 		expect(parameters.properties.dryRun).toBeDefined();
+		// The optimistic concurrency guard is only usable if the model is told it
+		// exists, which action it guards, and that it is an optional string.
+		expect(parameters.properties.expectedUpdatedAt?.type).toBe("string");
+		expect(parameters.properties.expectedUpdatedAt?.description).toContain("start");
+		expect(parameters.required ?? []).not.toContain("expectedUpdatedAt");
 		expect(tool.description).toContain("Project move requires exactly one of beforeId or afterId");
 		expect(tool.description).not.toContain("Project Goals cannot be reordered");
 	});

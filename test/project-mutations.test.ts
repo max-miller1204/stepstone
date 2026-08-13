@@ -363,6 +363,18 @@ describe("project mutation service", () => {
 		const done = await transitionProjectGoal(path, goal.id, "done");
 		expect(done.goal.completedAt).toBe(done.goal.updatedAt);
 
+		const stale = await readProjectWorklist(path);
+		if (stale.error) throw new Error(stale.error);
+		const staleGoal = stale.data.goals.find((candidate) => candidate.id === goal.id);
+		if (!staleGoal) throw new Error("Completed goal was not stored");
+		staleGoal.branch = "feat/stale-claim";
+		await writeFile(path, `${JSON.stringify(stale.data, null, 2)}\n`);
+
+		const released = await transitionProjectGoal(path, goal.id, "done");
+		expect(released.goal.completedAt).toBe(done.goal.completedAt);
+		expect(released.goal.updatedAt).not.toBe(done.goal.updatedAt);
+		expect(released.goal).not.toHaveProperty("branch");
+
 		const archived = await transitionProjectGoal(path, goal.id, "archived");
 		expect(archived.goal.completedAt).toBe(done.goal.completedAt);
 

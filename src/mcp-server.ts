@@ -3,6 +3,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { z } from "zod";
 import {
 	projectGoalSelectionError,
+	resolveProjectWorklist,
 	type WorklistApplicationFailure,
 	type WorklistApplicationResult,
 	WorklistApplicationService,
@@ -15,7 +16,7 @@ import {
 	mcpActionDescription,
 } from "./cli-contract.ts";
 import { dependencyWaves, dependentGoals, isGoalBlocked, nextGoal, readyGoals } from "./dependencies.ts";
-import { createWorklistLocator, resolveGitRoot } from "./git.ts";
+import { createProjectRootLookup } from "./git.ts";
 import { matchesGoalQuery, resolveGoalSelector, type UnresolvedGoalSelector } from "./goal-selection.ts";
 import { WORKLIST_ERROR_CODES, type WorklistResultMeta } from "./result-envelope.ts";
 import type { WorklistOperationResult } from "./types.ts";
@@ -379,19 +380,19 @@ function resourceAddress(action: string): string | ResourceTemplate {
  *
  * The service receives the locator as a closure, not a startup path. Every MCP
  * resource read and tool write therefore re-runs the canonical current/legacy/
- * environment resolution before touching persistent state.
+ * environment resolution before touching persistent state, and a Git that never
+ * answered at startup is asked again rather than fixing the server's whole life
+ * to a repository verdict Git never reached.
  */
 export function createStepstoneMcpServer(options: StepstoneMcpServerOptions = {}): McpServer {
 	const cwd = options.cwd ?? process.cwd();
 	const env = options.env ?? process.env;
-	const git = resolveGitRoot(cwd);
-	const locate =
-		git.isGit && git.root ? createWorklistLocator(git.root, { env, overrideBase: cwd }) : undefined;
+	const lookup = createProjectRootLookup(cwd, { env, overrideBase: cwd });
 	const operationService = () => {
 		let shadowedWorklistPath: string | undefined;
 		const service = new WorklistApplicationService({ projectPath: null });
 		service.setProjectPathResolver(() => {
-			const location = locate?.();
+			const location = resolveProjectWorklist(lookup());
 			shadowedWorklistPath = location?.shadowedPath;
 			return location?.path ?? null;
 		});

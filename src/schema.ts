@@ -117,6 +117,12 @@ export const WorklistParamsSchema = Type.Object({
 			description: "For project start, remove the existing branch claim instead of setting one.",
 		}),
 	),
+	expectedUpdatedAt: Type.Optional(
+		Type.String({
+			description:
+				"The target Project Goal's exact updatedAt from the caller's last read, for project start, update, set_active, complete, reopen, archive, and delete. A stale value returns a typed conflict instead of overwriting a newer change.",
+		}),
+	),
 	plan: Type.Optional(
 		Type.Array(ProjectGoalPlanEntrySchema, {
 			description:

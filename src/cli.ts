@@ -5,6 +5,7 @@ import { basename, resolve } from "node:path";
 import { AGENTS_PATH, AgentsBlockError, type AgentsRefreshResult, refreshAgentsFile } from "./agents.ts";
 import {
 	projectGoalSelectionError,
+	projectRootUnavailableError,
 	projectWorklistMergeRequiredError,
 	type WorklistApplicationFailure,
 	type WorklistApplicationResult,
@@ -31,6 +32,11 @@ import { goalCount } from "./format.ts";
 import {
 	createWorklistLocator,
 	currentGitBranch,
+	type GitCommandFailure,
+	type GitRootFailure,
+	gitCommandDiagnostic,
+	gitFailureDetails,
+	isTransientGitFailure,
 	resolveGitRoot,
 	resolveWorklistLocation,
 	shadowedWorklistWarning,
@@ -422,22 +428,46 @@ interface ProjectLocation {
 	worklist: WorklistLocation;
 }
 
-function resolveRepositoryRoot(invocation: CliInvocation): string {
-	const result = resolveGitRoot(invocation.cwd);
-	if (!result.isGit || !result.root) {
-		throw new WorklistCliFailure({
+/**
+ * The typed failure a command earns when there is no repository to work in.
+ *
+ * The standing answer stays the standing answer, and stays short: someone in an
+ * ordinary directory needs the one sentence that names the way out, not the
+ * invocation Git was given or the status it exited with. A `--json` dispatcher
+ * still gets all of that in `details`. Every other reason there is no root says
+ * what Git said, because those are the ones where "run inside a repository" is no
+ * help to someone who already is.
+ */
+function repositoryRootFailure(action: string, failure?: GitRootFailure): WorklistCliFailure {
+	const meta = { changed: false, semanticNoOp: false, changedFields: [] };
+	if (!failure || failure.kind === "not-a-repository") {
+		return new WorklistCliFailure({
 			ok: false,
 			scope: "project",
-			action: invocation.action,
+			action,
 			error: {
 				code: WORKLIST_ERROR_CODES.UNAVAILABLE,
 				message: "Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
 				retryable: false,
-				details: { resolution: "run-inside-git-repository" },
+				details: gitFailureDetails("run-inside-git-repository", failure?.command),
 			},
-			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+			meta,
 		});
 	}
+	const remedy =
+		failure.kind === "unusable-directory" ? "Pass --cwd <dir> with a directory that exists." : undefined;
+	return new WorklistCliFailure({
+		ok: false,
+		scope: "project",
+		action,
+		error: projectRootUnavailableError(failure, remedy).toResultError(),
+		meta,
+	});
+}
+
+function resolveRepositoryRoot(invocation: CliInvocation): string {
+	const result = resolveGitRoot(invocation.cwd);
+	if (!result.root) throw repositoryRootFailure(invocation.action, result.failure);
 	return result.root;
 }
 
@@ -654,6 +684,37 @@ function formatPlanWarning(warning: ProjectPlanWarning): string {
 		`Warning: batch dependency ${warning.reference} resolves to new goal ${warning.batchGoalId}, ` +
 		`shadowing existing goal ${warning.existingGoalId}.`
 	);
+}
+
+/**
+ * The typed failure a claim earns when Git cannot name the current branch.
+ *
+ * `retryable` follows how the run ended rather than the bare fact that it failed.
+ * By this point the repository has already been resolved, so Git exists and the
+ * worktree is readable: a status Git exited with here is a verdict it will reach
+ * again, and a dispatcher told to retry an option this Git does not support spins
+ * forever. Either way `--branch` is the way through, which is why both
+ * resolutions name it.
+ */
+function branchLookupFailure(failure: GitCommandFailure): WorklistCliFailure {
+	const retryable = isTransientGitFailure(failure);
+	return new WorklistCliFailure({
+		ok: false,
+		scope: "project",
+		action: "start",
+		error: {
+			code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+			message:
+				`Git could not determine the current branch: ${gitCommandDiagnostic(failure)}. ` +
+				`${retryable ? "Retry, or pass" : "Pass"} --branch <name> explicitly.`,
+			retryable,
+			details: gitFailureDetails(
+				retryable ? "retry-or-provide-project-start-branch" : "provide-project-start-branch",
+				failure,
+			),
+		},
+		meta: { changed: false, semanticNoOp: false, changedFields: [] },
+	});
 }
 
 /** A failed operation, carrying the full deterministic failure envelope for --json output. */
@@ -1278,8 +1339,26 @@ async function run(invocation: CliInvocation): Promise<void> {
 			}
 			let branch = invocation.branch;
 			if (!invocation.clear && branch === undefined) {
-				branch = currentGitBranch(invocation.cwd) ?? undefined;
-				if (!branch) fail(`project start needs --branch when Git has no current branch\n\n${USAGE}`, 1);
+				const current = currentGitBranch(invocation.cwd);
+				if (current.error) throw branchLookupFailure(current.error);
+				branch = current.branch ?? undefined;
+				if (!branch) {
+					throw new WorklistCliFailure({
+						ok: false,
+						scope: "project",
+						action: "start",
+						error: {
+							code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+							message: "project start needs --branch when Git HEAD is detached.",
+							retryable: false,
+							details: {
+								fields: ["branch"],
+								resolution: "provide-project-start-branch",
+							},
+						},
+						meta: { changed: false, semanticNoOp: false, changedFields: [] },
+					});
+				}
 			}
 			const envelope = await executeCliOperation(service, {
 				scope: "project",

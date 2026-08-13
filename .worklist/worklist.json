@@ -645,9 +645,9 @@
       "title": "Repair project start semantics",
       "description": "Correct the branch-claim lifecycle across the CLI, application service, persistence layer, MCP, and Pi model tool. Clearing a stale branch from an already-done goal must preserve its historical completedAt, project start --json must return a typed JSON failure on detached HEAD or branch lookup failure, and the Pi schema must expose expectedUpdatedAt so claims can use the same optimistic concurrency guard as CLI and MCP. Add observable regressions for each interface and preserve ready-frontier claim behavior.",
       "group": "Audit remediation",
-      "status": "open",
+      "status": "active",
       "createdAt": "2026-08-12T09:42:45.110Z",
-      "updatedAt": "2026-08-12T22:06:36.401Z"
+      "updatedAt": "2026-08-13T01:13:30.523Z"
     },
     {
       "id": "make-dispatch-bindings-safe",
@@ -662,5 +662,5 @@
       "updatedAt": "2026-08-12T09:42:45.110Z"
     }
   ],
-  "revision": 267
+  "revision": 268
 }

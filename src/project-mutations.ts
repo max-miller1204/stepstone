@@ -250,17 +250,19 @@ function assertAcyclic(
 /**
  * The completion stamp a lifecycle transition leaves behind.
  *
- * Completing stamps the very instant the transition carries, so the two can
- * never disagree. Reopening clears it, because a goal that is open again was not
- * completed. Archiving keeps whatever is there: filing a finished goal away does
- * not unfinish it, and archiving an unfinished one completed nothing.
+ * Entering done stamps the same instant as the transition, so the two can never
+ * disagree. Repeating completion only to clear a stale branch keeps the original
+ * stamp, including its absence on legacy goals whose completion time is unknown.
+ * Reopening clears it, because a goal that is open again was not completed.
+ * Archiving keeps whatever is there: filing a finished goal away does not
+ * unfinish it, and archiving an unfinished one completed nothing.
  */
 function nextCompletedAt(
 	current: ProjectGoal,
 	status: ProjectGoalStatus,
 	updatedAt: string,
 ): string | undefined {
-	if (status === "done") return updatedAt;
+	if (status === "done") return current.status === "done" ? current.completedAt : updatedAt;
 	if (status === "open") return undefined;
 	return current.completedAt;
 }

@@ -630,4 +630,93 @@ describe("Stepstone MCP server", () => {
 			expect(shadowed.meta).toMatchObject({ shadowedWorklistPath: legacyPath });
 		});
 	});
+
+	it("answers a Git it could not run with an availability envelope, then recovers", async () => {
+		const root = await createGitRepository();
+		const emptyBin = await mkdtemp(join(tmpdir(), "stepstone-mcp-no-git-bin-"));
+		const realPath = process.env.PATH;
+
+		await withMcpClient(root, async (client) => {
+			// A client connected while Git cannot be run must not be told for the rest of
+			// the connection that this is not a repository.
+			process.env.PATH = emptyBin;
+			let unavailable: { envelope: ApplicationEnvelope; isError: boolean | undefined };
+			try {
+				unavailable = await callTool(client, "add", { title: "While Git is away" });
+			} finally {
+				process.env.PATH = realPath;
+			}
+			expect(unavailable.envelope).toMatchObject({
+				ok: false,
+				scope: "project",
+				action: "add",
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: { resolution: "repair-git-availability" },
+				},
+			});
+			expect(unavailable.envelope.error?.message).not.toContain("require a git repository");
+
+			// The same connection works once Git answers again.
+			const recovered = await callTool(client, "add", { title: "Once Git is back" });
+			expect(recovered.envelope.ok).toBe(true);
+
+			// And a repository already found is not asked about again, so Git going away
+			// afterwards cannot take the roadmap with it.
+			process.env.PATH = emptyBin;
+			let afterGitLeft: ApplicationEnvelope;
+			try {
+				afterGitLeft = await readEnvelope(client, `${RESOURCE_PREFIX}/list`);
+			} finally {
+				process.env.PATH = realPath;
+			}
+			expect(afterGitLeft.ok).toBe(true);
+			expect(resultGoals(afterGitLeft)).toHaveLength(1);
+		});
+	});
+
+	it("recovers when the repository Git refused is repaired during the connection", async () => {
+		const root = await createGitRepository();
+		const config = join(root, ".git", "config");
+		const original = await readFile(config, "utf8");
+		await writeFile(config, "this is not a config file\n");
+
+		await withMcpClient(root, async (client) => {
+			const refused = await callTool(client, "add", { title: "While Git objects" });
+			expect(refused.envelope).toMatchObject({
+				ok: false,
+				scope: "project",
+				action: "add",
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: { resolution: "repair-git-repository" },
+				},
+			});
+			expect(refused.envelope.error?.message).toContain("bad config");
+			expect(refused.envelope.error?.message).not.toContain("require a git repository");
+
+			// The client does not have to reconnect to pick up the repair.
+			await writeFile(config, original);
+			const recovered = await callTool(client, "add", { title: "Once the config is fixed" });
+			expect(recovered.envelope.ok).toBe(true);
+			expect(resultGoals(await readEnvelope(client, `${RESOURCE_PREFIX}/list`))).toHaveLength(1);
+		});
+	});
+
+	it("keeps the standing answer for a directory Git refuses", async () => {
+		const outside = await realpath(await mkdtemp(join(tmpdir(), "stepstone-mcp-bare-")));
+		await withMcpClient(outside, async (client) => {
+			const refused = await readEnvelope(client, `${RESOURCE_PREFIX}/list`);
+			expect(refused).toMatchObject({
+				ok: false,
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: { resolution: "run-inside-git-repository" },
+				},
+			});
+		});
+	});
 });

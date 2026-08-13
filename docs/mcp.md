@@ -47,8 +47,9 @@ A manually launched server normally appears idle because it is waiting for an MC
 
 ## Repository and worklist resolution
 
-At startup, the server resolves the real Git root containing its process working directory.
-If the working directory is not inside a Git repository, operations return an `UNAVAILABLE` application-service envelope instead of reading an unrelated file.
+The server resolves the real Git root containing its process working directory on the first operation that needs it, and keeps that root for the rest of the connection once Git names one.
+If the working directory is not inside a Git repository, operations return an `UNAVAILABLE` application-service envelope instead of reading an unrelated file, and that answer stands for the life of the server.
+A Git that could not be run, or that refused the repository it found, is a separate `UNAVAILABLE` envelope carrying what Git said, and the lookup is retried on a later operation, so a Git put back on `PATH` or a repository config repaired mid-connection is picked up without reconnecting.
 
 The Claude Code plugin is the one client that does not start the server inside the repository: Claude Code runs a plugin's server from the plugin's own cache directory, so the bundled configuration hands the project directory over in the `STEPSTONE_PLUGIN_PROJECT_ROOT` environment variable, and the server resolves the repository and any relative override from that directory instead of from its process working directory.
 It is that plugin's private handoff rather than a setting to configure: every other client selects the repository with `cwd`.
