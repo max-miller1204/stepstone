@@ -16,7 +16,7 @@ export const GIT_COMMAND_TIMEOUT_MS = 10000;
 const TIMED_OUT_CODE = "ETIMEDOUT";
 
 /** The entry Git looks for when it decides whether a directory is in a repository. */
-const GIT_MARKER = ".git";
+export const GIT_MARKER = ".git";
 
 /**
  * Why a Git command did not answer, kept as the runner reported it rather than
@@ -255,6 +255,79 @@ export function resolveGitRoot(cwd: string, options: GitCommandOptions = {}): Gi
 			},
 		};
 	}
+}
+
+/**
+ * The canonical form of a path, or the path itself when it cannot be resolved.
+ *
+ * Two paths naming one directory only compare equal once symlinks are gone, and a
+ * directory Git named that is no longer there is still Git's answer: falling back
+ * keeps a comparison against it honest instead of turning a stale worktree into a
+ * throw from the middle of an unrelated operation.
+ */
+export function canonicalPath(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
+}
+
+export interface MainWorktreeFailure {
+	/** One line naming what stopped the lookup, whatever the kind. */
+	message: string;
+	/** How the Git run ended, absent when Git answered but named no worktree. */
+	command?: GitCommandFailure;
+}
+
+/**
+ * The main worktree, or why Git named none. A failure is always present when
+ * there is no path, so a caller never has to invent one.
+ */
+export type MainWorktreeResult =
+	| { path: string; failure?: undefined }
+	| { path: null; failure: MainWorktreeFailure };
+
+/** The prefix `git worktree list --porcelain` gives the attribute naming a worktree. */
+const WORKTREE_ATTRIBUTE = "worktree ";
+
+/**
+ * The main worktree of the repository containing `cwd`.
+ *
+ * `git worktree list` defines its first record as the main worktree, which is the
+ * only reason this is answerable at all: `--git-common-dir` names the shared Git
+ * directory, and for a repository created with `git init --separate-git-dir` that
+ * directory is nowhere near any checkout.
+ *
+ * `-z` terminates each attribute with a NUL instead of a newline, so the first
+ * field is the whole first `worktree <path>` attribute even for a worktree whose
+ * path contains a newline - the one case the newline-delimited form cannot be
+ * parsed out of.
+ *
+ * Git is run directly rather than through a shell, for the same reason every
+ * other lookup here is: a shell answers for Git, turning an absent Git into its
+ * own exit status 127 and a signalled Git into 128 + n, which would make a run
+ * that never reached a verdict look like a verdict Git reached.
+ */
+export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}): MainWorktreeResult {
+	let raw: string;
+	try {
+		raw = execFileSync("git", ["worktree", "list", "--porcelain", "-z"], {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
+		});
+	} catch (error) {
+		const command = describeCommandFailure(error);
+		return { path: null, failure: { message: describeGitFailure(command), command } };
+	}
+	const attributeEnd = raw.indexOf("\0");
+	const attribute = attributeEnd === -1 ? raw : raw.slice(0, attributeEnd);
+	if (!attribute.startsWith(WORKTREE_ATTRIBUTE)) {
+		return { path: null, failure: { message: "git worktree list named no main worktree" } };
+	}
+	return { path: canonicalPath(attribute.slice(WORKTREE_ATTRIBUTE.length)) };
 }
 
 export interface CurrentGitBranchResult {

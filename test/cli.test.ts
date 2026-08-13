@@ -92,6 +92,23 @@ function fakeGitFailingBranchLookup(branchScript: string[]): Promise<string> {
 	]);
 }
 
+/**
+ * A PATH whose `git` resolves the repository the way the real one does and then
+ * fails the main-worktree lookup however the caller wrote it.
+ */
+function fakeGitFailingWorktreeLookup(worktreeScript: string[]): Promise<string> {
+	return fakeGitPath([
+		'if [ "$1" = "rev-parse" ]; then',
+		"  printf '%s\\n' \"$PWD\"",
+		"  exit 0",
+		"fi",
+		'if [ "$1" = "worktree" ]; then',
+		...worktreeScript,
+		"fi",
+		"exit 0",
+	]);
+}
+
 /** A PATH with no `git` on it at all, the way a machine without Git looks. */
 async function pathWithoutGit(): Promise<string> {
 	return mkdtemp(join(tmpdir(), "stepstone-no-git-bin-"));
@@ -2014,6 +2031,79 @@ describe("project goal file resolution", () => {
 		} finally {
 			await execFileAsync("git", ["worktree", "remove", "--force", linked], { cwd: root });
 		}
+	});
+
+	it("keeps a main-worktree lookup Git refused non-retryable, unlike one that never finished", async () => {
+		const root = await tempGitRepo();
+		const roadmap = join(root, ".worklist", "worklist.json");
+
+		// A Git too old for `-z` refuses the lookup the same way however often it is
+		// asked, so a dispatcher that honours `retryable` would spin on it forever.
+		const refusedPath = await fakeGitFailingWorktreeLookup([
+			'  echo "error: unknown switch z" >&2',
+			"  exit 129",
+		]);
+		const refused = await runCli(root, ["project", "add", "Must not diverge", "--json"], {
+			PATH: refusedPath,
+		});
+		expect(refused.code).toBe(1);
+		expect(refused.stdout).toBe("");
+		const refusedEnvelope = parseJson(refused.stderr) as GitFailureEnvelope;
+		expect(refusedEnvelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "add",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: {
+					resolution: "repair-main-worktree-lookup",
+					path: roadmap,
+					gitExitCode: 129,
+					gitTimedOut: false,
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(refusedEnvelope.error.details.gitSignal).toBeUndefined();
+		expect(refusedEnvelope.error.details.gitError).toContain("unknown switch");
+		// What Git said reaches the person who has to repair it, and the guard is not
+		// described as a failed write: the lookup happens before anything is written,
+		// so pointing at the file and the lock would send them to the wrong place.
+		expect(refusedEnvelope.error.message).toContain("unknown switch");
+		expect(refusedEnvelope.error.message).not.toContain("persistence");
+		expect(refusedEnvelope.error.message).not.toContain("Retry the change");
+		await expect(readFile(roadmap, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+		// Killed before Git could answer: nothing was decided, so asking again is the
+		// documented next step rather than a spin on a settled refusal.
+		const killedPath = await fakeGitFailingWorktreeLookup(["  kill -TERM $$"]);
+		const killed = await runCli(root, ["project", "add", "Must not diverge", "--json"], {
+			PATH: killedPath,
+		});
+		expect(killed.code).toBe(1);
+		const killedEnvelope = parseJson(killed.stderr) as GitFailureEnvelope;
+		expect(killedEnvelope).toMatchObject({
+			error: {
+				code: "UNAVAILABLE",
+				retryable: true,
+				details: {
+					resolution: "retry-main-worktree-lookup",
+					path: roadmap,
+					gitSignal: "SIGTERM",
+					gitTimedOut: false,
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(killedEnvelope.error.details.gitExitCode).toBeUndefined();
+		expect(killedEnvelope.error.message).toContain("Retry the change");
+		await expect(readFile(roadmap, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+		// The same repository writes normally once Git answers, so the refusal is the
+		// lookup failing rather than the guard standing in the way.
+		expect((await runCli(root, ["project", "add", "Lands once Git answers"])).code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["lands-once-git-answers"]);
 	});
 
 	it("reads and writes a legacy file rather than splitting the roadmap in two", async () => {

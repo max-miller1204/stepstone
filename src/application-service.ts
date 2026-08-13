@@ -41,6 +41,7 @@ import {
 	ProjectRevisionConflictError,
 	ProjectWorklistLinkedWorktreeRefusedError,
 	ProjectWorklistMoveRefusedError,
+	ProjectWorklistWorktreeLookupError,
 } from "./project-store.ts";
 import {
 	canonicalChangedFields,
@@ -1127,6 +1128,22 @@ export class WorklistApplicationService {
 					mainWorktree: error.mainWorktree,
 					resolution: "run-from-main-worktree",
 				}).toResultError();
+			} else if (error instanceof ProjectWorklistWorktreeLookupError) {
+				// A lookup that never answered is an availability failure, not a write
+				// that failed: nothing was written, and telling a dispatcher to retry a
+				// verdict Git already reached would spin it forever.
+				typedError = createApplicationError(
+					WORKLIST_ERROR_CODES.UNAVAILABLE,
+					error.message,
+					{
+						...gitFailureDetails(
+							error.retryable ? "retry-main-worktree-lookup" : "repair-main-worktree-lookup",
+							error.commandFailure,
+						),
+						path: error.worklistPath,
+					},
+					error.retryable,
+				).toResultError();
 			} else if (error instanceof ProjectWorklistMoveRefusedError) {
 				// Neither reason is retryable and neither is a stale baseline: one names
 				// a file that is gone, the other a second roadmap only a person can

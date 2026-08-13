@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -246,6 +246,53 @@ describe("project worklist move", () => {
 		await expect(moveProjectWorklist(from, to)).rejects.toThrow(ProjectWorklistMoveRefusedError);
 		expect(await readFile(to, "utf8")).toBe(destination);
 		expect(await readFile(from, "utf8")).toBe(destination);
+	});
+
+	/**
+	 * A repository and a linked worktree of it, canonical the way the store reports
+	 * them back, so a path assertion compares two paths rather than two spellings.
+	 */
+	async function repoWithLinkedWorktree(prefix: string): Promise<{ root: string; linked: string }> {
+		const root = await realpath(await mkdtemp(join(tmpdir(), prefix)));
+		const author = ["-c", "user.email=t@example.com", "-c", "user.name=Test"];
+		await execFileAsync("git", ["init"], { cwd: root });
+		await writeFile(join(root, "README.md"), "fixture\n");
+		await execFileAsync("git", ["add", "README.md"], { cwd: root });
+		await execFileAsync("git", [...author, "commit", "-m", "fixture"], { cwd: root });
+		const linked = join(await realpath(await mkdtemp(join(tmpdir(), prefix))), "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/linked-move", linked, "HEAD"], {
+			cwd: root,
+		});
+		return { root, linked };
+	}
+
+	it("refuses a move onto the committed roadmap of a linked worktree", async () => {
+		const { root, linked } = await repoWithLinkedWorktree("stepstone-move-linked-");
+		const from = join(linked, "scratch", "worklist.json");
+		const to = join(linked, ".worklist", "worklist.json");
+		const contents = await seed(from);
+
+		// The source is an explicit store the guard has no say over, so only the
+		// destination can refuse this: a move writes both ends.
+		await expect(moveProjectWorklist(from, to)).rejects.toMatchObject({
+			name: "ProjectWorklistLinkedWorktreeRefusedError",
+			worklistPath: to,
+			currentWorktree: linked,
+			mainWorktree: root,
+		});
+		expect(await readFile(from, "utf8")).toBe(contents);
+		await expect(readFile(to, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+		// The same move in the main worktree is what `migrate_path` performs, and it
+		// still lands.
+		const mainFrom = join(root, ".pi", "worklist.json");
+		const mainTo = join(root, ".worklist", "worklist.json");
+		await seed(mainFrom);
+		expect(await moveProjectWorklist(mainFrom, mainTo)).toEqual({
+			data: { fromPath: mainFrom, toPath: mainTo },
+			revision: 4,
+		});
+		expect(await readFile(mainTo, "utf8")).toBe(contents);
 	});
 
 	it("refuses a source that is not there", async () => {
