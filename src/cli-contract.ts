@@ -512,6 +512,9 @@ export const CLI_COMMAND_CONTRACT = {
 		`The goal file is \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.`,
 		`One goal-file resolution order applies in every roadmap interface, in the CLI, the MCP server, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
 		`Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only \`${LEGACY_WORKLIST_RELATIVE_PATH}\` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes \`${WORKLIST_RELATIVE_PATH}\`.`,
+		`Linked worktrees may read either committed roadmap, but a mutation that would change \`${WORKLIST_RELATIVE_PATH}\` or \`${LEGACY_WORKLIST_RELATIVE_PATH}\` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.`,
+		`A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no \`git worktree add\` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a \`--file\` or \`$${WORKLIST_PATH_ENV}\` store.`,
+		`An explicit \`--file\` or \`$${WORKLIST_PATH_ENV}\` path outside those two committed roadmap locations remains writable from a linked worktree.`,
 		`When both files exist the current path wins and every goal operation warns, because quietly ignoring a populated \`${LEGACY_WORKLIST_RELATIVE_PATH}\` would look exactly like data loss. Merge them by hand; no command picks a winner for you.`,
 		"With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.",
 		`\`--file\` and \`$${WORKLIST_PATH_ENV}\` are resolved from the process working directory, independently of \`--cwd\`, for goal operations. \`init\` ignores both overrides and always writes \`<git-root>/AGENTS.md\` in the repository selected by \`--cwd\`.`,
@@ -608,7 +611,7 @@ export const CLI_COMMAND_CONTRACT = {
 	],
 	dispatchRules: [
 		"Dispatch only goals returned by `ready --json`; claim each one with `start <id> --branch <name> --expect-updated-at <updatedAt>` before launching its worker.",
-		"The root session is the sole roadmap writer and runs every Stepstone mutation from the default-branch checkout; workers receive goal context but never mutate the worklist from isolated workspaces.",
+		"The root session is the sole roadmap writer and runs every Stepstone mutation from the repository's main worktree, normally on the default branch; workers receive goal context but never mutate the worklist from isolated workspaces.",
 		"Session hosting and workspace isolation are independent bindings: any host that can launch and observe a command can compose with any provider that returns an isolated checkout.",
 		"Treat a merged PR whose head belongs to the claimed branch as completion evidence; worker exit or silence alone never proves the goal landed.",
 		"Launching a dispatch loop for an explicitly approved plan grants standing consent to run `complete <id> --confirm` only for a goal in that plan after its matching PR merged.",

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -89,6 +89,42 @@ function fakeGitFailingBranchLookup(branchScript: string[]): Promise<string> {
 		"  exit 0",
 		"fi",
 		...branchScript,
+	]);
+}
+
+/**
+ * A PATH whose `git` resolves the repository the way the real one does and then
+ * fails the main-worktree lookup however the caller wrote it.
+ */
+function fakeGitFailingWorktreeLookup(worktreeScript: string[]): Promise<string> {
+	return fakeGitPath([
+		'if [ "$1" = "rev-parse" ]; then',
+		"  printf '%s\\n' \"$PWD\"",
+		"  exit 0",
+		"fi",
+		'if [ "$1" = "worktree" ]; then',
+		...worktreeScript,
+		"fi",
+		"exit 0",
+	]);
+}
+
+/**
+ * A PATH whose `git` is the real one with `-z` taken away from `worktree list`,
+ * the way every Git before 2.36 answers that invocation.
+ */
+async function fakeGitWithoutNulSeparatedWorktreeList(): Promise<string> {
+	const realGit = (await execFileAsync("which", ["git"])).stdout.trim();
+	return fakeGitPath([
+		'if [ "$1" = "worktree" ]; then',
+		'  for argument in "$@"; do',
+		'    if [ "$argument" = "-z" ]; then',
+		"      echo 'error: unknown switch -z' >&2",
+		"      exit 129",
+		"    fi",
+		"  done",
+		"fi",
+		`exec ${realGit} "$@"`,
 	]);
 }
 
@@ -1923,11 +1959,531 @@ async function seedWorklistAt(root: string, directory: string, goalId: string): 
 	return path;
 }
 
+/**
+ * A submodule working tree, whose `.git` is a gitdir link into the
+ * superproject's Git directory rather than a directory of its own.
+ *
+ * The link is what makes it worth building a whole superproject for: Git's first
+ * worktree record for such a repository is the Git directory, so the checkout
+ * itself is named nowhere in the listing.
+ */
+async function submoduleWorkingTree(): Promise<{ superproject: string; submodule: string }> {
+	const upstream = await tempGitRepo();
+	await writeFile(join(upstream, "README.md"), "submodule source\n");
+	await execFileAsync("git", ["add", "README.md"], { cwd: upstream });
+	await execFileAsync(
+		"git",
+		["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "seed"],
+		{ cwd: upstream },
+	);
+
+	const superproject = await tempGitRepo();
+	// Local submodule sources need the file protocol allowed since Git 2.38.
+	await execFileAsync(
+		"git",
+		[
+			"-c",
+			"protocol.file.allow=always",
+			"-c",
+			"user.email=t@example.com",
+			"-c",
+			"user.name=Test",
+			"submodule",
+			"add",
+			upstream,
+			"sub",
+		],
+		{ cwd: superproject },
+	);
+	return { superproject, submodule: join(superproject, "sub") };
+}
+
 describe("project goal file resolution", () => {
 	it("writes the current path in a repository that has neither file", async () => {
 		const root = await tempGitRepo();
 		expect((await runCli(root, ["project", "add", "First"])).code).toBe(0);
 		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["first"]);
+	});
+
+	it("refuses committed-roadmap writes from a linked worktree without restricting reads or explicit files", async () => {
+		const root = await tempGitRepo();
+		expect((await runCli(root, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: root },
+		);
+
+		const linkedParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-linked-")));
+		const linked = join(linkedParent, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/linked-roadmap", linked, "HEAD"], {
+			cwd: root,
+		});
+
+		try {
+			const rootPath = join(root, ".worklist", "worklist.json");
+			const linkedPath = join(linked, ".worklist", "worklist.json");
+			const rootBefore = await readFile(rootPath, "utf8");
+			const linkedBefore = await readFile(linkedPath, "utf8");
+
+			const listed = await runCli(linked, ["project", "list", "--json"]);
+			expect(listed.code).toBe(0);
+			expect(parseJson(listed.stdout).result.goals).toMatchObject([{ id: "canonical" }]);
+
+			const noOp = await runCli(linked, ["project", "move", "canonical", "up", "--json"]);
+			expect(noOp.code).toBe(0);
+			expect(parseJson(noOp.stdout).meta).toMatchObject({ changed: false, semanticNoOp: true });
+
+			const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
+			expect(refused.code).toBe(1);
+			expect(parseJson(refused.stderr)).toMatchObject({
+				ok: false,
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: {
+						path: linkedPath,
+						currentWorktree: linked,
+						mainWorktree: root,
+						resolution: "run-from-main-worktree",
+					},
+				},
+				meta: { changed: false, semanticNoOp: false, changedFields: [] },
+			});
+			expect(await readFile(rootPath, "utf8")).toBe(rootBefore);
+			expect(await readFile(linkedPath, "utf8")).toBe(linkedBefore);
+
+			const explicitPath = join(linked, "scratch", "worklist.json");
+			const explicit = await runCli(linked, [
+				"project",
+				"add",
+				"Explicit store",
+				"--file",
+				explicitPath,
+				"--json",
+			]);
+			expect(explicit.code).toBe(0);
+			expect((parseJson(await readFile(explicitPath, "utf8")) as ProjectWorklist).goals).toMatchObject([
+				{ id: "explicit-store" },
+			]);
+
+			await rm(linkedPath);
+			const legacyPath = await seedWorklistAt(linked, ".pi", "legacy");
+			const legacyBefore = await readFile(legacyPath, "utf8");
+			const migration = await runCli(linked, ["project", "migrate_path", "--confirm", "--json"]);
+			expect(migration.code).toBe(1);
+			expect(parseJson(migration.stderr)).toMatchObject({
+				error: {
+					code: "UNAVAILABLE",
+					details: {
+						path: legacyPath,
+						currentWorktree: linked,
+						mainWorktree: root,
+						resolution: "run-from-main-worktree",
+					},
+				},
+			});
+			expect(await readFile(legacyPath, "utf8")).toBe(legacyBefore);
+			await expect(readFile(linkedPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			await execFileAsync("git", ["worktree", "remove", "--force", linked], { cwd: root });
+		}
+	});
+
+	it("writes the committed roadmap from a main checkout whose Git directory sits elsewhere", async () => {
+		// `git init --separate-git-dir` leaves the checkout's `.git` a file naming a
+		// Git directory somewhere else, and Git's first worktree record is then that
+		// directory rather than the checkout. The checkout is still the repository's
+		// one main worktree, so nothing about it can fork a roadmap.
+		const home = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-separate-gitdir-")));
+		const gitDirectory = join(home, "roadmap.git");
+		const root = join(home, "checkout");
+		await execFileAsync("git", ["init", `--separate-git-dir=${gitDirectory}`, root]);
+
+		const added = await runCli(root, ["project", "add", "Written beside its Git directory", "--json"]);
+		expect(added.code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["written-beside-its-git-directory"]);
+
+		// And the rule still holds where it applies: a worktree added beside this
+		// checkout is refused, so the write above is the main checkout being allowed
+		// rather than the guard having been switched off.
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: root },
+		);
+		const linked = join(home, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/separate-gitdir", linked, "HEAD"], {
+			cwd: root,
+		});
+		const roadmap = join(linked, ".worklist", "worklist.json");
+		const before = await readFile(roadmap, "utf8");
+		const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
+		expect(refused.code).toBe(1);
+		// Refused without naming the checkout, because `git init --separate-git-dir`
+		// writes no way back to it: the `.git` link points one way only, and the Git
+		// directory records nothing. So the guard falls back to the refusal that names
+		// no destination rather than inventing one. The next test covers the same
+		// layout once the Git directory does record its checkout.
+		expect(parseJson(refused.stderr)).toMatchObject({
+			ok: false,
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { currentWorktree: linked, gitDirectory, resolution: "provide-main-worktree" },
+			},
+			meta: { changed: false, changedFields: [] },
+		});
+		expect(await readFile(roadmap, "utf8")).toBe(before);
+	});
+
+	it("names the main checkout its Git directory records to a worktree added beside it", async () => {
+		// A repository whose Git directory is not the checkout's own `.git` records
+		// where the checkout is in `core.worktree`, which Git writes itself whenever
+		// the two are not in their usual place. Git's first worktree record is still
+		// the Git directory, so that value is the only thing naming the main checkout,
+		// and a worktree added beside it has to be sent there.
+		const home = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-recorded-checkout-")));
+		const gitDirectory = join(home, "roadmap.git");
+		const root = join(home, "checkout");
+		await execFileAsync("git", ["init", `--separate-git-dir=${gitDirectory}`, root]);
+		await execFileAsync("git", ["config", "core.worktree", root], { cwd: root });
+
+		expect((await runCli(root, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: root },
+		);
+		const linked = join(home, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/recorded-checkout", linked, "HEAD"], {
+			cwd: root,
+		});
+
+		const roadmap = join(linked, ".worklist", "worklist.json");
+		const before = await readFile(roadmap, "utf8");
+		const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
+		expect(refused.code).toBe(1);
+		expect(parseJson(refused.stderr)).toMatchObject({
+			ok: false,
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: {
+					path: roadmap,
+					currentWorktree: linked,
+					mainWorktree: root,
+					resolution: "run-from-main-worktree",
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(await readFile(roadmap, "utf8")).toBe(before);
+
+		// The checkout it names can perform the change, so the refusal sends its
+		// reader somewhere the mutation actually lands.
+		expect((await runCli(root, ["project", "add", "Written where it belongs"])).code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["canonical", "written-where-it-belongs"]);
+	});
+
+	it("writes the committed roadmap from a submodule working tree", async () => {
+		// A submodule's `.git` is a gitdir link too, into the superproject's own Git
+		// directory, so Git names that link target as the first worktree record. The
+		// submodule checkout is nonetheless the sole checkout of its repository.
+		const { superproject, submodule } = await submoduleWorkingTree();
+		const added = await runCli(submodule, ["project", "add", "Written in a submodule", "--json"]);
+		expect(added.code).toBe(0);
+		expect((await readGoals(submodule)).map((goal) => goal.id)).toEqual(["written-in-a-submodule"]);
+		// The submodule keeps its own roadmap: the superproject's is untouched, so
+		// the write went where the working tree it was made from lives.
+		await expect(readFile(join(superproject, ".worklist", "worklist.json"), "utf8")).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+
+	it("names the submodule working tree to a worktree added beside it", async () => {
+		// A submodule records its checkout in `core.worktree` relative to its Git
+		// directory, which is the path a worktree added beside it has to be sent to.
+		// Git's listing names that Git directory instead, so a refusal that read only
+		// the listing would tell the owner of a repository that has a main checkout
+		// that it has none.
+		const { submodule } = await submoduleWorkingTree();
+		expect((await runCli(submodule, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: submodule });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: submodule },
+		);
+
+		const linkedParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-submodule-linked-")));
+		const linked = join(linkedParent, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/submodule-linked", linked, "HEAD"], {
+			cwd: submodule,
+		});
+
+		try {
+			const roadmap = join(linked, ".worklist", "worklist.json");
+			const before = await readFile(roadmap, "utf8");
+			const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
+			expect(refused.code).toBe(1);
+			expect(parseJson(refused.stderr)).toMatchObject({
+				ok: false,
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: {
+						path: roadmap,
+						currentWorktree: linked,
+						mainWorktree: submodule,
+						resolution: "run-from-main-worktree",
+					},
+				},
+				meta: { changed: false, semanticNoOp: false, changedFields: [] },
+			});
+			expect(await readFile(roadmap, "utf8")).toBe(before);
+
+			// The working tree it names can perform the change.
+			expect((await runCli(submodule, ["project", "add", "Written where it belongs"])).code).toBe(0);
+			expect((await readGoals(submodule)).map((goal) => goal.id)).toEqual([
+				"canonical",
+				"written-where-it-belongs",
+			]);
+		} finally {
+			await execFileAsync("git", ["worktree", "remove", "--force", linked], { cwd: submodule });
+		}
+	});
+
+	it("refuses a committed-roadmap write in a repository whose main worktree holds no checkout", async () => {
+		const source = await tempGitRepo();
+		expect((await runCli(source, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: source });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: source },
+		);
+
+		// The layout a bare clone plus worktrees gives: Git's first record is the Git
+		// directory, which holds no working tree and so can hold no roadmap.
+		const home = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-bare-")));
+		const gitDirectory = join(home, "roadmap.git");
+		await execFileAsync("git", ["clone", "--bare", source, gitDirectory]);
+		const checkout = join(home, "checkout");
+		await execFileAsync("git", ["worktree", "add", checkout, "HEAD"], { cwd: gitDirectory });
+
+		const roadmap = join(checkout, ".worklist", "worklist.json");
+		const before = await readFile(roadmap, "utf8");
+
+		const listed = await runCli(checkout, ["project", "list", "--json"]);
+		expect(listed.code).toBe(0);
+		expect(parseJson(listed.stdout).result.goals).toMatchObject([{ id: "canonical" }]);
+
+		const noOp = await runCli(checkout, ["project", "move", "canonical", "up", "--json"]);
+		expect(noOp.code).toBe(0);
+		expect(parseJson(noOp.stdout).meta).toMatchObject({ changed: false, semanticNoOp: true });
+
+		const refused = await runCli(checkout, ["project", "add", "Must not diverge", "--json"]);
+		expect(refused.code).toBe(1);
+		const envelope = parseJson(refused.stderr);
+		expect(envelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "add",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: {
+					path: roadmap,
+					currentWorktree: checkout,
+					gitDirectory,
+					resolution: "provide-main-worktree",
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		// A distinct refusal, because the linked-worktree one names a checkout to walk
+		// into and there is none here. Naming the Git directory as somewhere to run
+		// the change would send someone into Git's internals.
+		expect(envelope.error.details.mainWorktree).toBeUndefined();
+		expect(envelope.error.details.resolution).not.toBe("run-from-main-worktree");
+		expect(await readFile(roadmap, "utf8")).toBe(before);
+
+		// Every way out it names can be taken. `git worktree add` cannot make a main
+		// worktree here, so the message must not ask for one to be created.
+		const added = await execFileAsync("git", ["worktree", "add", join(home, "second"), "HEAD"], {
+			cwd: gitDirectory,
+		});
+		expect(added).toBeDefined();
+		const stillRefused = await runCli(checkout, ["project", "add", "Must not diverge", "--json"]);
+		expect(parseJson(stillRefused.stderr).error.details).toMatchObject({
+			gitDirectory,
+			resolution: "provide-main-worktree",
+		});
+		// The clone it points at instead does have one, and writes there land.
+		const clone = join(home, "clone");
+		await execFileAsync("git", ["clone", gitDirectory, clone]);
+		expect((await runCli(clone, ["project", "add", "Written in the clone"])).code).toBe(0);
+		expect((await readGoals(clone)).map((goal) => goal.id)).toEqual(["canonical", "written-in-the-clone"]);
+
+		// So does the other way out it names, from this very checkout.
+		expect(envelope.error.message).toContain(`$${WORKLIST_PATH_ENV}`);
+		const explicitPath = join(checkout, "scratch", "worklist.json");
+		const explicit = await runCli(checkout, ["project", "add", "Explicit store", "--json"], {
+			[WORKLIST_PATH_ENV]: explicitPath,
+		});
+		expect(explicit.code).toBe(0);
+		expect((parseJson(await readFile(explicitPath, "utf8")) as ProjectWorklist).goals).toMatchObject([
+			{ id: "explicit-store" },
+		]);
+	});
+
+	it("reads the newline-delimited listing on a Git that does not take -z", async () => {
+		const root = await tempGitRepo();
+		const olderGit = await fakeGitWithoutNulSeparatedWorktreeList();
+
+		// The lookup stands in front of every committed-roadmap write, so a Git
+		// without `-z` refuses a plain single-worktree repository too, not just the
+		// linked worktrees the rule is about.
+		const added = await runCli(root, ["project", "add", "Written on an older Git"], { PATH: olderGit });
+		expect(added.code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["written-on-an-older-git"]);
+
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: root },
+		);
+		const linkedParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-legacy-list-")));
+		const linked = join(linkedParent, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/legacy-list", linked, "HEAD"], {
+			cwd: root,
+		});
+
+		try {
+			// And the rule itself still holds through the fallback: the older format
+			// names the same main worktree.
+			const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"], {
+				PATH: olderGit,
+			});
+			expect(refused.code).toBe(1);
+			expect(parseJson(refused.stderr)).toMatchObject({
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: { currentWorktree: linked, mainWorktree: root, resolution: "run-from-main-worktree" },
+				},
+			});
+			expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["written-on-an-older-git"]);
+		} finally {
+			await execFileAsync("git", ["worktree", "remove", "--force", linked], { cwd: root });
+		}
+	});
+
+	it("asks Git where the main worktree is before it takes the worklist lock", async () => {
+		const root = await tempGitRepo();
+		const probe = join(await mkdtemp(join(tmpdir(), "stepstone-lock-probe-")), "lock-during-lookup");
+		// Git answers for itself; the shim only records whether the cross-process
+		// worklist lock was held at the moment the lookup ran.
+		const realGit = (await execFileAsync("which", ["git"])).stdout.trim();
+		const probingGit = await fakeGitPath([
+			'if [ "$1" = "worktree" ]; then',
+			`  if [ -e "$PWD/.worklist/.worklist.lock" ]; then printf held > '${probe}'; else printf free > '${probe}'; fi`,
+			"fi",
+			`exec ${realGit} "$@"`,
+		]);
+
+		const added = await runCli(root, ["project", "add", "Written while Git was asked"], {
+			PATH: probingGit,
+		});
+		expect(added.code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["written-while-git-was-asked"]);
+		// Git runs synchronously, so a lookup that reaches its time limit blocks past
+		// the lock's staleness window: another writer would judge the lock abandoned
+		// and take it while this process still believed it held it.
+		expect(await readFile(probe, "utf8")).toBe("free");
+	});
+
+	it("keeps a main-worktree lookup Git refused non-retryable, unlike one that never finished", async () => {
+		const root = await tempGitRepo();
+		const roadmap = join(root, ".worklist", "worklist.json");
+
+		// A Git too old for `-z` refuses the lookup the same way however often it is
+		// asked, so a dispatcher that honours `retryable` would spin on it forever.
+		const refusedPath = await fakeGitFailingWorktreeLookup([
+			'  echo "error: unknown switch z" >&2',
+			"  exit 129",
+		]);
+		const refused = await runCli(root, ["project", "add", "Must not diverge", "--json"], {
+			PATH: refusedPath,
+		});
+		expect(refused.code).toBe(1);
+		expect(refused.stdout).toBe("");
+		const refusedEnvelope = parseJson(refused.stderr) as GitFailureEnvelope;
+		expect(refusedEnvelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "add",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: {
+					resolution: "repair-main-worktree-lookup",
+					path: roadmap,
+					gitExitCode: 129,
+					gitTimedOut: false,
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(refusedEnvelope.error.details.gitSignal).toBeUndefined();
+		expect(refusedEnvelope.error.details.gitError).toContain("unknown switch");
+		// What Git said reaches the person who has to repair it, and the guard is not
+		// described as a failed write: the lookup happens before anything is written,
+		// so pointing at the file and the lock would send them to the wrong place.
+		expect(refusedEnvelope.error.message).toContain("unknown switch");
+		expect(refusedEnvelope.error.message).not.toContain("persistence");
+		expect(refusedEnvelope.error.message).not.toContain("Retry the change");
+		// The way out names the command that did not answer. A Git too old for `-z`
+		// is not a repository anyone can repair, so saying so would send them to the
+		// wrong place just as surely.
+		expect(refusedEnvelope.error.message).toContain("git worktree list --porcelain -z");
+		expect(refusedEnvelope.error.message).not.toContain("Repair the repository");
+		await expect(readFile(roadmap, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+		// Killed before Git could answer: nothing was decided, so asking again is the
+		// documented next step rather than a spin on a settled refusal.
+		const killedPath = await fakeGitFailingWorktreeLookup(["  kill -TERM $$"]);
+		const killed = await runCli(root, ["project", "add", "Must not diverge", "--json"], {
+			PATH: killedPath,
+		});
+		expect(killed.code).toBe(1);
+		const killedEnvelope = parseJson(killed.stderr) as GitFailureEnvelope;
+		expect(killedEnvelope).toMatchObject({
+			error: {
+				code: "UNAVAILABLE",
+				retryable: true,
+				details: {
+					resolution: "retry-main-worktree-lookup",
+					path: roadmap,
+					gitSignal: "SIGTERM",
+					gitTimedOut: false,
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(killedEnvelope.error.details.gitExitCode).toBeUndefined();
+		expect(killedEnvelope.error.message).toContain("Retry the change");
+		await expect(readFile(roadmap, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+		// The same repository writes normally once Git answers, so the refusal is the
+		// lookup failing rather than the guard standing in the way.
+		expect((await runCli(root, ["project", "add", "Lands once Git answers"])).code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["lands-once-git-answers"]);
 	});
 
 	it("reads and writes a legacy file rather than splitting the roadmap in two", async () => {

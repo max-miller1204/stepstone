@@ -1,7 +1,25 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import lockfile from "proper-lockfile";
+import {
+	LEGACY_WORKLIST_DIRECTORY,
+	WORKLIST_DIRECTORY,
+	WORKLIST_FILENAME,
+	WORKLIST_PATH_ENV,
+} from "./cli-contract.ts";
+import {
+	canonicalPath,
+	GIT_MARKER,
+	type GitCommandFailure,
+	gitCommandDiagnostic,
+	isTransientGitFailure,
+	type MainWorktreeFailure,
+	resolveMainWorktree,
+	resolveRecordedCheckout,
+	resolveWorktreePlacement,
+} from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import type { ProjectWorklist, RevisionedProjectWorklist } from "./types.ts";
 import { PROJECT_WORKLIST_VERSION } from "./types.ts";
@@ -79,6 +97,108 @@ export class ProjectWorklistMoveRefusedError extends ProjectMutationRefusedError
 		this.reason = reason;
 		this.fromPath = fromPath;
 		this.toPath = toPath;
+	}
+}
+/**
+ * A committed roadmap write attempted from a linked worktree.
+ *
+ * Reads and explicit files outside the two repository roadmap locations remain
+ * available there. A canonical write would instead create a second valid
+ * roadmap and a second lock, so the refusal names the sole worktree that may
+ * perform it.
+ */
+export class ProjectWorklistLinkedWorktreeRefusedError extends ProjectMutationRefusedError {
+	readonly worklistPath: string;
+	readonly currentWorktree: string;
+	readonly mainWorktree: string;
+
+	constructor(worklistPath: string, currentWorktree: string, mainWorktree: string) {
+		super(
+			`Project worklist ${worklistPath} cannot be changed from linked worktree ${currentWorktree}. Run this mutation from the main worktree ${mainWorktree}.`,
+		);
+		this.name = "ProjectWorklistLinkedWorktreeRefusedError";
+		this.worklistPath = worklistPath;
+		this.currentWorktree = currentWorktree;
+		this.mainWorktree = mainWorktree;
+	}
+}
+
+/**
+ * A committed roadmap write in a repository whose main worktree holds no
+ * checkout, which every worktree of a bare clone is.
+ *
+ * Kept apart from the linked-worktree refusal because the way out is not the
+ * same. That one names a checkout someone can walk into; here Git's first record
+ * is the Git directory itself, which can hold no working tree and so can hold no
+ * roadmap, and telling someone to run the change there would name a destination
+ * that cannot exist.
+ *
+ * Nor can one be conjured: `git worktree add` on a bare repository only ever adds
+ * another linked worktree, and the first record stays the Git directory however
+ * many are added. So the ways out named are the ones that can actually be taken -
+ * a main worktree that was removed can be restored, a bare repository can be
+ * cloned into one that has a checkout, and a store outside the two committed
+ * roadmap locations was never covered by this rule in the first place.
+ *
+ * The write is still refused. Every checkout of such a repository is one of many
+ * equals, so letting them all write is exactly the silent fork the guard exists
+ * to prevent, and picking one of them would make the roadmap's sole writer
+ * whichever checkout happened to ask first.
+ *
+ * The one other repository that lands here is a gitdir-link one that records no
+ * checkout: `git init --separate-git-dir` writes the link from the checkout to
+ * the Git directory and nothing the other way, so a main checkout it does have
+ * cannot be named from the Git directory. The refusal still holds, because a
+ * write let through would fork the roadmap exactly as any other would, and a
+ * path cannot be invented for the message to send its reader to.
+ */
+export class ProjectWorklistNoMainWorktreeError extends ProjectMutationRefusedError {
+	readonly worklistPath: string;
+	readonly currentWorktree: string;
+	readonly gitDirectory: string;
+
+	constructor(worklistPath: string, currentWorktree: string, gitDirectory: string) {
+		super(
+			`Project worklist ${worklistPath} cannot be changed from ${currentWorktree}: the repository at ${gitDirectory} has no main worktree, so no checkout of it is the roadmap's sole writer. Restore the main worktree if it was removed, or make this change in a clone that has one; a store outside the committed roadmap paths, named by $${WORKLIST_PATH_ENV}, stays writable here.`,
+		);
+		this.name = "ProjectWorklistNoMainWorktreeError";
+		this.worklistPath = worklistPath;
+		this.currentWorktree = currentWorktree;
+		this.gitDirectory = gitDirectory;
+	}
+}
+
+/**
+ * A committed roadmap write that could not be shown to be safe, because Git never
+ * named the main worktree.
+ *
+ * The guard fails closed: a write let through on a lookup that did not answer is
+ * exactly the silent fork it exists to prevent, and the roadmap is left as it was
+ * either way.
+ *
+ * `retryable` follows how the Git run ended rather than the bare fact that it
+ * failed. A status Git exited with is a verdict it will reach again - an option
+ * this Git is too old for, a repository it refuses to read - and a dispatcher told
+ * to retry one of those never stops. Only a run killed before Git answered can
+ * answer differently next time.
+ */
+export class ProjectWorklistWorktreeLookupError extends ProjectMutationRefusedError {
+	readonly worklistPath: string;
+	readonly retryable: boolean;
+	/** How the Git run ended, absent when Git answered but named no worktree. */
+	readonly commandFailure?: GitCommandFailure;
+
+	constructor(worklistPath: string, failure: MainWorktreeFailure) {
+		const retryable = failure.command !== undefined && isTransientGitFailure(failure.command);
+		const diagnostic = failure.command ? gitCommandDiagnostic(failure.command) : failure.message;
+		super(
+			`Git could not determine the main worktree for ${worklistPath}: ${diagnostic}. ` +
+				`${retryable ? "Retry the change." : `Make \`${failure.invocation}\` answer here, then retry.`}`,
+		);
+		this.name = "ProjectWorklistWorktreeLookupError";
+		this.worklistPath = worklistPath;
+		this.retryable = retryable;
+		if (failure.command) this.commandFailure = failure.command;
 	}
 }
 
@@ -216,6 +336,70 @@ export async function readProjectWorklist(
 		};
 	}
 }
+/**
+ * The refusal a write to either committed roadmap path has earned, or nothing.
+ *
+ * Asked of the write rather than of each interface, so every path that changes a
+ * roadmap - a mutation and a migration alike - is held to it, and a new interface
+ * cannot forget to ask.
+ *
+ * Answered rather than thrown, because where it has to be decided and where it
+ * has to be asked are not the same place. Deciding it runs Git, and Git runs
+ * synchronously: a run that reaches its time limit blocks this process past the
+ * staleness window of the worklist lock, long enough for another writer to judge
+ * the lock abandoned, remove it, and take it while this process still believes it
+ * holds it. So it is worked out before the lock is taken and raised inside it,
+ * once the mutation has said it is going to change something.
+ *
+ * Paths outside the current and legacy roadmap locations are explicit
+ * non-roadmap stores. They intentionally remain writable from any worktree.
+ */
+function committedRoadmapWriteRefusal(path: string): ProjectMutationRefusedError | undefined {
+	const worklistPath = resolve(path);
+	const worklistDirectory = dirname(worklistPath);
+	const directoryName = basename(worklistDirectory);
+	if (
+		basename(worklistPath) !== WORKLIST_FILENAME ||
+		(directoryName !== WORKLIST_DIRECTORY && directoryName !== LEGACY_WORKLIST_DIRECTORY)
+	) {
+		return undefined;
+	}
+
+	const currentWorktree = canonicalPath(dirname(worklistDirectory));
+	if (!existsSync(resolve(currentWorktree, GIT_MARKER))) return undefined;
+	const main = resolveMainWorktree(currentWorktree);
+	if (main.kind === "unavailable") {
+		return new ProjectWorklistWorktreeLookupError(worklistPath, main.failure);
+	}
+	if (main.kind === "checkout" && currentWorktree === main.path) return undefined;
+
+	// The listing naming some other directory is not yet an answer. It names the
+	// Git directory rather than the checkout for every repository whose `.git` is
+	// a gitdir link - a submodule working tree, a `git init --separate-git-dir`
+	// repository - and each of those is its repository's one main checkout, as
+	// entitled to write the roadmap as any other. Only Git's own placement of this
+	// checkout tells them apart from a worktree that really was added beside a
+	// main one.
+	const placement = resolveWorktreePlacement(currentWorktree);
+	if (placement.kind === "unavailable") {
+		return new ProjectWorklistWorktreeLookupError(worklistPath, placement.failure);
+	}
+	if (placement.kind === "main") return undefined;
+	if (main.kind === "no-checkout") {
+		// The listing naming a Git directory does not mean there is no main checkout
+		// to name: for a gitdir-link repository it is the only thing the listing can
+		// print, and the checkout is recorded in the Git directory itself. Sending
+		// this worktree to a checkout that exists beats telling its owner that the
+		// repository they are standing in has none. Only a repository that records
+		// nothing - a bare one above all - has nobody to send anyone to.
+		const recorded = resolveRecordedCheckout(main.gitDirectory);
+		if (recorded) {
+			return new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, recorded);
+		}
+		return new ProjectWorklistNoMainWorktreeError(worklistPath, currentWorktree, main.gitDirectory);
+	}
+	return new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, main.path);
+}
 
 /** Name of the cross-process lock every writer to one worklist directory takes. */
 const LOCK_FILENAME = ".worklist.lock";
@@ -259,6 +443,12 @@ export async function moveProjectWorklist(
 ): Promise<ProjectStoreResult<ProjectWorklistMove>> {
 	const fromDir = dirname(fromPath);
 	const toDir = dirname(toPath);
+	// Both ends, because a move writes both: it removes one roadmap and creates
+	// the other. Checking only the source would let a caller outside the CLI's
+	// own `migrate_path` land a committed roadmap in a linked worktree from a
+	// store the guard does not cover.
+	const fromRefusal = committedRoadmapWriteRefusal(fromPath);
+	const toRefusal = committedRoadmapWriteRefusal(toPath);
 	const releaseDestination = await lockWorklistDirectory(toDir);
 	let releaseSource: (() => Promise<void>) | undefined;
 	let tempName: string | undefined;
@@ -285,6 +475,9 @@ export async function moveProjectWorklist(
 		// the look and the rename that would otherwise overwrite it.
 		const destination = await stat(toPath).catch(() => undefined);
 		if (destination) throw new ProjectWorklistMoveRefusedError("destination-exists", fromPath, toPath);
+
+		if (fromRefusal) throw fromRefusal;
+		if (toRefusal) throw toRefusal;
 
 		tempName = resolve(toDir, `.worklist-${randomBytes(8).toString("hex")}.tmp`);
 		await writeFile(tempName, contents, "utf8");
@@ -314,6 +507,7 @@ export async function mutateProjectWorklist<T>(
 	options: ProjectMutationOptions = {},
 ): Promise<ProjectStoreResult<T>> {
 	const dir = dirname(path);
+	const refusal = committedRoadmapWriteRefusal(path);
 	const release = await lockWorklistDirectory(dir);
 	let tempName: string | undefined;
 
@@ -337,6 +531,8 @@ export async function mutateProjectWorklist<T>(
 			};
 		}
 		if (!changed) return { data: result, revision: readResult.data.revision, changed: false };
+
+		if (refusal) throw refusal;
 
 		const revision = readResult.data.revision + 1;
 		if (!Number.isSafeInteger(revision)) {

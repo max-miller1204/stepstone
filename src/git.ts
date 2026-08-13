@@ -16,7 +16,7 @@ export const GIT_COMMAND_TIMEOUT_MS = 10000;
 const TIMED_OUT_CODE = "ETIMEDOUT";
 
 /** The entry Git looks for when it decides whether a directory is in a repository. */
-const GIT_MARKER = ".git";
+export const GIT_MARKER = ".git";
 
 /**
  * Why a Git command did not answer, kept as the runner reported it rather than
@@ -255,6 +255,293 @@ export function resolveGitRoot(cwd: string, options: GitCommandOptions = {}): Gi
 			},
 		};
 	}
+}
+
+/**
+ * The canonical form of a path, or the path itself when it cannot be resolved.
+ *
+ * Two paths naming one directory only compare equal once symlinks are gone, and a
+ * directory Git named that is no longer there is still Git's answer: falling back
+ * keeps a comparison against it honest instead of turning a stale worktree into a
+ * throw from the middle of an unrelated operation.
+ */
+export function canonicalPath(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
+}
+
+export interface MainWorktreeFailure {
+	/** One line naming what stopped the lookup, whatever the kind. */
+	message: string;
+	/**
+	 * The Git command that did not answer, written the way someone would type it.
+	 *
+	 * Two unlike commands stand between a committed roadmap write and its verdict -
+	 * the listing that locates the main checkout, and the lookup that places the
+	 * current one - so a refusal naming only one of them would send whoever has to
+	 * repair it to a command that works.
+	 */
+	invocation: string;
+	/** How the Git run ended, absent when Git answered but named no worktree. */
+	command?: GitCommandFailure;
+}
+
+/**
+ * What Git's first worktree record amounts to.
+ *
+ * A repository cloned or initialised bare has no main checkout at all: its first
+ * record names the Git directory, which holds no working tree and can hold no
+ * file anyone commits. That is a different answer from a main worktree Git named
+ * and from a lookup Git never answered, and a caller that cannot tell them apart
+ * ends up naming a destination nobody can write in.
+ *
+ * A first record naming a Git directory does not by itself mean the repository
+ * has no main checkout: whenever a checkout's `.git` is a gitdir link, Git prints
+ * that Git directory here instead of the checkout, so a submodule working tree
+ * and a `git init --separate-git-dir` repository read the same way a bare one
+ * does. Which of those it is, is `resolveWorktreePlacement`'s question, not this
+ * lookup's.
+ */
+export type MainWorktreeResult =
+	/** Git named a main worktree that holds a checkout. */
+	| { kind: "checkout"; path: string }
+	/** Git named a main worktree that holds no working tree, so nothing can be written there. */
+	| { kind: "no-checkout"; gitDirectory: string }
+	/** Git named no main worktree at all. */
+	| { kind: "unavailable"; failure: MainWorktreeFailure };
+
+/** The prefix `git worktree list --porcelain` gives the attribute naming a worktree. */
+const WORKTREE_ATTRIBUTE = "worktree ";
+
+/** The listing that locates the main checkout, as someone would type it. */
+const WORKTREE_LIST_COMMAND = "git worktree list --porcelain -z";
+
+/** The lookup that places the current checkout in its repository, likewise. */
+const WORKTREE_PLACEMENT_COMMAND = "git rev-parse --git-dir --git-common-dir";
+
+/**
+ * The status Git's option parser exits with when it will not take the command
+ * line it was given.
+ */
+const GIT_USAGE_ERROR_STATUS = 129;
+
+type WorktreeListRun =
+	| { output: string; failure?: undefined }
+	| { output?: undefined; failure: GitCommandFailure };
+
+/** One `git worktree list` run, kept as either its output or how it ended. */
+function runWorktreeList(cwd: string, args: string[], timeoutMs: number): WorktreeListRun {
+	try {
+		return {
+			output: execFileSync("git", ["worktree", "list", ...args], {
+				cwd,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: timeoutMs,
+			}),
+		};
+	} catch (error) {
+		return { failure: describeCommandFailure(error) };
+	}
+}
+
+/**
+ * What the first record of a porcelain listing says the main worktree is.
+ *
+ * Only the first attribute is read, and it is the same `worktree <path>` line in
+ * both spellings of the format: the separator is all that differs.
+ *
+ * Whether that worktree holds a checkout is asked of the directory rather than of
+ * the porcelain `bare` attribute, which is not there to be read in every layout: a
+ * repository whose config says `core.bare` can still print a `HEAD` and a `branch`
+ * for its first record and no `bare` line at all. The `.git` entry Git itself looks
+ * for is present in every worktree that has one, including one whose Git directory
+ * lives elsewhere, and absent from a Git directory standing alone.
+ */
+function mainWorktreeFromListing(raw: string, separator: string): MainWorktreeResult {
+	const attributeEnd = raw.indexOf(separator);
+	const attribute = attributeEnd === -1 ? raw : raw.slice(0, attributeEnd);
+	if (!attribute.startsWith(WORKTREE_ATTRIBUTE)) {
+		return {
+			kind: "unavailable",
+			failure: { message: "git worktree list named no main worktree", invocation: WORKTREE_LIST_COMMAND },
+		};
+	}
+	const main = canonicalPath(attribute.slice(WORKTREE_ATTRIBUTE.length));
+	if (!existsSync(join(main, GIT_MARKER))) return { kind: "no-checkout", gitDirectory: main };
+	return { kind: "checkout", path: main };
+}
+
+/**
+ * The main worktree of the repository containing `cwd`.
+ *
+ * `git worktree list` defines its first record as the main worktree, which is the
+ * only reason this is answerable at all: `--git-common-dir` names the shared Git
+ * directory, and for a repository created with `git init --separate-git-dir` that
+ * directory is nowhere near any checkout.
+ *
+ * `-z` terminates each attribute with a NUL instead of a newline, so the first
+ * field is the whole first `worktree <path>` attribute even for a worktree whose
+ * path contains a newline - the one case the newline-delimited form cannot be
+ * parsed out of. Git has only taken `-z` here since 2.36, and this lookup stands
+ * in front of every committed roadmap write, so an older Git would refuse them
+ * all rather than the linked ones. It is therefore asked again without `-z`, and
+ * only in the one case that can mean: a status Git's option parser exits with,
+ * having read the command line and declined it, for an invocation whose only
+ * other option long predates that parser knowing this one. Any other way the
+ * first run ended is Git's answer and is returned as it stands, and a second run
+ * that fails too reports the first failure rather than its own, so nothing about
+ * a Git that is broken for some unrelated reason is swapped for a story about
+ * `-z`. On that older Git a main worktree whose path contains a newline reads
+ * back truncated, which fails closed into a refusal rather than a write.
+ *
+ * Git is run directly rather than through a shell, for the same reason every
+ * other lookup here is: a shell answers for Git, turning an absent Git into its
+ * own exit status 127 and a signalled Git into 128 + n, which would make a run
+ * that never reached a verdict look like a verdict Git reached.
+ */
+export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}): MainWorktreeResult {
+	const timeoutMs = options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS;
+	const nulSeparated = runWorktreeList(cwd, ["--porcelain", "-z"], timeoutMs);
+	if (nulSeparated.output !== undefined) return mainWorktreeFromListing(nulSeparated.output, "\0");
+
+	const unavailable: MainWorktreeResult = {
+		kind: "unavailable",
+		failure: {
+			message: describeGitFailure(nulSeparated.failure),
+			invocation: WORKTREE_LIST_COMMAND,
+			command: nulSeparated.failure,
+		},
+	};
+	if (nulSeparated.failure.exitCode !== GIT_USAGE_ERROR_STATUS) return unavailable;
+
+	const lineSeparated = runWorktreeList(cwd, ["--porcelain"], timeoutMs);
+	if (lineSeparated.output === undefined) return unavailable;
+	return mainWorktreeFromListing(lineSeparated.output, "\n");
+}
+
+/**
+ * The working tree a Git directory records for itself, when it records one.
+ *
+ * A repository whose checkout reaches it through a `.git` gitdir link is named
+ * by the porcelain listing as that Git directory rather than as the checkout, so
+ * a worktree added beside such a checkout has a main worktree the listing never
+ * spells out. The one place the way back is written down is `core.worktree` in
+ * the repository's own config, which is how a submodule working tree is reached.
+ *
+ * Git is asked to resolve that value rather than it being read and joined here.
+ * A relative `core.worktree` is relative to the Git directory, it may arrive
+ * through an included file or the per-worktree config, and where Git itself
+ * would work is the whole question. Running from inside the Git directory is
+ * what makes the answer this repository's: Git takes a directory that is a Git
+ * directory as its own and asks it for a working tree, so nothing above it on
+ * the filesystem can answer in its place.
+ *
+ * Recording nothing, a Git that did not answer, and a recorded path that no
+ * longer holds a checkout are one answer here, because they leave the caller in
+ * one position: nobody to name. A bare repository is the first of those, and the
+ * refusal it earns says exactly that rather than a path.
+ */
+export function resolveRecordedCheckout(
+	gitDirectory: string,
+	options: GitCommandOptions = {},
+): string | undefined {
+	let raw: string;
+	try {
+		raw = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+			cwd: gitDirectory,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
+		});
+	} catch {
+		return undefined;
+	}
+	const top = raw.trim();
+	if (!top) return undefined;
+	const checkout = canonicalPath(top);
+	return existsSync(join(checkout, GIT_MARKER)) ? checkout : undefined;
+}
+
+/**
+ * Where a checkout sits in the repository it belongs to.
+ *
+ * A linked worktree is the one checkout that must not write a file the repository
+ * commits, and comparing a path against the porcelain listing cannot pick it out
+ * on its own: whenever a checkout's `.git` is a gitdir link - a submodule working
+ * tree, or a repository made with `git init --separate-git-dir` - the listing's
+ * first record is the Git directory rather than the checkout, so an ordinary main
+ * checkout reads exactly like a worktree the listing did not name.
+ */
+export type WorktreePlacement =
+	/** The repository's ordinary main checkout, however its Git directory is reached. */
+	| { kind: "main" }
+	/** A worktree added with `git worktree add`, which has a main checkout elsewhere or none. */
+	| { kind: "linked" }
+	/** Git said neither, so nothing about this checkout is known. */
+	| { kind: "unavailable"; failure: MainWorktreeFailure };
+
+/**
+ * Whether `cwd` is its repository's main checkout or a linked worktree.
+ *
+ * `git worktree add` gives each worktree it adds a Git directory of its own
+ * beneath the shared one, and leaves every other checkout using the shared one
+ * directly. So the two directories being the same directory is what says this
+ * checkout is not a linked worktree - a question about this checkout alone, which
+ * is why it can be answered without a path to compare against.
+ *
+ * That is all these two directories are asked for. Neither says where the main
+ * checkout is - `--git-common-dir` names the shared Git directory, which for a
+ * repository created with `git init --separate-git-dir` is nowhere near any
+ * checkout - and locating it stays with the porcelain listing.
+ *
+ * Each answer is resolved against `cwd` before they are compared, because Git
+ * prints either one relative to the current directory when it can, which is the
+ * same directory arriving spelled two ways. A Git directory whose path contains a
+ * newline reads back truncated - `git rev-parse` has no NUL-separated form - and
+ * so compares unequal, which fails closed into a refusal rather than a write.
+ *
+ * Git is run directly rather than through a shell, for the same reason every
+ * other lookup here is: a shell answers for Git, turning an absent Git into its
+ * own exit status 127 and a signalled Git into 128 + n, which would make a run
+ * that never reached a verdict look like a verdict Git reached.
+ */
+export function resolveWorktreePlacement(cwd: string, options: GitCommandOptions = {}): WorktreePlacement {
+	let raw: string;
+	try {
+		raw = execFileSync("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
+		});
+	} catch (error) {
+		const command = describeCommandFailure(error);
+		return {
+			kind: "unavailable",
+			failure: {
+				message: describeGitFailure(command),
+				invocation: WORKTREE_PLACEMENT_COMMAND,
+				command,
+			},
+		};
+	}
+	const [own = "", shared = ""] = raw.split("\n").map((line) => line.trim());
+	if (!own || !shared) {
+		return {
+			kind: "unavailable",
+			failure: {
+				message: "git rev-parse named no Git directory",
+				invocation: WORKTREE_PLACEMENT_COMMAND,
+			},
+		};
+	}
+	return canonicalPath(resolve(cwd, own)) === canonicalPath(resolve(cwd, shared))
+		? { kind: "main" }
+		: { kind: "linked" };
 }
 
 export interface CurrentGitBranchResult {
