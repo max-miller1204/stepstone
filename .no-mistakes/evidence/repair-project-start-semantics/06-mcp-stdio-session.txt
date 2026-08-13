@@ -1,0 +1,154 @@
+=== The repository Git refuses when the agent host connects ===
+> tools/call add {"title":"While Git objects"}
+{
+  "ok": false,
+  "scope": "project",
+  "action": "add",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Git will not work in this repository: fatal: bad config line 1 in file .git/config.",
+    "retryable": false,
+    "details": {
+      "resolution": "repair-git-repository",
+      "gitError": "Command failed: git rev-parse --show-toplevel fatal: bad config line 1 in file .git/config (git exited with status 128)",
+      "gitTimedOut": false,
+      "gitExitCode": 128
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": []
+  }
+}
+
+=== The user runs the repair Git named, without reconnecting the host ===
+> tools/call add {"title":"Ship the 1.0 release"}
+{
+  "ok": true,
+  "result": {
+    "scope": "project",
+    "action": "add",
+    "goal": {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "open",
+      "createdAt": "2026-08-13T06:40:54.572Z",
+      "updatedAt": "2026-08-13T06:40:54.572Z"
+    },
+    "goals": [
+      {
+        "id": "ship-the-1-0-release",
+        "title": "Ship the 1.0 release",
+        "status": "open",
+        "createdAt": "2026-08-13T06:40:54.572Z",
+        "updatedAt": "2026-08-13T06:40:54.572Z"
+      }
+    ]
+  }
+}
+
+=== A branch claim guarded by the goal timestamp the host last read ===
+> tools/call start {"id":"ship-the-1-0-release","branch":"feat/ship-1-0","expectedUpdatedAt":"2026-08-13T06:40:54.572Z"}
+{
+  "ok": true,
+  "result": {
+    "scope": "project",
+    "action": "start",
+    "goal": {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "open",
+      "createdAt": "2026-08-13T06:40:54.572Z",
+      "updatedAt": "2026-08-13T06:40:54.578Z",
+      "branch": "feat/ship-1-0"
+    },
+    "goals": [
+      {
+        "id": "ship-the-1-0-release",
+        "title": "Ship the 1.0 release",
+        "status": "open",
+        "createdAt": "2026-08-13T06:40:54.572Z",
+        "updatedAt": "2026-08-13T06:40:54.578Z",
+        "branch": "feat/ship-1-0"
+      }
+    ]
+  }
+}
+
+=== A second host still holding the stale read tries to claim the same goal ===
+> tools/call start {"id":"ship-the-1-0-release","branch":"feat/stale","expectedUpdatedAt":"2026-08-13T06:40:54.572Z"}
+{
+  "ok": false,
+  "scope": "project",
+  "action": "start",
+  "error": {
+    "code": "CONFLICT",
+    "message": "Project goal ship-the-1-0-release changed from 2026-08-13T06:40:54.572Z to 2026-08-13T06:40:54.578Z.",
+    "retryable": true,
+    "conflict": {
+      "type": "goal-updated-at",
+      "id": "ship-the-1-0-release",
+      "expectedUpdatedAt": "2026-08-13T06:40:54.572Z",
+      "actualUpdatedAt": "2026-08-13T06:40:54.578Z",
+      "resolution": "refresh-and-retry"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": []
+  }
+}
+
+=== The claim that actually holds, and the frontier that hides it ===
+> resources/read stepstone://worklist/list
+{
+  "ok": true,
+  "scope": "project",
+  "action": "list",
+  "result": {
+    "scope": "project",
+    "action": "list",
+    "goals": [
+      {
+        "id": "ship-the-1-0-release",
+        "title": "Ship the 1.0 release",
+        "status": "open",
+        "createdAt": "2026-08-13T06:40:54.572Z",
+        "updatedAt": "2026-08-13T06:40:54.578Z",
+        "branch": "feat/ship-1-0"
+      }
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    }
+  }
+}
+
+> resources/read stepstone://worklist/ready
+{
+  "ok": true,
+  "scope": "project",
+  "action": "ready",
+  "result": {
+    "scope": "project",
+    "action": "ready",
+    "goals": []
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "2"
+    }
+  }
+}
+
+Scratch repository: /tmp/stepstone-evidence-mcp-igirjU

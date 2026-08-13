@@ -1,0 +1,138 @@
+=== 1. Detached HEAD: a request that simply omitted --branch ===
+$ git branch --show-current
+
+
+$ stepstone project start claim-target --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "start",
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "project start needs --branch when Git HEAD is detached.",
+    "retryable": false,
+    "details": {
+      "fields": [
+        "branch"
+      ],
+      "resolution": "provide-project-start-branch"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 1]
+
+$ stepstone project start claim-target
+project start needs --branch when Git HEAD is detached.
+  [exit 1]
+
+=== 2. Git refused the branch lookup (too old for --show-current) ===
+$ PATH=<fake-git>:$PATH stepstone project start claim-target --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "start",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Git could not determine the current branch: error: unknown option `show-current'. Pass --branch <name> explicitly.",
+    "retryable": false,
+    "details": {
+      "resolution": "provide-project-start-branch",
+      "gitError": "Command failed: git branch --show-current error: unknown option `show-current' (git exited with status 129)",
+      "gitTimedOut": false,
+      "gitExitCode": 129
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 1]
+
+$ PATH=<fake-git>:$PATH stepstone project start claim-target
+Git could not determine the current branch: error: unknown option `show-current'. Pass --branch <name> explicitly.
+  [exit 1]
+
+=== 3. The branch lookup never finished (killed before Git answered) ===
+$ PATH=<fake-git>:$PATH stepstone project start claim-target --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "start",
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Git could not determine the current branch: Command failed: git branch --show-current (killed by SIGTERM). Retry, or pass --branch <name> explicitly.",
+    "retryable": true,
+    "details": {
+      "resolution": "retry-or-provide-project-start-branch",
+      "gitError": "Command failed: git branch --show-current (killed by SIGTERM)",
+      "gitTimedOut": false,
+      "gitSignal": "SIGTERM"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 1]
+
+=== 4. --branch is the way through in every one of them ===
+$ stepstone project start claim-target --branch feat/explicit --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "start",
+  "result": {
+    "scope": "project",
+    "action": "start",
+    "goal": {
+      "id": "claim-target",
+      "title": "Claim target",
+      "status": "open",
+      "createdAt": "2026-08-13T06:32:56.309Z",
+      "updatedAt": "2026-08-13T06:32:56.981Z",
+      "branch": "feat/explicit"
+    },
+    "goals": [
+      {
+        "id": "claim-target",
+        "title": "Claim target",
+        "status": "open",
+        "createdAt": "2026-08-13T06:32:56.309Z",
+        "updatedAt": "2026-08-13T06:32:56.981Z",
+        "branch": "feat/explicit"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "claim-target"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "2"
+    },
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 0]
+
+Scratch repository: /tmp/stepstone-evidence-start-T1I4nE

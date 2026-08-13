@@ -1,0 +1,47 @@
+=== A session on a repository with an active goal and session tasks ===
+> worklist {"scope":"project","action":"add","title":"Ship the 1.0 release"}
+  ok
+> worklist {"scope":"project","action":"add","title":"Draft the migration"}
+  ok
+> worklist {"scope":"project","action":"start","id":"ship-the-1-0-release","branch":"feat/ship-1-0"}
+  ok
+> worklist {"scope":"project","action":"set_active","id":"ship-the-1-0-release"}
+  ok
+> worklist {"scope":"session","action":"add","title":"Read the release checklist"}
+  ok
+--- what the user sees ---
+widget:
+  Goal: Ship the 1.0 release
+  ○ Read the release checklist
+notices:
+  (none)
+
+=== A session that starts while Git cannot be run at all ===
+> worklist {"scope":"project","action":"add","title":"While Git is away"}
+  failed: UNAVAILABLE: Project goals require a git repository. Session tasks are still available outside git.
+> worklist {"scope":"session","action":"add","title":"Session work still runs"}
+  ok
+--- the widget degrades, the operation says why ---
+widget:
+  ○ Session work still runs
+notices:
+  (none)
+
+=== Git comes back: the same session picks the repository up again ===
+> worklist {"scope":"project","action":"add","title":"Once Git is back"}
+  failed: UNAVAILABLE: Project goals require a git repository. Session tasks are still available outside git.
+> worklist {"scope":"project","action":"set_active","id":"once-git-is-back"}
+  failed: UNAVAILABLE: Project goals require a git repository. Session tasks are still available outside git.
+--- no restart needed ---
+widget:
+  ○ Session work still runs
+notices:
+  (none)
+
+=== A goal file the session cannot parse is still named ===
+--- a file someone has to repair is never silent ---
+widget:
+  (no widget drawn)
+notices:
+  ! PERSISTENCE_FAILED: Malformed project worklist or unsupported schema. Repair /tmp/stepstone-evidence-widget-malformed-samJaX/.worklist/worklist.json before retrying.
+

@@ -1,0 +1,31 @@
+=== The parameter schema pi advertises to the model ===
+expectedUpdatedAt: undefined
+required: ["scope","action"]
+
+=== A model reads the goal, then claims it against the timestamp it read ===
+> worklist {"scope":"project","action":"add","title":"Guarded dispatch"}
+  ok: {"id":"guarded-dispatch","title":"Guarded dispatch","status":"open","createdAt":"2026-08-13T06:40:05.501Z","updatedAt":"2026-08-13T06:40:05.501Z"}
+
+> worklist {"scope":"project","action":"start","id":"guarded-dispatch","branch":"feat/guarded","expectedUpdatedAt":"2026-08-13T06:40:05.501Z"}
+  (schema does not declare expectedUpdatedAt: dropped from the tool call)
+  ok: {"id":"guarded-dispatch","title":"Guarded dispatch","status":"open","createdAt":"2026-08-13T06:40:05.501Z","updatedAt":"2026-08-13T06:40:05.509Z","branch":"feat/guarded"}
+
+=== A second model still holding the stale read tries to claim it ===
+> worklist {"scope":"project","action":"start","id":"guarded-dispatch","branch":"feat/stale","expectedUpdatedAt":"2026-08-13T06:40:05.501Z"}
+  (schema does not declare expectedUpdatedAt: dropped from the tool call)
+  ok: {"id":"guarded-dispatch","title":"Guarded dispatch","status":"open","createdAt":"2026-08-13T06:40:05.501Z","updatedAt":"2026-08-13T06:40:05.510Z","branch":"feat/stale"}
+
+=== What the roadmap actually holds afterwards ===
+> worklist {"scope":"project","action":"list"}
+  ok: {"scope":"project","action":"list","goals":[{"id":"guarded-dispatch","title":"Guarded dispatch","status":"open","createdAt":"2026-08-13T06:40:05.501Z","updatedAt":"2026-08-13T06:40:05.510Z","branch":"feat/stale"}]}
+
+[
+  {
+    "id": "guarded-dispatch",
+    "title": "Guarded dispatch",
+    "status": "open",
+    "createdAt": "2026-08-13T06:40:05.501Z",
+    "updatedAt": "2026-08-13T06:40:05.510Z",
+    "branch": "feat/stale"
+  }
+]

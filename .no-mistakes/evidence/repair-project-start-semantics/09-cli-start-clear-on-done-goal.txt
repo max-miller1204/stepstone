@@ -1,0 +1,84 @@
+=== A goal finished long ago, still carrying a claim after a roadmap merge ===
+$ stepstone project complete ship-the-1-0-release --confirm
+Project goal ship-the-1-0-release is now done
+
+$ cat .worklist/worklist.json
+{
+  "version": 1,
+  "revision": 3,
+  "goals": [
+    {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:43:07.502Z",
+      "updatedAt": "2026-08-13T06:43:07.712Z",
+      "completedAt": "2026-08-13T06:43:07.712Z",
+      "branch": "feat/ship-1-0"
+    }
+  ]
+}
+
+=== Releasing the stale claim with project start --clear ===
+$ stepstone project start ship-the-1-0-release --clear --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "start",
+  "result": {
+    "scope": "project",
+    "action": "start",
+    "goal": {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:43:07.502Z",
+      "updatedAt": "2026-08-13T06:43:07.864Z",
+      "completedAt": "2026-08-13T06:43:07.712Z"
+    },
+    "goals": [
+      {
+        "id": "ship-the-1-0-release",
+        "title": "Ship the 1.0 release",
+        "status": "done",
+        "createdAt": "2026-08-13T06:43:07.502Z",
+        "updatedAt": "2026-08-13T06:43:07.864Z",
+        "completedAt": "2026-08-13T06:43:07.712Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "ship-the-1-0-release"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "4"
+    },
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 0]
+
+$ cat .worklist/worklist.json
+{
+  "version": 1,
+  "revision": 4,
+  "goals": [
+    {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:43:07.502Z",
+      "updatedAt": "2026-08-13T06:43:07.864Z",
+      "completedAt": "2026-08-13T06:43:07.712Z"
+    }
+  ]
+}

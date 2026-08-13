@@ -1,0 +1,269 @@
+=== A goal is claimed on the branch it is worked on ===
+$ stepstone project add Ship the 1.0 release
+Added project goal ship-the-1-0-release: Ship the 1.0 release
+  [exit 0]
+
+$ git branch --show-current
+feat/ship-1-0
+
+$ stepstone project start ship-the-1-0-release
+Started project goal ship-the-1-0-release on feat/ship-1-0
+  [exit 0]
+
+$ stepstone project list
+[open] ship-the-1-0-release: Ship the 1.0 release
+  [exit 0]
+
+=== Lifecycle guardrail: completion still needs an explicit confirmation ===
+$ stepstone project complete ship-the-1-0-release --json
+{
+  "ok": false,
+  "scope": "project",
+  "action": "complete",
+  "error": {
+    "code": "APPROVAL_REQUIRED",
+    "message": "Project complete requires explicit confirmation.",
+    "retryable": false,
+    "details": {
+      "confirmation": "confirm=true",
+      "resolution": "request-explicit-user-confirmation"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 3]
+
+=== Completing the goal stamps completedAt and releases the claim ===
+$ stepstone project complete ship-the-1-0-release --confirm --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "complete",
+  "result": {
+    "scope": "project",
+    "action": "complete",
+    "goal": {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:32:29.116Z",
+      "updatedAt": "2026-08-13T06:32:29.569Z",
+      "completedAt": "2026-08-13T06:32:29.569Z"
+    },
+    "goals": [
+      {
+        "id": "ship-the-1-0-release",
+        "title": "Ship the 1.0 release",
+        "status": "done",
+        "createdAt": "2026-08-13T06:32:29.116Z",
+        "updatedAt": "2026-08-13T06:32:29.569Z",
+        "completedAt": "2026-08-13T06:32:29.569Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "ship-the-1-0-release"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "3"
+    },
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 0]
+
+$ cat .worklist/worklist.json
+{
+  "version": 1,
+  "revision": 3,
+  "goals": [
+    {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:32:29.116Z",
+      "updatedAt": "2026-08-13T06:32:29.569Z",
+      "completedAt": "2026-08-13T06:32:29.569Z"
+    }
+  ]
+}
+
+=== A merge of two roadmaps leaves a stale claim on the finished goal ===
+$ cat .worklist/worklist.json
+{
+  "version": 1,
+  "revision": 3,
+  "goals": [
+    {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:32:29.116Z",
+      "updatedAt": "2026-08-13T06:32:29.569Z",
+      "completedAt": "2026-08-13T06:32:29.569Z",
+      "branch": "feat/ship-1-0"
+    }
+  ]
+}
+
+=== Clearing the stale claim keeps the historical completedAt ===
+$ stepstone project complete ship-the-1-0-release --confirm --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "complete",
+  "result": {
+    "scope": "project",
+    "action": "complete",
+    "goal": {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:32:29.116Z",
+      "updatedAt": "2026-08-13T06:32:29.718Z",
+      "completedAt": "2026-08-13T06:32:29.569Z"
+    },
+    "goals": [
+      {
+        "id": "ship-the-1-0-release",
+        "title": "Ship the 1.0 release",
+        "status": "done",
+        "createdAt": "2026-08-13T06:32:29.116Z",
+        "updatedAt": "2026-08-13T06:32:29.718Z",
+        "completedAt": "2026-08-13T06:32:29.569Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": true,
+    "semanticNoOp": false,
+    "changedFields": [
+      "/goals"
+    ],
+    "changedEntities": {
+      "projectGoalIds": [
+        "ship-the-1-0-release"
+      ],
+      "sessionTaskIds": []
+    },
+    "revisions": {
+      "project": "4"
+    },
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 0]
+
+$ cat .worklist/worklist.json
+{
+  "version": 1,
+  "revision": 4,
+  "goals": [
+    {
+      "id": "ship-the-1-0-release",
+      "title": "Ship the 1.0 release",
+      "status": "done",
+      "createdAt": "2026-08-13T06:32:29.116Z",
+      "updatedAt": "2026-08-13T06:32:29.718Z",
+      "completedAt": "2026-08-13T06:32:29.569Z"
+    }
+  ]
+}
+
+historical completedAt : 2026-08-13T06:32:29.569Z
+completedAt now        : 2026-08-13T06:32:29.569Z
+preserved              : true
+updatedAt now          : 2026-08-13T06:32:29.718Z
+updatedAt moved past it: true
+stale branch cleared   : true
+
+=== The ready frontier still hides work someone has already claimed ===
+$ stepstone project add Draft the migration
+Added project goal draft-the-migration: Draft the migration
+  [exit 0]
+
+$ stepstone project add Update the docs
+Added project goal update-the-docs: Update the docs
+  [exit 0]
+
+(draft-the-migration is claimed on feat/migration by another agent)
+
+$ stepstone project next --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "next",
+  "result": {
+    "scope": "project",
+    "action": "next",
+    "goal": {
+      "id": "update-the-docs",
+      "title": "Update the docs",
+      "status": "open",
+      "createdAt": "2026-08-13T06:32:29.952Z",
+      "updatedAt": "2026-08-13T06:32:29.952Z"
+    }
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "6"
+    },
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 0]
+
+$ stepstone project ready --json
+{
+  "ok": true,
+  "scope": "project",
+  "action": "ready",
+  "result": {
+    "scope": "project",
+    "action": "ready",
+    "goals": [
+      {
+        "id": "update-the-docs",
+        "title": "Update the docs",
+        "status": "open",
+        "createdAt": "2026-08-13T06:32:29.952Z",
+        "updatedAt": "2026-08-13T06:32:29.952Z"
+      }
+    ]
+  },
+  "meta": {
+    "changed": false,
+    "semanticNoOp": false,
+    "changedFields": [],
+    "revisions": {
+      "project": "6"
+    },
+    "cliVersion": "0.9.2"
+  }
+}
+  [exit 0]
+
+$ stepstone project waves
+Wave 1 (2 goals):
+  [open] draft-the-migration: Draft the migration (branch feat/migration)
+  [open] update-the-docs: Update the docs
+  [exit 0]
+
+Scratch repository: /tmp/stepstone-evidence-lifecycle-Io7G8c

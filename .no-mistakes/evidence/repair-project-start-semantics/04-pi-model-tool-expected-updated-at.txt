@@ -1,0 +1,43 @@
+=== The parameter schema pi advertises to the model ===
+expectedUpdatedAt: {
+  "type": "string",
+  "description": "The target Project Goal's exact updatedAt from the caller's last read, for project start, update, set_active, complete, reopen, archive, and delete. A stale value returns a typed conflict instead of overwriting a newer change."
+}
+required: ["scope","action"]
+
+=== A model reads the goal, then claims it against the timestamp it read ===
+> worklist {"scope":"project","action":"add","title":"Guarded dispatch"}
+  ok: {"id":"guarded-dispatch","title":"Guarded dispatch","status":"open","createdAt":"2026-08-13T06:40:04.991Z","updatedAt":"2026-08-13T06:40:04.991Z"}
+
+> worklist {"scope":"project","action":"start","id":"guarded-dispatch","branch":"feat/guarded","expectedUpdatedAt":"2026-08-13T06:40:04.991Z"}
+  ok: {"id":"guarded-dispatch","title":"Guarded dispatch","status":"open","createdAt":"2026-08-13T06:40:04.991Z","updatedAt":"2026-08-13T06:40:04.996Z","branch":"feat/guarded"}
+
+=== A second model still holding the stale read tries to claim it ===
+> worklist {"scope":"project","action":"start","id":"guarded-dispatch","branch":"feat/stale","expectedUpdatedAt":"2026-08-13T06:40:04.991Z"}
+  failed: {
+  "code": "CONFLICT",
+  "retryable": true,
+  "message": "Project goal guarded-dispatch changed from 2026-08-13T06:40:04.991Z to 2026-08-13T06:40:04.996Z.",
+  "conflict": {
+    "type": "goal-updated-at",
+    "id": "guarded-dispatch",
+    "expectedUpdatedAt": "2026-08-13T06:40:04.991Z",
+    "actualUpdatedAt": "2026-08-13T06:40:04.996Z",
+    "resolution": "refresh-and-retry"
+  }
+}
+
+=== What the roadmap actually holds afterwards ===
+> worklist {"scope":"project","action":"list"}
+  ok: {"scope":"project","action":"list","goals":[{"id":"guarded-dispatch","title":"Guarded dispatch","status":"open","createdAt":"2026-08-13T06:40:04.991Z","updatedAt":"2026-08-13T06:40:04.996Z","branch":"feat/guarded"}]}
+
+[
+  {
+    "id": "guarded-dispatch",
+    "title": "Guarded dispatch",
+    "status": "open",
+    "createdAt": "2026-08-13T06:40:04.991Z",
+    "updatedAt": "2026-08-13T06:40:04.996Z",
+    "branch": "feat/guarded"
+  }
+]
