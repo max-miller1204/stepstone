@@ -65,29 +65,36 @@ interface GitFailureEnvelope {
 }
 
 /**
- * A PATH whose `git` resolves the repository the way the real one does and then
- * fails the branch lookup however the caller wrote it.
+ * A PATH whose `git` runs the given shell script instead of the real Git.
  *
  * Prepended rather than replacing PATH, so the script keeps whatever ordinary
  * commands it is written in.
  */
-async function fakeGitPath(branchScript: string[]): Promise<string> {
+async function fakeGitPath(script: string[]): Promise<string> {
 	const bin = await mkdtemp(join(tmpdir(), "stepstone-fake-git-"));
 	const fakeGit = join(bin, "git");
-	await writeFile(
-		fakeGit,
-		[
-			"#!/bin/sh",
-			'if [ "$1" = "rev-parse" ]; then',
-			"  printf '%s\\n' \"$PWD\"",
-			"  exit 0",
-			"fi",
-			...branchScript,
-			"",
-		].join("\n"),
-	);
+	await writeFile(fakeGit, ["#!/bin/sh", ...script, ""].join("\n"));
 	await chmod(fakeGit, 0o755);
 	return `${bin}:${process.env.PATH ?? ""}`;
+}
+
+/**
+ * A PATH whose `git` resolves the repository the way the real one does and then
+ * fails the branch lookup however the caller wrote it.
+ */
+function fakeGitFailingBranchLookup(branchScript: string[]): Promise<string> {
+	return fakeGitPath([
+		'if [ "$1" = "rev-parse" ]; then',
+		"  printf '%s\\n' \"$PWD\"",
+		"  exit 0",
+		"fi",
+		...branchScript,
+	]);
+}
+
+/** A PATH with no `git` on it at all, the way a machine without Git looks. */
+async function pathWithoutGit(): Promise<string> {
+	return mkdtemp(join(tmpdir(), "stepstone-no-git-bin-"));
 }
 
 /**
@@ -976,6 +983,66 @@ describe("project goal CLI", () => {
 		expect((await readGoals(root))[0].title).toBe("From elsewhere");
 	});
 
+	it("does not call a Git that never ran a verdict about the repository", async () => {
+		const root = await tempGitRepo();
+
+		// No Git on PATH at all. Nothing was learned about this directory, so telling
+		// someone to run inside a repository would be a guess, and it is a machine to
+		// fix rather than a command to retry.
+		const withoutGit = await runCli(root, ["project", "list", "--json"], { PATH: await pathWithoutGit() });
+		expect(withoutGit.code).toBe(1);
+		expect(withoutGit.stdout).toBe("");
+		const withoutGitEnvelope = parseJson(withoutGit.stderr) as GitFailureEnvelope;
+		expect(withoutGitEnvelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "list",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "repair-git-availability", gitTimedOut: false },
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(withoutGitEnvelope.error.details.gitExitCode).toBeUndefined();
+		expect(withoutGitEnvelope.error.details.gitError).toContain("ENOENT");
+		expect(withoutGitEnvelope.error.message).not.toContain("Run inside a repository");
+
+		// Killed before answering: the same directory, and asking again can still
+		// produce the answer, so the location is not settled.
+		const killedPath = await fakeGitPath(["kill -TERM $$"]);
+		const killed = await runCli(root, ["project", "list", "--json"], { PATH: killedPath });
+		expect(killed.code).toBe(1);
+		const killedEnvelope = parseJson(killed.stderr) as GitFailureEnvelope;
+		expect(killedEnvelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "list",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: true,
+				details: { resolution: "retry-git-command", gitSignal: "SIGTERM", gitTimedOut: false },
+			},
+		});
+		expect(killedEnvelope.error.message).toContain("Retry");
+
+		// Git answering that this is not a repository keeps the permanent verdict, and
+		// a human still gets the diagnostic on stderr.
+		const refusedPath = await fakeGitPath(["printf '%s\\n' 'fatal: not a git repository' >&2", "exit 128"]);
+		const refused = await runCli(root, ["project", "list", "--json"], { PATH: refusedPath });
+		expect(refused.code).toBe(1);
+		expect(parseJson(refused.stderr)).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "list",
+			error: { code: "UNAVAILABLE", retryable: false, details: { resolution: "run-inside-git-repository" } },
+		});
+
+		const humanWithoutGit = await runCli(root, ["project", "list"], { PATH: await pathWithoutGit() });
+		expect(humanWithoutGit.code).toBe(1);
+		expect(diagnostic(humanWithoutGit.stderr)).toContain("ENOENT");
+	});
+
 	it("rejects a known flag after the interactive description separator", async () => {
 		const root = await tempGitRepo();
 		await runCli(root, ["project", "add", "Existing goal"]);
@@ -1546,7 +1613,7 @@ describe("project goal CLI", () => {
 
 		// A Git too old for `branch --show-current` refuses with a status of its own,
 		// and will refuse the same way forever: unavailable, but not retryable.
-		const unsupportedPath = await fakeGitPath([
+		const unsupportedPath = await fakeGitFailingBranchLookup([
 			"printf '%s\\n' \"error: unknown option \\`show-current'\" >&2",
 			"exit 129",
 		]);
@@ -1597,7 +1664,7 @@ describe("project goal CLI", () => {
 
 		// Killed before Git could answer: nothing was decided, so asking again is
 		// the documented next step rather than a spin on a settled refusal.
-		const killedPath = await fakeGitPath(["kill -TERM $$"]);
+		const killedPath = await fakeGitFailingBranchLookup(["kill -TERM $$"]);
 		const killed = await runCli(root, ["project", "start", "claim-target", "--json"], {
 			PATH: killedPath,
 		});

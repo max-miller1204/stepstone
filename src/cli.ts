@@ -426,6 +426,7 @@ interface ProjectLocation {
 
 function resolveRepositoryRoot(invocation: CliInvocation): string {
 	const result = resolveGitRoot(invocation.cwd);
+	if (result.unavailable) throw gitUnavailableFailure(invocation.action, result.unavailable);
 	if (!result.isGit || !result.root) {
 		throw new WorklistCliFailure({
 			ok: false,
@@ -675,6 +676,48 @@ function describeGitFailure(failure: GitCommandFailure): string {
 }
 
 /**
+ * The evidence every Git execution failure carries, so one dispatcher parser
+ * reads a failed branch lookup and a Git that never ran the same way.
+ */
+function gitFailureDetails(resolution: string, failure: GitCommandFailure): Record<string, unknown> {
+	return {
+		resolution,
+		gitError: describeGitFailure(failure),
+		gitTimedOut: failure.timedOut,
+		...(failure.exitCode !== undefined ? { gitExitCode: failure.exitCode } : {}),
+		...(failure.signal !== undefined ? { gitSignal: failure.signal } : {}),
+	};
+}
+
+/**
+ * The typed failure every command earns when Git never said whether the working
+ * directory is a repository.
+ *
+ * Git refusing the directory is an answer, and the repository failure below says
+ * so permanently. A Git that could not be run, or was killed before answering,
+ * says nothing about the directory: telling someone to run inside a repository
+ * would be a guess, and telling a dispatcher the location is settled would have
+ * it give up on a timeout that clears on its own.
+ */
+function gitUnavailableFailure(action: string, failure: GitCommandFailure): WorklistCliFailure {
+	const retryable = isTransientGitFailure(failure);
+	return new WorklistCliFailure({
+		ok: false,
+		scope: "project",
+		action,
+		error: {
+			code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+			message:
+				`Git could not be run to find the repository: ${describeGitFailure(failure)}. ` +
+				`${retryable ? "Retry, or check" : "Check"} that Git is installed and can run here.`,
+			retryable,
+			details: gitFailureDetails(retryable ? "retry-git-command" : "repair-git-availability", failure),
+		},
+		meta: { changed: false, semanticNoOp: false, changedFields: [] },
+	});
+}
+
+/**
  * The typed failure a claim earns when Git cannot name the current branch.
  *
  * `retryable` follows how the run ended rather than the bare fact that it failed.
@@ -686,7 +729,6 @@ function describeGitFailure(failure: GitCommandFailure): string {
  */
 function branchLookupFailure(failure: GitCommandFailure): WorklistCliFailure {
 	const retryable = isTransientGitFailure(failure);
-	const gitError = describeGitFailure(failure);
 	return new WorklistCliFailure({
 		ok: false,
 		scope: "project",
@@ -694,16 +736,13 @@ function branchLookupFailure(failure: GitCommandFailure): WorklistCliFailure {
 		error: {
 			code: WORKLIST_ERROR_CODES.UNAVAILABLE,
 			message:
-				`Git could not determine the current branch: ${gitError}. ` +
+				`Git could not determine the current branch: ${describeGitFailure(failure)}. ` +
 				`${retryable ? "Retry, or pass" : "Pass"} --branch <name> explicitly.`,
 			retryable,
-			details: {
-				resolution: retryable ? "retry-or-provide-project-start-branch" : "provide-project-start-branch",
-				gitError,
-				gitTimedOut: failure.timedOut,
-				...(failure.exitCode !== undefined ? { gitExitCode: failure.exitCode } : {}),
-				...(failure.signal !== undefined ? { gitSignal: failure.signal } : {}),
-			},
+			details: gitFailureDetails(
+				retryable ? "retry-or-provide-project-start-branch" : "provide-project-start-branch",
+				failure,
+			),
 		},
 		meta: { changed: false, semanticNoOp: false, changedFields: [] },
 	});

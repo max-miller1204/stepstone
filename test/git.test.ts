@@ -12,6 +12,29 @@ import {
 	shadowedWorklistWarning,
 } from "../src/git.ts";
 
+/** A `git` on PATH that answers however the test needs it to, shadowing the real one. */
+async function fakeGitOnPath(script: string): Promise<() => void> {
+	const bin = await mkdtemp(join(tmpdir(), "stepstone-fake-git-"));
+	await writeFile(join(bin, "git"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+	const original = process.env.PATH;
+	// Prepended rather than replacing PATH, so the script can still reach the
+	// ordinary commands it is written in.
+	process.env.PATH = `${bin}:${original ?? ""}`;
+	return () => {
+		process.env.PATH = original;
+	};
+}
+
+/** A PATH with no `git` on it at all, the way a machine without Git looks. */
+async function noGitOnPath(): Promise<() => void> {
+	const empty = await mkdtemp(join(tmpdir(), "stepstone-no-git-bin-"));
+	const original = process.env.PATH;
+	process.env.PATH = empty;
+	return () => {
+		process.env.PATH = original;
+	};
+}
+
 describe("git root", () => {
 	it("returns a canonical root through a symlink", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-git-"));
@@ -25,22 +48,58 @@ describe("git root", () => {
 
 	it("degrades cleanly outside git", async () => {
 		const root = await mkdtemp(join(tmpdir(), "stepstone-no-git-"));
-		expect(resolveGitRoot(root).isGit).toBe(false);
+		const result = resolveGitRoot(root);
+		expect(result.isGit).toBe(false);
+		// Git ran and refused the directory, which is an answer: nothing here is
+		// waiting on Git to become available.
+		expect(result.unavailable).toBeUndefined();
+	});
+
+	it("keeps a Git that never answered apart from a Git that refused the directory", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-root-classify-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+
+		const restoreKilled = await fakeGitOnPath("kill -TERM $$");
+		let killed: ReturnType<typeof resolveGitRoot>;
+		try {
+			killed = resolveGitRoot(root);
+		} finally {
+			restoreKilled();
+		}
+		expect(killed.isGit).toBe(false);
+		const killedFailure = killed.unavailable;
+		if (!killedFailure) throw new Error("a killed root lookup reported no failure");
+		expect(killedFailure).toMatchObject({ signal: "SIGTERM", timedOut: false });
+		expect(isTransientGitFailure(killedFailure)).toBe(true);
+
+		const restoreSlow = await fakeGitOnPath("sleep 30");
+		let timedOut: ReturnType<typeof resolveGitRoot>;
+		try {
+			timedOut = resolveGitRoot(root, { timeoutMs: 250 });
+		} finally {
+			restoreSlow();
+		}
+		const timedOutFailure = timedOut.unavailable;
+		if (!timedOutFailure) throw new Error("a timed-out root lookup reported no failure");
+		expect(timedOutFailure.timedOut).toBe(true);
+		expect(isTransientGitFailure(timedOutFailure)).toBe(true);
+
+		// A machine without Git learned nothing about the directory either, but no
+		// amount of retrying will change that.
+		const restoreMissing = await noGitOnPath();
+		let missing: ReturnType<typeof resolveGitRoot>;
+		try {
+			missing = resolveGitRoot(root);
+		} finally {
+			restoreMissing();
+		}
+		const missingFailure = missing.unavailable;
+		if (!missingFailure) throw new Error("a missing Git reported no failure");
+		expect(missingFailure.message).toContain("ENOENT");
+		expect(missingFailure.exitCode).toBeUndefined();
+		expect(isTransientGitFailure(missingFailure)).toBe(false);
 	});
 });
-
-/** A `git` on PATH that answers however the test needs it to, shadowing the real one. */
-async function fakeGitOnPath(script: string): Promise<() => void> {
-	const bin = await mkdtemp(join(tmpdir(), "stepstone-fake-git-"));
-	await writeFile(join(bin, "git"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
-	const original = process.env.PATH;
-	// Prepended rather than replacing PATH, so the script can still reach the
-	// ordinary commands it is written in.
-	process.env.PATH = `${bin}:${original ?? ""}`;
-	return () => {
-		process.env.PATH = original;
-	};
-}
 
 describe("current branch", () => {
 	it("distinguishes a checked-out branch, detached HEAD, and Git failure", async () => {

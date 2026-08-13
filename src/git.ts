@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import {
@@ -10,30 +10,6 @@ import {
 
 /** How long any Git command in this module may take before it is killed. */
 export const GIT_COMMAND_TIMEOUT_MS = 10000;
-
-export interface GitRootResult {
-	root: string | null;
-	isGit: boolean;
-	error?: string;
-}
-
-export function resolveGitRoot(cwd: string): GitRootResult {
-	try {
-		const raw = execSync("git rev-parse --show-toplevel", {
-			cwd,
-			encoding: "utf8",
-			stdio: ["pipe", "pipe", "pipe"],
-			timeout: GIT_COMMAND_TIMEOUT_MS,
-		});
-		const top = raw.trim();
-		if (!top) return { root: null, isGit: false, error: "not a git repository" };
-		const canonical = realpathSync(top);
-		return { root: canonical, isGit: true };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		return { root: null, isGit: false, error: message };
-	}
-}
 
 /** The errno a run killed for outliving its time limit is reported with. */
 const TIMED_OUT_CODE = "ETIMEDOUT";
@@ -94,16 +70,63 @@ export function isTransientGitFailure(failure: GitCommandFailure): boolean {
 	return failure.timedOut || failure.signal !== undefined;
 }
 
+export interface GitCommandOptions {
+	/** How long to wait for Git. Defaults to `GIT_COMMAND_TIMEOUT_MS`. */
+	timeoutMs?: number;
+}
+
+export interface GitRootResult {
+	root: string | null;
+	isGit: boolean;
+	/** What went wrong, for a caller that only has to say something went wrong. */
+	error?: string;
+	/**
+	 * Why Git never reached a verdict about `cwd`: it could not be run at all, or it
+	 * was killed before answering.
+	 *
+	 * Absent when Git itself refused the directory, which is an answer rather than a
+	 * failure to answer, and permanent in a way a Git that could not run is not.
+	 */
+	unavailable?: GitCommandFailure;
+}
+
+/**
+ * The repository root `cwd` belongs to, keeping Git's verdict about the directory
+ * distinct from Git never giving one.
+ *
+ * Git is run directly rather than through a shell for the same reason the branch
+ * lookup is: a shell answers for Git, turning an absent Git into its own exit
+ * status 127 and a signalled Git into 128 + n, which would make both look like
+ * Git refusing this directory.
+ */
+export function resolveGitRoot(cwd: string, options: GitCommandOptions = {}): GitRootResult {
+	try {
+		const raw = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
+		});
+		const top = raw.trim();
+		if (!top) return { root: null, isGit: false, error: "not a git repository" };
+		const canonical = realpathSync(top);
+		return { root: canonical, isGit: true };
+	} catch (error) {
+		const failure = describeCommandFailure(error);
+		return {
+			root: null,
+			isGit: false,
+			error: failure.message,
+			...(failure.exitCode === undefined ? { unavailable: failure } : {}),
+		};
+	}
+}
+
 export interface CurrentGitBranchResult {
 	/** The checked-out branch, or null when HEAD is detached. */
 	branch: string | null;
 	/** A Git execution failure. Absent when Git successfully reports detached HEAD. */
 	error?: GitCommandFailure;
-}
-
-export interface CurrentGitBranchOptions {
-	/** How long to wait for Git. Defaults to `GIT_COMMAND_TIMEOUT_MS`. */
-	timeoutMs?: number;
 }
 
 /**
@@ -119,7 +142,7 @@ export interface CurrentGitBranchOptions {
  * child as its own exit status 128 + n, which would hide the one distinction
  * this result exists to keep.
  */
-export function currentGitBranch(cwd: string, options: CurrentGitBranchOptions = {}): CurrentGitBranchResult {
+export function currentGitBranch(cwd: string, options: GitCommandOptions = {}): CurrentGitBranchResult {
 	try {
 		const raw = execFileSync("git", ["branch", "--show-current"], {
 			cwd,
