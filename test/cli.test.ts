@@ -1959,6 +1959,45 @@ async function seedWorklistAt(root: string, directory: string, goalId: string): 
 	return path;
 }
 
+/**
+ * A submodule working tree, whose `.git` is a gitdir link into the
+ * superproject's Git directory rather than a directory of its own.
+ *
+ * The link is what makes it worth building a whole superproject for: Git's first
+ * worktree record for such a repository is the Git directory, so the checkout
+ * itself is named nowhere in the listing.
+ */
+async function submoduleWorkingTree(): Promise<{ superproject: string; submodule: string }> {
+	const upstream = await tempGitRepo();
+	await writeFile(join(upstream, "README.md"), "submodule source\n");
+	await execFileAsync("git", ["add", "README.md"], { cwd: upstream });
+	await execFileAsync(
+		"git",
+		["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "seed"],
+		{ cwd: upstream },
+	);
+
+	const superproject = await tempGitRepo();
+	// Local submodule sources need the file protocol allowed since Git 2.38.
+	await execFileAsync(
+		"git",
+		[
+			"-c",
+			"protocol.file.allow=always",
+			"-c",
+			"user.email=t@example.com",
+			"-c",
+			"user.name=Test",
+			"submodule",
+			"add",
+			upstream,
+			"sub",
+		],
+		{ cwd: superproject },
+	);
+	return { superproject, submodule: join(superproject, "sub") };
+}
+
 describe("project goal file resolution", () => {
 	it("writes the current path in a repository that has neither file", async () => {
 		const root = await tempGitRepo();
@@ -2083,47 +2122,81 @@ describe("project goal file resolution", () => {
 		const before = await readFile(roadmap, "utf8");
 		const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
 		expect(refused.code).toBe(1);
+		// Refused without naming the checkout, because `git init --separate-git-dir`
+		// writes no way back to it: the `.git` link points one way only, and the Git
+		// directory records nothing. So the guard falls back to the refusal that names
+		// no destination rather than inventing one. The next test covers the same
+		// layout once the Git directory does record its checkout.
 		expect(parseJson(refused.stderr)).toMatchObject({
 			ok: false,
-			error: { code: "UNAVAILABLE", retryable: false, details: { currentWorktree: linked } },
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { currentWorktree: linked, gitDirectory, resolution: "provide-main-worktree" },
+			},
 			meta: { changed: false, changedFields: [] },
 		});
 		expect(await readFile(roadmap, "utf8")).toBe(before);
+	});
+
+	it("names the main checkout its Git directory records to a worktree added beside it", async () => {
+		// A repository whose Git directory is not the checkout's own `.git` records
+		// where the checkout is in `core.worktree`, which Git writes itself whenever
+		// the two are not in their usual place. Git's first worktree record is still
+		// the Git directory, so that value is the only thing naming the main checkout,
+		// and a worktree added beside it has to be sent there.
+		const home = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-recorded-checkout-")));
+		const gitDirectory = join(home, "roadmap.git");
+		const root = join(home, "checkout");
+		await execFileAsync("git", ["init", `--separate-git-dir=${gitDirectory}`, root]);
+		await execFileAsync("git", ["config", "core.worktree", root], { cwd: root });
+
+		expect((await runCli(root, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: root },
+		);
+		const linked = join(home, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/recorded-checkout", linked, "HEAD"], {
+			cwd: root,
+		});
+
+		const roadmap = join(linked, ".worklist", "worklist.json");
+		const before = await readFile(roadmap, "utf8");
+		const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
+		expect(refused.code).toBe(1);
+		expect(parseJson(refused.stderr)).toMatchObject({
+			ok: false,
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: {
+					path: roadmap,
+					currentWorktree: linked,
+					mainWorktree: root,
+					resolution: "run-from-main-worktree",
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		expect(await readFile(roadmap, "utf8")).toBe(before);
+
+		// The checkout it names can perform the change, so the refusal sends its
+		// reader somewhere the mutation actually lands.
+		expect((await runCli(root, ["project", "add", "Written where it belongs"])).code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual([
+			"canonical",
+			"written-where-it-belongs",
+		]);
 	});
 
 	it("writes the committed roadmap from a submodule working tree", async () => {
 		// A submodule's `.git` is a gitdir link too, into the superproject's own Git
 		// directory, so Git names that link target as the first worktree record. The
 		// submodule checkout is nonetheless the sole checkout of its repository.
-		const upstream = await tempGitRepo();
-		await writeFile(join(upstream, "README.md"), "submodule source\n");
-		await execFileAsync("git", ["add", "README.md"], { cwd: upstream });
-		await execFileAsync(
-			"git",
-			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "seed"],
-			{ cwd: upstream },
-		);
-
-		const superproject = await tempGitRepo();
-		// Local submodule sources need the file protocol allowed since Git 2.38.
-		await execFileAsync(
-			"git",
-			[
-				"-c",
-				"protocol.file.allow=always",
-				"-c",
-				"user.email=t@example.com",
-				"-c",
-				"user.name=Test",
-				"submodule",
-				"add",
-				upstream,
-				"sub",
-			],
-			{ cwd: superproject },
-		);
-
-		const submodule = join(superproject, "sub");
+		const { superproject, submodule } = await submoduleWorkingTree();
 		const added = await runCli(submodule, ["project", "add", "Written in a submodule", "--json"]);
 		expect(added.code).toBe(0);
 		expect((await readGoals(submodule)).map((goal) => goal.id)).toEqual(["written-in-a-submodule"]);
@@ -2132,6 +2205,59 @@ describe("project goal file resolution", () => {
 		await expect(readFile(join(superproject, ".worklist", "worklist.json"), "utf8")).rejects.toMatchObject({
 			code: "ENOENT",
 		});
+	});
+
+	it("names the submodule working tree to a worktree added beside it", async () => {
+		// A submodule records its checkout in `core.worktree` relative to its Git
+		// directory, which is the path a worktree added beside it has to be sent to.
+		// Git's listing names that Git directory instead, so a refusal that read only
+		// the listing would tell the owner of a repository that has a main checkout
+		// that it has none.
+		const { submodule } = await submoduleWorkingTree();
+		expect((await runCli(submodule, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: submodule });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: submodule },
+		);
+
+		const linkedParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-submodule-linked-")));
+		const linked = join(linkedParent, "worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "test/submodule-linked", linked, "HEAD"], {
+			cwd: submodule,
+		});
+
+		try {
+			const roadmap = join(linked, ".worklist", "worklist.json");
+			const before = await readFile(roadmap, "utf8");
+			const refused = await runCli(linked, ["project", "add", "Must not diverge", "--json"]);
+			expect(refused.code).toBe(1);
+			expect(parseJson(refused.stderr)).toMatchObject({
+				ok: false,
+				error: {
+					code: "UNAVAILABLE",
+					retryable: false,
+					details: {
+						path: roadmap,
+						currentWorktree: linked,
+						mainWorktree: submodule,
+						resolution: "run-from-main-worktree",
+					},
+				},
+				meta: { changed: false, semanticNoOp: false, changedFields: [] },
+			});
+			expect(await readFile(roadmap, "utf8")).toBe(before);
+
+			// The working tree it names can perform the change.
+			expect((await runCli(submodule, ["project", "add", "Written where it belongs"])).code).toBe(0);
+			expect((await readGoals(submodule)).map((goal) => goal.id)).toEqual([
+				"canonical",
+				"written-where-it-belongs",
+			]);
+		} finally {
+			await execFileAsync("git", ["worktree", "remove", "--force", linked], { cwd: submodule });
+		}
 	});
 
 	it("refuses a committed-roadmap write in a repository whose main worktree holds no checkout", async () => {

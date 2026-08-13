@@ -424,6 +424,49 @@ export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}
 }
 
 /**
+ * The working tree a Git directory records for itself, when it records one.
+ *
+ * A repository whose checkout reaches it through a `.git` gitdir link is named
+ * by the porcelain listing as that Git directory rather than as the checkout, so
+ * a worktree added beside such a checkout has a main worktree the listing never
+ * spells out. The one place the way back is written down is `core.worktree` in
+ * the repository's own config, which is how a submodule working tree is reached.
+ *
+ * Git is asked to resolve that value rather than it being read and joined here.
+ * A relative `core.worktree` is relative to the Git directory, it may arrive
+ * through an included file or the per-worktree config, and where Git itself
+ * would work is the whole question. Running from inside the Git directory is
+ * what makes the answer this repository's: Git takes a directory that is a Git
+ * directory as its own and asks it for a working tree, so nothing above it on
+ * the filesystem can answer in its place.
+ *
+ * Recording nothing, a Git that did not answer, and a recorded path that no
+ * longer holds a checkout are one answer here, because they leave the caller in
+ * one position: nobody to name. A bare repository is the first of those, and the
+ * refusal it earns says exactly that rather than a path.
+ */
+export function resolveRecordedCheckout(
+	gitDirectory: string,
+	options: GitCommandOptions = {},
+): string | undefined {
+	let raw: string;
+	try {
+		raw = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+			cwd: gitDirectory,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
+		});
+	} catch {
+		return undefined;
+	}
+	const top = raw.trim();
+	if (!top) return undefined;
+	const checkout = canonicalPath(top);
+	return existsSync(join(checkout, GIT_MARKER)) ? checkout : undefined;
+}
+
+/**
  * Where a checkout sits in the repository it belongs to.
  *
  * A linked worktree is the one checkout that must not write a file the repository

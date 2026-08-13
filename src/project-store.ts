@@ -17,6 +17,7 @@ import {
 	isTransientGitFailure,
 	type MainWorktreeFailure,
 	resolveMainWorktree,
+	resolveRecordedCheckout,
 	resolveWorktreePlacement,
 } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
@@ -143,6 +144,13 @@ export class ProjectWorklistLinkedWorktreeRefusedError extends ProjectMutationRe
  * equals, so letting them all write is exactly the silent fork the guard exists
  * to prevent, and picking one of them would make the roadmap's sole writer
  * whichever checkout happened to ask first.
+ *
+ * The one other repository that lands here is a gitdir-link one that records no
+ * checkout: `git init --separate-git-dir` writes the link from the checkout to
+ * the Git directory and nothing the other way, so a main checkout it does have
+ * cannot be named from the Git directory. The refusal still holds, because a
+ * write let through would fork the roadmap exactly as any other would, and a
+ * path cannot be invented for the message to send its reader to.
  */
 export class ProjectWorklistNoMainWorktreeError extends ProjectMutationRefusedError {
 	readonly worklistPath: string;
@@ -378,6 +386,16 @@ function committedRoadmapWriteRefusal(path: string): ProjectMutationRefusedError
 	}
 	if (placement.kind === "main") return undefined;
 	if (main.kind === "no-checkout") {
+		// The listing naming a Git directory does not mean there is no main checkout
+		// to name: for a gitdir-link repository it is the only thing the listing can
+		// print, and the checkout is recorded in the Git directory itself. Sending
+		// this worktree to a checkout that exists beats telling its owner that the
+		// repository they are standing in has none. Only a repository that records
+		// nothing - a bare one above all - has nobody to send anyone to.
+		const recorded = resolveRecordedCheckout(main.gitDirectory);
+		if (recorded) {
+			return new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, recorded);
+		}
 		return new ProjectWorklistNoMainWorktreeError(worklistPath, currentWorktree, main.gitDirectory);
 	}
 	return new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, main.path);
