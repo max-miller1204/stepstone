@@ -2186,10 +2186,7 @@ describe("project goal file resolution", () => {
 		// The checkout it names can perform the change, so the refusal sends its
 		// reader somewhere the mutation actually lands.
 		expect((await runCli(root, ["project", "add", "Written where it belongs"])).code).toBe(0);
-		expect((await readGoals(root)).map((goal) => goal.id)).toEqual([
-			"canonical",
-			"written-where-it-belongs",
-		]);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["canonical", "written-where-it-belongs"]);
 	});
 
 	it("writes the committed roadmap from a submodule working tree", async () => {

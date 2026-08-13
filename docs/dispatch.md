@@ -255,8 +255,9 @@ On abandonment the same verified close happens before claim release and lease re
 
 ## Invariants for every binding
 
-- Only the root session mutates Project Goals, and it does so from the default-branch checkout.
+- Only the root session mutates Project Goals, and it does so from the repository's main worktree, which is the default-branch checkout every binding here leaves it in.
 - Workers never edit `.worklist/worklist.json` or run mutating Stepstone commands.
+  Stepstone refuses a committed-roadmap mutation from a linked worktree rather than trusting a driver to observe that, so a worker that attempts one is sent to the main worktree instead of forking the roadmap; see [storage.md](storage.md#the-committed-roadmap-has-one-writer).
 - Claim before launch, and release every abandoned claim.
 - Treat a rejected claim as a stop: release the workspace instead of launching a worker, because the claim is the only thing preventing a second driver from dispatching the same goal.
 - Check every step between a successful claim and a running worker, and release both the claim and the workspace only when the failure proves no worker was launched; a claim held with nobody working it keeps the goal out of `ready` until someone notices, while a claim released under a worker that may be running hands the same goal to a second driver.
