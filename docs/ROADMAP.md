@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-51 goals: 1 active, 11 open, 36 done, 3 archived.
+51 goals: 11 open, 37 done, 3 archived.
 
 ## Orchestrator
 
@@ -349,7 +349,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Correct the branch-claim lifecycle across the CLI, application service, persistence layer, MCP, and Pi model tool. Clearing a stale branch from an already-done goal must preserve its historical completedAt, project start --json must return a typed JSON failure on detached HEAD or branch lookup failure, and the Pi schema must expose expectedUpdatedAt so claims can use the same optimistic concurrency guard as CLI and MCP. Add observable regressions for each interface and preserve ready-frontier claim behavior.
 
-- **[active]** Make dispatch bindings safe - `make-dispatch-bindings-safe`
+- **[done]** Make dispatch bindings safe - `make-dispatch-bindings-safe`
 
   Repair the packaged dispatch recipe so both bindings launch bounded parallel work without leaking or corrupting claims and workspaces. Herdr prompt submission must not wait indefinitely or interpret an ambiguous wait failure as permission to abandon a submitted worker; every clear must use the updatedAt returned by its own claim; detached launches need an executable startup handshake; Herdr agents and panes must close before returning Treehouse leases; and dirty-worktree cleanup must be non-interactive, explicit, and verified. Exercise the exact documented commands rather than substitute driver commands.
 
