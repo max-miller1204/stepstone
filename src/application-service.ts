@@ -41,6 +41,7 @@ import {
 	ProjectRevisionConflictError,
 	ProjectWorklistLinkedWorktreeRefusedError,
 	ProjectWorklistMoveRefusedError,
+	ProjectWorklistNoMainWorktreeError,
 	ProjectWorklistWorktreeLookupError,
 } from "./project-store.ts";
 import {
@@ -1127,6 +1128,16 @@ export class WorklistApplicationService {
 					currentWorktree: error.currentWorktree,
 					mainWorktree: error.mainWorktree,
 					resolution: "run-from-main-worktree",
+				}).toResultError();
+			} else if (error instanceof ProjectWorklistNoMainWorktreeError) {
+				// A repository with no main worktree has no checkout to send anyone to,
+				// so this carries its own resolution rather than naming a destination
+				// that cannot be walked into.
+				typedError = createApplicationError(WORKLIST_ERROR_CODES.UNAVAILABLE, error.message, {
+					path: error.worklistPath,
+					currentWorktree: error.currentWorktree,
+					gitDirectory: error.gitDirectory,
+					resolution: "create-main-worktree-checkout",
 				}).toResultError();
 			} else if (error instanceof ProjectWorklistWorktreeLookupError) {
 				// A lookup that never answered is an availability failure, not a write

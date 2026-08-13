@@ -2033,6 +2033,86 @@ describe("project goal file resolution", () => {
 		}
 	});
 
+	it("refuses a committed-roadmap write in a repository whose main worktree holds no checkout", async () => {
+		const source = await tempGitRepo();
+		expect((await runCli(source, ["project", "add", "Canonical"])).code).toBe(0);
+		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: source });
+		await execFileAsync(
+			"git",
+			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap fixture"],
+			{ cwd: source },
+		);
+
+		// The layout a bare clone plus worktrees gives: Git's first record is the Git
+		// directory, which holds no working tree and so can hold no roadmap.
+		const home = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-bare-")));
+		const gitDirectory = join(home, "roadmap.git");
+		await execFileAsync("git", ["clone", "--bare", source, gitDirectory]);
+		const checkout = join(home, "checkout");
+		await execFileAsync("git", ["worktree", "add", checkout, "HEAD"], { cwd: gitDirectory });
+
+		const roadmap = join(checkout, ".worklist", "worklist.json");
+		const before = await readFile(roadmap, "utf8");
+
+		const listed = await runCli(checkout, ["project", "list", "--json"]);
+		expect(listed.code).toBe(0);
+		expect(parseJson(listed.stdout).result.goals).toMatchObject([{ id: "canonical" }]);
+
+		const noOp = await runCli(checkout, ["project", "move", "canonical", "up", "--json"]);
+		expect(noOp.code).toBe(0);
+		expect(parseJson(noOp.stdout).meta).toMatchObject({ changed: false, semanticNoOp: true });
+
+		const refused = await runCli(checkout, ["project", "add", "Must not diverge", "--json"]);
+		expect(refused.code).toBe(1);
+		const envelope = parseJson(refused.stderr);
+		expect(envelope).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "add",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: {
+					path: roadmap,
+					currentWorktree: checkout,
+					gitDirectory,
+					resolution: "create-main-worktree-checkout",
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+		// A distinct refusal, because the linked-worktree one names a checkout to walk
+		// into and there is none here. Naming the Git directory as somewhere to run
+		// the change would send someone into Git's internals.
+		expect(envelope.error.details.mainWorktree).toBeUndefined();
+		expect(envelope.error.details.resolution).not.toBe("run-from-main-worktree");
+		expect(await readFile(roadmap, "utf8")).toBe(before);
+	});
+
+	it("asks Git where the main worktree is before it takes the worklist lock", async () => {
+		const root = await tempGitRepo();
+		const probe = join(await mkdtemp(join(tmpdir(), "stepstone-lock-probe-")), "lock-during-lookup");
+		// Git answers for itself; the shim only records whether the cross-process
+		// worklist lock was held at the moment the lookup ran.
+		const realGit = (await execFileAsync("which", ["git"])).stdout.trim();
+		const probingGit = await fakeGitPath([
+			'if [ "$1" = "worktree" ]; then',
+			`  if [ -e "$PWD/.worklist/.worklist.lock" ]; then printf held > '${probe}'; else printf free > '${probe}'; fi`,
+			"fi",
+			`exec ${realGit} "$@"`,
+		]);
+
+		const added = await runCli(root, ["project", "add", "Written while Git was asked"], {
+			PATH: probingGit,
+		});
+		expect(added.code).toBe(0);
+		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["written-while-git-was-asked"]);
+		// Git runs synchronously, so a lookup that reaches its time limit blocks past
+		// the lock's staleness window: another writer would judge the lock abandoned
+		// and take it while this process still believed it held it.
+		expect(await readFile(probe, "utf8")).toBe("free");
+	});
+
 	it("keeps a main-worktree lookup Git refused non-retryable, unlike one that never finished", async () => {
 		const root = await tempGitRepo();
 		const roadmap = join(root, ".worklist", "worklist.json");

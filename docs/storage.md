@@ -46,6 +46,19 @@ A CLI call, an MCP client, an open board, and a live Pi session may therefore al
 A malformed or unsupported file is reported and never overwritten automatically, so a corrupt roadmap is a question for its owner rather than something a tool silently replaces.
 Project Goal operations are unavailable outside a Git repository; in a Pi session, Session Tasks continue to work normally there.
 
+## The committed roadmap has one writer
+
+The roadmap is committed, so every worktree of a repository has its own copy of it, and a change made in a linked worktree lands on that branch alone.
+Two people working in two worktrees would each end up with a roadmap the other never sees, which reads as goals disappearing rather than as two files.
+So the main worktree is the roadmap's sole writer: a mutation that would change `.worklist/worklist.json` or the legacy `.pi/worklist.json` from a linked worktree is refused as `UNAVAILABLE` with `resolution: run-from-main-worktree` and the main worktree's path, and the CLI maps that to exit code 1.
+
+Reading is unrestricted, and so is anything that cannot fork the roadmap: a `--dry-run`, and a semantic no-op, which writes no bytes.
+An explicit `--file` or `$STEPSTONE_WORKLIST` store outside those two committed locations is not the committed roadmap and stays writable from any worktree.
+
+Two repositories cannot answer the question at all, and each says so in its own way rather than under the refusal above.
+A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no checkout to send anyone to: it is refused with `resolution: create-main-worktree-checkout`, naming the Git directory, because a bare directory holds no file anyone can commit.
+A `git worktree list` that does not answer leaves the question open, and the write is refused rather than let through: `resolution: retry-main-worktree-lookup` when Git was killed before it answered and the same call may answer next time, `repair-main-worktree-lookup` when Git returned a verdict of its own, carrying what Git said in `details.gitError`.
+
 ## Revisions and preconditions
 
 The file carries a monotonic numeric revision, which application callers receive as an opaque string.

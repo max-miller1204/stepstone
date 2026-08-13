@@ -117,6 +117,37 @@ export class ProjectWorklistLinkedWorktreeRefusedError extends ProjectMutationRe
 }
 
 /**
+ * A committed roadmap write in a repository whose main worktree holds no
+ * checkout, which every worktree of a bare clone is.
+ *
+ * Kept apart from the linked-worktree refusal because the way out is not the
+ * same. That one names a checkout someone can walk into; here Git's first record
+ * is the Git directory itself, which can hold no working tree and so can hold no
+ * roadmap, and telling someone to run the change there would name a destination
+ * that cannot exist.
+ *
+ * The write is still refused. Every checkout of such a repository is one of many
+ * equals, so letting them all write is exactly the silent fork the guard exists
+ * to prevent, and picking one of them would make the roadmap's sole writer
+ * whichever checkout happened to ask first.
+ */
+export class ProjectWorklistNoMainWorktreeError extends ProjectMutationRefusedError {
+	readonly worklistPath: string;
+	readonly currentWorktree: string;
+	readonly gitDirectory: string;
+
+	constructor(worklistPath: string, currentWorktree: string, gitDirectory: string) {
+		super(
+			`Project worklist ${worklistPath} cannot be changed from ${currentWorktree}: the repository at ${gitDirectory} has no main worktree, so no checkout of it is the roadmap's sole writer. Give ${gitDirectory} a main worktree checkout and make this change there.`,
+		);
+		this.name = "ProjectWorklistNoMainWorktreeError";
+		this.worklistPath = worklistPath;
+		this.currentWorktree = currentWorktree;
+		this.gitDirectory = gitDirectory;
+	}
+}
+
+/**
  * A committed roadmap write that could not be shown to be safe, because Git never
  * named the main worktree.
  *
@@ -287,16 +318,24 @@ export async function readProjectWorklist(
 	}
 }
 /**
- * Refuse a write to either committed roadmap path from a linked worktree.
+ * The refusal a write to either committed roadmap path has earned, or nothing.
  *
  * Asked of the write rather than of each interface, so every path that changes a
  * roadmap - a mutation and a migration alike - is held to it, and a new interface
  * cannot forget to ask.
  *
+ * Answered rather than thrown, because where it has to be decided and where it
+ * has to be asked are not the same place. Deciding it runs Git, and Git runs
+ * synchronously: a run that reaches its time limit blocks this process past the
+ * staleness window of the worklist lock, long enough for another writer to judge
+ * the lock abandoned, remove it, and take it while this process still believes it
+ * holds it. So it is worked out before the lock is taken and raised inside it,
+ * once the mutation has said it is going to change something.
+ *
  * Paths outside the current and legacy roadmap locations are explicit
  * non-roadmap stores. They intentionally remain writable from any worktree.
  */
-function assertCommittedRoadmapWriteAllowed(path: string): void {
+function committedRoadmapWriteRefusal(path: string): ProjectMutationRefusedError | undefined {
 	const worklistPath = resolve(path);
 	const worklistDirectory = dirname(worklistPath);
 	const directoryName = basename(worklistDirectory);
@@ -304,16 +343,22 @@ function assertCommittedRoadmapWriteAllowed(path: string): void {
 		basename(worklistPath) !== WORKLIST_FILENAME ||
 		(directoryName !== WORKLIST_DIRECTORY && directoryName !== LEGACY_WORKLIST_DIRECTORY)
 	) {
-		return;
+		return undefined;
 	}
 
 	const currentWorktree = canonicalPath(dirname(worklistDirectory));
-	if (!existsSync(resolve(currentWorktree, GIT_MARKER))) return;
+	if (!existsSync(resolve(currentWorktree, GIT_MARKER))) return undefined;
 	const main = resolveMainWorktree(currentWorktree);
-	if (main.path === null) throw new ProjectWorklistWorktreeLookupError(worklistPath, main.failure);
-	if (currentWorktree !== main.path) {
-		throw new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, main.path);
+	if (main.kind === "unavailable") {
+		return new ProjectWorklistWorktreeLookupError(worklistPath, main.failure);
 	}
+	if (main.kind === "no-checkout") {
+		return new ProjectWorklistNoMainWorktreeError(worklistPath, currentWorktree, main.gitDirectory);
+	}
+	if (currentWorktree !== main.path) {
+		return new ProjectWorklistLinkedWorktreeRefusedError(worklistPath, currentWorktree, main.path);
+	}
+	return undefined;
 }
 
 /** Name of the cross-process lock every writer to one worklist directory takes. */
@@ -358,6 +403,12 @@ export async function moveProjectWorklist(
 ): Promise<ProjectStoreResult<ProjectWorklistMove>> {
 	const fromDir = dirname(fromPath);
 	const toDir = dirname(toPath);
+	// Both ends, because a move writes both: it removes one roadmap and creates
+	// the other. Checking only the source would let a caller outside the CLI's
+	// own `migrate_path` land a committed roadmap in a linked worktree from a
+	// store the guard does not cover.
+	const fromRefusal = committedRoadmapWriteRefusal(fromPath);
+	const toRefusal = committedRoadmapWriteRefusal(toPath);
 	const releaseDestination = await lockWorklistDirectory(toDir);
 	let releaseSource: (() => Promise<void>) | undefined;
 	let tempName: string | undefined;
@@ -385,12 +436,8 @@ export async function moveProjectWorklist(
 		const destination = await stat(toPath).catch(() => undefined);
 		if (destination) throw new ProjectWorklistMoveRefusedError("destination-exists", fromPath, toPath);
 
-		// Both ends, because a move writes both: it removes one roadmap and creates
-		// the other. Checking only the source would let a caller outside the CLI's
-		// own `migrate_path` land a committed roadmap in a linked worktree from a
-		// store the guard does not cover.
-		assertCommittedRoadmapWriteAllowed(fromPath);
-		assertCommittedRoadmapWriteAllowed(toPath);
+		if (fromRefusal) throw fromRefusal;
+		if (toRefusal) throw toRefusal;
 
 		tempName = resolve(toDir, `.worklist-${randomBytes(8).toString("hex")}.tmp`);
 		await writeFile(tempName, contents, "utf8");
@@ -420,6 +467,7 @@ export async function mutateProjectWorklist<T>(
 	options: ProjectMutationOptions = {},
 ): Promise<ProjectStoreResult<T>> {
 	const dir = dirname(path);
+	const refusal = committedRoadmapWriteRefusal(path);
 	const release = await lockWorklistDirectory(dir);
 	let tempName: string | undefined;
 
@@ -444,7 +492,7 @@ export async function mutateProjectWorklist<T>(
 		}
 		if (!changed) return { data: result, revision: readResult.data.revision, changed: false };
 
-		assertCommittedRoadmapWriteAllowed(path);
+		if (refusal) throw refusal;
 
 		const revision = readResult.data.revision + 1;
 		if (!Number.isSafeInteger(revision)) {

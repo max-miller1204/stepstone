@@ -281,12 +281,21 @@ export interface MainWorktreeFailure {
 }
 
 /**
- * The main worktree, or why Git named none. A failure is always present when
- * there is no path, so a caller never has to invent one.
+ * What Git's first worktree record amounts to.
+ *
+ * A repository cloned or initialised bare has no main checkout at all: its first
+ * record names the Git directory, which holds no working tree and can hold no
+ * file anyone commits. That is a different answer from a main worktree Git named
+ * and from a lookup Git never answered, and a caller that cannot tell them apart
+ * ends up naming a destination nobody can write in.
  */
 export type MainWorktreeResult =
-	| { path: string; failure?: undefined }
-	| { path: null; failure: MainWorktreeFailure };
+	/** Git named a main worktree that holds a checkout. */
+	| { kind: "checkout"; path: string }
+	/** Git named a main worktree that holds no working tree, so nothing can be written there. */
+	| { kind: "no-checkout"; gitDirectory: string }
+	/** Git named no main worktree at all. */
+	| { kind: "unavailable"; failure: MainWorktreeFailure };
 
 /** The prefix `git worktree list --porcelain` gives the attribute naming a worktree. */
 const WORKTREE_ATTRIBUTE = "worktree ";
@@ -308,6 +317,13 @@ const WORKTREE_ATTRIBUTE = "worktree ";
  * other lookup here is: a shell answers for Git, turning an absent Git into its
  * own exit status 127 and a signalled Git into 128 + n, which would make a run
  * that never reached a verdict look like a verdict Git reached.
+ *
+ * Whether that first record holds a checkout is asked of the directory rather
+ * than of the porcelain `bare` attribute, which is not there to be read in every
+ * layout: a repository whose config says `core.bare` can still print a `HEAD` and
+ * a `branch` for its first record and no `bare` line at all. The `.git` entry Git
+ * itself looks for is present in every worktree that has one, including one whose
+ * Git directory lives elsewhere, and absent from a Git directory standing alone.
  */
 export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}): MainWorktreeResult {
 	let raw: string;
@@ -320,14 +336,19 @@ export function resolveMainWorktree(cwd: string, options: GitCommandOptions = {}
 		});
 	} catch (error) {
 		const command = describeCommandFailure(error);
-		return { path: null, failure: { message: describeGitFailure(command), command } };
+		return { kind: "unavailable", failure: { message: describeGitFailure(command), command } };
 	}
 	const attributeEnd = raw.indexOf("\0");
 	const attribute = attributeEnd === -1 ? raw : raw.slice(0, attributeEnd);
 	if (!attribute.startsWith(WORKTREE_ATTRIBUTE)) {
-		return { path: null, failure: { message: "git worktree list named no main worktree" } };
+		return {
+			kind: "unavailable",
+			failure: { message: "git worktree list named no main worktree" },
+		};
 	}
-	return { path: canonicalPath(attribute.slice(WORKTREE_ATTRIBUTE.length)) };
+	const main = canonicalPath(attribute.slice(WORKTREE_ATTRIBUTE.length));
+	if (!existsSync(join(main, GIT_MARKER))) return { kind: "no-checkout", gitDirectory: main };
+	return { kind: "checkout", path: main };
 }
 
 export interface CurrentGitBranchResult {
