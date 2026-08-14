@@ -1,0 +1,13 @@
+commands:
+  lint: >-
+    npm run typecheck &&
+    npm run imports:check &&
+    npm run lint:check &&
+    npm run docs:check
+
+ignore_patterns:
+  - ".claude/skills/stepstone/SKILL.md"
+  - ".claude-plugin/marketplace.json"
+  - ".claude-plugin/plugin.json"
+  - "docs/cli.md"
+  - "docs/ROADMAP.md"
