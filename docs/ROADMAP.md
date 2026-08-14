@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-51 goals: 10 open, 38 done, 3 archived.
+52 goals: 11 open, 38 done, 3 archived.
 
 ## Orchestrator
 
@@ -266,6 +266,12 @@ A goal's description is a record of what was decided when it was written rather 
   The deliverable is therefore a harness-neutral dispatch contract - read ready, claim a goal, run an agent session against it in an isolated workspace, detect completion by merge evidence, complete on main - plus a small binding surface covering only the two axes above. Ship at least two working bindings so the contract is proven rather than fitted to one setup: plain git worktrees driven by detached processes as the zero-dependency baseline, and herdr panes over treehouse worktrees as the richer one. The existing rule that nothing in src/ knows about any of these tools already makes this a scope and documentation change rather than a redesign, and the standing-consent authorization model applies unchanged to whichever bindings run the loop.
 
   Depends on `apply-plan-atomic-batch-import-of-a` (done), `sequencing-commands-project-next-ready` (done), `project-start-mark-a-goal-in-flight-and` (done).
+
+- **[open]** First-class resumable dispatch driver - `first-class-resumable-dispatch-driver`
+
+  Turn the documented root-session dispatch contract into an executable driver that can run an explicitly approved Project Goal plan through a selectable workspace and session-hosting binding. The driver selects only ready goals, claims each branch with optimistic concurrency, enforces bounded parallelism, launches workers with complete goal context, recognizes only matching merged PRs as completion evidence, and safely releases or preserves custody according to whether an outcome is known or ambiguous. Persist enough local runtime state to resume after interruption, and expose status, inspection, recovery, and cleanup operations without making canonical roadmap state depend on Herdr, Treehouse, or any agent harness. Keep the existing documented bindings executable and covered as the behavioral contract.
+
+  Depends on `root-session-recipe-herdr-treehouse` (done), `make-dispatch-bindings-safe` (done).
 
 ## Later
 

@@ -663,7 +663,20 @@
       "createdAt": "2026-08-12T09:42:45.110Z",
       "updatedAt": "2026-08-13T18:25:36.652Z",
       "completedAt": "2026-08-13T18:25:36.652Z"
+    },
+    {
+      "id": "first-class-resumable-dispatch-driver",
+      "title": "First-class resumable dispatch driver",
+      "description": "Turn the documented root-session dispatch contract into an executable driver that can run an explicitly approved Project Goal plan through a selectable workspace and session-hosting binding. The driver selects only ready goals, claims each branch with optimistic concurrency, enforces bounded parallelism, launches workers with complete goal context, recognizes only matching merged PRs as completion evidence, and safely releases or preserves custody according to whether an outcome is known or ambiguous. Persist enough local runtime state to resume after interruption, and expose status, inspection, recovery, and cleanup operations without making canonical roadmap state depend on Herdr, Treehouse, or any agent harness. Keep the existing documented bindings executable and covered as the behavioral contract.",
+      "group": "Automation",
+      "dependsOn": [
+        "root-session-recipe-herdr-treehouse",
+        "make-dispatch-bindings-safe"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-14T19:26:11.603Z",
+      "updatedAt": "2026-08-14T19:26:11.603Z"
     }
   ],
-  "revision": 273
+  "revision": 274
 }
