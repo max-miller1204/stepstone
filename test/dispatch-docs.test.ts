@@ -13,6 +13,18 @@ const leaseHolder = `stepstone:${goalId}`;
 const claimEvent = `npx:-y stepstone@latest project start ${goalId} --branch ${goalBranch} --expect-updated-at ready-at --json`;
 const clearEvent = `npx:-y stepstone@latest project start ${goalId} --clear --expect-updated-at claimed-at --json`;
 
+/**
+ * The startup grace every scenario hands the documented Binding A launch.
+ *
+ * The snippet decides whether a detached agent survived by sleeping this long
+ * and then signalling its pid, so a scenario that expects a doomed agent to be
+ * gone only holds when the grace outlasts a fork, an exec and an exit on a
+ * machine already running the rest of the suite. The documented default of one
+ * second carries that margin; a millisecond budget would make these scenarios a
+ * stopwatch race against the host.
+ */
+const startupGraceSeconds = "1";
+
 interface CommandResult {
 	code: number;
 	stdout: string;
@@ -167,6 +179,7 @@ function baseEnvironment(fixture: DispatchFixture): Record<string, string> {
 		LEASE_WORKSPACE: fixture.leasedWorkspace,
 		PANE_CLOSED: join(fixture.sandbox, "pane-closed"),
 		XDG_STATE_HOME: join(fixture.sandbox, "state"),
+		AGENT_STARTUP_GRACE_SECONDS: startupGraceSeconds,
 		goal_id: goalId,
 		goal_prompt: "Implement the selected goal",
 		updated_at: "ready-at",
@@ -211,7 +224,6 @@ describe("documented dispatch bindings", () => {
 		const result = await runShell(fixture.root, `${bindingAWorkspace}\n${bindingALaunch}`, {
 			...baseEnvironment(fixture),
 			AGENT_COMMAND: configuredCommand,
-			AGENT_STARTUP_GRACE_SECONDS: "0.05",
 		});
 
 		expect(result.code).toBe(1);
@@ -239,7 +251,6 @@ describe("documented dispatch bindings", () => {
 		const result = await runShell(fixture.root, buildScript(), {
 			...baseEnvironment(fixture),
 			AGENT_COMMAND: "never-launched-agent",
-			AGENT_STARTUP_GRACE_SECONDS: "0.05",
 			STEPSTONE_CLAIM_RESULT: "reject",
 		});
 
@@ -278,7 +289,6 @@ describe("documented dispatch bindings", () => {
 		const result = await runShell(fixture.root, buildScript(), {
 			...baseEnvironment(fixture),
 			AGENT_COMMAND: "never-launched-agent",
-			AGENT_STARTUP_GRACE_SECONDS: "0.05",
 			STEPSTONE_CLAIM_RESULT: "malformed",
 		});
 
@@ -346,7 +356,6 @@ describe("documented dispatch bindings", () => {
 		const result = await runShell(fixture.root, dirtyThenCleanup, {
 			...baseEnvironment(fixture),
 			AGENT_COMMAND: agent,
-			AGENT_STARTUP_GRACE_SECONDS: "0.05",
 		});
 
 		expect(result.code).toBe(0);
