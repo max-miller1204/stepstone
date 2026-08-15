@@ -8,14 +8,17 @@
 			"name": "stepstone",
 			"version": "0.9.4",
 			"bundleDependencies": [
-				"proper-lockfile"
+				"proper-lockfile",
+				"zod"
 			],
 			"license": "MIT",
 			"dependencies": {
-				"proper-lockfile": "^4.1.2"
+				"proper-lockfile": "^4.1.2",
+				"zod": "^4.4.3"
 			},
 			"bin": {
-				"stepstone": "dist/cli.js"
+				"stepstone": "dist/cli.js",
+				"stepstone-dispatch": "dist/dispatch.js"
 			},
 			"devDependencies": {
 				"@biomejs/biome": "^2.2.4",
@@ -5240,7 +5243,7 @@
 			"version": "4.4.3",
 			"resolved": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
 			"integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==",
-			"dev": true,
+			"inBundle": true,
 			"license": "MIT",
 			"funding": {
 				"url": "https://github.com/sponsors/colinhacks"

@@ -10,6 +10,9 @@ const dispatchMarkdown = await readFile(resolve("docs/dispatch.md"), "utf8");
 const goalId = "safe-dispatch";
 const goalBranch = `stepstone/${goalId}`;
 const leaseHolder = `stepstone:${goalId}`;
+const leaseId = "a".repeat(32);
+const treehouseGetEvent = `treehouse:get --lease --lease-holder ${leaseHolder} --json`;
+const treehouseStatusEvent = "treehouse:status --json";
 const claimEvent = `npx:-y stepstone@latest project start ${goalId} --branch ${goalBranch} --expect-updated-at ready-at --json`;
 const clearEvent = `npx:-y stepstone@latest project start ${goalId} --clear --expect-updated-at claimed-at --json`;
 
@@ -132,15 +135,19 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 	await writeExecutable(join(bin, "treehouse"), [
 		'printf "treehouse:%s\\n" "$*" >>"$EVENTS"',
 		'case "$1" in',
-		"  get) printf '%s\\n' \"$LEASE_WORKSPACE\" ;;",
+		'  get) printf \'{"path":"%s","lease_id":"%s","lease_holder":"%s","leased_at":"2026-01-01T00:00:00.000Z"}\\n\' "$LEASE_WORKSPACE" "$LEASE_ID" "$LEASE_HOLDER" ;;',
+		'  status) printf \'[{"name":"1","path":"%s","status":"leased","lease_id":"%s","lease_holder":"%s","leased_at":"2026-01-01T00:00:00.000Z","processes":[]}]\\n\' "$LEASE_WORKSPACE" "$LEASE_ID" "$LEASE_HOLDER" ;;',
 		"  return)",
 		'    case " $* " in *" --force "*) ;; *) exit 90 ;; esac',
-		'    workspace_status=$(git -C "$2" status --porcelain) || exit 91',
-		'    test -z "$workspace_status" || exit 92',
-		'    git worktree remove --force "$2" || exit 93',
+		'    case " $* " in *" --if-lease-id $LEASE_ID "*) ;; *) exit 91 ;; esac',
+		'    case " $* " in *" --if-lease-holder $LEASE_HOLDER "*) ;; *) exit 92 ;; esac',
+		'    git -C "$2" reset --hard HEAD >/dev/null || exit 93',
+		'    git -C "$2" clean -fdx >/dev/null || exit 94',
+		'    workspace_status=$(git -C "$2" status --porcelain) || exit 95',
+		'    test -z "$workspace_status" || exit 96',
 		'    printf "treehouse:return-clean\\n" >>"$EVENTS"',
 		"    ;;",
-		"  *) exit 94 ;;",
+		"  *) exit 97 ;;",
 		"esac",
 	]);
 	await writeExecutable(join(bin, "herdr"), [
@@ -164,6 +171,7 @@ async function installFakeBoundaries(bin: string): Promise<void> {
 		"    ;;",
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template
 		'  agent:start) test "${HERDR_START_RESULT:-ok}" = ok ;;',
+		'  agent:get) printf \'{"result":{"agent":{"pane_id":"pane-1","cwd":"%s"}}}\\n\' "$LEASE_WORKSPACE" ;;',
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion, not a template
 		'  agent:prompt) test "${HERDR_PROMPT_RESULT:-ok}" = ok ;;',
 		"  agent:wait) : ;;",
@@ -178,6 +186,8 @@ function baseEnvironment(fixture: DispatchFixture): Record<string, string> {
 		EVENTS: fixture.events,
 		LEASE_WORKSPACE: fixture.leasedWorkspace,
 		PANE_CLOSED: join(fixture.sandbox, "pane-closed"),
+		LEASE_ID: leaseId,
+		LEASE_HOLDER: leaseHolder,
 		XDG_STATE_HOME: join(fixture.sandbox, "state"),
 		AGENT_STARTUP_GRACE_SECONDS: startupGraceSeconds,
 		goal_id: goalId,
@@ -257,11 +267,12 @@ describe("documented dispatch bindings", () => {
 		expect(result.code).toBe(1);
 		const events = await readEvents(fixture);
 		if (bindingB) {
-			expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
+			expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
 			expect(events).toEqual([
-				`treehouse:get --lease --lease-holder ${leaseHolder}`,
+				treehouseGetEvent,
+				treehouseStatusEvent,
 				claimEvent,
-				`treehouse:return ${fixture.leasedWorkspace} --force --if-lease-holder ${leaseHolder}`,
+				`treehouse:return ${fixture.leasedWorkspace} --force --if-lease-id ${leaseId} --if-lease-holder ${leaseHolder}`,
 				"treehouse:return-clean",
 			]);
 			return;
@@ -297,7 +308,7 @@ describe("documented dispatch bindings", () => {
 		const events = await readEvents(fixture);
 		if (bindingB) {
 			expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
-			expect(events).toEqual([`treehouse:get --lease --lease-holder ${leaseHolder}`, claimEvent]);
+			expect(events).toEqual([treehouseGetEvent, treehouseStatusEvent, claimEvent]);
 			await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
 				cwd: fixture.root,
 			});
@@ -327,8 +338,10 @@ describe("documented dispatch bindings", () => {
 		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
 		const events = await readEvents(fixture);
 		expect(events).toEqual([
-			`treehouse:get --lease --lease-holder ${leaseHolder}`,
+			treehouseGetEvent,
+			treehouseStatusEvent,
 			claimEvent,
+			treehouseStatusEvent,
 			`herdr:pane split --current --direction right --cwd ${fixture.leasedWorkspace} --no-focus`,
 		]);
 		await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
@@ -380,7 +393,7 @@ describe("documented dispatch bindings", () => {
 		});
 
 		expect(result.code).toBe(1);
-		expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
+		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
 		const events = await readEvents(fixture);
 		const close = events.indexOf("herdr:pane close pane-1");
 		const verify = events.indexOf("herdr:pane list");
@@ -390,7 +403,7 @@ describe("documented dispatch bindings", () => {
 		expect(verify).toBeGreaterThan(close);
 		expect(clear).toBeGreaterThan(verify);
 		expect(returned).toBeGreaterThan(clear);
-		expect(events[returned]).toContain(`--force --if-lease-holder ${leaseHolder}`);
+		expect(events[returned]).toContain(`--force --if-lease-id ${leaseId} --if-lease-holder ${leaseHolder}`);
 		expect(events).toContain("treehouse:return-clean");
 	});
 
@@ -419,7 +432,9 @@ describe("documented dispatch bindings", () => {
 		expect(result.code).toBe(0);
 		const events = await readEvents(fixture);
 		expect(eventsMatching(events, "herdr:agent prompt")).toEqual([
-			"herdr:agent prompt pane-1 Implement the selected goal --wait --timeout 300000",
+			expect.stringMatching(
+				/^herdr:agent prompt pane-1 Read the complete Stepstone goal context from .+\/prompt\.txt and follow it exactly\. --wait --timeout 300000$/,
+			),
 		]);
 		await execFileAsync("git", ["worktree", "remove", "--force", fixture.leasedWorkspace], {
 			cwd: fixture.root,
@@ -442,7 +457,9 @@ describe("documented dispatch bindings", () => {
 		expect(result.stderr).toContain("Prompt outcome is ambiguous");
 		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
 		const events = await readEvents(fixture);
-		expect(events).toContain("herdr:agent prompt pane-1 Implement the selected goal --wait --timeout 17");
+		expect(eventsMatching(events, "herdr:agent prompt")[0]).toMatch(
+			/^herdr:agent prompt pane-1 Read the complete Stepstone goal context from .+\/prompt\.txt and follow it exactly\. --wait --timeout 17$/,
+		);
 		expect(eventsMatching(events, "herdr:pane close")).toEqual([]);
 		expect(eventsMatching(events, " --clear ")).toEqual([]);
 		expect(eventsMatching(events, "treehouse:return ")).toEqual([]);
@@ -469,7 +486,7 @@ describe("documented dispatch bindings", () => {
 		const result = await runShell(fixture.root, dirtyThenCleanup, baseEnvironment(fixture));
 
 		expect(result.code).toBe(0);
-		expect(await pathExists(fixture.leasedWorkspace)).toBe(false);
+		expect(await pathExists(fixture.leasedWorkspace)).toBe(true);
 		const events = await readEvents(fixture);
 		const close = events.indexOf("herdr:pane close pane-1");
 		const verify = events.indexOf("herdr:pane list");
@@ -477,7 +494,10 @@ describe("documented dispatch bindings", () => {
 		expect(close).toBeGreaterThanOrEqual(0);
 		expect(verify).toBeGreaterThan(close);
 		expect(returned).toBeGreaterThan(verify);
-		expect(events[returned]).toContain(`--force --if-lease-holder ${leaseHolder}`);
+		expect(events[returned]).toContain(`--force --if-lease-id ${leaseId} --if-lease-holder ${leaseHolder}`);
+		expect(
+			(await execFileAsync("git", ["status", "--porcelain"], { cwd: fixture.leasedWorkspace })).stdout,
+		).toBe("");
 		expect(events).toContain("treehouse:return-clean");
 		expect(eventsMatching(events, " --clear ")).toEqual([]);
 	});

@@ -7,55 +7,143 @@ A root session can fan out an explicitly approved Project Goal plan without maki
 The root session owns the roadmap.
 Workers own implementation branches and PRs.
 
+## Published driver
+
+`stepstone-dispatch` is the executable form of the root-session contract.
+Run it from the repository's main worktree after the exact Project Goal plan and its dispatch have been explicitly approved:
+
+```sh
+npx -y -p stepstone@latest stepstone-dispatch start \
+  --goal first-approved-goal \
+  --goal second-approved-goal \
+  --max-parallel 2 \
+  --workspace worktree \
+  --session process \
+  --agent-command my-agent \
+  --agent-arg run \
+  --json
+```
+
+The package also installs `stepstone-dispatch`, so an installed package can run the same command directly:
+
+```sh
+stepstone-dispatch start \
+  --goal first-approved-goal \
+  --max-parallel 1 \
+  --agent-command my-agent
+```
+
+Repeated `--goal` values are the run's immutable authorization allow-list.
+Repeated `--agent-arg` values are passed verbatim, including option-shaped values such as `--model`.
+The driver reads the canonical ready frontier and launches only allow-listed goals that are open, unblocked, and unclaimed.
+It creates or acquires each workspace before claiming the goal, claims with the selected ready result's exact `updatedAt`, and never exceeds `--max-parallel`.
+The complete stored goal is submitted to the worker over standard input for process sessions and through a private mode-0600 prompt file for Herdr sessions, never as a process argument.
+
+Workspace isolation and session hosting are independent selections.
+`--workspace worktree --session process` uses detached process groups in ordinary Git worktrees and is supported only on Linux, where `/proc` permits exact session-token ownership checks before signaling.
+The driver rejects process-session runs on other operating systems instead of accepting custody it cannot later verify and close.
+`--workspace treehouse --session herdr --agent-kind <kind>` uses Treehouse leases and Herdr panes.
+Either workspace provider can compose with either session host.
+The core and executable import graphs do not import Herdr, Treehouse, an agent harness, or Pi peers; selected external tools are invoked only at their CLI boundaries.
+
+The start result names a run ID.
+Runtime state is stored under the repository's Git common directory at `stepstone-dispatch/<run-id>.json`, outside the canonical roadmap and shared by the main checkout across process restarts.
+The record includes the selected target branch and revision, exact claim tokens, canonical completion and release receipts, transition intent, binding configuration, and workspace and session custody.
+Each acquired workspace also has a private ownership marker in `stepstone-dispatch/workspaces/` and a unique owner token inside that worktree's resolved Git administrative directory.
+Immediately before deleting a Git branch, cleanup journals its exact tip in that marker, atomically deletes only that unchanged ref while the authenticated owned worktree is still registered as its checkout, then journals the completed branch deletion before removing the worktree.
+A retry may finish removing that same authenticated worktree once branch deletion is journaled.
+After a workspace is absent or unregistered, cleanup never deletes a branch automatically, even when a same-tip branch exists elsewhere; an incomplete deletion journal fails closed for manual recovery.
+Cleanup validates the custody records against the binding, exact path, branch, base revision, and current worktree identity before it may scrub or delete anything, then records verified removal so an interrupted cleanup is idempotent.
+Deleting the whole completed run removes its cleanup receipts.
+Process sessions journal a launch-token-to-PID receipt immediately after spawn, before prompt submission, and observe process exit before any asynchronous receipt or prompt work, so restarted recovery can prove whether an otherwise unjournaled worker is still live without scanning unrelated processes.
+Resume after a worker or PR changes state:
+
+```sh
+stepstone-dispatch resume <run-id> --json
+```
+
+Resume reconciles journaled acquisition, claim, and release transitions before doing new work.
+It preserves an interrupted acquisition when no local result proves what was acquired, adopts only a canonical claim that matches its journaled branch and baseline, and finishes cleanup when a release committed before local state persistence.
+It does not relaunch a persisted worker session.
+Merged PR evidence must name the stored head and target branches, must postdate the current claim, and must provide a merge commit reachable from the freshly fetched target.
+The driver persists that evidence and its completion intent before the canonical mutation.
+If completion commits but its response is lost, resume accepts only the resulting canonical done transition tied to that journaled intent rather than completing twice or guessing from a branch name.
+The canonical target checkout is fast-forwarded to that verified revision before a newly unblocked goal receives a workspace.
+Only then does the driver complete the goal, persist its canonical completion receipt, clean custody, and refill free parallel slots from a freshly read ready frontier.
+Run resume again as later PRs merge.
+
+Inspection does not mutate the roadmap:
+
+```sh
+stepstone-dispatch status --json
+stepstone-dispatch status <run-id> --json
+stepstone-dispatch inspect <run-id> <goal-id> --json
+```
+
+A `launching` entry with a persisted launch token but no verified session handle is never releasable automatically.
+After inspecting the process table or Herdr agent, `--confirm-launch-closed` asks the selected binding to prove that no worker still carries the persisted launch identity before recovery may release the claim.
+An interrupted workspace acquisition, any outcome after a process has spawned, a prompt submission timeout, an unreadable Herdr response, a merge-inspection failure, or a concurrency conflict preserves custody in the run record.
+`cleanup-pending` entries whose worker session has not been proven closed continue to consume parallel capacity.
+After inspecting that custody and proving no worker should retain it, release it explicitly:
+
+```sh
+stepstone-dispatch recover <run-id> <goal-id> --release --json
+stepstone-dispatch recover <run-id> <goal-id> --release \
+  --claim-updated-at <verified-current-updated-at> --json
+stepstone-dispatch recover <run-id> <goal-id> --release --confirm-launch-closed --json
+```
+
+Recovery clears only the claim whose `updatedAt` was returned by this run's successful claim.
+Recovery first closes and verifies the recorded worker session while the claim still blocks redispatch, journals the release before mutating canonical state, clears the exact claim, and only then scrubs the workspace.
+A changed canonical token makes recovery fail closed instead of releasing somebody else's custody.
+Recovery is limited to live claim phases and rejects completed, released, cleaned, failed, and cleanup-only entries before closing a session or mutating state.
+Destructive cleanup requires a persisted canonical completion or release receipt, so changing only a phase cannot turn live claimed custody into cleanup work.
+If a claim mutation committed but its response was lost before the returned token could be journaled, the driver does not infer ownership from the deterministic branch name.
+After independently verifying that interrupted claim, an operator can provide the exact current token with `--claim-updated-at`; recovery checks the same branch and token again before releasing it.
+An acquisition interrupted before its workspace result was persisted has no exact claim to release and remains inspection-only rather than guessing that no checkout was acquired.
+Cleanup likewise refuses an entry that still owns canonical custody:
+
+```sh
+stepstone-dispatch cleanup <run-id> [goal-id] --json
+```
+
+Cleanup persists verified session closure before touching the workspace, and its worktree, branch deletion, and guarded Treehouse return steps are idempotent across partial failures and restarts.
+With no goal ID it removes the noncanonical run record only after every entry is cleaned or failed.
+
+The executable performs one reconciliation and scheduling pass per invocation rather than becoming a daemon.
+This keeps restart behavior explicit and lets any scheduler, root session, or human decide when another `resume` pass should run.
+
 ## Dispatch contract
 
 1. Apply the exact approved plan once.
-2. Read `project ready --json` from the default-branch checkout.
-3. For each selected goal, create or acquire an isolated checkout and choose its branch name.
-4. Claim the goal before launching work:
+2. Start a driver run with exactly that plan's approved goal IDs and the canonical target branch and revision.
+3. Select only goals from a fresh ready frontier, up to the persisted parallel limit, counting every unverified session.
+4. Journal intent, then acquire an isolated workspace and deterministic `stepstone/<goal-id>` branch.
+5. Journal and claim through the shared application service with the ready goal's `updatedAt`.
+6. Launch the selected session host with the full stored goal as context.
+7. Preserve custody whenever acquisition, launch, observation, release, or completion has an ambiguous outcome.
+8. Accept only a current-claim PR merged into the stored target whose merge commit is reachable from the updated target revision.
+9. Re-read canonical state, complete with standing consent, then close and scrub custody.
+10. Read the ready frontier again only after the target is current, and stop when the approved run has nothing ready or held.
 
-```sh
-npx -y stepstone@latest project start "$goal_id" \
-  --branch "$branch" \
-  --expect-updated-at "$updated_at"
-```
-
-5. Launch the configured agent command in that checkout with the full goal as its prompt.
-6. Observe the worker, but treat only a merged PR from the claimed branch as completion evidence.
-7. Pull the default branch, re-read the goal, then complete it from the root checkout.
-   The claim in step 4 stored the branch on the goal and bumped its `updatedAt`, so the value read in step 2 is already spent; reusing it fails the completion with exit code 4.
-
-```sh
-updated_at=$(npx -y stepstone@latest project show "$goal_id" --json | jq -r '.result.goal.updatedAt')
-npx -y stepstone@latest project complete "$goal_id" \
-  --expect-updated-at "$updated_at" \
-  --confirm
-```
-
-8. Release the workspace and read `ready --json` again.
-9. Stop when `ready` is empty.
-Read `waves --json` to distinguish a finished roadmap from goals that are blocked or already claimed.
-
-The snippets below read envelopes with `jq`, but any JSON reader works: every value they take comes from a documented `result` field.
-
-`--max-parallel N` is a driver policy, not stored roadmap state.
-Dispatch at most `N` entries from each ready result.
-With `--max-parallel 1`, the same loop is a serial auto-chain.
+`--max-parallel N` is driver runtime policy and never canonical roadmap state.
+With `--max-parallel 1`, repeated resume passes form a serial chain.
 
 ## Authorization boundary
 
-Explicit approval of a plan plus an explicit request to run its dispatch loop grants standing consent to complete a goal from that plan only after the goal's matching PR merges.
-This is the narrow exception to the normal rule that an agent must ask immediately before confirming a lifecycle action, and the loop expresses it as `--confirm` on the CLI.
+Explicit approval of a plan plus an explicit request to start its driver run grants standing consent to complete a goal from that run only after the goal's matching PR merges.
+This is the narrow exception to the normal rule that an agent must ask immediately before confirming a lifecycle action.
+The driver records the approved IDs before dispatch and cannot extend that consent during resume.
 
 Standing consent does not authorize completion based on worker exit, a green unmerged PR, or session silence.
-It does not authorize `archive`, `delete`, `reopen`, a goal outside the approved plan, or a later plan.
-If a worker is abandoned or its PR closes without merging, release the claim without completing the goal.
-Use the `updatedAt` returned by the successful claim rather than re-reading and potentially clearing somebody else's newer claim:
+It does not authorize `archive`, `delete`, `reopen`, a goal outside the approved run, or a later plan.
+If a worker is abandoned or its PR closes without merging, inspect the persisted custody and use explicit `recover --release`.
+The driver passes the `updatedAt` returned by its successful claim rather than re-reading and potentially clearing somebody else's newer claim.
 
-```sh
-npx -y stepstone@latest project start "$goal_id" --clear \
-  --expect-updated-at "$claimed_updated_at"
-```
+## Executable binding contracts
+
+The recipes below remain executable behavioral contracts in the documentation test suite.
+They spell out the same failure boundaries as the published driver without becoming imports or runtime dependencies.
 
 ## Binding A: Git worktrees and detached processes
 
@@ -125,9 +213,9 @@ mkdir -p "$runtime" || abandon
 ) || abandon
 ```
 
-`AGENT_COMMAND` names one executable; pass agent-specific configuration through that executable or its environment.
-The `command -v` preflight catches a missing executable before launch.
-The bounded startup grace then verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that `nohup` reports before an `exec` failure.
+`AGENT_COMMAND` names one executable; the published driver passes agent-specific configuration through repeatable `--agent-arg` values.
+The command preflight resolves and fingerprints that executable before persisting a run, and resume refuses a changed executable identity.
+The documented shell binding's bounded startup grace verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that `nohup` reports before an `exec` failure.
 
 The log and pid file belong to the driver, not to the branch under review.
 Keeping them outside `$workspace` leaves the worker's checkout clean, so an agent that stages everything cannot commit its own transcript into the PR.
@@ -155,8 +243,11 @@ A pooled worktree can arrive on a detached HEAD, where `git branch --show-curren
 lease_holder="stepstone:$goal_id"
 branch="stepstone/$goal_id"
 base=$(git rev-parse HEAD) || exit 1
-workspace=$(treehouse get --lease --lease-holder "$lease_holder") || exit 1
-test -n "$workspace" || exit 1
+lease_json=$(treehouse get --lease --lease-holder "$lease_holder" --json) || exit 1
+workspace=$(printf '%s\n' "$lease_json" | jq -er '.path') || exit 1
+lease_id=$(printf '%s\n' "$lease_json" | jq -er '.lease_id') || exit 1
+returned_holder=$(printf '%s\n' "$lease_json" | jq -er '.lease_holder') || exit 1
+test "$returned_holder" = "$lease_holder" || exit 1
 ```
 
 Claim the goal from the root checkout and retain the `updatedAt` returned by that exact claim.
@@ -166,24 +257,47 @@ Once prompt submission has been attempted, a timeout or transport failure is amb
 ```sh
 # dispatch-example: binding-b-launch
 pane_id=
+runtime_dir="${XDG_STATE_HOME:-$HOME/.local/state}/stepstone/dispatch/$goal_id"
+umask 077
+mkdir -p "$runtime_dir" || exit 1
+prompt_file="$runtime_dir/prompt.txt"
+
+verify_lease() {
+  lease_status=$(treehouse status --json) || return 1
+  lease_matches=$(printf '%s\n' "$lease_status" |
+    jq -er --arg path "$workspace" '[.[] | select(.path == $path)] | length') || return 1
+  test "$lease_matches" = 1 || return 1
+  current_lease_id=$(printf '%s\n' "$lease_status" |
+    jq -er --arg path "$workspace" '.[] | select(.path == $path) | .lease_id') || return 1
+  current_holder=$(printf '%s\n' "$lease_status" |
+    jq -er --arg path "$workspace" '.[] | select(.path == $path) | .lease_holder') || return 1
+  current_status=$(printf '%s\n' "$lease_status" |
+    jq -er --arg path "$workspace" '.[] | select(.path == $path) | .status') || return 1
+  test "$current_status" = leased &&
+    test "$current_lease_id" = "$lease_id" &&
+    test "$current_holder" = "$lease_holder"
+}
 
 cleanup_lease() {
-  git -C "$workspace" reset --hard HEAD &&
-    git -C "$workspace" clean -fdx &&
-    workspace_status=$(git -C "$workspace" status --porcelain) &&
-    test -z "$workspace_status" &&
-    treehouse return "$workspace" --force --if-lease-holder "$lease_holder"
+  treehouse return "$workspace" --force \
+    --if-lease-id "$lease_id" \
+    --if-lease-holder "$lease_holder"
 }
 
 close_pane() {
-  test -z "$pane_id" && return 0
-  herdr pane close "$pane_id" || return 1
-  pane_list=$(herdr pane list) || return 1
-  pane_present=$(printf '%s\n' "$pane_list" |
-    jq -r --arg pane "$pane_id" 'any(.result.panes[]; .pane_id == $pane)') || return 1
-  test "$pane_present" = false || return 1
-  pane_id=
+  if test -n "$pane_id"
+  then
+    herdr pane close "$pane_id" || return 1
+    pane_list=$(herdr pane list) || return 1
+    pane_present=$(printf '%s\n' "$pane_list" |
+      jq -r --arg pane "$pane_id" 'any(.result.panes[]; .pane_id == $pane)') || return 1
+    test "$pane_present" = false || return 1
+    pane_id=
+  fi
+  rm -f "$prompt_file" || return 1
 }
+
+verify_lease || exit 1
 
 if ! claim_json=$(npx -y stepstone@latest project start "$goal_id" \
   --branch "$branch" \
@@ -208,8 +322,10 @@ abandon() {
   cleanup_lease || exit 1
   exit 1
 }
+printf '%s' "$goal_prompt" >"$prompt_file" || abandon
 
 git -C "$workspace" checkout -b "$branch" "$base" || abandon
+verify_lease || abandon
 pane_json=$(herdr pane split --current --direction right --cwd "$workspace" --no-focus) ||
   abandon
 if ! pane_id=$(printf '%s\n' "$pane_json" | jq -er '.result.pane.pane_id')
@@ -219,8 +335,13 @@ then
 fi
 agent_name=$(printf 'ss-%.18s-%s' "$goal_id" "$(printf %s "$goal_id" | cksum | cut -d' ' -f1)")
 herdr agent start "$agent_name" --kind "$HERDR_AGENT_KIND" --pane "$pane_id" || abandon
-if ! herdr agent prompt "$pane_id" "$goal_prompt" --wait \
-  --timeout "${HERDR_PROMPT_TIMEOUT_MS:-300000}"
+agent_json=$(herdr agent get "$agent_name") || abandon
+owned_pane=$(printf '%s\n' "$agent_json" | jq -er '.result.agent.pane_id') || abandon
+owned_cwd=$(printf '%s\n' "$agent_json" | jq -er '.result.agent.cwd') || abandon
+test "$owned_pane" = "$pane_id" && test "$owned_cwd" = "$workspace" || abandon
+if ! herdr agent prompt "$pane_id" \
+  "Read the complete Stepstone goal context from $prompt_file and follow it exactly." \
+  --wait --timeout "${HERDR_PROMPT_TIMEOUT_MS:-300000}"
 then
   printf '%s\n' "Prompt outcome is ambiguous; claim, pane, and lease are preserved." >&2
   exit 1
@@ -228,8 +349,10 @@ fi
 ```
 
 Herdr answers over its socket API in a JSON envelope, so the pane ID is read out of `.result.pane.pane_id`; passing the whole response to `--pane` starts nothing.
-If the successful split returns an unreadable envelope, the driver preserves the claim and lease because it cannot prove which pane to close.
-
+The full prompt is written to a private mode-0600 file, and only an instruction containing that path appears in process arguments.
+The published driver snapshots pane identities before split and persists that snapshot plus the derived agent name.
+If split returns an unreadable envelope, recovery never trusts a pane ID inferred only from the snapshot difference.
+It closes a post-launch pane only when `herdr agent get` independently maps the persisted derived agent name to that pane and exact workspace; otherwise it preserves ambiguous custody, while no post-launch pane is already safe.
 Herdr requires an agent name matching `[a-z][a-z0-9_-]{0,31}` and unique among live agents, so the goal ID cannot be the name: most IDs on a real roadmap exceed the 32 characters, and `agent start` would fail every dispatch.
 The derived name keeps a readable prefix of the ID inside that limit and appends a checksum of the full ID, which stays unique where truncation alone would collide.
 Once the agent is running, Herdr accepts the hosting pane ID wherever it accepts a name, so the calls after `agent start` target `$pane_id` and never depend on that derivation.
@@ -242,13 +365,17 @@ Use bounded waits such as `herdr agent wait "$pane_id" --timeout "${HERDR_WAIT_T
 A wait timeout preserves custody because the request may have reached the agent before the client lost its response.
 Those signals never replace merged-PR evidence.
 
-After merge and completion, close the pane, verify that Herdr no longer lists it, scrub the checkout, and only then force-return the lease:
+After merge and completion, close the pane, verify that Herdr no longer lists it, then ask Treehouse to atomically verify the exact lease identity, scrub the checkout under its lease lock, and return it:
 
 ```sh
 # dispatch-example: binding-b-cleanup
 close_pane || exit 1
 cleanup_lease || exit 1
 ```
+
+The published Treehouse binding records the immutable lease ID returned by `treehouse get --json` and verifies both that ID and the holder immediately before claim and launch.
+Cleanup delegates all destructive reset work to `treehouse return --force --if-lease-id ... --if-lease-holder ...`, whose lease precondition and reset share Treehouse's state lock.
+A changed lease therefore fails before any Git scrub, while a retry after a successful guarded return records local cleanup without touching the now-available pooled worktree.
 
 Closing the hosting pane ends its Herdr agent.
 On abandonment the same verified close happens before claim release and lease return, so Treehouse never receives a checkout still owned by a live pane.

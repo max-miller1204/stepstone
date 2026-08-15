@@ -129,11 +129,15 @@ export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 export const AGENTS_BLOCK_START = "<!-- stepstone:project-goals:start -->";
 export const AGENTS_BLOCK_END = "<!-- stepstone:project-goals:end -->";
 
+/** Published companion executable that runs the resumable dispatch contract. */
+export const DISPATCH_BINARY = `${BINARY}-dispatch`;
+
 /** Canonical optional skill installation offered by `project init`, but never executed by it. */
 export const SKILL_INSTALL_COMMAND = `npx skills add max-miller1204/${BINARY} --skill ${BINARY} -g`;
 
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
+	dispatchBinary: DISPATCH_BINARY,
 	scope: "project",
 	intro: `Manage a repository's Project Goals in \`<git-root>/${WORKLIST_RELATIVE_PATH}\` from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.`,
 	/**
@@ -485,13 +489,15 @@ export const CLI_COMMAND_CONTRACT = {
 		"All three are reads derived from the stored edges the same way `blocked` is, so nothing is cached and no command has to be re-run to refresh them.",
 	],
 	dispatchRules: [
-		"Dispatch only goals returned by `ready --json`; claim each one with `start <id> --branch <name> --expect-updated-at <updatedAt>` before launching its worker.",
-		"The root session is the sole roadmap writer and runs every Stepstone mutation from the repository's main worktree, normally on the default branch; workers receive goal context but never mutate the worklist from isolated workspaces.",
-		"Session hosting and workspace isolation are independent bindings: any host that can launch and observe a command can compose with any provider that returns an isolated checkout.",
-		"Treat a merged PR whose head belongs to the claimed branch as completion evidence; worker exit or silence alone never proves the goal landed.",
-		"Launching a dispatch loop for an explicitly approved plan grants standing consent to run `complete <id> --confirm` only for a goal in that plan after its matching PR merged.",
-		"That standing consent does not cover archive, delete, reopen, unrelated goals, unmerged work, or a new plan; release an abandoned claim with `start <id> --clear --expect-updated-at <updatedAt>`, passing the `updatedAt` that same claim returned rather than a re-read value that may already belong to somebody else's newer claim.",
-		"Re-read `ready` after each merge and stop when it is empty; distinguish finished roadmaps from blocked or claimed work by reading `waves --json`.",
+		`Start an approved run with \`npx -y -p ${BINARY}@latest ${DISPATCH_BINARY} start --goal <id>... --agent-command <executable>\`; repeated goal IDs are the immutable authorization allow-list.`,
+		"The published driver selects only allow-listed goals returned by a fresh ready frontier, claims each exact `updatedAt` before launch, and enforces its persisted parallel limit.",
+		"The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; workers receive the complete goal context but never mutate the worklist from isolated workspaces.",
+		"Session hosting and workspace isolation are independent CLI bindings: detached processes or Herdr can compose with Git worktrees or Treehouse leases without importing any of those tools or an agent harness.",
+		"Only a merged PR whose head exactly matches the stored claimed branch is completion evidence; worker exit, silence, or an unmerged green PR never proves the goal landed.",
+		"Launching a driver run for an explicitly approved plan grants standing consent to complete only an allow-listed goal after its matching PR merged.",
+		"Local runtime state under the Git common directory preserves claim tokens, workspace and session custody, binding configuration, and outcomes across `resume`, while canonical roadmap state remains harness-neutral.",
+		"Known-safe pre-launch failures release the exact claim token; ambiguous outcomes preserve custody until inspection and explicit `recover <run-id> <goal-id> --release`.",
+		"Use `status` and `inspect` without mutation, `resume` to reconcile merges and refill capacity, and `cleanup` only after completion or exact release.",
 	],
 	exitCodes: [
 		{ code: 0, meaning: "success" },
