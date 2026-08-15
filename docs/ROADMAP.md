@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-52 goals: 11 open, 38 done, 3 archived.
+54 goals: 13 open, 38 done, 3 archived.
 
 ## Orchestrator
 
@@ -233,6 +233,16 @@ A goal's description is a record of what was decided when it was written rather 
   Make a mutation from a linked worktree loud instead of silent, and decide the behaviour explicitly rather than by default: refuse and name the main worktree, warn and proceed, or redirect the write to the main worktree's file under its lock. Refusal is safest and matches the sole-writer rule, but it breaks any adapter that expects project start or project complete to run from inside a dispatched worktree, so root-session-recipe's claim-in-the-worktree, complete-on-main contract must be checked against whichever behaviour is chosen; redirect preserves that contract at the cost of a write crossing directories. Reads stay unrestricted in every case, since only mutations can fork the roadmap. Detect the linked worktree with git worktree list --porcelain, whose first entry is the main worktree, rather than deriving it from --git-common-dir, which under git init --separate-git-dir points outside the working tree entirely and whose parent is then unrelated to the checkout.
 
   Sequencing against worklist-path: both change the same resolution path, and worklist-path already requires one resolution order shared by the CLI, the board, the Pi extension and the MCP server. If worklist-path is scheduled first, fold this guard into that single resolution rather than landing it separately and rewriting it. Landing this first is still worthwhile if worklist-path is far out, because the divergence hazard goes live the moment a treehouse fan-out runs. Either way the guard covers the committed goal file only: worklist-path's gitignored siblings under .worklist/ are deliberately per-worktree local state for dispatch claims, branch-scoped focus and ephemeral board state, and must keep resolving per-worktree rather than collapsing to one shared directory.
+
+- **[open]** Retire MCP and Claude plugin surfaces - `retire-mcp-and-claude-plugin-surfaces`
+
+  Make the stepstone CLI the sole cross-harness capability transport. Remove the stepstone-mcp executable, MCP server and adapter, protocol metadata, tests, documentation, packaging exercises, and MCP-only runtime dependencies. Retire the Claude Code plugin and its generated skill copy, MCP declaration, and slash commands because the standalone Agent Skill and CLI provide the supported workflow without a client-specific adapter. Preserve the terminal board, Pi extension, shared application service, roadmap format, locking, and confirmation guardrails. No worklist data migration is required.
+
+- **[open, blocked]** Make skill-first onboarding explicit - `make-skill-first-onboarding-explicit`
+
+  Present the Agent Skill as the preferred guidance installation and project init as an alternative fallback for harnesses that read AGENTS.md but do not support skills. Reduce the generated AGENTS block to the canonical storage rule, CLI invocation, JSON-output preference, exact approval guardrails, capture workflow, and project help pointer instead of duplicating the full command and flag manual. Update the README and generated documentation so users are never told to install both surfaces, and reconcile open roadmap descriptions that still assume MCP resources or the Claude plugin. Keep every generated artifact sourced from the command contract.
+
+  Depends on `retire-mcp-and-claude-plugin-surfaces` (open).
 
 ## Visibility
 

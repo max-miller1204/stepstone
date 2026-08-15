@@ -1,5 +1,11 @@
 commands:
+  # Gate commands run under a non-interactive /bin/sh that never sources a shell
+  # profile, so a Node provisioned by fnm is missing from PATH and every
+  # `npm run ...` here exits 127 with "npm: not found". Prepending fnm's
+  # default-alias bin restores npm where fnm is installed, and is a no-op
+  # anywhere else because a PATH entry that does not exist is simply skipped.
   lint: >-
+    export PATH="$HOME/.local/share/fnm/aliases/default/bin:$PATH";
     npm run typecheck &&
     npm run imports:check &&
     npm run lint:check &&

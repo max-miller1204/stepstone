@@ -676,7 +676,28 @@
       "status": "open",
       "createdAt": "2026-08-14T19:26:11.603Z",
       "updatedAt": "2026-08-14T19:26:11.603Z"
+    },
+    {
+      "id": "retire-mcp-and-claude-plugin-surfaces",
+      "title": "Retire MCP and Claude plugin surfaces",
+      "description": "Make the stepstone CLI the sole cross-harness capability transport. Remove the stepstone-mcp executable, MCP server and adapter, protocol metadata, tests, documentation, packaging exercises, and MCP-only runtime dependencies. Retire the Claude Code plugin and its generated skill copy, MCP declaration, and slash commands because the standalone Agent Skill and CLI provide the supported workflow without a client-specific adapter. Preserve the terminal board, Pi extension, shared application service, roadmap format, locking, and confirmation guardrails. No worklist data migration is required.",
+      "group": "Harness",
+      "status": "open",
+      "createdAt": "2026-08-14T19:52:07.371Z",
+      "updatedAt": "2026-08-14T19:52:07.371Z"
+    },
+    {
+      "id": "make-skill-first-onboarding-explicit",
+      "title": "Make skill-first onboarding explicit",
+      "description": "Present the Agent Skill as the preferred guidance installation and project init as an alternative fallback for harnesses that read AGENTS.md but do not support skills. Reduce the generated AGENTS block to the canonical storage rule, CLI invocation, JSON-output preference, exact approval guardrails, capture workflow, and project help pointer instead of duplicating the full command and flag manual. Update the README and generated documentation so users are never told to install both surfaces, and reconcile open roadmap descriptions that still assume MCP resources or the Claude plugin. Keep every generated artifact sourced from the command contract.",
+      "group": "Harness",
+      "dependsOn": [
+        "retire-mcp-and-claude-plugin-surfaces"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-14T19:52:07.371Z",
+      "updatedAt": "2026-08-14T19:52:07.371Z"
     }
   ],
-  "revision": 274
+  "revision": 275
 }
