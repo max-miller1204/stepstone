@@ -9,8 +9,6 @@ npx -y stepstone@latest project ui
 The board is an interactive full-screen view over the same Project Goals, so the roadmap can be read and edited from a shell without starting any particular agent session.
 It is for a human at the keyboard: it holds the terminal until they quit, requires a terminal and refuses to start without one, which keeps `list` and `--json` the read path for scripts and agents.
 
-That is why the Claude Code plugin's `/stepstone:ui` prints the command to paste rather than running it: a slash command runs inside the agent's process, which does not own the terminal the board needs.
-
 ## Layout
 
 The board is a split view: the goal list on the left, the selected goal's status, timestamps, identifier, and complete description on the right.

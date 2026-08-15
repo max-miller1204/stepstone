@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
 	collectExecutableModuleGraph,
 	collectModuleGraph,
+	executableEntryPoints,
 	findDisallowedImports,
 	moduleImports,
 } from "../scripts/cli-import-graph.ts";
@@ -150,7 +151,7 @@ describe("CLI module scanner", () => {
 	});
 });
 
-describe("the module graph behind the compiled bins", () => {
+describe("the module graph behind compiled executables", () => {
 	it("reaches the terminal board, which is where a Pi import is most tempting", async () => {
 		const graph = await collectModuleGraph();
 		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
@@ -158,13 +159,9 @@ describe("the module graph behind the compiled bins", () => {
 		expect(files).toContain("src/tui/goal-board.ts");
 	});
 
-	it("reaches the MCP adapter, which only the second entry point pulls in", async () => {
-		// Walking the CLI alone leaves this subtree unread, so an import added here
-		// would be checked by nothing until the pack-and-install job runs.
+	it("walks every configured executable entry point", async () => {
 		const graph = await collectExecutableModuleGraph();
-		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
-		expect(files).toContain("src/mcp.ts");
-		expect(files).toContain("src/mcp-server.ts");
+		for (const entry of executableEntryPoints) expect(graph.has(entry)).toBe(true);
 	});
 
 	it("imports nothing at runtime that a Pi-free install could not resolve", async () => {

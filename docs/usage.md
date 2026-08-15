@@ -16,8 +16,8 @@ Run the command from inside the target repository, or pass `--cwd <dir>` to reso
 `--file <path>`, and the `$STEPSTONE_WORKLIST` environment variable, name a goal file outright instead of letting the repository resolve one; see [docs/storage.md](storage.md).
 
 The CLI ships as a compiled bin in the published package, so it needs Node 20 or newer and nothing else.
-Every Pi peer dependency is optional, and neither compiled bin loads one, so `npx -y stepstone@latest` runs with no Pi installation.
-That is enforced by import scans over both module graphs and by a CI job that packs the tarball and drives both installed bins in a scratch directory with no Pi present; see [docs/development.md](https://github.com/max-miller1204/stepstone/blob/main/docs/development.md).
+The compiled bin loads no Pi peer, so `npx -y stepstone@latest` runs with no Pi installation.
+That is enforced by import scans over every executable module graph and by a CI job that packs the tarball and drives every installed bin in a scratch directory with no Pi present; see [docs/development.md](https://github.com/max-miller1204/stepstone/blob/main/docs/development.md).
 
 ## Running from a checkout
 
@@ -39,9 +39,8 @@ The read, marker validation, and atomic replacement run under a cross-process re
 Run `init` inside the target repository or pass `--cwd <dir>`.
 `--file <path>` and `$STEPSTONE_WORKLIST` affect goal-file resolution for other actions but never the `AGENTS.md` target.
 
-After refreshing the block, `init` prints the canonical optional skill installation command and MCP client process configuration.
-It does not execute the skill installer or edit MCP client configuration because installation scope and configuration location are choices owned by each harness.
-Neither line it prints names the Claude Code plugin, which bundles both of those integrations into one install; see [docs/skill.md](skill.md#claude-code-plugin-versus-the-standalone-skill).
+After refreshing the block, `init` prints the canonical optional skill installation command.
+It does not execute the skill installer because installation scope is a choice owned by each harness.
 
 ## Reading the roadmap
 

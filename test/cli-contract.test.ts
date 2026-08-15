@@ -12,7 +12,6 @@ import {
 	DOCS_PATH,
 	flagActionScope,
 	LEGACY_WORKLIST_DIRECTORY,
-	mcpActionDescription,
 	renderAgentsMarkdownBlock,
 	renderCliGuide,
 	renderCliUsage,
@@ -342,12 +341,7 @@ describe("single CLI command contract", () => {
 		if (!action?.captureWorkflow) throw new Error("apply-plan capture workflow is missing");
 		expect(action.name).toBe("apply-plan");
 
-		const surfaces = [
-			renderSkillMarkdown(),
-			renderAgentsMarkdownBlock(),
-			renderCliGuide(),
-			mcpActionDescription(action),
-		];
+		const surfaces = [renderSkillMarkdown(), renderAgentsMarkdownBlock(), renderCliGuide()];
 		for (const step of action.captureWorkflow.steps) {
 			for (const surface of surfaces) expect(surface).toContain(step);
 		}

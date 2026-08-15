@@ -13,14 +13,14 @@ Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to sta
 ## Install
 
 **Any coding harness.**
-Initialize or refresh the repository's [harness-neutral `AGENTS.md` guidance](docs/usage.md#initializing-agent-guidance), then follow whichever optional integration instructions apply to your client:
+Initialize or refresh the repository's [harness-neutral `AGENTS.md` guidance](docs/usage.md#initializing-agent-guidance), then install the optional Agent Skill if your client supports it:
 
 ```sh
 npx -y stepstone@latest project init
 ```
 
 The command changes only the stable marker-delimited Stepstone block in `<git-root>/AGENTS.md` and preserves every byte of authored guidance around it.
-It prints the canonical skill installation command and MCP process configuration, but it does not run an installer or modify a client's configuration because those scopes and locations depend on the harness.
+It prints the canonical skill installation command, but it does not run an installer because installation scope depends on the harness.
 Run it inside the target repository or select one with `--cwd`; `--file` and `$STEPSTONE_WORKLIST` select goal storage for other actions and never redirect the `AGENTS.md` target.
 
 **Any shell, script, or coding agent.**
@@ -30,28 +30,12 @@ There is nothing to install: the CLI runs from npm on demand, in any Git reposit
 npx -y stepstone@latest project list
 ```
 
-**Claude Code plugin.**
-Add this repository's marketplace, then install the self-contained plugin:
-
-```text
-/plugin marketplace add max-miller1204/stepstone
-/plugin install stepstone@stepstone
-```
-
-The plugin bundles the Stepstone skill, a cache-local MCP server, and the namespaced read commands `/stepstone:list`, `/stepstone:next`, `/stepstone:ready`, and `/stepstone:waves`.
-`/stepstone:ui` hands a human at the keyboard the command that opens the existing [terminal board](docs/board.md), which they paste into their own terminal because a slash command cannot take over one.
-Each read command is one read of the matching MCP resource and nothing else, and the plugin deliberately provides no mutation slash commands.
-Ask Claude to change goals in natural language when you want it to use the guarded MCP tools.
-
-**Skill-only install for Claude Code and other agents the [`skills` CLI](https://github.com/vercel-labs/skills) supports.**
-Install only the [agent skill](docs/skill.md) when you want CLI guidance without the Claude Code plugin's bundled MCP server and slash commands:
+**Agent Skill.**
+Install the [standalone skill](docs/skill.md) when your coding agent supports the [`skills` CLI](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add max-miller1204/stepstone --skill stepstone -g
 ```
-
-**Any MCP client.**
-Configure the cross-harness [MCP server](docs/mcp.md), which exposes roadmap reads as resources and mutations as tools through the package's `stepstone-mcp` bin.
 
 **[Pi](https://pi.dev).**
 Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a model-facing tool, and Session Tasks:
@@ -59,10 +43,6 @@ Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a mo
 ```sh
 pi install npm:stepstone
 ```
-
-Installing the Claude Code plugin, installing the npm package, and installing the standalone skill are separate choices.
-The plugin includes a generated copy of the skill and the compiled MCP server; the standalone skill installs guidance that invokes the published CLI.
-See [docs/skill.md](docs/skill.md) for the distinction.
 
 ## Try it
 
@@ -98,11 +78,11 @@ Statuses are `open`, `active`, `done`, and `archived`; at most one goal is activ
 Dependency edges say which goals must land first, and blocked is derived from those edges on every read rather than stored, so nothing is ever left marked blocked after the work holding it up finished.
 `ready` is the whole parallel frontier, `next` is its first entry, and `waves` lays the unfinished goals out in the earliest layer each could start in.
 
-Every interface writes through one application service, one cross-process lock, and one atomic file replacement, so a CLI call, an MCP client, an open board, and a live Pi session can share a repository without corrupting the file or losing an edit.
+Every interface writes through one application service, one cross-process lock, and one atomic file replacement, so a CLI call, an open board, and a live Pi session can share a repository without corrupting the file or losing an edit.
 Optional preconditions, a file-wide revision and a single goal's `updatedAt`, turn a stale read into a reported conflict instead of a silent overwrite.
 
-Nothing the CLI or MCP server loads imports a Pi package, so `npx -y stepstone@latest` runs with no Pi installation.
-That is enforced by source-level import scans and by a CI job that packs the tarball and drives both installed bins with no Pi present.
+Nothing the CLI loads imports a Pi package, so `npx -y stepstone@latest` runs with no Pi installation.
+That is enforced by source-level import scans and by a CI job that packs the tarball and drives every installed executable with no Pi present.
 
 ## Documentation
 
@@ -115,8 +95,7 @@ That is enforced by source-level import scans and by a CI job that packs the tar
 | [docs/dispatch.md](docs/dispatch.md) | Harness-neutral dispatch contract and working bindings for detached Git worktrees and Herdr plus Treehouse |
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
-| [docs/skill.md](docs/skill.md) | The generated agent skill, the Claude Code plugin that bundles it, and how to install either |
-| [docs/mcp.md](docs/mcp.md) | The cross-harness MCP server: client configuration, resources, mutation tools, and confirmation guardrails |
+| [docs/skill.md](docs/skill.md) | The standalone generated Agent Skill and how to install it |
 | [docs/pi.md](docs/pi.md) | The Pi extension: Session Tasks, `/tasks`, the widget, the model tool, the module API |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | This repository's own Project Goals, generated from the goal file it commits |
 | [docs/development.md](docs/development.md) | Working on stepstone: checks, generated files, and the invariants behind them |

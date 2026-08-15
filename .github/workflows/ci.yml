@@ -27,13 +27,13 @@ jobs:
       - run: npm audit --omit=dev --omit=peer --audit-level=high
       - run: npm run pack:check
 
-  # Both bins promise that `npx stepstone` and `stepstone-mcp` work with nothing
-  # installed but Node, and this checkout cannot test that: it has every Pi peer
-  # present as a devDependency, so a leaked import resolves here and breaks only
-  # for users. This job packs the publishable tarball, installs it alone with no
-  # Pi present, and drives every released bin across its surface. It waits on
-  # `check`, whose fast source-level import scan reports the same regression in
-  # milliseconds and with a clearer message.
+  # Published executables promise to work with nothing installed but Node, and
+  # this checkout cannot test that directly: it has every Pi peer present as a
+  # devDependency, so a leaked import resolves here and breaks only for users.
+  # This job packs the publishable tarball, installs it alone with no Pi present,
+  # and drives every released bin across its surface. It waits on `check`, whose
+  # fast source-level import scan reports the same regression in milliseconds
+  # and with a clearer message.
   no-pi-install:
     needs: check
     runs-on: ubuntu-latest

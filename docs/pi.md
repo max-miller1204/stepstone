@@ -28,7 +28,7 @@ Try a checkout without installing it:
 pi -e ./src/extension.ts
 ```
 
-Every Pi peer dependency is declared optional, which is what lets the same package serve as a dependency-free CLI and MCP server elsewhere.
+Every Pi peer dependency is declared optional, which is what lets the same package serve as a dependency-free CLI elsewhere.
 How a release reaches npm and the gallery is in [docs/releasing.md](https://github.com/max-miller1204/stepstone/blob/main/docs/releasing.md).
 
 ## The dashboard
@@ -91,7 +91,7 @@ For Session Tasks, `add` optionally accepts exactly one of `beforeId` or `afterI
 Project Goal `move` takes the same anchors and reorders the roadmap; `add` and `update` also accept a `group`, where an empty string clears it, a `dependsOn` array that replaces the goal's edges, and a `links` array of absolute HTTP or HTTPS URLs that replaces its informational links.
 Empty arrays clear dependencies or links.
 Project Goal `start` is the dispatch claim: it takes exactly one of a `branch` naming what is working on the goal or `clear=true` releasing an abandoned claim, leaves the goal's status alone, and keeps a claimed goal out of the ready frontier until `start` with `clear` or `complete` releases it.
-`update`, `start`, `set_active`, `complete`, `reopen`, `archive`, and `delete` also accept `expectedUpdatedAt`, the target goal's exact `updatedAt` from the caller's last read, so a claim or a lifecycle change sent from a stale read returns a typed conflict instead of overwriting a newer one; like the same field on [the MCP server](mcp.md#exact-confirmation-guardrails), it is a concurrency precondition and never stands in for `confirm`.
+`update`, `start`, `set_active`, `complete`, `reopen`, `archive`, and `delete` also accept `expectedUpdatedAt`, the target goal's exact `updatedAt` from the caller's last read, so a claim or a lifecycle change sent from a stale read returns a typed conflict instead of overwriting a newer one; it is a concurrency precondition and never stands in for `confirm`.
 
 Moves preserve the task ID, title, status, and Project Goal association.
 Self-placement, already-satisfied placement, identical Session Task updates, and repeated status changes succeed without writing another session snapshot.
@@ -100,7 +100,7 @@ Session Tasks use concise, self-contained titles without descriptions.
 Agents are instructed to split non-trivial work into several concrete, independently completable Session Tasks instead of copying the broad end goal into one task.
 Session Task statuses are `todo`, `doing`, and `done`, while Project Goal statuses are `open`, `active`, `done`, and `archived`, and only activation is a non-destructive direct Project Goal status change.
 
-The tool's prompt carries the brainstorm-to-approved-plan capture workflow for Project Goals, rendered from the same command contract as the CLI guide, the generated skill, the AGENTS block, and the MCP metadata, so the steps stay written once, in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
+The tool's prompt carries the brainstorm-to-approved-plan capture workflow for Project Goals, rendered from the same command contract as the CLI guide, the generated skill, and the AGENTS block, so the steps stay written once, in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
 On this surface the preview they allow is an `apply-plan` call with `dryRun=true`, which is never the user's approval, and an approved batch is applied by exactly one mutating `apply-plan` call rather than a sequence of `add` calls.
 
 The tool's schema uses `StringEnum` for string enums, which keeps it compatible with Google providers.
