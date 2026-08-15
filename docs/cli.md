@@ -2,7 +2,7 @@
 
 # stepstone CLI
 
-Manage a repository's Project Goals in `<git-root>/.worklist/worklist.json` from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, an MCP client, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
+Manage a repository's Project Goals in `<git-root>/.worklist/worklist.json` from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
 
 ## Invocation
 
@@ -17,7 +17,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- One goal-file resolution order applies in every roadmap interface, in the CLI, the MCP server, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- One goal-file resolution order applies in every roadmap interface, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
 - Linked worktrees may read either committed roadmap, but a mutation that would change `.worklist/worklist.json` or `.pi/worklist.json` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.
 - A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no `git worktree add` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a `--file` or `$STEPSTONE_WORKLIST` store.
@@ -159,7 +159,7 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 ## Agent guidance
 
 - Prefer --json and read the deterministic result envelope instead of parsing human output.
-- Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill and MCP setup guidance but never installs or registers either integration.
+- Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill setup guidance but never installs it.
 - Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.
 - Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.

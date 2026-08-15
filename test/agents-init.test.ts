@@ -70,7 +70,7 @@ function markerCount(contents: string, marker: string): number {
 }
 
 describe("project init AGENTS.md generation", () => {
-	it("targets --cwd while ignoring --file and STEPSTONE_WORKLIST, then only offers integrations", async () => {
+	it("targets --cwd while ignoring --file and STEPSTONE_WORKLIST, then offers skill setup", async () => {
 		const root = await tempGitRepo();
 		const caller = await mkdtemp(join(tmpdir(), "stepstone-agents-caller-"));
 		const explicitWorklist = join(caller, "explicit.json");
@@ -92,11 +92,6 @@ describe("project init AGENTS.md generation", () => {
 				agentsPath: string;
 				integrations: {
 					skill: { command: string };
-					mcp: {
-						config: {
-							mcpServers: Record<string, { command: string; args: string[]; cwd: string }>;
-						};
-					};
 				};
 			};
 			meta: { changed: boolean; semanticNoOp: boolean; cliVersion: string };
@@ -105,15 +100,7 @@ describe("project init AGENTS.md generation", () => {
 		expect(envelope.result.integrations.skill.command).toBe(
 			CLI_COMMAND_CONTRACT.agentSetup.skillInstallCommand,
 		);
-		expect(envelope.result.integrations.mcp.config).toEqual({
-			mcpServers: {
-				[CLI_COMMAND_CONTRACT.agentSetup.mcp.name]: {
-					command: CLI_COMMAND_CONTRACT.agentSetup.mcp.command,
-					args: [...CLI_COMMAND_CONTRACT.agentSetup.mcp.args],
-					cwd: root,
-				},
-			},
-		});
+		expect(Object.keys(envelope.result.integrations)).toEqual(["skill"]);
 		// init reports through the same envelope boundary as every other action, so
 		// the metadata the CLI stamps for all of them has to reach this one too.
 		const manifest = JSON.parse(await readFile(resolve("package.json"), "utf8")) as { version: string };
@@ -138,8 +125,10 @@ describe("project init AGENTS.md generation", () => {
 		expect(markerCount(written, AGENTS_BLOCK_START)).toBe(1);
 		expect(markerCount(written, AGENTS_BLOCK_END)).toBe(1);
 		expect(result.stdout).toContain(CLI_COMMAND_CONTRACT.agentSetup.skillInstallCommand);
-		expect(result.stdout).toContain("--package");
-		expect(result.stdout).toContain("were not installed or registered");
+		expect(result.stdout).toContain("Optional integration was not installed:");
+		expect(result.stdout).toContain("Choose the skill installation scope for your harness.");
+		expect(result.stdout).not.toContain("--package");
+		expect(result.stdout).not.toMatch(/MCP|Claude Code plugin/i);
 	});
 
 	it("replaces one stale block while preserving the exact prefix and suffix", async () => {

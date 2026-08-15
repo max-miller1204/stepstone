@@ -11,8 +11,6 @@
 		"cli",
 		"agent",
 		"claude-code",
-		"claude-code-plugin",
-		"mcp",
 		"pi-package",
 		"pi",
 		"extension"
@@ -35,15 +33,11 @@
 		"!docs/development.md",
 		"!docs/releasing.md",
 		".claude/skills/stepstone",
-		".claude-plugin",
-		"commands",
-		"skills/stepstone",
 		"README.md",
 		"package.json"
 	],
 	"bin": {
-		"stepstone": "dist/cli.js",
-		"stepstone-mcp": "dist/mcp.js"
+		"stepstone": "dist/cli.js"
 	},
 	"main": "./src/extension.ts",
 	"exports": {
@@ -58,14 +52,13 @@
 	},
 	"scripts": {
 		"worklist": "node ./src/cli.ts",
-		"mcp": "node ./src/mcp.ts",
 		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
 		"docs": "node ./scripts/generate-docs.ts",
 		"docs:check": "node ./scripts/generate-docs.ts --check",
 		"imports:check": "node ./scripts/cli-import-graph.ts",
 		"no-pi-install:check": "node ./scripts/no-pi-install-check.ts",
 		"prepack": "npm run build",
-		"version": "npm run docs && git add .claude-plugin/plugin.json",
+		"version": "npm run docs",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
@@ -78,14 +71,10 @@
 		"verify": "npm run check && npm run pack:check"
 	},
 	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.30.0",
-		"proper-lockfile": "^4.1.2",
-		"zod": "^4.4.3"
+		"proper-lockfile": "^4.1.2"
 	},
 	"bundledDependencies": [
-		"@modelcontextprotocol/sdk",
-		"proper-lockfile",
-		"zod"
+		"proper-lockfile"
 	],
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": "*",

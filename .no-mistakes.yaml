@@ -13,7 +13,5 @@ commands:
 
 ignore_patterns:
   - ".claude/skills/stepstone/SKILL.md"
-  - ".claude-plugin/marketplace.json"
-  - ".claude-plugin/plugin.json"
   - "docs/cli.md"
   - "docs/ROADMAP.md"

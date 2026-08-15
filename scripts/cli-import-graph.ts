@@ -1,17 +1,16 @@
 /**
- * Fails when either compiled executable's module graph stops being runnable
- * with nothing installed but Node.
+ * Fails when a compiled executable's module graph stops being runnable with
+ * nothing installed but Node.
  *
  *   npm run imports:check
  *
- * The compiled bins ship to people who run `npx stepstone` or configure
- * `stepstone-mcp` with no Pi installation, so every runtime import they reach
- * has to resolve from Node's builtins or the package's own `dependencies`.
- * This repository installs every Pi peer as a devDependency, so a stray
- * `@earendil-works/*` import resolves here and fails only for those users.
- * Reading the sources catches that the moment the import is written, well
- * before the pack-and-install job in scripts/no-pi-install-check.ts proves the
- * same thing the slow way.
+ * The compiled executables ship to people with no Pi installation, so every
+ * runtime import they reach has to resolve from Node's builtins or the package's
+ * own `dependencies`. This repository installs every Pi peer as a devDependency,
+ * so a stray `@earendil-works/*` import resolves here and fails only for users.
+ * Reading the sources catches that the moment the import is written, well before
+ * the pack-and-install job in scripts/no-pi-install-check.ts proves the same
+ * thing the slow way.
  *
  * `import type` and `export type` statements are erased before a bin runs and
  * are therefore allowed, which is what lets src/session-store.ts keep its Pi
@@ -26,7 +25,7 @@ import { dirname, extname, relative, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const entryPoint = resolve(repoRoot, "src/cli.ts");
-export const executableEntryPoints = [entryPoint, resolve(repoRoot, "src/mcp.ts")];
+export const executableEntryPoints = [entryPoint];
 
 export interface ModuleImport {
 	specifier: string;
@@ -301,10 +300,10 @@ export async function collectModuleGraph(entry = entryPoint): Promise<Map<string
 }
 
 /**
- * The one graph the invariant is about: every module either compiled executable
- * pulls in, merged. Walking a single entry point leaves the other bin's imports
- * unread, so a caller that wants the guarded surface asks for this rather than
- * naming an entry point of its own.
+ * The merged graph behind every compiled executable.
+ *
+ * A caller that wants the guarded surface asks for this rather than naming one
+ * entry point, so adding an executable extends the same invariant.
  */
 export async function collectExecutableModuleGraph(): Promise<Map<string, ModuleImport[]>> {
 	const graphs = await Promise.all(executableEntryPoints.map((entry) => collectModuleGraph(entry)));

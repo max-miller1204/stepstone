@@ -4,26 +4,14 @@ import { glob, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { beforeAll, describe, expect, it } from "vitest";
-import {
-	CLAUDE_PLUGIN_MANIFEST_PATH,
-	CLI_COMMAND_CONTRACT,
-	type ClaudePluginMcpServer,
-	type ClaudePluginPackageMetadata,
-	renderClaudePluginArtifacts,
-	renderSkillMarkdown,
-	resolveClaudePluginMcpServer,
-	SKILL_PATH,
-} from "../src/cli-contract.ts";
+import { CLI_COMMAND_CONTRACT, renderSkillMarkdown, SKILL_PATH } from "../src/cli-contract.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
 import { DOCS_DIRECTORY, documentationPages } from "./docs-pages.ts";
 import { buildPackage, packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
 const compiledCliPath = resolve("dist/cli.js");
-const compiledMcpPath = resolve("dist/mcp.js");
 
 /**
  * Everything this checkout writes for itself rather than for an install.
@@ -76,51 +64,19 @@ describe("published stepstone package", () => {
 		await buildPackage();
 	}, 60_000);
 
-	it("compiles both executables to plain JavaScript entry points", async () => {
-		const [compiledCli, compiledMcp] = await Promise.all([
-			readFile(compiledCliPath, "utf8"),
-			readFile(compiledMcpPath, "utf8"),
-		]);
-		for (const compiled of [compiledCli, compiledMcp]) {
+	it("compiles every published executable to a plain JavaScript entry point", async () => {
+		const manifest = parseJson<{ bin?: Record<string, string> }>(
+			await readFile(resolve("package.json"), "utf8"),
+		);
+		const entryPaths = Object.values(manifest.bin ?? {});
+		expect(entryPaths.length, "package.json publishes no executable").toBeGreaterThan(0);
+		const compiledEntries = await Promise.all(entryPaths.map((entry) => readFile(resolve(entry), "utf8")));
+		for (const compiled of compiledEntries) {
 			expect(compiled.startsWith("#!/usr/bin/env node")).toBe(true);
-			// Node refuses TypeScript under node_modules; neither bin may need type stripping.
+			// Node refuses TypeScript under node_modules; no bin may need type stripping.
 			expect(compiled).not.toMatch(/from "\.\/[^"]+\.ts"/);
 		}
-		expect(compiledCli).toContain('from "./application-service.js"');
-		expect(compiledMcp).toContain('from "./mcp-server.js"');
-	});
-
-	it("starts the compiled MCP server through the Claude plugin config", async () => {
-		const root = await mkdtemp(join(tmpdir(), "stepstone-plugin-mcp-"));
-		await execFileAsync("git", ["init", "-q"], { cwd: root });
-		const manifest = parseJson<{ mcpServers: Record<string, ClaudePluginMcpServer> }>(
-			await readFile(resolve(CLAUDE_PLUGIN_MANIFEST_PATH), "utf8"),
-		);
-		const configured = manifest.mcpServers[CLI_COMMAND_CONTRACT.binary];
-		if (!configured) throw new Error("Claude plugin manifest has no Stepstone MCP server");
-		const pluginRoot = resolve(".");
-		const server = resolveClaudePluginMcpServer(configured, { pluginRoot, projectDir: root });
-		const transport = new StdioClientTransport({
-			command: server.command,
-			args: server.args,
-			cwd: pluginRoot,
-			stderr: "pipe",
-			env: { ...getDefaultEnvironment(), ...server.env },
-		});
-		const client = new Client({ name: "stepstone-claude-plugin-test", version: "1.0.0" });
-		try {
-			await client.connect(transport);
-			const listed = await client.readResource({ uri: `${CLI_COMMAND_CONTRACT.binary}://worklist/list` });
-			const content = listed.contents[0];
-			expect(content && "text" in content ? parseJson(content.text) : undefined).toMatchObject({
-				ok: true,
-				scope: "project",
-				action: "list",
-				result: { goals: [] },
-			});
-		} finally {
-			await client.close();
-		}
+		expect(await readFile(compiledCliPath, "utf8")).toContain('from "./application-service.js"');
 	});
 
 	it("imports only declared dependencies, never a Pi peer", async () => {
@@ -265,20 +221,7 @@ describe("published stepstone package", () => {
 			expect(paths, `${path} is written for this checkout and must not be packaged`).not.toContain(path);
 		}
 		expect(paths, `${SKILL_PATH} must be packaged so an install carries the skill`).toContain(SKILL_PATH);
-		const packageMetadata = parseJson<ClaudePluginPackageMetadata>(
-			await readFile(resolve("package.json"), "utf8"),
-		);
-		for (const artifact of renderClaudePluginArtifacts(packageMetadata)) {
-			expect(paths, `${artifact.path} must be present in the installable Claude Code plugin`).toContain(
-				artifact.path,
-			);
-		}
-		expect(paths, "project-scoped .mcp.json must not ship with the Claude plugin").not.toContain(".mcp.json");
-		for (const dependency of ["@modelcontextprotocol/sdk", "proper-lockfile", "zod"]) {
-			expect(paths, `the isolated Claude plugin cache needs bundled ${dependency}`).toContain(
-				`node_modules/${dependency}/package.json`,
-			);
-		}
+		expect(paths).toContain("node_modules/proper-lockfile/package.json");
 		expect(paths, "README.md must be packaged; it is the package's front page").toContain("README.md");
 		// Every other documentation page ships, because it documents the package for
 		// somebody using it. Classified by walking the directory rather than from a
@@ -347,10 +290,8 @@ describe("published stepstone package", () => {
 		}
 	}, 60_000);
 
-	it("ships both compiled bins in the published package", async () => {
+	it("ships every declared compiled executable in the published package", async () => {
 		const paths = await packedFilePaths();
-		expect(paths).toContain("dist/cli.js");
-		expect(paths).toContain("dist/mcp.js");
 		expect(paths).toContain("src/extension.ts");
 
 		const packageJson = parseJson<{
@@ -358,15 +299,11 @@ describe("published stepstone package", () => {
 			bin?: Record<string, string>;
 			files: string[];
 		}>(await readFile(resolve("package.json"), "utf8"));
-		// Both are keyed off the contract, because the generated docs lean on both:
-		// `npx -y <binary>@latest` resolves the published package name, while the
-		// command it then runs is the bin key. Pinning only one lets a rename ship
-		// docs that name a package nobody published.
 		expect(packageJson.name).toBe(CLI_COMMAND_CONTRACT.binary);
-		expect(packageJson.bin).toEqual({
-			[CLI_COMMAND_CONTRACT.binary]: "dist/cli.js",
-			[`${CLI_COMMAND_CONTRACT.binary}-mcp`]: "dist/mcp.js",
-		});
+		expect(packageJson.bin?.[CLI_COMMAND_CONTRACT.binary]).toBe("dist/cli.js");
+		for (const entry of Object.values(packageJson.bin ?? {})) {
+			expect(paths).toContain(entry);
+		}
 		expect(packageJson.files).toContain("dist");
 	}, 60_000);
 });

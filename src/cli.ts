@@ -843,9 +843,6 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 	}
 
 	const skillCommand = CLI_COMMAND_CONTRACT.agentSetup.skillInstallCommand;
-	const mcp = CLI_COMMAND_CONTRACT.agentSetup.mcp;
-	const mcpProcess = { command: mcp.command, args: [...mcp.args], cwd: root };
-	const mcpConfig = { mcpServers: { [mcp.name]: mcpProcess } };
 	const envelope: WorklistApplicationResult = {
 		ok: true,
 		scope: "project",
@@ -859,10 +856,6 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 					command: skillCommand,
 					guidance:
 						"This command installs globally. Remove `-g` to choose project-local installation instead.",
-				},
-				mcp: {
-					config: mcpConfig,
-					guidance: "Merge this server entry into the MCP client's own configuration.",
 				},
 			},
 		},
@@ -881,11 +874,9 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 		[
 			status,
 			"",
-			"Optional integrations were not installed or registered:",
+			"Optional integration was not installed:",
 			`Skill installation: ${skillCommand}`,
-			"MCP client configuration:",
-			JSON.stringify(mcpConfig, null, 2),
-			"Choose the skill installation scope and MCP client configuration location for your harness.",
+			"Choose the skill installation scope for your harness.",
 		].join("\n"),
 	);
 }

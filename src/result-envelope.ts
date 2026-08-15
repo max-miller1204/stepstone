@@ -68,10 +68,10 @@ export interface WorklistResultMeta {
 	 * and the legacy file exist, whether or not the passed-over one holds any
 	 * goals.
 	 *
-	 * A human is told in prose, which a caller reading an envelope cannot be: the
-	 * CLI's stderr is where the failure envelope goes and an MCP client sees only
-	 * the JSON body, so the condition rides in the meta of every result, success
-	 * or failure, as the one place it can be read without matching on wording.
+	 * A human is told in prose, which a caller reading a JSON envelope cannot be:
+	 * stderr carries the failure envelope, so the condition rides in the meta of
+	 * every result, success or failure, as the one place it can be read without
+	 * matching on wording.
 	 */
 	shadowedWorklistPath?: string;
 }

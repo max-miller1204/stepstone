@@ -106,7 +106,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- One goal-file resolution order applies in every roadmap interface, in the CLI, the MCP server, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- One goal-file resolution order applies in every roadmap interface, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
 - Linked worktrees may read either committed roadmap, but a mutation that would change `.worklist/worklist.json` or `.pi/worklist.json` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.
 - A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no `git worktree add` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a `--file` or `$STEPSTONE_WORKLIST` store.

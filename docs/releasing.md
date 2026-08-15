@@ -32,7 +32,7 @@ npm version patch
 # Use `npm version minor` or `npm version major` when appropriate.
 ```
 
-The manifest's `version` script regenerates the documents and stages `.claude-plugin/plugin.json` into that same commit, because the Claude Code plugin manifest carries the package version and a release commit that left it behind would ship a plugin advertising the previous one.
+The manifest's `version` script regenerates the generated documents before Git creates the release commit.
 
 Push the version commit and its tag, which is the step that publishes:
 

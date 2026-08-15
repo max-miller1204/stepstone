@@ -12,9 +12,8 @@ npm run no-pi-install:check
 ```
 
 `npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
-`npm run mcp` runs this checkout's stdio MCP server, which an MCP client can be pointed at instead of the published `stepstone-mcp` bin; see [docs/mcp.md](mcp.md).
-All of them run a TypeScript entry point straight from the checkout, so they need Node 22.18 or newer for native type stripping.
-The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for the published bins, which Node refuses to type-strip under `node_modules`.
+The `node src/cli.ts` entry point needs Node 22.18 or newer for native type stripping.
+The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for published executables, which Node refuses to type-strip under `node_modules`.
 
 ## Checks
 
@@ -22,9 +21,9 @@ The package ships TypeScript source directly because Pi loads extensions through
 | --- | --- |
 | `npm run check` | Types, the import scan, Biome lint and format, and the whole test suite |
 | `npm run docs:check` | The generated documents match the sources they are rendered from |
-| `npm run imports:check` | Nothing either compiled bin loads imports a Pi package |
+| `npm run imports:check` | Nothing a compiled executable loads imports a Pi package |
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
-| `npm run no-pi-install:check` | The packed, installed CLI and MCP bins, and the plugin's MCP configuration, all work with no Pi present |
+| `npm run no-pi-install:check` | Every packed and installed executable works with no Pi present |
 | `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
@@ -32,32 +31,22 @@ The test suite includes real Pi RPC load tests in temporary repositories, so it 
 `test/dispatch-docs.test.ts` runs the shell recipes in [docs/dispatch.md](dispatch.md) rather than a driver written beside it: each block is selected by its `# dispatch-example:` marker comment and executed over real Git worktrees, with fake `npx`, `herdr`, and `treehouse` executables ahead of them on `PATH` standing in for the boundaries this project does not own.
 Editing one of those blocks therefore changes what is executed, and renaming or dropping a marker fails that file instead of quietly leaving a binding unexercised.
 
-`npm run imports:check` reads the merged module graph behind both published entry points, `src/cli.ts` and `src/mcp.ts`, and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
-Both entry points are named in `executableEntryPoints` in `scripts/cli-import-graph.ts`, which this check and the test suite both walk, so a new executable joins the scan by being added there.
+`npm run imports:check` reads the merged module graph behind every entry in `executableEntryPoints` in `scripts/cli-import-graph.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
+Adding a published executable means adding its source entry there, so the check and its tests walk the expanded graph.
 That is why a Pi type belongs in an `import type` statement rather than an inline `import { type Foo }`: the latter is a runtime import the scan will reject.
 
 `npm run no-pi-install:check` is the slower proof behind it.
-It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and asserts the exit codes and `--json` envelopes of the installed CLI bin across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
-It then speaks MCP over stdio to the installed server bin, reading a resource and calling a mutation tool, so the second executable is proven to load from the same Pi-free install rather than only being packed into it.
-Which bins it drives comes from the manifest's `bin` map compared against `BIN_EXERCISES` in the script, so publishing a third executable without teaching this check to start it fails the job rather than shipping a bin nobody ever loaded.
-It finally starts that server once more the way Claude Code starts a plugin: from the installed manifest's inline MCP declaration, with the plugin placeholders expanded through `resolveClaudePluginMcpServer` and the process left in the plugin's own cache directory rather than in the repository, which is the only arrangement in which a plugin declaration that was never packed, or that drifted from the contract, actually fails.
-It runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
+It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and drives every published executable through the behavior-specific function named in `BIN_EXERCISES`.
+The manifest's `bin` map is compared against that exercise map before packing, so a new executable cannot ship without being started from the isolated install.
+The project CLI exercise asserts exit codes and `--json` envelopes across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
+The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 ## Generated files
 
-`docs/cli.md`, `.claude/skills/stepstone/SKILL.md`, the Claude Code plugin files, and the marker-delimited Stepstone block in `AGENTS.md` are generated from `src/cli-contract.ts` by `scripts/generate-docs.ts`.
+`docs/cli.md`, `.claude/skills/stepstone/SKILL.md`, and the marker-delimited Stepstone block in `AGENTS.md` are generated from `src/cli-contract.ts` by `scripts/generate-docs.ts`.
 `docs/ROADMAP.md` is generated by the same script from this repository's own `.worklist/worklist.json`, rendered by `src/roadmap.ts`.
 Never hand-edit a fully generated file or the generated block: run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
 The AGENTS renderer replaces only its one valid marker pair, preserves all authored bytes outside it, and refuses malformed or duplicate markers instead of clobbering prose.
-
-The plugin files are `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, one command per plugin action under `commands/`, and `skills/stepstone/SKILL.md`.
-The manifest declares the bundled MCP server inline, in its own `mcpServers` field, and nothing generates a repository-root `.mcp.json`.
-Claude Code reads that path as this checkout's own project-scoped configuration, where `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` are never expanded, so the same bytes that start the server for a plugin install register one a contributor's session cannot start: `test/claude-plugin.test.ts` fails if that file reappears here, and `test/compiled-cli.test.ts` fails if it reappears in the tarball.
-`skills/stepstone/SKILL.md` is the installable skill plus a `user-invocable: false` line, so a Claude Code user gets the same guidance without the plugin adding a skill they can invoke themselves.
-Which actions become commands is a `claudePlugin` field on the contract action rather than a list kept here, and a mutating or confirmation-guarded action may never carry it.
-The two `.claude-plugin` manifests are the only generated files rendered from `package.json` rather than from the contract, which checks only that the package still carries the contract's name, so the plugin's own name, version, description, and author cannot drift from the published package's.
-`commands/` is generated whole: `npm run docs` deletes any entry the contract no longer renders and `npm run docs:check` reports it instead, so an action that stops being a plugin command cannot leave a working slash command behind.
-Biome's formatter is turned off for the generated JSON in `biome.json`, because it collapses short arrays onto one line while the generator writes one element per line, and a formatter and a generator that disagree about the same bytes fight forever.
 
 Because the roadmap page is a projection of the goal file, changing a goal makes it stale.
 Regenerate it in the same commit that changes the goal, or the check reports the page and the roadmap disagreeing about what this project is doing.
@@ -67,10 +56,9 @@ The goal-file directory names and the environment variable live beside it, so th
 
 ## What the published package carries
 
-The tarball carries what an install reads and nothing else: `src/`, `dist/`, the generated skill, the Claude Code plugin files, `npm-shrinkwrap.json`, `README.md`, and the `docs/` pages that document the package.
+The tarball carries what an install reads and nothing else: `src/`, `dist/`, the generated skill, `npm-shrinkwrap.json`, `README.md`, and the `docs/` pages that document the package.
 
-The plugin ships inside that same tarball because its marketplace entry installs it from npm, so `/plugin install` and `npx` download one artifact rather than two.
-That is also why the lockfile is `npm-shrinkwrap.json` rather than `package-lock.json`: npm ignores a dependency's `package-lock.json`, so only a shrinkwrap pins the runtime tree that a plugin's isolated cache installs.
+The shrinkwrap pins the runtime dependency tree npm installs for the published package.
 It is npm's file to write, so refresh it by running an install rather than by editing it.
 
 This page, [docs/releasing.md](releasing.md), [docs/ROADMAP.md](ROADMAP.md), and `AGENTS.md` are written for this checkout, so the manifest's `files` keeps them out.

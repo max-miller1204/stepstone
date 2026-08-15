@@ -7,16 +7,15 @@ The file is human-readable and meant to be committed.
 
 ## Which file a repository has
 
-One resolution order applies everywhere, in the CLI, the MCP server, the terminal board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+One resolution order applies everywhere, in the CLI, the terminal board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, which only selects the target Git repository.
-`--file` is a CLI flag, so an interface that takes no flags, such as the MCP server, overrides the location through `$STEPSTONE_WORKLIST` alone.
 
 Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps.
 A repository with neither file writes `.worklist/worklist.json`.
 
 When both files exist, the current path wins and every goal operation warns, because quietly ignoring a populated legacy file would look exactly like data loss.
 Merge them by hand; no command picks a winner for you.
-A caller that reads envelopes rather than prose, `--json` on the CLI or any MCP response, gets that warning as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
+A caller using `--json` gets that warning as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
 
 Nothing remembers where that resolution landed: every operation asks again.
 A second worklist arriving mid-session, from a branch checkout, a merge, or a colleague on an older release, is therefore picked up rather than missed, and a long-lived reader such as an open board or a live session warns about it the first time it appears rather than on every turn.
@@ -41,7 +40,7 @@ A formatter that reindents it will fight every mutation, and reformatting is not
 ## Writes
 
 Every interface writes through one application service, which serializes physical writes behind a cross-process lock and replaces the file atomically.
-A CLI call, an MCP client, an open board, and a live Pi session may therefore all be working on one repository without corrupting the file or losing an edit.
+A CLI call, an open board, and a live Pi session may therefore all be working on one repository without corrupting the file or losing an edit.
 
 A malformed or unsupported file is reported and never overwritten automatically, so a corrupt roadmap is a question for its owner rather than something a tool silently replaces.
 Project Goal operations are unavailable outside a Git repository; in a Pi session, Session Tasks continue to work normally there.
