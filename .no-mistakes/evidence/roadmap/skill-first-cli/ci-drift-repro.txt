@@ -1,0 +1,69 @@
+$ git checkout 98efccb -- docs/ROADMAP.md   # simulate pushing worklist.json without regenerating the roadmap
+$ npm run docs:check
+  
+  > stepstone@0.9.3 docs:check
+  > node ./scripts/generate-docs.ts --check
+  
+  Stale generated file(s): docs/ROADMAP.md
+  Run `npm run docs` and commit the result.
+  exit=1
+
+$ npx vitest run test/roadmap.test.ts
+  
+   RUN  v4.1.10 /home/max/.no-mistakes/worktrees/b8259d22ae4a/01M03F5HWBDZDCFJD063ZEJMVZ
+  
+   ❯ test/roadmap.test.ts (13 tests | 1 failed) 10ms
+       × keeps the committed roadmap page byte-identical to a render of the committed goals 7ms
+  
+  ⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+  
+   FAIL  test/roadmap.test.ts > generated roadmap > keeps the committed roadmap page byte-identical to a render of the committed goals
+  AssertionError: docs/ROADMAP.md is stale; run `npm run docs` to regenerate it: expected '<!-- Generated from .worklist/worklis…' to be '<!-- Generated from .worklist/worklis…' // Object.is equality
+  
+  - Expected
+  + Received
+  
+  @@ -5,11 +5,11 @@
+    Every Project Goal in this repository, rendered from `.worklist/worklist.json` so the roadmap reads here without a terminal.
+    Each section is a group goals are filed under, and the goals inside one are in the roadmap's canonical file order.
+    Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
+    A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
+  
+  - 54 goals: 13 open, 38 done, 3 archived.
+  + 52 goals: 11 open, 38 done, 3 archived.
+  
+    ## Orchestrator
+  
+    - **[archived]** Integrate Project Goal launch with pi-orchestrator - `future-start-goal`
+  
+  @@ -231,20 +231,10 @@
+      The consequence is worse than the merge conflict merge-driver is scoped to prevent. With one copy, two writers collide loudly at merge time. Across worktrees they diverge silently: two goal files, two locks, both valid, drifting until someone notices. This is not hypothetical - ipod-shuffle-linux carries worklist(active) and worklist(done) commits landed on feature branches, because marking a goal started or finished naturally happens while that feature branch is checked out. The convention is hardest to honour in exactly the moments the workflow most wants to write.
+  
+      Make a mutation from a linked worktree loud instead of silent, and decide the behaviour explicitly rather than by default: refuse and name the main worktree, warn and proceed, or redirect the write to the main worktree's file under its lock. Refusal is safest and matches the sole-writer rule, but it breaks any adapter that expects project start or project complete to run from inside a dispatched worktree, so root-session-recipe's claim-in-the-worktree, complete-on-main contract must be checked against whichever behaviour is chosen; redirect preserves that contract at the cost of a write crossing directories. Reads stay unrestricted in every case, since only mutations can fork the roadmap. Detect the linked worktree with git worktree list --porcelain, whose first entry is the main worktree, rather than deriving it from --git-common-dir, which under git init --separate-git-dir points outside the working tree entirely and whose parent is then unrelated to the checkout.
+  
+      Sequencing against worklist-path: both change the same resolution path, and worklist-path already requires one resolution order shared by the CLI, the board, the Pi extension and the MCP server. If worklist-path is scheduled first, fold this guard into that single resolution rather than landing it separately and rewriting it. Landing this first is still worthwhile if worklist-path is far out, because the divergence hazard goes live the moment a treehouse fan-out runs. Either way the guard covers the committed goal file only: worklist-path's gitignored siblings under .worklist/ are deliberately per-worktree local state for dispatch claims, branch-scoped focus and ephemeral board state, and must keep resolving per-worktree rather than collapsing to one shared directory.
+  -
+  - - **[open]** Retire MCP and Claude plugin surfaces - `retire-mcp-and-claude-plugin-surfaces`
+  -
+  -   Make the stepstone CLI the sole cross-harness capability transport. Remove the stepstone-mcp executable, MCP server and adapter, protocol metadata, tests, documentation, packaging exercises, and MCP-only runtime dependencies. Retire the Claude Code plugin and its generated skill copy, MCP declaration, and slash commands because the standalone Agent Skill and CLI provide the supported workflow without a client-specific adapter. Preserve the terminal board, Pi extension, shared application service, roadmap format, locking, and confirmation guardrails. No worklist data migration is required.
+  -
+  - - **[open, blocked]** Make skill-first onboarding explicit - `make-skill-first-onboarding-explicit`
+  -
+
+$ git checkout HEAD -- docs/ROADMAP.md   # restore the generated roadmap
+$ npm run docs:check
+  
+  > stepstone@0.9.3 docs:check
+  > node ./scripts/generate-docs.ts --check
+  
+  Generated files are up to date.
+$ npx vitest run test/roadmap.test.ts
+   RUN  v4.1.10 /home/max/.no-mistakes/worktrees/b8259d22ae4a/01M03F5HWBDZDCFJD063ZEJMVZ
+  
+  
+   Test Files  1 passed (1)
+        Tests  13 passed (13)
+     Start at  16:05:04
+     Duration  194ms (transform 78ms, setup 0ms, import 108ms, tests 7ms, environment 0ms)
+  
+$ git status --porcelain

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/max/.no-mistakes/worktrees/b8259d22ae4a/01M03F5HWBDZDCFJD063ZEJMVZ
+
+
+ Test Files  1 passed (1)
+      Tests  13 passed (13)
+   Start at  16:07:25
+   Duration  9.44s (transform 441ms, setup 0ms, import 558ms, tests 7.59s, environment 1ms)
+

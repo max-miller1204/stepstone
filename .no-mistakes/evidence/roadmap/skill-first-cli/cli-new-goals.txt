@@ -1,0 +1,46 @@
+$ stepstone project find CLI-only surfaces  # locate the two newly captured goals
+[open] retire-mcp-and-claude-plugin-surfaces: Retire MCP and Claude plugin surfaces
+
+$ stepstone project show retire-mcp-and-claude-plugin-surfaces
+retire-mcp-and-claude-plugin-surfaces: Retire MCP and Claude plugin surfaces
+status: open
+group: Harness
+created: 2026-08-14T19:52:07.371Z
+updated: 2026-08-14T19:52:07.371Z
+blocks:
+  make-skill-first-onboarding-explicit
+description:
+Make the stepstone CLI the sole cross-harness capability transport. Remove the stepstone-mcp executable, MCP server and adapter, protocol metadata, tests, documentation, packaging exercises, and MCP-only runtime dependencies. Retire the Claude Code plugin and its generated skill copy, MCP declaration, and slash commands because the standalone Agent Skill and CLI provide the supported workflow without a client-specific adapter. Preserve the terminal board, Pi extension, shared application service, roadmap format, locking, and confirmation guardrails. No worklist data migration is required.
+
+$ stepstone project show make-skill-first-onboarding-explicit
+make-skill-first-onboarding-explicit: Make skill-first onboarding explicit
+status: open (blocked)
+group: Harness
+created: 2026-08-14T19:52:07.371Z
+updated: 2026-08-14T19:52:07.371Z
+depends on:
+  retire-mcp-and-claude-plugin-surfaces [open] - waiting
+description:
+Present the Agent Skill as the preferred guidance installation and project init as an alternative fallback for harnesses that read AGENTS.md but do not support skills. Reduce the generated AGENTS block to the canonical storage rule, CLI invocation, JSON-output preference, exact approval guardrails, capture workflow, and project help pointer instead of duplicating the full command and flag manual. Update the README and generated documentation so users are never told to install both surfaces, and reconcile open roadmap descriptions that still assume MCP resources or the Claude plugin. Keep every generated artifact sourced from the command contract.
+
+$ stepstone project ready | tail   # the unblocked goal is on the frontier
+[open] merge-driver-structural-git-merge-for: merge-driver: structural git merge for worklist.json
+[open] focus-mode-show-only-session-tasks: focus-mode: show only Session Tasks linked to the active goal
+[open] task-promotion-promote-a-session-task: task-promotion: promote a Session Task into a Project Goal
+[open] archive-browsing-archived-goals-in-the: archive-browsing: archived goals in the Pi dashboard
+[open] first-class-resumable-dispatch-driver: First-class resumable dispatch driver
+[open] retire-mcp-and-claude-plugin-surfaces: Retire MCP and Claude plugin surfaces
+
+$ stepstone project waves | tail -12   # the dependent goal sits one wave later
+  [open] context-surface-show-the-active-goal: context-surface: show the active goal inside each harness
+  [open] branch-scoped-active-per-worktree: branch-scoped-active: per-worktree featured goal via links
+  [open] goal-checklist-acceptance-criteria: goal-checklist: acceptance criteria items per goal
+  [open] merge-driver-structural-git-merge-for: merge-driver: structural git merge for worklist.json
+  [open] focus-mode-show-only-session-tasks: focus-mode: show only Session Tasks linked to the active goal
+  [open] task-promotion-promote-a-session-task: task-promotion: promote a Session Task into a Project Goal
+  [open] archive-browsing-archived-goals-in-the: archive-browsing: archived goals in the Pi dashboard
+  [open] first-class-resumable-dispatch-driver: First-class resumable dispatch driver
+  [open] retire-mcp-and-claude-plugin-surfaces: Retire MCP and Claude plugin surfaces
+Wave 2 (2 goals):
+  [open] pi-tui-parity-mirror-board-polish-in: pi-tui-parity: mirror board polish in the Pi widget and dashboard
+  [open] make-skill-first-onboarding-explicit: Make skill-first onboarding explicit

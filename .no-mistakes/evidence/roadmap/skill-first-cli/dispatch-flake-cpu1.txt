@@ -1,0 +1,20 @@
+pinned to CPU 3, sharing it with 3 busy loops
+
+=== A) pre-fix (0.05s grace) ===
+  run  1: PASS
+  run  2: PASS
+  run  3: PASS
+  run  4: PASS
+  run  5: PASS
+  run  6: PASS
+  pre-fix: 6 passed, 0 failed
+
+=== B) fixed (1s documented default) ===
+  run  1: PASS
+  run  2: PASS
+  run  3: PASS
+  run  4: PASS
+  run  5: PASS
+  run  6: PASS
+  fixed: 6 passed, 0 failed
+

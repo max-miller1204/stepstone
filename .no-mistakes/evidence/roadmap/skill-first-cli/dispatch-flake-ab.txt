@@ -1,0 +1,35 @@
+host: 22 CPUs, background load: 24 busy loops (started below)
+
+=== A) pre-fix test file (98efccb: AGENT_STARTUP_GRACE_SECONDS=0.05 in the racy scenarios) ===
+  214:			AGENT_STARTUP_GRACE_SECONDS: "0.05",
+  242:			AGENT_STARTUP_GRACE_SECONDS: "0.05",
+  281:			AGENT_STARTUP_GRACE_SECONDS: "0.05",
+  349:			AGENT_STARTUP_GRACE_SECONDS: "0.05",
+  run  1: PASS
+  run  2: PASS
+  run  3: PASS
+  run  4: PASS
+  run  5: PASS
+  run  6: PASS
+  run  7: PASS
+  run  8: PASS
+  run  9: PASS
+  run 10: PASS
+  pre-fix: 10 passed, 0 failed out of 10
+
+=== B) fixed test file (c94295a: documented default 1s grace for every scenario) ===
+  26:const startupGraceSeconds = "1";
+  182:		AGENT_STARTUP_GRACE_SECONDS: startupGraceSeconds,
+  run  1: PASS
+  run  2: PASS
+  run  3: PASS
+  run  4: PASS
+  run  5: PASS
+  run  6: PASS
+  run  7: PASS
+  run  8: PASS
+  run  9: PASS
+  run 10: PASS
+  fixed: 10 passed, 0 failed out of 10
+
+worktree after restore:

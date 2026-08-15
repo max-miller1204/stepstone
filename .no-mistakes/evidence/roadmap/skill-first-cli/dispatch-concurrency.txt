@@ -1,0 +1,13 @@
+=== A) pre-fix test file (0.05s grace) under 6-way concurrency ===
+  round 1 done (6 pass / 0 fail cumulative)
+  round 2 done (12 pass / 0 fail cumulative)
+  round 3 done (18 pass / 0 fail cumulative)
+  pre-fix: 18 passed, 0 failed out of 18 concurrent runs
+
+=== B) fixed test file (1s documented default) under 6-way concurrency ===
+  round 1 done (6 pass / 0 fail cumulative)
+  round 2 done (12 pass / 0 fail cumulative)
+  round 3 done (18 pass / 0 fail cumulative)
+  fixed: 18 passed, 0 failed out of 18 concurrent runs
+
+worktree after restore:

@@ -1,0 +1,16 @@
+Documented Binding A launch vs a doomed agent that takes ~300ms to die
+
+AGENT_STARTUP_GRACE_SECONDS=0.05
+  snippet exit code ......... 0 (1 = agent death detected and custody released)
+  claim released ............ NO - goal stays claimed by a dead agent
+  workspace scrubbed ........ NO - /tmp/grace-race-pSZxel/stepstone-safe-dispatch left behind
+  branch deleted ............ NO - stepstone/safe-dispatch left behind
+  snippet output ............ Preparing worktree (new branch 'stepstone/safe-dispatch') HEAD is now at ab2ce7c fixture 
+
+AGENT_STARTUP_GRACE_SECONDS=1
+  snippet exit code ......... 1 (1 = agent death detected and custody released)
+  claim released ............ yes
+  workspace scrubbed ........ yes
+  branch deleted ............ yes
+  snippet output ............ Preparing worktree (new branch 'stepstone/safe-dispatch') HEAD is now at ab2ce7c fixture {"result":{"goal":{"updatedAt":"cleared-at"}}} HEAD is now at ab2ce7c fixture Deleted branch stepstone/safe-dispatch (was ab2ce7c). 
+
