@@ -675,16 +675,18 @@
       ],
       "status": "open",
       "createdAt": "2026-08-14T19:26:11.603Z",
-      "updatedAt": "2026-08-14T19:26:11.603Z"
+      "updatedAt": "2026-08-15T22:36:30.883Z",
+      "branch": "stepstone/first-class-resumable-dispatch-driver"
     },
     {
       "id": "retire-mcp-and-claude-plugin-surfaces",
       "title": "Retire MCP and Claude plugin surfaces",
       "description": "Make the stepstone CLI the sole cross-harness capability transport. Remove the stepstone-mcp executable, MCP server and adapter, protocol metadata, tests, documentation, packaging exercises, and MCP-only runtime dependencies. Retire the Claude Code plugin and its generated skill copy, MCP declaration, and slash commands because the standalone Agent Skill and CLI provide the supported workflow without a client-specific adapter. Preserve the terminal board, Pi extension, shared application service, roadmap format, locking, and confirmation guardrails. No worklist data migration is required.",
       "group": "Harness",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-14T19:52:07.371Z",
-      "updatedAt": "2026-08-14T19:52:07.371Z"
+      "updatedAt": "2026-08-15T22:56:31.159Z",
+      "completedAt": "2026-08-15T22:56:31.159Z"
     },
     {
       "id": "make-skill-first-onboarding-explicit",
@@ -699,5 +701,5 @@
       "updatedAt": "2026-08-14T19:52:07.371Z"
     }
   ],
-  "revision": 275
+  "revision": 278
 }
