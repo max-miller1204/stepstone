@@ -33,7 +33,7 @@ stepstone-dispatch start \
   --agent-command my-agent
 ```
 
-Repeated `--goal` values are the run's immutable authorization allow-list.
+Repeated `--goal` values are the run's immutable authorization allow-list, and `start` refuses an ID that names no goal, so an approved plan is applied before the run that dispatches it.
 Repeated `--agent-arg` values are passed verbatim to a process session's executable, including option-shaped values such as `--model`; a Herdr session carries no such arguments and a run that persisted them under one is rejected.
 The second form names no binding, so it takes the defaults `--workspace worktree --session process`.
 `--agent-command` is required by process sessions and `--agent-kind` by Herdr sessions.
@@ -47,7 +47,9 @@ Whichever repository that is, every action refuses a linked worktree, the read-o
 Every failure exits 1, so a caller reads that envelope rather than the graded exit codes the `project` CLI returns.
 The driver reads the canonical ready frontier and launches only allow-listed goals that are open, unblocked, and unclaimed.
 It creates or acquires each workspace before claiming the goal, claims with the selected ready result's exact `updatedAt`, and never exceeds `--max-parallel`.
-The complete stored goal is submitted to the worker over standard input for process sessions and through a private mode-0600 prompt file for Herdr sessions, never as a process argument.
+The worker's prompt is the complete stored goal as JSON under the driver's own standing instructions: implement it in the provided isolated checkout, leave the roadmap to the root session rather than editing `.worklist/worklist.json` or running mutating `project` commands, and open a pull request whose head is the claimed branch, which is the only evidence that ever completes the goal.
+The configured agent therefore needs no dispatch-specific prompt configuration of its own.
+That prompt is submitted over standard input for process sessions and through a private mode-0600 prompt file for Herdr sessions, never as a process argument.
 
 Workspace isolation and session hosting are independent selections.
 `--workspace worktree --session process` uses detached process groups in ordinary Git worktrees and is supported only on Linux, where `/proc` permits exact session-token ownership checks before signaling.
@@ -115,6 +117,7 @@ Recovery clears only the claim whose `updatedAt` was returned by this run's succ
 Recovery first closes and verifies the recorded worker session while the claim still blocks redispatch, journals the release before mutating canonical state, clears the exact claim, and only then scrubs the workspace.
 A changed canonical token makes recovery fail closed instead of releasing somebody else's custody.
 Recovery is limited to live claim phases and rejects completed, released, cleaned, and cleanup-only entries before closing a session or mutating state.
+It also refuses an entry whose completion intent or merged evidence is already journaled, whatever phase that entry now holds, so a completion interrupted after its intent was recorded is settled by `resume` rather than released by hand.
 Destructive cleanup requires a persisted canonical completion or release receipt, so changing only a phase cannot turn live claimed custody into cleanup work.
 If a claim mutation committed but its response was lost before the returned token could be journaled, the driver does not infer ownership from the deterministic branch name.
 After independently verifying that interrupted claim, an operator can provide the exact current token with `--claim-updated-at`; recovery checks the same branch and token again before releasing it.
