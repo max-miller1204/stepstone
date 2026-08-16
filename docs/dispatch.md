@@ -130,7 +130,8 @@ Destructive cleanup requires a persisted canonical completion or release receipt
 If a claim mutation committed but its response was lost before the returned token could be journaled, the driver does not infer ownership from the deterministic branch name.
 After independently verifying that interrupted claim, an operator can provide the exact current token with `--claim-updated-at`; recovery checks the same branch and token again before releasing it.
 Every other entry that never journaled an exact claim token is inspection-only: an acquisition whose result was never persisted, and a claim canonical state does not tie to this run, such as one a concurrent driver won between the ready read and the mutation.
-`recover --release` refuses such an entry rather than guessing what was acquired, and `cleanup` refuses any entry that still holds custody, so one that acquired a checkout before its claim was refused keeps its parallel slot until that workspace and branch are settled outside the driver.
+`recover --release` refuses such an entry rather than guessing what was acquired, and `cleanup` refuses any entry that still holds custody, so it holds its parallel slot for the rest of the run.
+No driver command retires it, and `cleanup <run-id>` refuses the whole run rather than removing a record one such entry is still in, so settle whatever that entry acquired outside the driver and then delete the run's own state file.
 Releasing settles a goal for this run rather than requeuing it: the released entry stays in the run's record, and each pass dispatches only an approved goal that has no entry yet, so a goal recovered this way is picked up by a later run instead of by the next `resume`.
 Cleanup likewise refuses an entry that still owns canonical custody:
 
