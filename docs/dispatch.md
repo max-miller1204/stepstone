@@ -57,6 +57,7 @@ Either workspace provider can compose with either session host.
 The core and executable import graphs do not import Herdr, Treehouse, an agent harness, or Pi peers; selected external tools are invoked only at their CLI boundaries.
 
 The start result names a run ID.
+`start` takes the run's target branch and revision from the main worktree's own checkout, so it refuses a detached HEAD there.
 Runtime state is stored under the repository's Git common directory at `stepstone-dispatch/<run-id>.json`, outside the canonical roadmap and shared by the main checkout across process restarts.
 The record includes the selected target branch and revision, exact claim tokens, canonical completion and release receipts, transition intent, binding configuration, and workspace and session custody.
 Each acquired workspace also has a private ownership marker in `stepstone-dispatch/workspaces/` and a unique owner token inside that worktree's resolved Git administrative directory.
@@ -78,9 +79,10 @@ Resume reconciles journaled acquisition, claim, and release transitions before d
 It preserves an interrupted acquisition when no local result proves what was acquired, adopts only a canonical claim that matches its journaled branch and baseline, and finishes cleanup when a release committed before local state persistence.
 It does not relaunch a persisted worker session.
 Merged PR evidence must name the stored head and target branches, must postdate the current claim, and must provide a merge commit reachable from the freshly fetched target.
+That evidence is read at the GitHub CLI boundary, so `resume` needs `gh` installed and authenticated for this repository, and the reachability check fetches the target branch from `origin`.
 The driver persists that evidence and its completion intent before the canonical mutation.
 If completion commits but its response is lost, resume accepts only the resulting canonical done transition tied to that journaled intent rather than completing twice or guessing from a branch name.
-The canonical target checkout is fast-forwarded to that verified revision before a newly unblocked goal receives a workspace.
+The canonical target checkout is fast-forwarded to that verified revision before a newly unblocked goal receives a workspace, which needs the main worktree still on the run's target branch; a root session that moved it preserves custody instead.
 Only then does the driver complete the goal, persist its canonical completion receipt, clean custody, and refill free parallel slots from a freshly read ready frontier.
 Run resume again as later PRs merge.
 
