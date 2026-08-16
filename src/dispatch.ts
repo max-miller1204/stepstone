@@ -38,7 +38,7 @@ Actions:
   status [run-id]
   inspect <run-id> <goal-id>
   recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>] [--confirm-launch-closed]
-  cleanup <run-id> [goal-id]
+  cleanup <run-id> [goal-id] [--confirm-launch-closed]
 
 Binding flags for start:
   --workspace worktree|treehouse       Default: worktree
@@ -358,7 +358,11 @@ async function main(): Promise<void> {
 			const result = await store.withRunLock(runId, async () => {
 				const run = await store.load(runId);
 				assertRunRepository(run, repositoryRoot);
-				return createDriver(run, store).cleanup(run.id, invocation.positionals[1]);
+				return createDriver(run, store).cleanup(
+					run.id,
+					invocation.positionals[1],
+					invocation.options.has("confirm-launch-closed"),
+				);
 			});
 			print(result ? summarize(result) : { removedRunId: runId }, invocation.json);
 			return;

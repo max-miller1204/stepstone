@@ -16,8 +16,7 @@ export type DispatchPhase =
 	| "released"
 	| "completed"
 	| "cleanup-pending"
-	| "cleaned"
-	| "failed";
+	| "cleaned";
 
 export interface DispatchWorkspace {
 	binding: string;
@@ -99,6 +98,7 @@ export interface SessionLaunchFailure extends Error {
 
 export interface SessionBinding {
 	readonly name: string;
+	verifyLaunchIdentity?(): Promise<void>;
 	launch(
 		workspace: DispatchWorkspace,
 		goal: ProjectGoal,
@@ -109,6 +109,7 @@ export interface SessionBinding {
 		workspace: DispatchWorkspace,
 		goal: ProjectGoal,
 		launchToken: string,
+		operatorConfirmed?: boolean,
 	): Promise<void>;
 	cleanup(session: DispatchSession): Promise<void>;
 }
@@ -246,6 +247,8 @@ export class DispatchDriver {
 		const ready = readyGoals(snapshot.goals, snapshot.retiredIds).filter(
 			(goal) => approved.has(goal.id) && !run.entries[goal.id],
 		);
+		if (ready.length === 0) return run;
+		await this.dependencies.session.verifyLaunchIdentity?.();
 		for (const goal of ready.slice(0, slots)) {
 			await this.launch(run, goal);
 			slots = run.maxParallel - Object.values(run.entries).filter(consumesCapacity).length;
@@ -298,6 +301,7 @@ export class DispatchDriver {
 				entry.workspace,
 				entry.goal,
 				entry.launchToken,
+				true,
 			);
 			entry.launchToken = undefined;
 			entry.phase = "ambiguous";
@@ -329,19 +333,20 @@ export class DispatchDriver {
 		return run;
 	}
 
-	async cleanup(runId: string, goalId?: string): Promise<DispatchRun | undefined> {
+	async cleanup(
+		runId: string,
+		goalId?: string,
+		confirmLaunchClosed = false,
+	): Promise<DispatchRun | undefined> {
 		const run = await this.dependencies.store.load(runId);
 		this.assertBindings(run);
 		const entries = goalId ? [this.requireEntry(run, goalId)] : Object.values(run.entries);
 		for (const entry of entries) {
 			if (hasCanonicalCustody(entry))
 				throw new Error(`Goal ${entry.goal.id} still has custody; recover its claim first`);
-			if (needsCleanup(entry)) await this.cleanupEntry(run, entry);
+			if (needsCleanup(entry)) await this.cleanupEntry(run, entry, confirmLaunchClosed);
 		}
-		if (
-			!goalId &&
-			Object.values(run.entries).every((entry) => entry.phase === "cleaned" || entry.phase === "failed")
-		) {
+		if (!goalId && Object.values(run.entries).every((entry) => entry.phase === "cleaned")) {
 			await this.dependencies.store.remove(run.id);
 			return undefined;
 		}
@@ -648,7 +653,11 @@ export class DispatchDriver {
 		}
 	}
 
-	private async cleanupEntry(run: DispatchRun, entry: DispatchEntry): Promise<void> {
+	private async cleanupEntry(
+		run: DispatchRun,
+		entry: DispatchEntry,
+		confirmLaunchClosed = false,
+	): Promise<void> {
 		if (!needsCleanup(entry)) return;
 		if (entry.session) {
 			try {
@@ -671,6 +680,7 @@ export class DispatchDriver {
 					entry.workspace,
 					entry.goal,
 					entry.launchToken,
+					confirmLaunchClosed,
 				);
 				entry.launchToken = undefined;
 				entry.phase = "cleanup-pending";

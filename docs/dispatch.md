@@ -56,7 +56,8 @@ After a workspace is absent or unregistered, cleanup never deletes a branch auto
 Cleanup validates the custody records against the binding, exact path, branch, base revision, and current worktree identity before it may scrub or delete anything, then records verified removal so an interrupted cleanup is idempotent.
 Deleting the whole completed run removes its cleanup receipts.
 Process sessions reserve their launch-token receipt before anything can spawn, journal the PID into it immediately after spawn and before prompt submission, and observe process exit before any asynchronous prompt work, so restarted recovery can prove whether an otherwise unjournaled worker is still live without scanning unrelated processes.
-Both session hosts write that receipt before the first step that could create a worker, so an absent receipt is proof that an interrupted launch never started one and explicit recovery may release its claim; a reserved receipt whose PID was never journaled still preserves custody for process inspection.
+Both session hosts write that receipt before the first step that could create a worker, so an absent receipt is proof that an interrupted launch never started one and explicit recovery may release its claim.
+A reserved receipt whose PID was never journaled names a launch nothing can check, so it preserves custody until `--confirm-launch-closed` carries an operator's process-table verdict.
 Resume after a worker or PR changes state:
 
 ```sh
@@ -107,10 +108,12 @@ Cleanup likewise refuses an entry that still owns canonical custody:
 
 ```sh
 stepstone-dispatch cleanup <run-id> [goal-id] --json
+stepstone-dispatch cleanup <run-id> [goal-id] --confirm-launch-closed --json
 ```
 
 Cleanup persists verified session closure before touching the workspace, and its worktree, branch deletion, and guarded Treehouse return steps are idempotent across partial failures and restarts.
-With no goal ID it removes the noncanonical run record only after every entry is cleaned or failed.
+`--confirm-launch-closed` carries the same inspected verdict here that it carries for recovery, for an entry already past its canonical mutation whose reserved launch identity nothing can check.
+With no goal ID it removes the noncanonical run record only after every entry is cleaned.
 
 The executable performs one reconciliation and scheduling pass per invocation rather than becoming a daemon.
 This keeps restart behavior explicit and lets any scheduler, root session, or human decide when another `resume` pass should run.
@@ -217,7 +220,8 @@ mkdir -p "$runtime" || abandon
 
 `AGENT_COMMAND` names one executable; the published driver passes agent-specific configuration through repeatable `--agent-arg` values.
 The command preflight resolves and fingerprints that executable before persisting a run, and the driver refuses to spawn a worker whose executable identity changed.
-That refusal happens at the spawn boundary, so an agent upgraded mid-run turns each new dispatch into a known-safe launch failure that releases its exact claim, while resume still reconciles merged PRs, journals canonical completion, and cleans custody rather than stranding a run that only needs reconciliation.
+Resume reconciles merged PRs, journals canonical completion, and cleans custody first, and only then refuses, so an agent upgraded mid-run neither strands a run that needs reconciliation nor consumes an approved goal that was never dispatched.
+The binding checks the same fingerprint again at the spawn boundary, so no worker is ever started from an executable the run did not authorize.
 The documented shell binding's bounded startup grace verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that `nohup` reports before an `exec` failure.
 
 The log and pid file belong to the driver, not to the branch under review.
@@ -379,7 +383,8 @@ cleanup_lease || exit 1
 The published Treehouse binding records the immutable lease ID returned by `treehouse get --json` and verifies both that ID and the holder immediately before claim and launch.
 Cleanup delegates all destructive reset work to `treehouse return --force --if-lease-id ... --if-lease-holder ...`, whose lease precondition and reset share Treehouse's state lock.
 A changed lease therefore fails before any Git scrub, while a retry after a successful guarded return records local cleanup without touching the now-available pooled worktree.
-Because the leased checkout shares this repository's ref store, cleanup still owns the branch it created: under the verified lease it journals that branch's exact tip, detaches the leased checkout onto the recorded base, atomically deletes only that unchanged ref, and journals the deletion before returning the lease.
+Because the leased checkout shares this repository's ref store, cleanup still owns the branch it created: under the verified lease it journals that branch's exact tip, force-detaches the leased checkout onto the recorded base, atomically deletes only that unchanged ref, and journals the deletion before returning the lease.
+The detach is forced because an abandoned worker's uncommitted edits would otherwise abort it, and the guarded return that follows resets the pooled checkout regardless.
 Deleting the ref the binding created is what keeps `stepstone/<goal-id>` dispatchable again; leaving it behind would fail every later `checkout -b` for that goal.
 
 Closing the hosting pane ends its Herdr agent.

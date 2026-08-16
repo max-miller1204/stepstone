@@ -667,22 +667,25 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
-	it("still reconciles merged evidence when the session host refuses a changed agent identity", async () => {
+	it("reconciles merged evidence but keeps approved goals undispatched when the agent identity changed", async () => {
 		const setup = fixture([goal("alpha"), goal("beta", { dependsOn: ["alpha"] })], 1);
 		const run = await setup.create();
 		await setup.makeDriver().advance(run.id);
 		setup.session.launchIdentityFailure = new Error("agent executable identity changed");
 		setup.merges.evidence.set("stepstone/alpha", merged());
 
-		const resumed = await setup.makeDriver().advance(run.id);
+		await expect(setup.makeDriver().advance(run.id)).rejects.toThrow("agent executable identity changed");
 
-		expect(resumed.entries.alpha.phase).toBe("cleaned");
+		const reconciled = await setup.store.load(run.id);
+		expect(reconciled.entries.alpha.phase).toBe("cleaned");
 		expect(setup.roadmap.completions).toHaveLength(1);
-		expect(resumed.entries.beta.phase).toBe("cleaned");
-		expect(setup.session.prompts).toHaveLength(1);
-		expect(setup.roadmap.releases).toEqual([
-			{ id: "beta", token: resumed.entries.beta.claimUpdatedAt as string },
-		]);
+		expect(reconciled.entries.beta).toBeUndefined();
+		expect(setup.workspace.acquired).toEqual(["alpha"]);
+		expect(setup.roadmap.releases).toEqual([]);
+
+		setup.session.launchIdentityFailure = undefined;
+		const dispatched = await setup.makeDriver().advance(run.id);
+		expect(dispatched.entries.beta.phase).toBe("running");
 	});
 
 	it("refuses to spawn a worker whose agent executable identity changed", async () => {
@@ -729,14 +732,18 @@ describe("resumable dispatch driver", () => {
 			).resolves.toBeUndefined();
 
 			const sessionDirectory = join(directory, "sessions", "alpha");
+			const receiptPath = join(sessionDirectory, `launch-${launchToken}.json`);
 			await mkdir(sessionDirectory, { recursive: true });
-			await writeFile(
-				join(sessionDirectory, `launch-${launchToken}.json`),
-				JSON.stringify({ token: launchToken }),
-			);
+			await writeFile(receiptPath, JSON.stringify({ token: launchToken }));
 			await expect(
 				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
-			).rejects.toThrow("never journaled a process ID");
+			).rejects.toThrow("--confirm-launch-closed");
+			expect(await readFile(receiptPath, "utf8")).toContain(launchToken);
+
+			await expect(
+				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken, true),
+			).resolves.toBeUndefined();
+			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -1139,6 +1146,9 @@ describe("resumable dispatch driver", () => {
 			const workspace = await binding.acquire(goal("alpha"), "stepstone/alpha", base);
 			const sentinel = join(leased, "untracked-custody");
 			await writeFile(sentinel, "must survive");
+			await writeFile(join(leased, "seed"), "worker committed this");
+			await execFileAsync("git", ["commit", "-q", "-am", "worker work"], { cwd: leased });
+			await writeFile(join(leased, "seed"), "worker was interrupted mid-edit");
 			process.env.STEPSTONE_TEST_CHANGED = "1";
 			await expect(binding.verify(workspace, "stepstone/alpha")).rejects.toThrow("different lease");
 			await expect(binding.cleanup(workspace, "stepstone/alpha")).rejects.toThrow("different lease");

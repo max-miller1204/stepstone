@@ -91,6 +91,11 @@ async function runCommand(
 	return { stdout, stderr };
 }
 
+function isUnexecutableCommand(error: unknown): boolean {
+	if (!(error instanceof Error) || !("code" in error)) return false;
+	return error.code === "ENOENT" || error.code === "EACCES" || error.code === "EPERM";
+}
+
 function requireGoal(result: Awaited<ReturnType<WorklistApplicationService["execute"]>>): ProjectGoal {
 	if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
 	if (!result.result.goal) throw new Error(`Project ${result.action} did not return its goal`);
@@ -194,7 +199,6 @@ const entrySchema = z
 			"completed",
 			"cleanup-pending",
 			"cleaned",
-			"failed",
 		]),
 		workspace: workspaceSchema.optional(),
 		session: sessionSchema.optional(),
@@ -483,7 +487,7 @@ const runSchema = z
 				context.addIssue({ code: "custom", path, message: "phase lacks its exact claim token" });
 			}
 			if (
-				(entry.phase === "preparing" || entry.phase === "cleaned" || entry.phase === "failed") &&
+				(entry.phase === "preparing" || entry.phase === "cleaned") &&
 				(entry.workspace || entry.session || entry.launchToken)
 			) {
 				context.addIssue({
@@ -1207,7 +1211,7 @@ export class TreehouseWorkspaceBinding implements WorkspaceBinding {
 				throw new Error("Refusing branch cleanup because the branch identity changed");
 			}
 			if (branchTip) {
-				await runCommand("git", ["checkout", "--detach", base], workspace.path);
+				await runCommand("git", ["checkout", "--force", "--detach", base], workspace.path);
 				await deleteBranchIfUnchanged(this.repositoryRoot, branch, expectedBranchTip);
 			}
 			removalRecord = await journalWorkspaceBranchDeleted(marker.path, removalRecord);
@@ -1399,6 +1403,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		_workspace: DispatchWorkspace,
 		goal: ProjectGoal,
 		launchToken: string,
+		operatorConfirmed = false,
 	): Promise<void> {
 		if (!z.string().uuid().safeParse(launchToken).success) {
 			throw new Error("Interrupted process launch token is invalid");
@@ -1411,9 +1416,13 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 			.strict()
 			.parse(JSON.parse(journaled));
 		if (receipt.pid === undefined) {
-			throw new Error(
-				`Interrupted launch ${launchToken} reserved its identity but never journaled a process ID; inspect the process table for STEPSTONE_DISPATCH_SESSION_TOKEN=${launchToken} before recovery`,
-			);
+			if (!operatorConfirmed) {
+				throw new Error(
+					`Interrupted launch ${launchToken} reserved its identity but never journaled a process ID; inspect the process table for STEPSTONE_DISPATCH_SESSION_TOKEN=${launchToken} and rerun with --confirm-launch-closed`,
+				);
+			}
+			await rm(receiptPath, { force: true });
+			return;
 		}
 		try {
 			const environment = await readFile(`/proc/${receipt.pid}/environ`);
@@ -1517,9 +1526,7 @@ export class HerdrSessionBinding implements SessionBinding {
 			beforePaneIds,
 		});
 		let paneId: string | undefined;
-		let splitAttempted = false;
 		try {
-			splitAttempted = true;
 			const split = await runCommand(
 				"herdr",
 				["pane", "split", "--current", "--direction", "right", "--cwd", workspace.path, "--no-focus"],
@@ -1544,7 +1551,7 @@ export class HerdrSessionBinding implements SessionBinding {
 			);
 		} catch (error) {
 			if (!paneId) {
-				if (splitAttempted) {
+				if (!isUnexecutableCommand(error)) {
 					throw new HerdrAmbiguousFailure(
 						`Herdr pane creation outcome is ambiguous: ${error instanceof Error ? error.message : String(error)}`,
 						{
