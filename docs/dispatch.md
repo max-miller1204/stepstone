@@ -35,7 +35,8 @@ stepstone-dispatch start \
 
 Repeated `--goal` values are the run's immutable authorization allow-list.
 Repeated `--agent-arg` values are passed verbatim, including option-shaped values such as `--model`.
-`stepstone-dispatch --help` prints the complete action and flag surface, including the binding defaults and the timing and placement flags this page leaves to it.
+The second form names no binding, so it takes the defaults `--workspace worktree --session process`.
+`stepstone-dispatch --help` prints the complete action and flag surface, including the timing and placement flags this page leaves to it.
 The driver reads the canonical ready frontier and launches only allow-listed goals that are open, unblocked, and unclaimed.
 It creates or acquires each workspace before claiming the goal, claims with the selected ready result's exact `updatedAt`, and never exceeds `--max-parallel`.
 The complete stored goal is submitted to the worker over standard input for process sessions and through a private mode-0600 prompt file for Herdr sessions, never as a process argument.
@@ -137,7 +138,7 @@ This keeps restart behavior explicit and lets any scheduler, root session, or hu
 10. Read the ready frontier again only after the target is current, and stop when the approved run has nothing ready or held.
 
 `--max-parallel N` is driver runtime policy and never canonical roadmap state.
-With `--max-parallel 1`, repeated resume passes form a serial chain.
+With `--max-parallel 1`, its default, repeated resume passes form a serial chain.
 
 ## Authorization boundary
 
