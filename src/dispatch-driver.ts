@@ -338,6 +338,11 @@ export class DispatchDriver {
 		goalId?: string,
 		confirmLaunchClosed = false,
 	): Promise<DispatchRun | undefined> {
+		if (confirmLaunchClosed && !goalId) {
+			throw new Error(
+				"--confirm-launch-closed carries one inspected goal's verdict; name that goal to use it",
+			);
+		}
 		const run = await this.dependencies.store.load(runId);
 		this.assertBindings(run);
 		const entries = goalId ? [this.requireEntry(run, goalId)] : Object.values(run.entries);
@@ -599,6 +604,14 @@ export class DispatchDriver {
 
 	private async launchWorker(run: DispatchRun, entry: DispatchEntry): Promise<void> {
 		if (!entry.workspace) throw new Error("Claimed entry has no workspace");
+		try {
+			await this.dependencies.session.verifyLaunchIdentity?.();
+		} catch (error) {
+			entry.phase = "claimed";
+			entry.message = `Worker launch is deferred with its claim and workspace held: ${errorMessage(error)}`;
+			await this.persist(run, entry);
+			return;
+		}
 		entry.launchToken = randomUUID();
 		entry.phase = "launching";
 		entry.message = "Worker launch intent and identity are journaled; no session handle is proven yet.";

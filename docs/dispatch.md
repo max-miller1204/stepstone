@@ -108,11 +108,12 @@ Cleanup likewise refuses an entry that still owns canonical custody:
 
 ```sh
 stepstone-dispatch cleanup <run-id> [goal-id] --json
-stepstone-dispatch cleanup <run-id> [goal-id] --confirm-launch-closed --json
+stepstone-dispatch cleanup <run-id> <goal-id> --confirm-launch-closed --json
 ```
 
 Cleanup persists verified session closure before touching the workspace, and its worktree, branch deletion, and guarded Treehouse return steps are idempotent across partial failures and restarts.
 `--confirm-launch-closed` carries the same inspected verdict here that it carries for recovery, for an entry already past its canonical mutation whose reserved launch identity nothing can check.
+That verdict names one inspected goal, so cleanup refuses the flag without a goal ID rather than spending one process-table inspection on every entry in the run.
 With no goal ID it removes the noncanonical run record only after every entry is cleaned.
 
 The executable performs one reconciliation and scheduling pass per invocation rather than becoming a daemon.
@@ -221,6 +222,7 @@ mkdir -p "$runtime" || abandon
 `AGENT_COMMAND` names one executable; the published driver passes agent-specific configuration through repeatable `--agent-arg` values.
 The command preflight resolves and fingerprints that executable before persisting a run, and the driver refuses to spawn a worker whose executable identity changed.
 Resume reconciles merged PRs, journals canonical completion, and cleans custody first, and only then refuses, so an agent upgraded mid-run neither strands a run that needs reconciliation nor consumes an approved goal that was never dispatched.
+An entry already holding a claim when the identity changed keeps that claim and its workspace in `claimed` and launches on a later resume, because releasing it would drop the goal from this run's allow-list for a failure that proves nothing about the goal.
 The binding checks the same fingerprint again at the spawn boundary, so no worker is ever started from an executable the run did not authorize.
 The documented shell binding's bounded startup grace verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that `nohup` reports before an `exec` failure.
 

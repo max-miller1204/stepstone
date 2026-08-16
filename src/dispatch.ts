@@ -38,7 +38,7 @@ Actions:
   status [run-id]
   inspect <run-id> <goal-id>
   recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>] [--confirm-launch-closed]
-  cleanup <run-id> [goal-id] [--confirm-launch-closed]
+  cleanup <run-id> [goal-id] [--confirm-launch-closed requires a goal ID]
 
 Binding flags for start:
   --workspace worktree|treehouse       Default: worktree

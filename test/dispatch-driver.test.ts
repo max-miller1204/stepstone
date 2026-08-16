@@ -688,6 +688,69 @@ describe("resumable dispatch driver", () => {
 		expect(dispatched.entries.beta.phase).toBe("running");
 	});
 
+	it("defers a resumed claimed launch with its custody held when the agent identity changed", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		const run = await setup.create();
+		const baseline = goal("alpha");
+		const claimed = await setup.roadmap.claim("alpha", "stepstone/alpha", baseline.updatedAt);
+		run.entries.alpha = {
+			goal: baseline,
+			branch: "stepstone/alpha",
+			phase: "claimed",
+			workspace: { binding: setup.workspace.name, path: "/work/alpha", metadata: {} },
+			claimUpdatedAt: claimed.updatedAt,
+			updatedAt: "2026-01-01T00:00:00.500Z",
+		};
+		await setup.store.save(run);
+		setup.session.launchIdentityFailure = new Error("agent executable identity changed");
+
+		const deferred = await setup.makeDriver().advance(run.id);
+
+		expect(deferred.entries.alpha.phase).toBe("claimed");
+		expect(deferred.entries.alpha.launchToken).toBeUndefined();
+		expect(deferred.entries.alpha.message).toContain("agent executable identity changed");
+		expect(setup.roadmap.releases).toEqual([]);
+		expect(setup.session.prompts).toEqual([]);
+		expect(setup.workspace.cleaned).toEqual([]);
+
+		setup.session.launchIdentityFailure = undefined;
+		const launched = await setup.makeDriver().advance(run.id);
+
+		expect(launched.entries.alpha.phase).toBe("running");
+		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("refuses to apply one goal's inspected launch verdict to every entry in a run", async () => {
+		const setup = fixture([goal("alpha", { status: "done" }), goal("beta", { status: "done" })], 2);
+		const run = await setup.create();
+		for (const [index, id] of ["alpha", "beta"].entries()) {
+			run.entries[id] = {
+				goal: goal(id, { status: "done" }),
+				branch: `stepstone/${id}`,
+				phase: "cleanup-pending",
+				claimUpdatedAt: "2026-01-01T00:00:01.000Z",
+				completionIntentAt: "2026-01-01T00:00:01.500Z",
+				completionUpdatedAt: "2026-01-01T00:00:02.000Z",
+				launchToken: `00000000-0000-4000-8000-00000000004${index}`,
+				mergedPr: merged({ headBranch: `stepstone/${id}` }),
+				workspace: { binding: setup.workspace.name, path: `/work/${id}`, metadata: {} },
+				updatedAt: "2026-02-01T00:00:00.000Z",
+			};
+		}
+		await setup.store.save(run);
+
+		await expect(setup.makeDriver().cleanup(run.id, undefined, true)).rejects.toThrow("name that goal");
+		expect(setup.session.interruptedLaunchChecks).toEqual([]);
+		expect(setup.workspace.cleaned).toEqual([]);
+
+		const cleaned = await setup.makeDriver().cleanup(run.id, "alpha", true);
+
+		expect(cleaned?.entries.alpha.phase).toBe("cleaned");
+		expect(cleaned?.entries.beta.phase).toBe("cleanup-pending");
+		expect(cleaned?.entries.beta.launchToken).toBe("00000000-0000-4000-8000-000000000041");
+		expect(setup.workspace.cleaned).toEqual(["stepstone/alpha"]);
+	});
+
 	it("refuses to spawn a worker whose agent executable identity changed", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-identity-"));
 		try {
