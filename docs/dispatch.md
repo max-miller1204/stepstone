@@ -274,7 +274,7 @@ test "$returned_holder" = "$lease_holder" || exit 1
 ```
 
 Claim the goal from the root checkout and retain the `updatedAt` returned by that exact claim.
-Every safe pre-submission failure closes and verifies any pane, releases the claim with that token, scrubs the checkout, and force-returns the lease.
+Every safe pre-submission failure closes and verifies any pane, releases the claim with that token, and force-returns the lease, whose guarded return scrubs the checkout under Treehouse's lease lock.
 Once prompt submission has been attempted, a timeout or transport failure is ambiguous, so custody is preserved for inspection instead of assuming no worker is running:
 
 ```sh
@@ -381,7 +381,7 @@ The derived name keeps a readable prefix of the ID inside that limit and appends
 Once the agent is running, Herdr accepts the hosting pane ID wherever it accepts a name, so the calls after `agent start` target `$pane_id` and never depend on that derivation.
 
 `stepstone/$goal_id` is deterministic, and neither `start --clear` nor returning a lease deletes a branch, so re-dispatching a goal whose earlier attempt still has its branch fails at `checkout -b`.
-That failure closes any created pane, releases the claim, scrubs the checkout, and returns the lease instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
+That failure closes any created pane, releases the claim, and force-returns the lease so Treehouse scrubs the checkout, instead of running the worker on whatever ref the pool handed out, whose PR head would never match the branch stored on the goal.
 Delete or rename the stale branch deliberately, once you know whether its commits are still wanted.
 
 Use bounded waits such as `herdr agent wait "$pane_id" --timeout "${HERDR_WAIT_TIMEOUT_MS:-300000}"` and use `herdr agent read "$pane_id"` for liveness and diagnostics.
@@ -416,7 +416,7 @@ On abandonment the same verified close happens before claim release and lease re
 - Check every step between a successful claim and a running worker, and release both the claim and the workspace only when the failure proves no worker was launched; a claim held with nobody working it keeps the goal out of `ready` until someone notices, while a claim released under a worker that may be running hands the same goal to a second driver.
 - Keep the claim, the workspace, and any hosting session when a failure leaves custody ambiguous, and say on stderr what is being held, because an outcome nobody can read is a case for inspection rather than for automatic cleanup.
 - Use each goal's `updatedAt` precondition for claim and completion, re-reading it before each one rather than reusing a spent value, and release a claim with the `updatedAt` that same claim returned, because a re-read value may already belong to somebody else's newer claim.
-- Scrub a workspace and verify it reports clean before forcing its removal or return, and force only after the goal is completed or its exact claim is released, so cleanup neither stops on an interactive refusal nor discards a checkout somebody still holds.
+- Reset a workspace before forcing its removal or return, by scrubbing and verifying it clean where the binding owns the removal or by delegating that reset to a provider whose guarded return performs it under its own lock, and force only after the goal is completed or its exact claim is released, so cleanup neither stops on an interactive refusal nor discards a checkout somebody still holds.
 - Keep the approved plan's goal IDs as the authorization allow-list.
 - Match merge evidence to the branch stored on that exact goal.
 - Re-read canonical state after every merge instead of caching the ready frontier.
