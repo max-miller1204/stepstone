@@ -36,7 +36,12 @@ stepstone-dispatch start \
 Repeated `--goal` values are the run's immutable authorization allow-list.
 Repeated `--agent-arg` values are passed verbatim, including option-shaped values such as `--model`.
 The second form names no binding, so it takes the defaults `--workspace worktree --session process`.
-`stepstone-dispatch --help` prints the complete action and flag surface, including the timing and placement flags this page leaves to it.
+`--agent-command` is required by process sessions and `--agent-kind` by Herdr sessions.
+`--cwd <repository>` selects the repository an action runs against and defaults to the current directory.
+`--workspace-parent <path>` chooses where the worktree workspace creates its `stepstone-<goal-id>` checkouts, defaulting to the repository's parent directory; the Treehouse workspace takes placement from its lease pool and ignores the flag.
+`--startup-grace-ms <milliseconds>` bounds the wait that proves a spawned process-session worker survived its own startup, and defaults to 1000.
+`--prompt-timeout-ms <milliseconds>` bounds Herdr prompt submission, and defaults to 300000.
+`stepstone-dispatch --help` prints that same surface as a flag list.
 The driver reads the canonical ready frontier and launches only allow-listed goals that are open, unblocked, and unclaimed.
 It creates or acquires each workspace before claiming the goal, claims with the selected ready result's exact `updatedAt`, and never exceeds `--max-parallel`.
 The complete stored goal is submitted to the worker over standard input for process sessions and through a private mode-0600 prompt file for Herdr sessions, never as a process argument.
