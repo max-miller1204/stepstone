@@ -26,6 +26,6 @@ The skill installs no code and pins no version: it invokes the published CLI as 
 Never hand-edit it: run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
 
 The generated skill is deliberately repository-neutral, because one file serves every checkout and must never assume it was installed alongside this source tree.
-The tests enforce that too: no absolute path may appear in it, every npx invocation must pin the cache-safe `stepstone@latest` specifier, and its examples may never hand an agent a copy-paste lifecycle command or a `--confirm` flag.
+The tests enforce that too: no absolute path may appear in it, an invocation that names the package directly after `npx` must carry the cache-safe `@latest` pin, and its examples may never hand an agent a copy-paste lifecycle command or a `--confirm` flag.
 
 Working on the skill itself is the one case for symlinking `.claude/skills/stepstone` into `~/.claude/skills/`, which makes the installed skill track your working tree.
