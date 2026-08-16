@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -812,6 +813,40 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
+	it("carries an operator verdict for a recycled PID whose process group survives", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-verdict-"));
+		const workspace: DispatchWorkspace = { binding: "worktree", path: directory, metadata: {} };
+		const launchToken = "00000000-0000-4000-8000-000000000023";
+		const sessionDirectory = join(directory, "sessions", "alpha");
+		const receiptPath = join(sessionDirectory, `launch-${launchToken}.json`);
+		const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+			detached: true,
+			stdio: "ignore",
+		});
+		try {
+			await once(unrelated, "spawn");
+			const recycled = unrelated.pid;
+			if (!recycled) throw new Error("fixture could not spawn an unrelated process group");
+			await mkdir(sessionDirectory, { recursive: true });
+			await writeFile(receiptPath, JSON.stringify({ pid: recycled, token: launchToken }));
+			const processBinding = new DetachedProcessSessionBinding(process.execPath, [], directory, 100);
+
+			await expect(
+				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
+			).rejects.toThrow("--confirm-launch-closed");
+			expect(await readFile(receiptPath, "utf8")).toContain(launchToken);
+
+			await expect(
+				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken, true),
+			).resolves.toBeUndefined();
+			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			if (unrelated.pid) process.kill(-unrelated.pid, "SIGKILL");
+			unrelated.unref();
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("removes durable workspace cleanup receipts with a completed run", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-receipt-"));
 		const marker = "00000000-0000-4000-8000-000000000002";
@@ -1268,14 +1303,33 @@ describe("resumable dispatch driver", () => {
 			process.env.STEPSTONE_TEST_PANES = panesPath;
 			process.env.STEPSTONE_TEST_CWD = directory;
 			const binding = new HerdrSessionBinding("task", directory, 100);
+			const workspace: DispatchWorkspace = { binding: "worktree", path: directory, metadata: {} };
+			const launchToken = "00000000-0000-4000-8000-000000000024";
 			let session: DispatchSession | undefined;
 			try {
-				await binding.launch({ binding: "worktree", path: directory, metadata: {} }, goal("alpha"), "prompt");
+				await binding.launch(workspace, goal("alpha"), "prompt", launchToken);
 			} catch (error) {
 				session =
 					error instanceof Error && "session" in error ? (error as SessionLaunchFailure).session : undefined;
 			}
 			if (!session) throw new Error("Herdr fixture did not preserve ambiguous session custody");
+
+			await expect(
+				binding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken, true),
+			).rejects.toThrow("still live");
+
+			const herdrReceiptPath = join(directory, "sessions", "alpha", `herdr-launch-${launchToken}.json`);
+			process.env.PATH = join(directory, "absent-bin");
+			await expect(
+				binding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
+			).rejects.toThrow("--confirm-launch-closed");
+			expect(await readFile(herdrReceiptPath, "utf8")).toContain(launchToken);
+			await expect(
+				binding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken, true),
+			).resolves.toBeUndefined();
+			await expect(readFile(herdrReceiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			process.env.PATH = `${bin}:${oldPath ?? ""}`;
+
 			await binding.cleanup(session);
 			expect(JSON.parse(await readFile(panesPath, "utf8"))).toEqual(["root-pane", "concurrent-pane"]);
 		} finally {

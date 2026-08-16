@@ -1265,8 +1265,32 @@ function processExists(pid: number): boolean {
 		return true;
 	} catch (error) {
 		if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+		if (error instanceof Error && "code" in error && error.code === "EPERM") return true;
 		throw error;
 	}
+}
+
+async function carriesSessionToken(pid: number, launchToken: string): Promise<boolean> {
+	try {
+		const environment = await readFile(`/proc/${pid}/environ`);
+		return environment.includes(Buffer.from(`STEPSTONE_DISPATCH_SESSION_TOKEN=${launchToken}\0`));
+	} catch (error) {
+		if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "EACCES")) {
+			return false;
+		}
+		throw error;
+	}
+}
+
+async function acceptInterruptedLaunchVerdict(
+	operatorConfirmed: boolean,
+	unprovable: string,
+	accept: () => Promise<void>,
+): Promise<void> {
+	if (!operatorConfirmed) {
+		throw new Error(`${unprovable}; inspect that custody and rerun with --confirm-launch-closed`);
+	}
+	await accept();
 }
 
 export class DetachedProcessSessionBinding implements SessionBinding {
@@ -1415,31 +1439,29 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 			.object({ pid: z.number().int().positive().optional(), token: z.literal(launchToken) })
 			.strict()
 			.parse(JSON.parse(journaled));
-		if (receipt.pid === undefined) {
-			if (!operatorConfirmed) {
-				throw new Error(
-					`Interrupted launch ${launchToken} reserved its identity but never journaled a process ID; inspect the process table for STEPSTONE_DISPATCH_SESSION_TOKEN=${launchToken} and rerun with --confirm-launch-closed`,
-				);
-			}
+		const release = async () => {
 			await rm(receiptPath, { force: true });
+		};
+		const pid = receipt.pid;
+		if (pid === undefined) {
+			return await acceptInterruptedLaunchVerdict(
+				operatorConfirmed,
+				`Interrupted launch ${launchToken} reserved its identity but never journaled a process ID`,
+				release,
+			);
+		}
+		if (await carriesSessionToken(pid, launchToken)) {
+			throw new Error(`Interrupted dispatch worker PID ${pid} is still live`);
+		}
+		if (!processExists(-pid)) {
+			await release();
 			return;
 		}
-		try {
-			const environment = await readFile(`/proc/${receipt.pid}/environ`);
-			if (!environment.includes(Buffer.from(`STEPSTONE_DISPATCH_SESSION_TOKEN=${launchToken}\0`))) {
-				throw new Error(`PID ${receipt.pid} no longer carries this interrupted launch identity`);
-			}
-		} catch (error) {
-			if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-				if (processExists(-receipt.pid)) {
-					throw new Error(`Process-group ${receipt.pid} remains after its interrupted session leader exited`);
-				}
-				await rm(receiptPath, { force: true });
-				return;
-			}
-			throw error;
-		}
-		throw new Error(`Interrupted dispatch worker PID ${receipt.pid} is still live`);
+		return await acceptInterruptedLaunchVerdict(
+			operatorConfirmed,
+			`Process-group ${pid} remains after the interrupted session leader for ${launchToken} exited`,
+			release,
+		);
 	}
 
 	async cleanup(session: DispatchSession): Promise<void> {
@@ -1456,20 +1478,12 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		) {
 			throw new Error("Process session metadata is incomplete");
 		}
-		try {
-			const environment = await readFile(`/proc/${pid}/environ`);
-			if (!environment.includes(Buffer.from(`STEPSTONE_DISPATCH_SESSION_TOKEN=${token}\0`))) {
-				throw new Error(`PID ${pid} no longer belongs to this dispatch session`);
-			}
-		} catch (error) {
-			if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-				if (!processExists(-pid)) {
-					await rm(receiptPath, { force: true });
-					return;
-				}
+		if (!(await carriesSessionToken(pid, token))) {
+			if (processExists(-pid)) {
 				throw new Error(`Process-group ${pid} remains after its verifiable session leader exited`);
 			}
-			throw error;
+			await rm(receiptPath, { force: true });
+			return;
 		}
 		process.kill(-pid, "SIGTERM");
 		for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -1611,6 +1625,7 @@ export class HerdrSessionBinding implements SessionBinding {
 		workspace: DispatchWorkspace,
 		goal: ProjectGoal,
 		launchToken: string,
+		operatorConfirmed = false,
 	): Promise<void> {
 		const receiptPath = join(this.stateDirectory, "sessions", goal.id, `herdr-launch-${launchToken}.json`);
 		const promptPath = join(this.stateDirectory, "sessions", goal.id, "prompt.txt");
@@ -1629,8 +1644,22 @@ export class HerdrSessionBinding implements SessionBinding {
 			})
 			.strict()
 			.parse(JSON.parse(journaled));
-		const panes = await this.listPanes(workspace.path);
-		const owned = await this.findOwnedAgentPane(receipt.agentName, workspace.path);
+		const release = async () => {
+			await rm(receiptPath, { force: true });
+			await rm(promptPath, { force: true });
+		};
+		let panes: Array<{ pane_id?: string }>;
+		let owned: string | undefined;
+		try {
+			panes = await this.listPanes(workspace.path);
+			owned = await this.findOwnedAgentPane(receipt.agentName, workspace.path);
+		} catch (error) {
+			return await acceptInterruptedLaunchVerdict(
+				operatorConfirmed,
+				`Herdr could not be asked whether pane custody for ${launchToken} survives: ${error instanceof Error ? error.message : String(error)}`,
+				release,
+			);
+		}
 		if (owned) throw new Error(`Interrupted Herdr worker pane ${owned} is still live`);
 		if (receipt.paneId) {
 			if (panes.some((pane) => pane.pane_id === receipt.paneId)) {
@@ -1639,11 +1668,14 @@ export class HerdrSessionBinding implements SessionBinding {
 		} else {
 			const previous = new Set(receipt.beforePaneIds);
 			if (panes.some((pane) => pane.pane_id && !previous.has(pane.pane_id))) {
-				throw new Error("An unidentified post-launch Herdr pane is still live");
+				return await acceptInterruptedLaunchVerdict(
+					operatorConfirmed,
+					"An unidentified post-launch Herdr pane is still live",
+					release,
+				);
 			}
 		}
-		await rm(receiptPath, { force: true });
-		await rm(promptPath, { force: true });
+		await release();
 	}
 
 	async cleanup(session: DispatchSession): Promise<void> {

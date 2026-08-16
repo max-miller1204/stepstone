@@ -84,6 +84,7 @@ stepstone-dispatch inspect <run-id> <goal-id> --json
 
 A `launching` entry with a persisted launch token but no verified session handle is never releasable automatically.
 After inspecting the process table or Herdr agent, `--confirm-launch-closed` asks the selected binding to prove that no worker still carries the persisted launch identity before recovery may release the claim.
+A binding that positively identifies a live worker refuses that release no matter what the flag says; the flag decides only the cases the binding cannot check at all, such as a reserved receipt with no PID, a recycled PID whose process group survives, or a Herdr daemon that cannot be asked.
 Cleanup asks the same binding for the same proof before scrubbing a workspace whose launch identity outlived its session handle, so a goal completed from merged evidence holds its parallel slot in `cleanup-pending` until no worker can still be using that checkout.
 An interrupted workspace acquisition, any outcome after a process has spawned, a prompt submission timeout, an unreadable Herdr response, a merge-inspection failure, or a concurrency conflict preserves custody in the run record.
 `cleanup-pending` entries whose worker session has not been proven closed continue to consume parallel capacity.
@@ -99,7 +100,7 @@ stepstone-dispatch recover <run-id> <goal-id> --release --confirm-launch-closed 
 Recovery clears only the claim whose `updatedAt` was returned by this run's successful claim.
 Recovery first closes and verifies the recorded worker session while the claim still blocks redispatch, journals the release before mutating canonical state, clears the exact claim, and only then scrubs the workspace.
 A changed canonical token makes recovery fail closed instead of releasing somebody else's custody.
-Recovery is limited to live claim phases and rejects completed, released, cleaned, failed, and cleanup-only entries before closing a session or mutating state.
+Recovery is limited to live claim phases and rejects completed, released, cleaned, and cleanup-only entries before closing a session or mutating state.
 Destructive cleanup requires a persisted canonical completion or release receipt, so changing only a phase cannot turn live claimed custody into cleanup work.
 If a claim mutation committed but its response was lost before the returned token could be journaled, the driver does not infer ownership from the deterministic branch name.
 After independently verifying that interrupted claim, an operator can provide the exact current token with `--claim-updated-at`; recovery checks the same branch and token again before releasing it.
@@ -222,7 +223,8 @@ mkdir -p "$runtime" || abandon
 `AGENT_COMMAND` names one executable; the published driver passes agent-specific configuration through repeatable `--agent-arg` values.
 The command preflight resolves and fingerprints that executable before persisting a run, and the driver refuses to spawn a worker whose executable identity changed.
 Resume reconciles merged PRs, journals canonical completion, and cleans custody first, and only then refuses, so an agent upgraded mid-run neither strands a run that needs reconciliation nor consumes an approved goal that was never dispatched.
-An entry already holding a claim when the identity changed keeps that claim and its workspace in `claimed` and launches on a later resume, because releasing it would drop the goal from this run's allow-list for a failure that proves nothing about the goal.
+An entry already holding a claim when the identity changed keeps that claim and its workspace in `claimed` rather than releasing them, because a release would drop the goal from this run's allow-list for a failure that proves nothing about the goal.
+A run's fingerprint is fixed at `start` and no command re-authorizes it, so that deferred entry launches on a later resume only if the authorized executable is restored; otherwise it holds its custody until `recover <run-id> <goal-id> --release` retires it, and adopting an upgraded agent means starting a new run for the goals that remain.
 The binding checks the same fingerprint again at the spawn boundary, so no worker is ever started from an executable the run did not authorize.
 The documented shell binding's bounded startup grace verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that `nohup` reports before an `exec` failure.
 
