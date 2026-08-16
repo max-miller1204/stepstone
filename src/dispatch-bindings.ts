@@ -870,6 +870,30 @@ async function deleteBranchIfUnchanged(
 	}
 }
 
+async function deleteJournaledWorkspaceBranch(
+	repositoryRoot: string,
+	markerPath: string,
+	record: z.infer<typeof workspaceMarkerSchema>,
+	branch: string,
+	branchTip: string | undefined,
+	beforeDelete?: () => Promise<void>,
+): Promise<z.infer<typeof workspaceMarkerSchema>> {
+	const expectedBranchTip = record.removalBranchTip;
+	if (!expectedBranchTip) throw new Error("Workspace cleanup lacks its exact branch identity");
+	if (record.branchDeletedAt) {
+		if (branchTip) throw new Error("Refusing cleanup because the deleted branch name was recreated");
+		return record;
+	}
+	if (branchTip && branchTip !== expectedBranchTip) {
+		throw new Error("Refusing branch cleanup because the branch identity changed");
+	}
+	if (branchTip) {
+		await beforeDelete?.();
+		await deleteBranchIfUnchanged(repositoryRoot, branch, expectedBranchTip);
+	}
+	return await journalWorkspaceBranchDeleted(markerPath, record);
+}
+
 async function finishAlreadyRemovedWorkspace(
 	repositoryRoot: string,
 	workspacePath: string,
@@ -1049,21 +1073,13 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			if (!branchTip) throw new Error("Owned worktree branch disappeared before cleanup intent");
 			removalRecord = await journalWorkspaceBranchRemoval(marker.path, removalRecord, branchTip);
 		}
-		const expectedBranchTip = removalRecord.removalBranchTip;
-		if (!expectedBranchTip) throw new Error("Workspace cleanup lacks its exact branch identity");
-		if (removalRecord.branchDeletedAt) {
-			if (branchTip) {
-				throw new Error("Refusing cleanup because the deleted branch name was recreated");
-			}
-		} else {
-			if (branchTip && branchTip !== expectedBranchTip) {
-				throw new Error("Refusing branch cleanup because the branch identity changed");
-			}
-			if (branchTip) {
-				await deleteBranchIfUnchanged(this.repositoryRoot, branch, expectedBranchTip);
-			}
-			removalRecord = await journalWorkspaceBranchDeleted(marker.path, removalRecord);
-		}
+		removalRecord = await deleteJournaledWorkspaceBranch(
+			this.repositoryRoot,
+			marker.path,
+			removalRecord,
+			branch,
+			branchTip,
+		);
 		await runCommand("git", ["worktree", "remove", "--force", workspace.path], this.repositoryRoot);
 		await markWorkspaceRemoved(marker.path, removalRecord);
 	}
@@ -1202,20 +1218,16 @@ export class TreehouseWorkspaceBinding implements WorkspaceBinding {
 			if (!branchTip) throw new Error("Leased Treehouse branch disappeared before cleanup intent");
 			removalRecord = await journalWorkspaceBranchRemoval(marker.path, removalRecord, branchTip);
 		}
-		const expectedBranchTip = removalRecord.removalBranchTip;
-		if (!expectedBranchTip) throw new Error("Workspace cleanup lacks its exact branch identity");
-		if (removalRecord.branchDeletedAt) {
-			if (branchTip) throw new Error("Refusing cleanup because the deleted branch name was recreated");
-		} else {
-			if (branchTip && branchTip !== expectedBranchTip) {
-				throw new Error("Refusing branch cleanup because the branch identity changed");
-			}
-			if (branchTip) {
+		removalRecord = await deleteJournaledWorkspaceBranch(
+			this.repositoryRoot,
+			marker.path,
+			removalRecord,
+			branch,
+			branchTip,
+			async () => {
 				await runCommand("git", ["checkout", "--force", "--detach", base], workspace.path);
-				await deleteBranchIfUnchanged(this.repositoryRoot, branch, expectedBranchTip);
-			}
-			removalRecord = await journalWorkspaceBranchDeleted(marker.path, removalRecord);
-		}
+			},
+		);
 		await runCommand(
 			"treehouse",
 			["return", workspace.path, "--force", "--if-lease-id", leaseId, "--if-lease-holder", holder],
@@ -1464,7 +1476,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		);
 	}
 
-	async cleanup(session: DispatchSession): Promise<void> {
+	async cleanup(session: DispatchSession, operatorConfirmed = false): Promise<void> {
 		const pid = Number(session.metadata.pid);
 		const token = session.metadata.token;
 		const receiptPath = session.metadata.receiptPath;
@@ -1478,12 +1490,19 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		) {
 			throw new Error("Process session metadata is incomplete");
 		}
-		if (!(await carriesSessionToken(pid, token))) {
-			if (processExists(-pid)) {
-				throw new Error(`Process-group ${pid} remains after its verifiable session leader exited`);
-			}
+		const release = async () => {
 			await rm(receiptPath, { force: true });
-			return;
+		};
+		if (!(await carriesSessionToken(pid, token))) {
+			if (!processExists(-pid)) {
+				await release();
+				return;
+			}
+			return await acceptInterruptedLaunchVerdict(
+				operatorConfirmed,
+				`Process-group ${pid} remains after its verifiable session leader exited`,
+				release,
+			);
 		}
 		process.kill(-pid, "SIGTERM");
 		for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -1678,7 +1697,7 @@ export class HerdrSessionBinding implements SessionBinding {
 		await release();
 	}
 
-	async cleanup(session: DispatchSession): Promise<void> {
+	async cleanup(session: DispatchSession, operatorConfirmed = false): Promise<void> {
 		const cwd = session.metadata.workspace;
 		const promptPath = session.metadata.promptPath;
 		const receiptPath = session.metadata.receiptPath;
@@ -1690,10 +1709,21 @@ export class HerdrSessionBinding implements SessionBinding {
 			await rm(promptPath, { force: true });
 			await rm(receiptPath, { force: true });
 		};
-		const panes = await this.listPanes(cwd);
 		const paneId = session.metadata.paneId;
+		let panes: Array<{ pane_id?: string }>;
+		let inventoried: string | undefined;
+		try {
+			panes = await this.listPanes(cwd);
+			inventoried = paneId ? await this.findOwnedAgentPane(agentName, cwd) : undefined;
+		} catch (error) {
+			return await acceptInterruptedLaunchVerdict(
+				operatorConfirmed,
+				`Herdr could not be asked whether pane custody for ${agentName} survives: ${error instanceof Error ? error.message : String(error)}`,
+				finish,
+			);
+		}
 		if (paneId) {
-			const owned = await this.findOwnedAgentPane(agentName, cwd);
+			const owned = inventoried;
 			if (owned !== undefined && owned !== paneId) {
 				throw new Error(`Herdr agent ${agentName} does not authenticate pane ${paneId}`);
 			}

@@ -847,6 +847,69 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
+	it("carries an operator verdict for a session handle no binding can prove closed", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-session-verdict-"));
+		const sessionDirectory = join(directory, "sessions", "alpha");
+		const token = "00000000-0000-4000-8000-000000000025";
+		const receiptPath = join(sessionDirectory, `launch-${token}.json`);
+		const survivor = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+			detached: true,
+			stdio: "ignore",
+		});
+		const oldPath = process.env.PATH;
+		try {
+			await once(survivor, "spawn");
+			const orphaned = survivor.pid;
+			if (!orphaned) throw new Error("fixture could not spawn a surviving process group");
+			await mkdir(sessionDirectory, { recursive: true });
+			await writeFile(receiptPath, JSON.stringify({ pid: orphaned, token }));
+			const processBinding = new DetachedProcessSessionBinding(process.execPath, [], directory, 100);
+			const processSession: DispatchSession = {
+				binding: "process",
+				metadata: {
+					pid: String(orphaned),
+					token,
+					logPath: join(sessionDirectory, "agent.log"),
+					receiptPath,
+				},
+			};
+
+			await expect(processBinding.cleanup(processSession)).rejects.toThrow("--confirm-launch-closed");
+			expect(await readFile(receiptPath, "utf8")).toContain(token);
+			await expect(processBinding.cleanup(processSession, true)).resolves.toBeUndefined();
+			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			expect(process.kill(-orphaned, 0)).toBe(true);
+
+			const herdrReceiptPath = join(sessionDirectory, `herdr-launch-${token}.json`);
+			const promptPath = join(sessionDirectory, "prompt.txt");
+			await writeFile(herdrReceiptPath, JSON.stringify({ launchToken: token }));
+			await writeFile(promptPath, "prompt");
+			const herdrBinding = new HerdrSessionBinding("task", directory, 100);
+			const herdrSession: DispatchSession = {
+				binding: "herdr",
+				metadata: {
+					paneId: "worker-pane",
+					workspace: directory,
+					promptPath,
+					receiptPath: herdrReceiptPath,
+					agentName: "ss-alpha-1",
+				},
+			};
+			process.env.PATH = join(directory, "absent-bin");
+
+			await expect(herdrBinding.cleanup(herdrSession)).rejects.toThrow("--confirm-launch-closed");
+			expect(await readFile(herdrReceiptPath, "utf8")).toContain(token);
+			await expect(herdrBinding.cleanup(herdrSession, true)).resolves.toBeUndefined();
+			await expect(readFile(herdrReceiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			await expect(readFile(promptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+		} finally {
+			process.env.PATH = oldPath;
+			if (survivor.pid) process.kill(-survivor.pid, "SIGKILL");
+			survivor.unref();
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("removes durable workspace cleanup receipts with a completed run", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-receipt-"));
 		const marker = "00000000-0000-4000-8000-000000000002";

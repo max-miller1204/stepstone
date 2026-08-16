@@ -111,7 +111,7 @@ export interface SessionBinding {
 		launchToken: string,
 		operatorConfirmed?: boolean,
 	): Promise<void>;
-	cleanup(session: DispatchSession): Promise<void>;
+	cleanup(session: DispatchSession, operatorConfirmed?: boolean): Promise<void>;
 }
 
 export interface MergeEvidence {
@@ -278,7 +278,7 @@ export class DispatchDriver {
 		}
 		if (entry.session) {
 			try {
-				await this.dependencies.session.cleanup(entry.session);
+				await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
 				entry.launchToken = undefined;
 				entry.session = undefined;
 				entry.phase = "ambiguous";
@@ -674,7 +674,7 @@ export class DispatchDriver {
 		if (!needsCleanup(entry)) return;
 		if (entry.session) {
 			try {
-				await this.dependencies.session.cleanup(entry.session);
+				await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
 				entry.session = undefined;
 				entry.launchToken = undefined;
 				entry.phase = "cleanup-pending";

@@ -85,6 +85,7 @@ stepstone-dispatch inspect <run-id> <goal-id> --json
 A `launching` entry with a persisted launch token but no verified session handle is never releasable automatically.
 After inspecting the process table or Herdr agent, `--confirm-launch-closed` asks the selected binding to prove that no worker still carries the persisted launch identity before recovery may release the claim.
 A binding that positively identifies a live worker refuses that release no matter what the flag says; the flag decides only the cases the binding cannot check at all, such as a reserved receipt with no PID, a recycled PID whose process group survives, or a Herdr daemon that cannot be asked.
+The same verdict settles a recorded session handle the binding cannot prove closed either, which is how a worker that exited leaving a background child in its process group is released; the flag never signals such a group, because the binding cannot tell it from an unrelated one that reused the number.
 Cleanup asks the same binding for the same proof before scrubbing a workspace whose launch identity outlived its session handle, so a goal completed from merged evidence holds its parallel slot in `cleanup-pending` until no worker can still be using that checkout.
 An interrupted workspace acquisition, any outcome after a process has spawned, a prompt submission timeout, an unreadable Herdr response, a merge-inspection failure, or a concurrency conflict preserves custody in the run record.
 `cleanup-pending` entries whose worker session has not been proven closed continue to consume parallel capacity.
@@ -113,7 +114,7 @@ stepstone-dispatch cleanup <run-id> <goal-id> --confirm-launch-closed --json
 ```
 
 Cleanup persists verified session closure before touching the workspace, and its worktree, branch deletion, and guarded Treehouse return steps are idempotent across partial failures and restarts.
-`--confirm-launch-closed` carries the same inspected verdict here that it carries for recovery, for an entry already past its canonical mutation whose reserved launch identity nothing can check.
+`--confirm-launch-closed` carries the same inspected verdict here that it carries for recovery, for an entry already past its canonical mutation whose reserved launch identity or recorded session handle nothing can check.
 That verdict names one inspected goal, so cleanup refuses the flag without a goal ID rather than spending one process-table inspection on every entry in the run.
 With no goal ID it removes the noncanonical run record only after every entry is cleaned.
 
