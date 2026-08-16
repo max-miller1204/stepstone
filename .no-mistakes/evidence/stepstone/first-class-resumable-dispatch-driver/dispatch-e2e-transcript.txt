@@ -1,0 +1,1150 @@
+=== Stepstone resumable dispatch driver: end-to-end transcript ===
+Repository (root session, main worktree): /tmp/stepstone-dispatch-e2e-asdkYh/main
+Agent binary launched for every worker:   fake-agent (records its prompt, commits, pushes its branch)
+GitHub stand-in for merge evidence:       gh (reads local PR fixtures)
+
+--- The approved plan, and the ready frontier the driver is allowed to select from
+
+$ stepstone project waves
+Wave 1 (3 goals):
+  [open] ship-widget: Ship widget
+  [open] write-docs: Write docs
+  [open] fix-typo: Fix typo
+Wave 2 (1 goal):
+  [open] polish-widget: Polish widget
+
+$ stepstone project ready
+[open] ship-widget: Ship widget
+[open] write-docs: Write docs
+[open] fix-typo: Fix typo
+
+--- Pass 1: start the run. Three goals are ready, --max-parallel 2 bounds the fan-out.
+
+$ stepstone-dispatch start --goal ship-widget --goal polish-widget --goal write-docs --goal fix-typo --max-parallel 2 --workspace worktree --session process --agent-command fake-agent --workspace-parent /tmp/stepstone-dispatch-e2e-asdkYh/workspaces --startup-grace-ms 1500
+{
+  "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+  "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+  "approvedGoalIds": [
+    "ship-widget",
+    "polish-widget",
+    "write-docs",
+    "fix-typo"
+  ],
+  "maxParallel": 2,
+  "workspaceBinding": "worktree",
+  "sessionBinding": "process",
+  "createdAt": "2026-08-16T18:53:27.158Z",
+  "updatedAt": "2026-08-16T18:53:30.424Z",
+  "entries": {
+    "ship-widget": {
+      "phase": "running",
+      "branch": "stepstone/ship-widget",
+      "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+      "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-ship-widget",
+      "session": {
+        "pid": "4057696",
+        "token": "3c870f21-2f67-4761-aa9b-51358f8cb749",
+        "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/ship-widget/agent.log",
+        "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/ship-widget/launch-3c870f21-2f67-4761-aa9b-51358f8cb749.json"
+      },
+      "message": "Worker launched; matching merged PR is the only completion evidence.",
+      "updatedAt": "2026-08-16T18:53:28.794Z"
+    },
+    "write-docs": {
+      "phase": "running",
+      "branch": "stepstone/write-docs",
+      "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+      "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-write-docs",
+      "session": {
+        "pid": "4057778",
+        "token": "4a4ee06f-7bd3-4a75-a231-d423b8b8ea19",
+        "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/write-docs/agent.log",
+        "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/write-docs/launch-4a4ee06f-7bd3-4a75-a231-d423b8b8ea19.json"
+      },
+      "message": "Worker launched; matching merged PR is the only completion evidence.",
+      "updatedAt": "2026-08-16T18:53:30.424Z"
+    }
+  }
+}
+
+--- Only two goals were dispatched: the third ready goal is held by --max-parallel, the fourth is still blocked.
+
+$ stepstone project list
+[open] ship-widget: Ship widget
+[open] polish-widget: Polish widget
+[open] write-docs: Write docs
+[open] fix-typo: Fix typo
+
+--- Each dispatched goal got its own isolated checkout on its deterministic stepstone/<goal-id> branch, and carries that branch as its claim in the canonical roadmap.
+
+$ git worktree list
+/tmp/stepstone-dispatch-e2e-asdkYh/main                              671668c [main]
+/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-ship-widget  91e2f5c [stepstone/ship-widget]
+/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-write-docs   40afd7c [stepstone/write-docs]
+
+--- The worker was launched inside its own checkout and received the complete stored goal on stdin.
+
+$ cat /tmp/stepstone-dispatch-e2e-asdkYh/prompts/ship-widget.prompt.txt
+Implement this claimed Stepstone Project Goal in the provided isolated checkout.
+
+The root dispatch driver is the sole roadmap writer. Do not edit .worklist/worklist.json or run mutating Stepstone project commands.
+
+Complete the entire goal, commit the implementation branch, and open a pull request whose head is the claimed branch.
+
+Project Goal context:
+
+{
+  "id": "ship-widget",
+  "title": "Ship widget",
+  "description": "Add the widget module with its public API.",
+  "status": "open",
+  "createdAt": "2026-08-16T18:52:54.503Z",
+  "updatedAt": "2026-08-16T18:52:54.503Z"
+}
+
+$ cat /tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/ship-widget/agent.log
+worker for ship-widget started in /tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-ship-widget on branch stepstone/ship-widget
+session token: 3c870f21-2f67-4761-aa9b-51358f8cb749
+worker for ship-widget pushed stepstone/ship-widget and opened its pull request
+
+$ stepstone project show ship-widget
+ship-widget: Ship widget
+status: open
+branch: stepstone/ship-widget
+created: 2026-08-16T18:52:54.503Z
+updated: 2026-08-16T18:53:27.265Z
+blocks:
+  polish-widget
+description:
+Add the widget module with its public API.
+
+--- The two claims removed those goals from the ready frontier; fix-typo stays ready but unstaffed because --max-parallel 2 is full.
+
+$ stepstone project ready
+[open] fix-typo: Fix typo
+
+--- Pass 2: two pull requests exist for ship-widget's branch - one merged into another base, one merged before this claim. Neither is completion evidence.
+
+$ cat /tmp/stepstone-dispatch-e2e-asdkYh/pr/stepstone/ship-widget.json
+[
+  {"headRefName":"stepstone/ship-widget","baseRefName":"release","createdAt":"2026-08-16T18:59:00.000Z","mergedAt":"2026-08-16T18:59:30.000Z","mergeCommit":{"oid":"671668c04eec9c6c109deabce9a6201cb5bc4ebc"},"url":"https://github.com/acme/widget/pull/7"},
+  {"headRefName":"stepstone/ship-widget","baseRefName":"main","createdAt":"2026-01-05T10:00:00.000Z","mergedAt":"2026-01-06T10:00:00.000Z","mergeCommit":{"oid":"671668c04eec9c6c109deabce9a6201cb5bc4ebc"},"url":"https://github.com/acme/widget/pull/2"}
+]
+
+$ stepstone-dispatch resume 4028d83a-6ac7-4b78-bce2-0ae95374d9b4
+{
+  "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+  "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+  "approvedGoalIds": [
+    "ship-widget",
+    "polish-widget",
+    "write-docs",
+    "fix-typo"
+  ],
+  "maxParallel": 2,
+  "workspaceBinding": "worktree",
+  "sessionBinding": "process",
+  "createdAt": "2026-08-16T18:53:27.158Z",
+  "updatedAt": "2026-08-16T18:53:30.424Z",
+  "entries": {
+    "ship-widget": {
+      "phase": "running",
+      "branch": "stepstone/ship-widget",
+      "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+      "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-ship-widget",
+      "session": {
+        "pid": "4057696",
+        "token": "3c870f21-2f67-4761-aa9b-51358f8cb749",
+        "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/ship-widget/agent.log",
+        "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/ship-widget/launch-3c870f21-2f67-4761-aa9b-51358f8cb749.json"
+      },
+      "message": "Worker launched; matching merged PR is the only completion evidence.",
+      "updatedAt": "2026-08-16T18:53:28.794Z"
+    },
+    "write-docs": {
+      "phase": "running",
+      "branch": "stepstone/write-docs",
+      "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+      "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-write-docs",
+      "session": {
+        "pid": "4057778",
+        "token": "4a4ee06f-7bd3-4a75-a231-d423b8b8ea19",
+        "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/write-docs/agent.log",
+        "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/write-docs/launch-4a4ee06f-7bd3-4a75-a231-d423b8b8ea19.json"
+      },
+      "message": "Worker launched; matching merged PR is the only completion evidence.",
+      "updatedAt": "2026-08-16T18:53:30.424Z"
+    }
+  }
+}
+
+$ stepstone project show ship-widget
+ship-widget: Ship widget
+status: open
+branch: stepstone/ship-widget
+created: 2026-08-16T18:52:54.503Z
+updated: 2026-08-16T18:53:27.265Z
+blocks:
+  polish-widget
+description:
+Add the widget module with its public API.
+
+--- Pass 3: the reviewer merges ship-widget's real pull request into main.
+
+$ merge-pr stepstone/ship-widget 11 /tmp/stepstone-dispatch-e2e-asdkYh
+merged PR #11 (stepstone/ship-widget -> main) as 9a977ecea06e82bdc154a7219bd9fd5aa49a7634
+
+$ cat /tmp/stepstone-dispatch-e2e-asdkYh/pr/stepstone/ship-widget.json
+[{"headRefName":"stepstone/ship-widget","baseRefName":"main","createdAt":"2026-08-16T18:54:06.197Z","mergedAt":"2026-08-16T18:54:06.197Z","mergeCommit":{"oid":"9a977ecea06e82bdc154a7219bd9fd5aa49a7634"},"url":"https://github.com/acme/widget/pull/11"}]
+
+$ stepstone-dispatch resume 4028d83a-6ac7-4b78-bce2-0ae95374d9b4
+{
+  "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+  "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+  "approvedGoalIds": [
+    "ship-widget",
+    "polish-widget",
+    "write-docs",
+    "fix-typo"
+  ],
+  "maxParallel": 2,
+  "workspaceBinding": "worktree",
+  "sessionBinding": "process",
+  "createdAt": "2026-08-16T18:53:27.158Z",
+  "updatedAt": "2026-08-16T18:54:08.122Z",
+  "entries": {
+    "ship-widget": {
+      "phase": "cleaned",
+      "branch": "stepstone/ship-widget",
+      "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+      "mergedPr": {
+        "url": "https://github.com/acme/widget/pull/11",
+        "headBranch": "stepstone/ship-widget",
+        "baseBranch": "main",
+        "createdAt": "2026-08-16T18:54:06.197Z",
+        "mergedAt": "2026-08-16T18:54:06.197Z",
+        "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+      },
+      "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+      "updatedAt": "2026-08-16T18:54:06.524Z"
+    },
+    "write-docs": {
+      "phase": "running",
+      "branch": "stepstone/write-docs",
+      "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+      "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-write-docs",
+      "session": {
+        "pid": "4057778",
+        "token": "4a4ee06f-7bd3-4a75-a231-d423b8b8ea19",
+        "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/write-docs/agent.log",
+        "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/write-docs/launch-4a4ee06f-7bd3-4a75-a231-d423b8b8ea19.json"
+      },
+      "message": "Worker launched; matching merged PR is the only completion evidence.",
+      "updatedAt": "2026-08-16T18:53:30.424Z"
+    },
+    "polish-widget": {
+      "phase": "running",
+      "branch": "stepstone/polish-widget",
+      "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+      "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget",
+      "session": {
+        "pid": "4058873",
+        "token": "8e35409f-80fb-4f10-8499-8cdc4db57f22",
+        "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log",
+        "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"
+      },
+      "message": "Worker launched; matching merged PR is the only completion evidence.",
+      "updatedAt": "2026-08-16T18:54:08.122Z"
+    }
+  }
+}
+
+--- ship-widget is done in the canonical roadmap, its claim is cleared, and the goal it blocked was dispatched in the freed slot.
+
+$ stepstone project show ship-widget
+ship-widget: Ship widget
+status: done
+created: 2026-08-16T18:52:54.503Z
+updated: 2026-08-16T18:54:06.391Z
+completed: 2026-08-16T18:54:06.391Z
+blocks:
+  polish-widget
+description:
+Add the widget module with its public API.
+
+$ stepstone project waves
+Wave 1 (3 goals):
+  [open] polish-widget: Polish widget (branch stepstone/polish-widget)
+  [open] write-docs: Write docs (branch stepstone/write-docs)
+  [open] fix-typo: Fix typo
+
+--- The canonical checkout was fast-forwarded to the verified merge commit before the newly unblocked goal was staffed.
+
+$ git log --oneline --graph -n 4
+*   9a977ec Merge pull request #11 from stepstone/ship-widget
+|\  
+| * 91e2f5c Implement ship-widget
+|/  
+* 671668c Capture the approved goal plan
+* 35ba111 Initial commit
+
+--- ship-widget's worktree and branch are gone; polish-widget's checkout was created from the updated target.
+
+$ git worktree list
+/tmp/stepstone-dispatch-e2e-asdkYh/main                                9a977ec [main]
+/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget  72fd128 [stepstone/polish-widget]
+/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-write-docs     40afd7c [stepstone/write-docs]
+
+$ git branch --list stepstone/*
++ stepstone/polish-widget
++ stepstone/write-docs
+
+$ cat /tmp/stepstone-dispatch-e2e-asdkYh/prompts/polish-widget.prompt.txt
+Implement this claimed Stepstone Project Goal in the provided isolated checkout.
+
+The root dispatch driver is the sole roadmap writer. Do not edit .worklist/worklist.json or run mutating Stepstone project commands.
+
+Complete the entire goal, commit the implementation branch, and open a pull request whose head is the claimed branch.
+
+Project Goal context:
+
+{
+  "id": "polish-widget",
+  "title": "Polish widget",
+  "description": "Refine the widget module once it exists.",
+  "dependsOn": [
+    "ship-widget"
+  ],
+  "status": "open",
+  "createdAt": "2026-08-16T18:52:54.503Z",
+  "updatedAt": "2026-08-16T18:52:54.503Z"
+}
+
+--- polish-widget's isolated checkout was branched from the merge commit, not from the stale target.
+
+$ git -C /tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget log --oneline -n 3
+72fd128 Implement polish-widget
+9a977ec Merge pull request #11 from stepstone/ship-widget
+91e2f5c Implement ship-widget
+
+--- Pass 4: write-docs' pull request merges, and the driver process is SIGKILLed mid-pass while it is launching the next goal.
+
+$ merge-pr stepstone/write-docs 12 /tmp/stepstone-dispatch-e2e-asdkYh
+merged PR #12 (stepstone/write-docs -> main) as 67a57e6acc18f6be4bd2a7e896de1ddb1e777afd
+
+$ stepstone-dispatch resume 4028d83a-6ac7-4b78-bce2-0ae95374d9b4   # killed mid-pass
+SIGKILL delivered to driver PID 4060046 while fix-typo was in phase 'launching'
+driver exit status: 137 (killed)
+
+--- Nothing was printed by the killed process. A brand-new process reads the persisted run state and reports exactly where the interrupted work stopped.
+
+$ stepstone-dispatch inspect 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 fix-typo
+{
+  "run": {
+    "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+    "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+    "approvedGoalIds": [
+      "ship-widget",
+      "polish-widget",
+      "write-docs",
+      "fix-typo"
+    ],
+    "maxParallel": 2,
+    "workspaceBinding": "worktree",
+    "sessionBinding": "process",
+    "createdAt": "2026-08-16T18:53:27.158Z",
+    "updatedAt": "2026-08-16T18:55:03.582Z",
+    "entries": {
+      "ship-widget": {
+        "phase": "cleaned",
+        "branch": "stepstone/ship-widget",
+        "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/11",
+          "headBranch": "stepstone/ship-widget",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:54:06.197Z",
+          "mergedAt": "2026-08-16T18:54:06.197Z",
+          "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+        "updatedAt": "2026-08-16T18:54:06.524Z"
+      },
+      "write-docs": {
+        "phase": "cleaned",
+        "branch": "stepstone/write-docs",
+        "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/12",
+          "headBranch": "stepstone/write-docs",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:55:03.231Z",
+          "mergedAt": "2026-08-16T18:55:03.231Z",
+          "mergeCommit": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/12.",
+        "updatedAt": "2026-08-16T18:55:03.508Z"
+      },
+      "polish-widget": {
+        "phase": "running",
+        "branch": "stepstone/polish-widget",
+        "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+        "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget",
+        "session": {
+          "pid": "4058873",
+          "token": "8e35409f-80fb-4f10-8499-8cdc4db57f22",
+          "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log",
+          "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"
+        },
+        "message": "Worker launched; matching merged PR is the only completion evidence.",
+        "updatedAt": "2026-08-16T18:54:08.122Z"
+      },
+      "fix-typo": {
+        "phase": "launching",
+        "branch": "stepstone/fix-typo",
+        "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+        "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-fix-typo",
+        "message": "Worker launch intent and identity are journaled; no session handle is proven yet.",
+        "updatedAt": "2026-08-16T18:55:03.582Z"
+      }
+    }
+  },
+  "goal": {
+    "goal": {
+      "id": "fix-typo",
+      "title": "Fix typo",
+      "description": "Correct the spelling in the README.",
+      "status": "open",
+      "createdAt": "2026-08-16T18:52:54.503Z",
+      "updatedAt": "2026-08-16T18:52:54.503Z"
+    },
+    "branch": "stepstone/fix-typo",
+    "phase": "launching",
+    "workspace": {
+      "binding": "worktree",
+      "path": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-fix-typo",
+      "metadata": {
+        "marker": "0183097c-d4a6-44fa-8bd9-5d0d64a16939",
+        "base": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd",
+        "gitdir": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/worktrees/stepstone-fix-typo"
+      }
+    },
+    "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+    "launchToken": "f98414f1-bae4-40f3-91af-9a4088fda25d",
+    "message": "Worker launch intent and identity are journaled; no session handle is proven yet.",
+    "updatedAt": "2026-08-16T18:55:03.582Z"
+  }
+}
+
+$ stepstone-dispatch status 4028d83a-6ac7-4b78-bce2-0ae95374d9b4
+{"id":"4028d83a-6ac7-4b78-bce2-0ae95374d9b4","repositoryRoot":"/tmp/stepstone-dispatch-e2e-asdkYh/main","approvedGoalIds":["ship-widget","polish-widget","write-docs","fix-typo"],"maxParallel":2,"workspaceBinding":"worktree","sessionBinding":"process","createdAt":"2026-08-16T18:53:27.158Z","updatedAt":"2026-08-16T18:55:03.582Z","entries":{"ship-widget":{"phase":"cleaned","branch":"stepstone/ship-widget","claimUpdatedAt":"2026-08-16T18:53:27.265Z","mergedPr":{"url":"https://github.com/acme/widget/pull/11","headBranch":"stepstone/ship-widget","baseBranch":"main","createdAt":"2026-08-16T18:54:06.197Z","mergedAt":"2026-08-16T18:54:06.197Z","mergeCommit":"9a977ecea06e82bdc154a7219bd9fd5aa49a7634"},"message":"Completed and cleaned after https://github.com/acme/widget/pull/11.","updatedAt":"2026-08-16T18:54:06.524Z"},"write-docs":{"phase":"cleaned","branch":"stepstone/write-docs","claimUpdatedAt":"2026-08-16T18:53:28.898Z","mergedPr":{"url":"https://github.com/acme/widget/pull/12","headBranch":"stepstone/write-docs","baseBranch":"main","createdAt":"2026-08-16T18:55:03.231Z","mergedAt":"2026-08-16T18:55:03.231Z","mergeCommit":"67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"},"message":"Completed and cleaned after https://github.com/acme/widget/pull/12.","updatedAt":"2026-08-16T18:55:03.508Z"},"polish-widget":{"phase":"running","branch":"stepstone/polish-widget","claimUpdatedAt":"2026-08-16T18:54:06.593Z","workspace":"/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget","session":{"pid":"4058873","token":"8e35409f-80fb-4f10-8499-8cdc4db57f22","logPath":"/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log","receiptPath":"/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"},"message":"Worker launched; matching merged PR is the only completion evidence.","updatedAt":"2026-08-16T18:54:08.122Z"},"fix-typo":{"phase":"launching","branch":"stepstone/fix-typo","claimUpdatedAt":"2026-08-16T18:55:03.579Z","workspace":"/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-fix-typo","message":"Worker launch intent and identity are journaled; no session handle is proven yet.","updatedAt":"2026-08-16T18:55:03.582Z"}}}
+
+--- The launch receipt is reserved before anything can spawn. This crash landed after the spawn but before the process ID reached that receipt, so the record names a launch nothing can check.
+
+$ cat /tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/fix-typo/launch-f98414f1-bae4-40f3-91af-9a4088fda25d.json
+{"token":"f98414f1-bae4-40f3-91af-9a4088fda25d"}
+
+--- Pass 5: resume reconciles the interrupted launch. It preserves the claim and workspace instead of guessing.
+
+$ stepstone-dispatch resume 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 --json
+{
+  "ok": true,
+  "result": {
+    "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+    "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+    "approvedGoalIds": [
+      "ship-widget",
+      "polish-widget",
+      "write-docs",
+      "fix-typo"
+    ],
+    "maxParallel": 2,
+    "workspaceBinding": "worktree",
+    "sessionBinding": "process",
+    "createdAt": "2026-08-16T18:53:27.158Z",
+    "updatedAt": "2026-08-16T18:55:34.479Z",
+    "entries": {
+      "ship-widget": {
+        "phase": "cleaned",
+        "branch": "stepstone/ship-widget",
+        "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/11",
+          "headBranch": "stepstone/ship-widget",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:54:06.197Z",
+          "mergedAt": "2026-08-16T18:54:06.197Z",
+          "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+        "updatedAt": "2026-08-16T18:54:06.524Z"
+      },
+      "write-docs": {
+        "phase": "cleaned",
+        "branch": "stepstone/write-docs",
+        "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/12",
+          "headBranch": "stepstone/write-docs",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:55:03.231Z",
+          "mergedAt": "2026-08-16T18:55:03.231Z",
+          "mergeCommit": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/12.",
+        "updatedAt": "2026-08-16T18:55:03.508Z"
+      },
+      "polish-widget": {
+        "phase": "running",
+        "branch": "stepstone/polish-widget",
+        "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+        "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget",
+        "session": {
+          "pid": "4058873",
+          "token": "8e35409f-80fb-4f10-8499-8cdc4db57f22",
+          "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log",
+          "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"
+        },
+        "message": "Worker launched; matching merged PR is the only completion evidence.",
+        "updatedAt": "2026-08-16T18:54:08.122Z"
+      },
+      "fix-typo": {
+        "phase": "ambiguous",
+        "branch": "stepstone/fix-typo",
+        "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+        "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-fix-typo",
+        "message": "Worker launch was interrupted before a session handle was persisted; launch identity is preserved for manual inspection.",
+        "updatedAt": "2026-08-16T18:55:34.479Z"
+      }
+    }
+  }
+}
+
+$ stepstone-dispatch inspect 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 fix-typo --json
+{
+  "ok": true,
+  "result": {
+    "run": {
+      "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+      "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+      "approvedGoalIds": [
+        "ship-widget",
+        "polish-widget",
+        "write-docs",
+        "fix-typo"
+      ],
+      "maxParallel": 2,
+      "workspaceBinding": "worktree",
+      "sessionBinding": "process",
+      "createdAt": "2026-08-16T18:53:27.158Z",
+      "updatedAt": "2026-08-16T18:55:34.479Z",
+      "entries": {
+        "ship-widget": {
+          "phase": "cleaned",
+          "branch": "stepstone/ship-widget",
+          "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+          "mergedPr": {
+            "url": "https://github.com/acme/widget/pull/11",
+            "headBranch": "stepstone/ship-widget",
+            "baseBranch": "main",
+            "createdAt": "2026-08-16T18:54:06.197Z",
+            "mergedAt": "2026-08-16T18:54:06.197Z",
+            "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+          },
+          "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+          "updatedAt": "2026-08-16T18:54:06.524Z"
+        },
+        "write-docs": {
+          "phase": "cleaned",
+          "branch": "stepstone/write-docs",
+          "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+          "mergedPr": {
+            "url": "https://github.com/acme/widget/pull/12",
+            "headBranch": "stepstone/write-docs",
+            "baseBranch": "main",
+            "createdAt": "2026-08-16T18:55:03.231Z",
+            "mergedAt": "2026-08-16T18:55:03.231Z",
+            "mergeCommit": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"
+          },
+          "message": "Completed and cleaned after https://github.com/acme/widget/pull/12.",
+          "updatedAt": "2026-08-16T18:55:03.508Z"
+        },
+        "polish-widget": {
+          "phase": "running",
+          "branch": "stepstone/polish-widget",
+          "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+          "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget",
+          "session": {
+            "pid": "4058873",
+            "token": "8e35409f-80fb-4f10-8499-8cdc4db57f22",
+            "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log",
+            "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"
+          },
+          "message": "Worker launched; matching merged PR is the only completion evidence.",
+          "updatedAt": "2026-08-16T18:54:08.122Z"
+        },
+        "fix-typo": {
+          "phase": "ambiguous",
+          "branch": "stepstone/fix-typo",
+          "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+          "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-fix-typo",
+          "message": "Worker launch was interrupted before a session handle was persisted; launch identity is preserved for manual inspection.",
+          "updatedAt": "2026-08-16T18:55:34.479Z"
+        }
+      }
+    },
+    "goal": {
+      "goal": {
+        "id": "fix-typo",
+        "title": "Fix typo",
+        "description": "Correct the spelling in the README.",
+        "status": "open",
+        "createdAt": "2026-08-16T18:52:54.503Z",
+        "updatedAt": "2026-08-16T18:52:54.503Z"
+      },
+      "branch": "stepstone/fix-typo",
+      "phase": "ambiguous",
+      "workspace": {
+        "binding": "worktree",
+        "path": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-fix-typo",
+        "metadata": {
+          "marker": "0183097c-d4a6-44fa-8bd9-5d0d64a16939",
+          "base": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd",
+          "gitdir": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/worktrees/stepstone-fix-typo"
+        }
+      },
+      "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+      "launchToken": "f98414f1-bae4-40f3-91af-9a4088fda25d",
+      "message": "Worker launch was interrupted before a session handle was persisted; launch identity is preserved for manual inspection.",
+      "updatedAt": "2026-08-16T18:55:34.479Z"
+    }
+  }
+}
+
+--- Releasing that claim is refused while nothing can prove the interrupted launch left no worker behind.
+
+$ stepstone-dispatch recover 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 fix-typo --release
+stepstone-dispatch: Goal fix-typo has an interrupted worker launch identity but no verified session handle; manual process inspection and --confirm-launch-closed are required
+[exit status 1]
+
+--- The operator inspects the process table for anything still carrying that launch identity, exactly as the binding would.
+
+$ find-live-worker f98414f1-bae4-40f3-91af-9a4088fda25d
+no live process carries launch identity f98414f1-bae4-40f3-91af-9a4088fda25d
+
+--- Only now does the operator's verdict release the exact claim, scrub the workspace, and delete the branch.
+
+$ stepstone-dispatch recover 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 fix-typo --release --confirm-launch-closed --json
+{
+  "ok": true,
+  "result": {
+    "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+    "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+    "approvedGoalIds": [
+      "ship-widget",
+      "polish-widget",
+      "write-docs",
+      "fix-typo"
+    ],
+    "maxParallel": 2,
+    "workspaceBinding": "worktree",
+    "sessionBinding": "process",
+    "createdAt": "2026-08-16T18:53:27.158Z",
+    "updatedAt": "2026-08-16T18:56:42.219Z",
+    "entries": {
+      "ship-widget": {
+        "phase": "cleaned",
+        "branch": "stepstone/ship-widget",
+        "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/11",
+          "headBranch": "stepstone/ship-widget",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:54:06.197Z",
+          "mergedAt": "2026-08-16T18:54:06.197Z",
+          "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+        "updatedAt": "2026-08-16T18:54:06.524Z"
+      },
+      "write-docs": {
+        "phase": "cleaned",
+        "branch": "stepstone/write-docs",
+        "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/12",
+          "headBranch": "stepstone/write-docs",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:55:03.231Z",
+          "mergedAt": "2026-08-16T18:55:03.231Z",
+          "mergeCommit": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/12.",
+        "updatedAt": "2026-08-16T18:55:03.508Z"
+      },
+      "polish-widget": {
+        "phase": "running",
+        "branch": "stepstone/polish-widget",
+        "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+        "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget",
+        "session": {
+          "pid": "4058873",
+          "token": "8e35409f-80fb-4f10-8499-8cdc4db57f22",
+          "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log",
+          "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"
+        },
+        "message": "Worker launched; matching merged PR is the only completion evidence.",
+        "updatedAt": "2026-08-16T18:54:08.122Z"
+      },
+      "fix-typo": {
+        "phase": "cleaned",
+        "branch": "stepstone/fix-typo",
+        "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+        "custodyOperatorAsserted": true,
+        "message": "Released and cleaned.",
+        "updatedAt": "2026-08-16T18:56:42.219Z"
+      }
+    }
+  }
+}
+
+--- The released goal is open and unclaimed again, so it reappears on the ready frontier, and its abandoned checkout and branch are gone.
+
+$ stepstone project show fix-typo
+fix-typo: Fix typo
+status: open
+created: 2026-08-16T18:52:54.503Z
+updated: 2026-08-16T18:56:42.168Z
+description:
+Correct the spelling in the README.
+
+$ stepstone project ready
+[open] fix-typo: Fix typo
+
+$ git worktree list
+/tmp/stepstone-dispatch-e2e-asdkYh/main                                67a57e6 [main]
+/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget  72fd128 [stepstone/polish-widget]
+
+$ git branch --list stepstone/*
++ stepstone/polish-widget
+
+--- The operator closed the abandoned pull request and deleted its branch (git push origin --delete stepstone/fix-typo).
+
+$ git ls-remote --heads origin
+67a57e6acc18f6be4bd2a7e896de1ddb1e777afd	refs/heads/main
+72fd12836a51f82b78f2a83e80a05c80480aeb48	refs/heads/stepstone/polish-widget
+91e2f5c1d3b481be9cfbc65076eaebf2c10153a4	refs/heads/stepstone/ship-widget
+40afd7cdc6a8a525309d9e07ad15aaf9e01242e3	refs/heads/stepstone/write-docs
+
+--- Resume never relaunches an entry this run already settled: the released goal stays terminal here and belongs to the canonical frontier, not to this run.
+
+$ stepstone-dispatch resume 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 --json
+{
+  "ok": true,
+  "result": {
+    "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+    "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+    "approvedGoalIds": [
+      "ship-widget",
+      "polish-widget",
+      "write-docs",
+      "fix-typo"
+    ],
+    "maxParallel": 2,
+    "workspaceBinding": "worktree",
+    "sessionBinding": "process",
+    "createdAt": "2026-08-16T18:53:27.158Z",
+    "updatedAt": "2026-08-16T18:56:42.219Z",
+    "entries": {
+      "ship-widget": {
+        "phase": "cleaned",
+        "branch": "stepstone/ship-widget",
+        "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/11",
+          "headBranch": "stepstone/ship-widget",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:54:06.197Z",
+          "mergedAt": "2026-08-16T18:54:06.197Z",
+          "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+        "updatedAt": "2026-08-16T18:54:06.524Z"
+      },
+      "write-docs": {
+        "phase": "cleaned",
+        "branch": "stepstone/write-docs",
+        "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/12",
+          "headBranch": "stepstone/write-docs",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:55:03.231Z",
+          "mergedAt": "2026-08-16T18:55:03.231Z",
+          "mergeCommit": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/12.",
+        "updatedAt": "2026-08-16T18:55:03.508Z"
+      },
+      "polish-widget": {
+        "phase": "running",
+        "branch": "stepstone/polish-widget",
+        "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+        "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget",
+        "session": {
+          "pid": "4058873",
+          "token": "8e35409f-80fb-4f10-8499-8cdc4db57f22",
+          "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log",
+          "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"
+        },
+        "message": "Worker launched; matching merged PR is the only completion evidence.",
+        "updatedAt": "2026-08-16T18:54:08.122Z"
+      },
+      "fix-typo": {
+        "phase": "cleaned",
+        "branch": "stepstone/fix-typo",
+        "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+        "custodyOperatorAsserted": true,
+        "message": "Released and cleaned.",
+        "updatedAt": "2026-08-16T18:56:42.219Z"
+      }
+    }
+  }
+}
+
+$ stepstone-dispatch status 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 --json
+{
+  "ok": true,
+  "result": [
+    {
+      "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+      "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+      "approvedGoalIds": [
+        "ship-widget",
+        "polish-widget",
+        "write-docs",
+        "fix-typo"
+      ],
+      "maxParallel": 2,
+      "workspaceBinding": "worktree",
+      "sessionBinding": "process",
+      "createdAt": "2026-08-16T18:53:27.158Z",
+      "updatedAt": "2026-08-16T18:56:42.219Z",
+      "entries": {
+        "ship-widget": {
+          "phase": "cleaned",
+          "branch": "stepstone/ship-widget",
+          "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+          "mergedPr": {
+            "url": "https://github.com/acme/widget/pull/11",
+            "headBranch": "stepstone/ship-widget",
+            "baseBranch": "main",
+            "createdAt": "2026-08-16T18:54:06.197Z",
+            "mergedAt": "2026-08-16T18:54:06.197Z",
+            "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+          },
+          "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+          "updatedAt": "2026-08-16T18:54:06.524Z"
+        },
+        "write-docs": {
+          "phase": "cleaned",
+          "branch": "stepstone/write-docs",
+          "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+          "mergedPr": {
+            "url": "https://github.com/acme/widget/pull/12",
+            "headBranch": "stepstone/write-docs",
+            "baseBranch": "main",
+            "createdAt": "2026-08-16T18:55:03.231Z",
+            "mergedAt": "2026-08-16T18:55:03.231Z",
+            "mergeCommit": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"
+          },
+          "message": "Completed and cleaned after https://github.com/acme/widget/pull/12.",
+          "updatedAt": "2026-08-16T18:55:03.508Z"
+        },
+        "polish-widget": {
+          "phase": "running",
+          "branch": "stepstone/polish-widget",
+          "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+          "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-polish-widget",
+          "session": {
+            "pid": "4058873",
+            "token": "8e35409f-80fb-4f10-8499-8cdc4db57f22",
+            "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/agent.log",
+            "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget/launch-8e35409f-80fb-4f10-8499-8cdc4db57f22.json"
+          },
+          "message": "Worker launched; matching merged PR is the only completion evidence.",
+          "updatedAt": "2026-08-16T18:54:08.122Z"
+        },
+        "fix-typo": {
+          "phase": "cleaned",
+          "branch": "stepstone/fix-typo",
+          "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+          "custodyOperatorAsserted": true,
+          "message": "Released and cleaned.",
+          "updatedAt": "2026-08-16T18:56:42.219Z"
+        }
+      }
+    }
+  ]
+}
+
+--- The last worker's pull request merges, so the final approved goal of this run completes.
+
+$ merge-pr stepstone/polish-widget 13 /tmp/stepstone-dispatch-e2e-asdkYh
+merged PR #13 (stepstone/polish-widget -> main) as 4fd2d5606e9a96c885970aebf2f60e7f9b58e293
+
+$ stepstone-dispatch resume 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 --json
+{
+  "ok": true,
+  "result": {
+    "id": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4",
+    "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+    "approvedGoalIds": [
+      "ship-widget",
+      "polish-widget",
+      "write-docs",
+      "fix-typo"
+    ],
+    "maxParallel": 2,
+    "workspaceBinding": "worktree",
+    "sessionBinding": "process",
+    "createdAt": "2026-08-16T18:53:27.158Z",
+    "updatedAt": "2026-08-16T18:57:22.523Z",
+    "entries": {
+      "ship-widget": {
+        "phase": "cleaned",
+        "branch": "stepstone/ship-widget",
+        "claimUpdatedAt": "2026-08-16T18:53:27.265Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/11",
+          "headBranch": "stepstone/ship-widget",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:54:06.197Z",
+          "mergedAt": "2026-08-16T18:54:06.197Z",
+          "mergeCommit": "9a977ecea06e82bdc154a7219bd9fd5aa49a7634"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/11.",
+        "updatedAt": "2026-08-16T18:54:06.524Z"
+      },
+      "write-docs": {
+        "phase": "cleaned",
+        "branch": "stepstone/write-docs",
+        "claimUpdatedAt": "2026-08-16T18:53:28.898Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/12",
+          "headBranch": "stepstone/write-docs",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:55:03.231Z",
+          "mergedAt": "2026-08-16T18:55:03.231Z",
+          "mergeCommit": "67a57e6acc18f6be4bd2a7e896de1ddb1e777afd"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/12.",
+        "updatedAt": "2026-08-16T18:55:03.508Z"
+      },
+      "polish-widget": {
+        "phase": "cleaned",
+        "branch": "stepstone/polish-widget",
+        "claimUpdatedAt": "2026-08-16T18:54:06.593Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/13",
+          "headBranch": "stepstone/polish-widget",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:57:22.258Z",
+          "mergedAt": "2026-08-16T18:57:22.258Z",
+          "mergeCommit": "4fd2d5606e9a96c885970aebf2f60e7f9b58e293"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/13.",
+        "updatedAt": "2026-08-16T18:57:22.523Z"
+      },
+      "fix-typo": {
+        "phase": "cleaned",
+        "branch": "stepstone/fix-typo",
+        "claimUpdatedAt": "2026-08-16T18:55:03.579Z",
+        "custodyOperatorAsserted": true,
+        "message": "Released and cleaned.",
+        "updatedAt": "2026-08-16T18:56:42.219Z"
+      }
+    }
+  }
+}
+
+$ stepstone project list
+[done] ship-widget: Ship widget
+[done] polish-widget: Polish widget
+[done] write-docs: Write docs
+[open] fix-typo: Fix typo
+
+$ git worktree list
+/tmp/stepstone-dispatch-e2e-asdkYh/main  4fd2d56 [main]
+
+$ git branch --list stepstone/*
+
+--- Every entry is terminal, so the noncanonical run record can be dropped. The roadmap keeps the outcome; nothing else survives.
+
+$ stepstone-dispatch cleanup 4028d83a-6ac7-4b78-bce2-0ae95374d9b4 --json
+{
+  "ok": true,
+  "result": {
+    "removedRunId": "4028d83a-6ac7-4b78-bce2-0ae95374d9b4"
+  }
+}
+
+$ stepstone-dispatch status
+No persisted dispatch runs.
+
+$ ls -R /tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch
+/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch:
+sessions
+workspaces
+
+/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions:
+fix-typo
+polish-widget
+ship-widget
+write-docs
+
+/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/fix-typo:
+agent.log
+
+/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/polish-widget:
+agent.log
+
+/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/ship-widget:
+agent.log
+
+/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/write-docs:
+agent.log
+
+/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/workspaces:
+
+--- The goal that was recovered and released is dispatchable again: a second, serial run (--max-parallel 1) picks it up from the canonical frontier.
+
+$ stepstone project ready
+[open] fix-typo: Fix typo
+
+$ stepstone-dispatch start --goal fix-typo --max-parallel 1 --agent-command fake-agent --workspace-parent /tmp/stepstone-dispatch-e2e-asdkYh/workspaces --startup-grace-ms 1500 --json
+{
+  "ok": true,
+  "result": {
+    "id": "446b915a-7819-4c82-ae5d-fee4d889df4d",
+    "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+    "approvedGoalIds": [
+      "fix-typo"
+    ],
+    "maxParallel": 1,
+    "workspaceBinding": "worktree",
+    "sessionBinding": "process",
+    "createdAt": "2026-08-16T18:57:35.673Z",
+    "updatedAt": "2026-08-16T18:57:37.314Z",
+    "entries": {
+      "fix-typo": {
+        "phase": "running",
+        "branch": "stepstone/fix-typo",
+        "claimUpdatedAt": "2026-08-16T18:57:35.786Z",
+        "workspace": "/tmp/stepstone-dispatch-e2e-asdkYh/workspaces/stepstone-fix-typo",
+        "session": {
+          "pid": "4067227",
+          "token": "2156b95f-b66e-4085-b7cd-1ab7dcdda3ed",
+          "logPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/fix-typo/agent.log",
+          "receiptPath": "/tmp/stepstone-dispatch-e2e-asdkYh/main/.git/stepstone-dispatch/sessions/fix-typo/launch-2156b95f-b66e-4085-b7cd-1ab7dcdda3ed.json"
+        },
+        "message": "Worker launched; matching merged PR is the only completion evidence.",
+        "updatedAt": "2026-08-16T18:57:37.314Z"
+      }
+    }
+  }
+}
+
+--- Its pull request merges, and this run finishes the plan.
+
+$ merge-pr stepstone/fix-typo 14 /tmp/stepstone-dispatch-e2e-asdkYh
+merged PR #14 (stepstone/fix-typo -> main) as 0436e8c6fcfc47db70f91055c81a3b147312327a
+
+$ stepstone-dispatch resume 446b915a-7819-4c82-ae5d-fee4d889df4d --json
+{
+  "ok": true,
+  "result": {
+    "id": "446b915a-7819-4c82-ae5d-fee4d889df4d",
+    "repositoryRoot": "/tmp/stepstone-dispatch-e2e-asdkYh/main",
+    "approvedGoalIds": [
+      "fix-typo"
+    ],
+    "maxParallel": 1,
+    "workspaceBinding": "worktree",
+    "sessionBinding": "process",
+    "createdAt": "2026-08-16T18:57:35.673Z",
+    "updatedAt": "2026-08-16T18:57:42.683Z",
+    "entries": {
+      "fix-typo": {
+        "phase": "cleaned",
+        "branch": "stepstone/fix-typo",
+        "claimUpdatedAt": "2026-08-16T18:57:35.786Z",
+        "mergedPr": {
+          "url": "https://github.com/acme/widget/pull/14",
+          "headBranch": "stepstone/fix-typo",
+          "baseBranch": "main",
+          "createdAt": "2026-08-16T18:57:42.386Z",
+          "mergedAt": "2026-08-16T18:57:42.386Z",
+          "mergeCommit": "0436e8c6fcfc47db70f91055c81a3b147312327a"
+        },
+        "message": "Completed and cleaned after https://github.com/acme/widget/pull/14.",
+        "updatedAt": "2026-08-16T18:57:42.683Z"
+      }
+    }
+  }
+}
+
+$ stepstone-dispatch cleanup 446b915a-7819-4c82-ae5d-fee4d889df4d --json
+{
+  "ok": true,
+  "result": {
+    "removedRunId": "446b915a-7819-4c82-ae5d-fee4d889df4d"
+  }
+}
+
+--- Final state: every approved goal is done in the canonical roadmap, main carries each merge, and no dispatch workspace, branch, worker, or run record is left behind.
+
+$ stepstone project list
+[done] ship-widget: Ship widget
+[done] polish-widget: Polish widget
+[done] write-docs: Write docs
+[done] fix-typo: Fix typo
+
+$ stepstone project waves
+No project goal is waiting; every goal is done or archived.
+
+$ git log --oneline --graph
+*   0436e8c Merge pull request #14 from stepstone/fix-typo
+|\  
+| * ced9d6f Implement fix-typo
+|/  
+*   4fd2d56 Merge pull request #13 from stepstone/polish-widget
+|\  
+| * 72fd128 Implement polish-widget
+* |   67a57e6 Merge pull request #12 from stepstone/write-docs
+|\ \  
+| |/  
+|/|   
+| * 40afd7c Implement write-docs
+* |   9a977ec Merge pull request #11 from stepstone/ship-widget
+|\ \  
+| |/  
+|/|   
+| * 91e2f5c Implement ship-widget
+|/  
+* 671668c Capture the approved goal plan
+* 35ba111 Initial commit
+
+$ git worktree list
+/tmp/stepstone-dispatch-e2e-asdkYh/main  0436e8c [main]
+
+$ git branch -a
+* main
+  remotes/origin/main
+  remotes/origin/stepstone/fix-typo
+  remotes/origin/stepstone/polish-widget
+  remotes/origin/stepstone/write-docs
+  remotes/origin/stepstone/ship-widget
+
+$ stepstone-dispatch status
+No persisted dispatch runs.
