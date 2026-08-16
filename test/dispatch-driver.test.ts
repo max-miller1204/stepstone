@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -33,6 +33,12 @@ import {
 import type { ProjectGoal } from "../src/types.ts";
 
 const execFileAsync = promisify(execFile);
+
+// Detached process sessions prove session-token ownership through /proc, so the
+// binding refuses to construct anywhere but Linux (docs/dispatch.md). Tests whose
+// subject is that binding only have a subject on Linux.
+const itOnLinux = it.skipIf(process.platform !== "linux");
+
 function goal(id: string, options: Partial<ProjectGoal> = {}): ProjectGoal {
 	return {
 		id,
@@ -761,7 +767,7 @@ describe("resumable dispatch driver", () => {
 		expect(setup.workspace.cleaned).toEqual(["stepstone/alpha"]);
 	});
 
-	it("refuses to spawn a worker whose agent executable identity changed", async () => {
+	itOnLinux("refuses to spawn a worker whose agent executable identity changed", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-identity-"));
 		try {
 			const changed = new DetachedProcessSessionBinding(
@@ -789,7 +795,7 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
-	it("proves an interrupted launch closed when it never reserved a spawn receipt", async () => {
+	itOnLinux("proves an interrupted launch closed when it never reserved a spawn receipt", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-receipt-proof-"));
 		const workspace: DispatchWorkspace = { binding: "worktree", path: directory, metadata: {} };
 		const launchToken = "00000000-0000-4000-8000-000000000022";
@@ -822,7 +828,7 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
-	it("carries an operator verdict for a recycled PID whose process group survives", async () => {
+	itOnLinux("carries an operator verdict for a recycled PID whose process group survives", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-verdict-"));
 		const workspace: DispatchWorkspace = { binding: "worktree", path: directory, metadata: {} };
 		const launchToken = "00000000-0000-4000-8000-000000000023";
@@ -856,7 +862,7 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
-	it("carries an operator verdict for a session handle no binding can prove closed", async () => {
+	itOnLinux("carries an operator verdict for a session handle no binding can prove closed", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-session-verdict-"));
 		const sessionDirectory = join(directory, "sessions", "alpha");
 		const token = "00000000-0000-4000-8000-000000000025";
@@ -961,7 +967,7 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
-	it("delivers process prompts over stdin and redacts them from launch errors", async () => {
+	itOnLinux("delivers process prompts over stdin and redacts them from launch errors", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-prompt-"));
 		const argvPath = join(directory, "argv.json");
 		const stdinPath = join(directory, "stdin.txt");
@@ -1102,7 +1108,7 @@ describe("resumable dispatch driver", () => {
 	});
 
 	it("authenticates worktree identity and never deletes a branch from an absent path alone", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "stepstone-worktree-marker-"));
+		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-worktree-marker-")));
 		const root = join(directory, "repo");
 		try {
 			await mkdir(root);
@@ -1267,7 +1273,7 @@ describe("resumable dispatch driver", () => {
 	});
 
 	it("guards Treehouse resume and cleanup with the exact current lease", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "stepstone-treehouse-retry-"));
+		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-treehouse-retry-")));
 		const root = join(directory, "repo");
 		const leased = join(directory, "leased");
 		const bin = join(directory, "bin");
@@ -1540,7 +1546,7 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
-	it("accepts option-shaped agent arguments through the published CLI contract", async () => {
+	itOnLinux("accepts option-shaped agent arguments through the published CLI contract", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-cli-"));
 		const root = join(directory, "repo");
 		const workspaceParent = join(directory, "workspaces");
