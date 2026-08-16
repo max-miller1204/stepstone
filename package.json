@@ -37,7 +37,8 @@
 		"package.json"
 	],
 	"bin": {
-		"stepstone": "dist/cli.js"
+		"stepstone": "dist/cli.js",
+		"stepstone-dispatch": "dist/dispatch.js"
 	},
 	"main": "./src/extension.ts",
 	"exports": {
@@ -52,6 +53,7 @@
 	},
 	"scripts": {
 		"worklist": "node ./src/cli.ts",
+		"dispatch": "node ./src/dispatch.ts",
 		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
 		"docs": "node ./scripts/generate-docs.ts",
 		"docs:check": "node ./scripts/generate-docs.ts --check",
@@ -71,10 +73,12 @@
 		"verify": "npm run check && npm run pack:check"
 	},
 	"dependencies": {
-		"proper-lockfile": "^4.1.2"
+		"proper-lockfile": "^4.1.2",
+		"zod": "^4.4.3"
 	},
 	"bundledDependencies": [
-		"proper-lockfile"
+		"proper-lockfile",
+		"zod"
 	],
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": "*",

@@ -183,13 +183,15 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 
 ## Dispatching approved plans
 
-- Dispatch only goals returned by `ready --json`; claim each one with `start <id> --branch <name> --expect-updated-at <updatedAt>` before launching its worker.
-- The root session is the sole roadmap writer and runs every Stepstone mutation from the repository's main worktree, normally on the default branch; workers receive goal context but never mutate the worklist from isolated workspaces.
-- Session hosting and workspace isolation are independent bindings: any host that can launch and observe a command can compose with any provider that returns an isolated checkout.
-- Treat a merged PR whose head belongs to the claimed branch as completion evidence; worker exit or silence alone never proves the goal landed.
-- Launching a dispatch loop for an explicitly approved plan grants standing consent to run `complete <id> --confirm` only for a goal in that plan after its matching PR merged.
-- That standing consent does not cover archive, delete, reopen, unrelated goals, unmerged work, or a new plan; release an abandoned claim with `start <id> --clear --expect-updated-at <updatedAt>`, passing the `updatedAt` that same claim returned rather than a re-read value that may already belong to somebody else's newer claim.
-- Re-read `ready` after each merge and stop when it is empty; distinguish finished roadmaps from blocked or claimed work by reading `waves --json`.
+- Start an approved run with `npx -y -p stepstone@latest stepstone-dispatch start --goal <id>... --agent-command <executable>`; repeated goal IDs are the immutable authorization allow-list.
+- The published driver selects only allow-listed goals returned by a fresh ready frontier, claims each exact `updatedAt` before launch, and enforces its persisted parallel limit.
+- The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; workers receive the complete goal context but never mutate the worklist from isolated workspaces.
+- Session hosting and workspace isolation are independent CLI bindings: detached processes or Herdr can compose with Git worktrees or Treehouse leases without importing any of those tools or an agent harness.
+- Only a merged PR whose head exactly matches the stored claimed branch is completion evidence; worker exit, silence, or an unmerged green PR never proves the goal landed.
+- Launching a driver run for an explicitly approved plan grants standing consent to complete only an allow-listed goal after its matching PR merged.
+- Local runtime state under the Git common directory preserves claim tokens, workspace and session custody, binding configuration, and outcomes across `resume`, while canonical roadmap state remains harness-neutral.
+- Known-safe pre-launch failures release the exact claim token; ambiguous outcomes preserve custody until inspection and explicit `recover <run-id> <goal-id> --release`.
+- Use `status` and `inspect` without mutation, `resume` to reconcile merges and refill capacity, and `cleanup` only after completion or exact release.
 
 The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in the package's `docs/dispatch.md`.
 

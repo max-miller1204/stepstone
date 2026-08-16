@@ -25,7 +25,7 @@ import { dirname, extname, relative, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const entryPoint = resolve(repoRoot, "src/cli.ts");
-export const executableEntryPoints = [entryPoint];
+export const executableEntryPoints = [entryPoint, resolve(repoRoot, "src/dispatch.ts")];
 
 export interface ModuleImport {
 	specifier: string;

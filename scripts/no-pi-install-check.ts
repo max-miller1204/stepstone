@@ -24,7 +24,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
+import { CLI_COMMAND_CONTRACT, DISPATCH_BINARY } from "../src/cli-contract.ts";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -322,6 +322,17 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	assert.match(board.stderr, /needs an interactive terminal/);
 }
 
+async function exerciseDispatch(binPath: string, workspace: string): Promise<void> {
+	const runDispatch = cliRunner(binPath, workspace);
+	const help = await runDispatch(["--help"]);
+	assert.equal(help.code, 0, "installed dispatch executable --help must succeed");
+	assert.match(help.stdout, /resume <run-id>/, "dispatch help must expose resumable operation");
+	const status = await runDispatch(["status", "--json"]);
+	assert.equal(status.code, 0, "installed dispatch executable status must succeed");
+	const envelope = JSON.parse(status.stdout) as { ok?: unknown; result?: unknown };
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(envelope.result, []);
+}
 /**
  * How each published executable is driven once it is installed, keyed by the
  * command name the manifest's `bin` map puts on a user's PATH. The manifest is
@@ -330,6 +341,7 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
  */
 const BIN_EXERCISES: Record<string, BinExercise> = {
 	[binary]: exerciseCli,
+	[DISPATCH_BINARY]: exerciseDispatch,
 };
 
 const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));

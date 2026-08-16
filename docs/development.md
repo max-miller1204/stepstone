@@ -13,6 +13,7 @@ npm run no-pi-install:check
 
 `npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
 The `node src/cli.ts` entry point needs Node 22.18 or newer for native type stripping.
+`npm run dispatch` runs this checkout's second published executable, the dispatch driver in `src/dispatch.ts`, under that same requirement; [docs/dispatch.md](dispatch.md) documents what it does.
 The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for published executables, which Node refuses to type-strip under `node_modules`.
 
 ## Checks
@@ -28,7 +29,8 @@ The package ships TypeScript source directly because Pi loads extensions through
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
 
-`test/dispatch-docs.test.ts` runs the shell recipes in [docs/dispatch.md](dispatch.md) rather than a driver written beside it: each block is selected by its `# dispatch-example:` marker comment and executed over real Git worktrees, with fake `npx`, `herdr`, and `treehouse` executables ahead of them on `PATH` standing in for the boundaries this project does not own.
+`test/dispatch-driver.test.ts` exercises the resumable runtime through injected roadmap, workspace, session, merge-evidence, and state-store bindings.
+`test/dispatch-docs.test.ts` separately runs the shell recipes in [docs/dispatch.md](dispatch.md): each block is selected by its `# dispatch-example:` marker and executed over real Git worktrees, with fake `npx`, `herdr`, and `treehouse` executables standing in for external CLI boundaries.
 Editing one of those blocks therefore changes what is executed, and renaming or dropping a marker fails that file instead of quietly leaving a binding unexercised.
 
 `npm run imports:check` reads the merged module graph behind every entry in `executableEntryPoints` in `scripts/cli-import-graph.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
@@ -39,6 +41,7 @@ That is why a Pi type belongs in an `import type` statement rather than an inlin
 It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and drives every published executable through the behavior-specific function named in `BIN_EXERCISES`.
 The manifest's `bin` map is compared against that exercise map before packing, so a new executable cannot ship without being started from the isolated install.
 The project CLI exercise asserts exit codes and `--json` envelopes across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
+The dispatch exercise starts the installed driver's help and persisted status surfaces.
 The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 ## Generated files
