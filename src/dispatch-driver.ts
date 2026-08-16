@@ -99,7 +99,6 @@ export interface SessionLaunchFailure extends Error {
 
 export interface SessionBinding {
 	readonly name: string;
-	verifyLaunchIdentity?(): Promise<void>;
 	launch(
 		workspace: DispatchWorkspace,
 		goal: ProjectGoal,
@@ -239,7 +238,6 @@ export class DispatchDriver {
 	async advance(runId: string): Promise<DispatchRun> {
 		const run = await this.dependencies.store.load(runId);
 		this.assertBindings(run);
-		await this.dependencies.session.verifyLaunchIdentity?.();
 		await this.reconcile(run);
 		let slots = run.maxParallel - Object.values(run.entries).filter(consumesCapacity).length;
 		if (slots <= 0) return run;

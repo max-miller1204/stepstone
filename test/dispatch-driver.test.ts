@@ -163,6 +163,7 @@ class FakeSession implements SessionBinding {
 		projectGoal: ProjectGoal,
 		prompt: string,
 	): Promise<DispatchSession> {
+		await this.verifyLaunchIdentity();
 		this.prompts.push(prompt);
 		if (this.failure) throw this.failure;
 		return { binding: this.name, metadata: { goalId: projectGoal.id } };
@@ -666,15 +667,22 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
-	it("refuses a resume pass whose session host cannot prove its launch identity", async () => {
-		const setup = fixture([goal("alpha")], 1);
+	it("still reconciles merged evidence when the session host refuses a changed agent identity", async () => {
+		const setup = fixture([goal("alpha"), goal("beta", { dependsOn: ["alpha"] })], 1);
 		const run = await setup.create();
+		await setup.makeDriver().advance(run.id);
 		setup.session.launchIdentityFailure = new Error("agent executable identity changed");
+		setup.merges.evidence.set("stepstone/alpha", merged());
 
-		await expect(setup.makeDriver().advance(run.id)).rejects.toThrow("agent executable identity changed");
+		const resumed = await setup.makeDriver().advance(run.id);
 
-		expect(setup.workspace.acquired).toEqual([]);
-		expect(setup.roadmap.claims).toEqual([]);
+		expect(resumed.entries.alpha.phase).toBe("cleaned");
+		expect(setup.roadmap.completions).toHaveLength(1);
+		expect(resumed.entries.beta.phase).toBe("cleaned");
+		expect(setup.session.prompts).toHaveLength(1);
+		expect(setup.roadmap.releases).toEqual([
+			{ id: "beta", token: resumed.entries.beta.claimUpdatedAt as string },
+		]);
 	});
 
 	it("refuses to spawn a worker whose agent executable identity changed", async () => {
@@ -700,6 +708,35 @@ describe("resumable dispatch driver", () => {
 				await executableFingerprint(process.execPath),
 			);
 			await expect(current.verifyLaunchIdentity()).resolves.toBeUndefined();
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("proves an interrupted launch closed when it never reserved a spawn receipt", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-receipt-proof-"));
+		const workspace: DispatchWorkspace = { binding: "worktree", path: directory, metadata: {} };
+		const launchToken = "00000000-0000-4000-8000-000000000022";
+		try {
+			const processBinding = new DetachedProcessSessionBinding(process.execPath, [], directory, 100);
+			await expect(
+				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
+			).resolves.toBeUndefined();
+
+			const herdrBinding = new HerdrSessionBinding("task", directory, 100);
+			await expect(
+				herdrBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
+			).resolves.toBeUndefined();
+
+			const sessionDirectory = join(directory, "sessions", "alpha");
+			await mkdir(sessionDirectory, { recursive: true });
+			await writeFile(
+				join(sessionDirectory, `launch-${launchToken}.json`),
+				JSON.stringify({ token: launchToken }),
+			);
+			await expect(
+				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
+			).rejects.toThrow("never journaled a process ID");
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -1114,6 +1151,12 @@ describe("resumable dispatch driver", () => {
 			await expect(binding.cleanup(workspace, "stepstone/alpha")).resolves.toBeUndefined();
 			await expect(binding.cleanup(workspace, "stepstone/alpha")).resolves.toBeUndefined();
 			expect(await readFile(counter, "utf8")).toBe("2");
+			expect(
+				(await execFileAsync("git", ["branch", "--list", "stepstone/alpha"], { cwd: root })).stdout,
+			).toBe("");
+			await expect(binding.acquire(goal("alpha"), "stepstone/alpha", base)).resolves.toMatchObject({
+				binding: "treehouse",
+			});
 		} finally {
 			process.env.PATH = oldPath;
 			delete process.env.STEPSTONE_TEST_RETURNS;

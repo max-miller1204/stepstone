@@ -753,6 +753,15 @@ async function createWorkspaceMarker(
 	});
 }
 
+async function readOptionalFile(path: string): Promise<string | undefined> {
+	try {
+		return await readFile(path, "utf8");
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
 async function writePrivateJsonAtomically(path: string, value: unknown): Promise<void> {
 	const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
 	await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
@@ -1138,6 +1147,9 @@ export class TreehouseWorkspaceBinding implements WorkspaceBinding {
 		if (!base) throw new Error("Treehouse workspace base is missing");
 		const { record } = await verifyWorkspaceMarker(this.repositoryRoot, workspace, branch, base);
 		if (record.removedAt) throw new Error("Treehouse workspace was already recorded as removed");
+		if (record.removalBranchTip || record.branchDeletedAt) {
+			throw new Error("Treehouse workspace cleanup is already in progress");
+		}
 		await verifyRegisteredWorkspace(
 			this.repositoryRoot,
 			workspace.path,
@@ -1180,12 +1192,32 @@ export class TreehouseWorkspaceBinding implements WorkspaceBinding {
 			marker.record.gitdir,
 			marker.record.marker,
 		);
+		let removalRecord = marker.record;
+		const branchTip = await currentBranchTip(this.repositoryRoot, branch);
+		if (!removalRecord.removalBranchTip) {
+			if (!branchTip) throw new Error("Leased Treehouse branch disappeared before cleanup intent");
+			removalRecord = await journalWorkspaceBranchRemoval(marker.path, removalRecord, branchTip);
+		}
+		const expectedBranchTip = removalRecord.removalBranchTip;
+		if (!expectedBranchTip) throw new Error("Workspace cleanup lacks its exact branch identity");
+		if (removalRecord.branchDeletedAt) {
+			if (branchTip) throw new Error("Refusing cleanup because the deleted branch name was recreated");
+		} else {
+			if (branchTip && branchTip !== expectedBranchTip) {
+				throw new Error("Refusing branch cleanup because the branch identity changed");
+			}
+			if (branchTip) {
+				await runCommand("git", ["checkout", "--detach", base], workspace.path);
+				await deleteBranchIfUnchanged(this.repositoryRoot, branch, expectedBranchTip);
+			}
+			removalRecord = await journalWorkspaceBranchDeleted(marker.path, removalRecord);
+		}
 		await runCommand(
 			"treehouse",
 			["return", workspace.path, "--force", "--if-lease-id", leaseId, "--if-lease-holder", holder],
 			this.repositoryRoot,
 		);
-		await markWorkspaceRemoved(marker.path, marker.record);
+		await markWorkspaceRemoved(marker.path, removalRecord);
 	}
 
 	private async leaseState(workspace: DispatchWorkspace): Promise<"owned" | "available"> {
@@ -1276,9 +1308,20 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		const sessionDirectory = join(this.stateDirectory, "sessions", goal.id);
 		await mkdir(sessionDirectory, { recursive: true, mode: 0o700 });
 		const logPath = join(sessionDirectory, "agent.log");
-		const log = await open(logPath, "a", 0o600);
 		const token = launchToken;
 		const receiptPath = join(sessionDirectory, `launch-${token}.json`);
+		try {
+			await writeFile(receiptPath, `${JSON.stringify({ token })}\n`, {
+				encoding: "utf8",
+				mode: 0o600,
+				flag: "wx",
+			});
+		} catch (error) {
+			throw new ProcessLaunchFailure(
+				`Worker launch identity could not be reserved before spawn: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		const log = await open(logPath, "a", 0o600);
 		try {
 			const child = spawn(this.command, this.args, {
 				cwd: workspace.path,
@@ -1293,6 +1336,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 			try {
 				await once(child, "spawn");
 			} catch (error) {
+				await rm(receiptPath, { force: true });
 				throw new ProcessLaunchFailure(
 					`Worker executable failed before launch: ${error instanceof Error ? error.message : String(error)}`,
 				);
@@ -1304,11 +1348,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 				metadata: { pid: String(pid), token, logPath, receiptPath },
 			};
 			try {
-				await writeFile(receiptPath, `${JSON.stringify({ pid, token })}\n`, {
-					encoding: "utf8",
-					mode: 0o600,
-					flag: "wx",
-				});
+				await writePrivateJsonAtomically(receiptPath, { pid, token });
 			} catch (error) {
 				child.stdin?.destroy();
 				child.unref();
@@ -1364,10 +1404,17 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 			throw new Error("Interrupted process launch token is invalid");
 		}
 		const receiptPath = join(this.stateDirectory, "sessions", goal.id, `launch-${launchToken}.json`);
+		const journaled = await readOptionalFile(receiptPath);
+		if (journaled === undefined) return;
 		const receipt = z
-			.object({ pid: z.number().int().positive(), token: z.literal(launchToken) })
+			.object({ pid: z.number().int().positive().optional(), token: z.literal(launchToken) })
 			.strict()
-			.parse(JSON.parse(await readFile(receiptPath, "utf8")));
+			.parse(JSON.parse(journaled));
+		if (receipt.pid === undefined) {
+			throw new Error(
+				`Interrupted launch ${launchToken} reserved its identity but never journaled a process ID; inspect the process table for STEPSTONE_DISPATCH_SESSION_TOKEN=${launchToken} before recovery`,
+			);
+		}
 		try {
 			const environment = await readFile(`/proc/${receipt.pid}/environ`);
 			if (!environment.includes(Buffer.from(`STEPSTONE_DISPATCH_SESSION_TOKEN=${launchToken}\0`))) {
@@ -1559,6 +1606,12 @@ export class HerdrSessionBinding implements SessionBinding {
 		launchToken: string,
 	): Promise<void> {
 		const receiptPath = join(this.stateDirectory, "sessions", goal.id, `herdr-launch-${launchToken}.json`);
+		const promptPath = join(this.stateDirectory, "sessions", goal.id, "prompt.txt");
+		const journaled = await readOptionalFile(receiptPath);
+		if (journaled === undefined) {
+			await rm(promptPath, { force: true });
+			return;
+		}
 		const receipt = z
 			.object({
 				launchToken: z.literal(launchToken),
@@ -1568,7 +1621,7 @@ export class HerdrSessionBinding implements SessionBinding {
 				paneId: z.string().optional(),
 			})
 			.strict()
-			.parse(JSON.parse(await readFile(receiptPath, "utf8")));
+			.parse(JSON.parse(journaled));
 		const panes = await this.listPanes(workspace.path);
 		const owned = await this.findOwnedAgentPane(receipt.agentName, workspace.path);
 		if (owned) throw new Error(`Interrupted Herdr worker pane ${owned} is still live`);
@@ -1583,7 +1636,7 @@ export class HerdrSessionBinding implements SessionBinding {
 			}
 		}
 		await rm(receiptPath, { force: true });
-		await rm(join(this.stateDirectory, "sessions", goal.id, "prompt.txt"), { force: true });
+		await rm(promptPath, { force: true });
 	}
 
 	async cleanup(session: DispatchSession): Promise<void> {
