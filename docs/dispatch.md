@@ -54,6 +54,7 @@ That prompt is submitted over standard input for process sessions and through a 
 Workspace isolation and session hosting are independent selections.
 `--workspace worktree --session process` uses detached process groups in ordinary Git worktrees and is supported only on Linux, where `/proc` permits exact session-token ownership checks before signaling.
 The driver rejects process-session runs on other operating systems instead of accepting custody it cannot later verify and close.
+Each such worker is spawned with `STEPSTONE_DISPATCH_SESSION_TOKEN` set to that launch's own token, and the ownership check is that exact token in the recorded leader's `/proc/<pid>/environ`, so a recycled PID is never signaled as though it were the worker.
 `--workspace treehouse --session herdr --agent-kind <kind>` uses Treehouse leases and Herdr panes.
 Either workspace provider can compose with either session host.
 The core and executable import graphs do not import Herdr, Treehouse, an agent harness, or Pi peers; selected external tools are invoked only at their CLI boundaries.
@@ -66,6 +67,7 @@ Every record is validated against the run schema on each read and before each wr
 Each acquired workspace also has a private ownership marker in `stepstone-dispatch/workspaces/` and a unique owner token inside that worktree's resolved Git administrative directory.
 Each dispatched goal gets a private mode-0700 `stepstone-dispatch/sessions/<goal-id>/` directory holding its launch receipt, a process session's `agent.log` capturing that worker's own standard output and error, and a Herdr session's prompt file.
 `status` and `inspect` print the entry's session metadata, which names those paths, so reading `agent.log` is how a process-session worker is observed; cleanup removes the receipt and prompt file but keeps that log, which therefore outlives even a deleted run record.
+That metadata also carries a process session's PID and token, and `inspect` prints the entry's launch token even where no session handle was persisted, so an operator deciding a `--confirm-launch-closed` verdict looks for that exact identity rather than for a process name.
 Immediately before deleting a Git branch, cleanup journals its exact tip in that marker, atomically deletes only that unchanged ref while the authenticated owned worktree is still registered as its checkout, then journals the completed branch deletion before removing the worktree.
 A retry may finish removing that same authenticated worktree once branch deletion is journaled.
 After a workspace is absent or unregistered, cleanup never deletes a branch automatically, even when a same-tip branch exists elsewhere; an incomplete deletion journal fails closed for manual recovery.
