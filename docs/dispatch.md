@@ -81,7 +81,7 @@ stepstone-dispatch resume <run-id> --json
 ```
 
 Resume reconciles journaled acquisition, claim, and release transitions before doing new work.
-It preserves an interrupted acquisition when no local result proves what was acquired, adopts only a canonical claim that matches its journaled branch and baseline, and finishes cleanup when a release committed before local state persistence.
+It preserves an interrupted acquisition when no local result proves what was acquired, retries an interrupted claim only while canonical state still shows its journaled baseline unclaimed, and finishes an interrupted release whose canonical state either still carries this run's exact claim or already committed that release before local state persistence.
 It does not relaunch a persisted worker session.
 Merged PR evidence must name the stored head and target branches, must postdate the current claim, and must provide a merge commit reachable from the freshly fetched target.
 That evidence is read at the GitHub CLI boundary, so `resume` needs `gh` installed and authenticated for this repository, and the reachability check fetches the target branch from `origin`.
