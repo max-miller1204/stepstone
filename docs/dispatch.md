@@ -34,7 +34,7 @@ stepstone-dispatch start \
 ```
 
 Repeated `--goal` values are the run's immutable authorization allow-list.
-Repeated `--agent-arg` values are passed verbatim, including option-shaped values such as `--model`.
+Repeated `--agent-arg` values are passed verbatim to a process session's executable, including option-shaped values such as `--model`; a Herdr session carries no such arguments and a run that persisted them under one is rejected.
 The second form names no binding, so it takes the defaults `--workspace worktree --session process`.
 `--agent-command` is required by process sessions and `--agent-kind` by Herdr sessions.
 `--cwd <repository>` selects the repository an action runs against and defaults to the current directory.
