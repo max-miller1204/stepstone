@@ -96,6 +96,8 @@ export interface SessionLaunchFailure extends Error {
 	session?: DispatchSession;
 }
 
+export type LaunchClosureOutcome = "proven" | "operator-asserted";
+
 export interface SessionBinding {
 	readonly name: string;
 	verifyLaunchIdentity?(): Promise<void>;
@@ -110,8 +112,8 @@ export interface SessionBinding {
 		goal: ProjectGoal,
 		launchToken: string,
 		operatorConfirmed?: boolean,
-	): Promise<void>;
-	cleanup(session: DispatchSession, operatorConfirmed?: boolean): Promise<void>;
+	): Promise<LaunchClosureOutcome>;
+	cleanup(session: DispatchSession, operatorConfirmed?: boolean): Promise<LaunchClosureOutcome>;
 }
 
 export interface MergeEvidence {
@@ -278,11 +280,14 @@ export class DispatchDriver {
 		}
 		if (entry.session) {
 			try {
-				await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
+				const outcome = await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
 				entry.launchToken = undefined;
 				entry.session = undefined;
 				entry.phase = "ambiguous";
-				entry.message = "Worker session closed and verified before claim recovery.";
+				entry.message =
+					outcome === "operator-asserted"
+						? "Worker session released on the operator's inspected verdict, not on binding proof, before claim recovery."
+						: "Worker session closed and verified before claim recovery.";
 				await this.persist(run, entry);
 			} catch (error) {
 				entry.phase = "ambiguous";
@@ -297,7 +302,7 @@ export class DispatchDriver {
 					`Goal ${goalId} has an interrupted worker launch identity but no verified session handle; manual process inspection and --confirm-launch-closed are required`,
 				);
 			}
-			await this.dependencies.session.verifyInterruptedLaunchClosed(
+			const outcome = await this.dependencies.session.verifyInterruptedLaunchClosed(
 				entry.workspace,
 				entry.goal,
 				entry.launchToken,
@@ -305,7 +310,10 @@ export class DispatchDriver {
 			);
 			entry.launchToken = undefined;
 			entry.phase = "ambiguous";
-			entry.message = "Explicit recovery verified that the interrupted launch has no live worker.";
+			entry.message =
+				outcome === "operator-asserted"
+					? "Explicit recovery released the interrupted launch on the operator's inspected verdict, not on binding proof."
+					: "Explicit recovery verified that the interrupted launch has no live worker.";
 			await this.persist(run, entry);
 		}
 		if (!entry.claimUpdatedAt && explicitClaimUpdatedAt) {
@@ -674,11 +682,14 @@ export class DispatchDriver {
 		if (!needsCleanup(entry)) return;
 		if (entry.session) {
 			try {
-				await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
+				const outcome = await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
 				entry.session = undefined;
 				entry.launchToken = undefined;
 				entry.phase = "cleanup-pending";
-				entry.message = "Worker session closed and verified; workspace cleanup is pending.";
+				entry.message =
+					outcome === "operator-asserted"
+						? "Worker session released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending."
+						: "Worker session closed and verified; workspace cleanup is pending.";
 				await this.persist(run, entry);
 			} catch (error) {
 				entry.phase = "cleanup-pending";
@@ -689,7 +700,7 @@ export class DispatchDriver {
 		}
 		if (entry.launchToken && entry.workspace) {
 			try {
-				await this.dependencies.session.verifyInterruptedLaunchClosed(
+				const outcome = await this.dependencies.session.verifyInterruptedLaunchClosed(
 					entry.workspace,
 					entry.goal,
 					entry.launchToken,
@@ -697,7 +708,10 @@ export class DispatchDriver {
 				);
 				entry.launchToken = undefined;
 				entry.phase = "cleanup-pending";
-				entry.message = "Interrupted worker launch proven closed; workspace cleanup is pending.";
+				entry.message =
+					outcome === "operator-asserted"
+						? "Interrupted worker launch released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending."
+						: "Interrupted worker launch proven closed; workspace cleanup is pending.";
 				await this.persist(run, entry);
 			} catch (error) {
 				entry.phase = "cleanup-pending";

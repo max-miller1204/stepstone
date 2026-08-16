@@ -16,10 +16,12 @@ import {
 } from "../src/dispatch-bindings.ts";
 import {
 	DispatchDriver,
+	type DispatchEntry,
 	type DispatchRun,
 	type DispatchSession,
 	type DispatchStateStore,
 	type DispatchWorkspace,
+	type LaunchClosureOutcome,
 	type MergeEvidence,
 	type MergeEvidenceBinding,
 	type RoadmapBinding,
@@ -156,6 +158,7 @@ class FakeSession implements SessionBinding {
 	interruptedLaunchFailure?: Error;
 	failure?: Error;
 	launchIdentityFailure?: Error;
+	launchClosureOutcome: LaunchClosureOutcome = "proven";
 	async verifyLaunchIdentity(): Promise<void> {
 		if (this.launchIdentityFailure) throw this.launchIdentityFailure;
 	}
@@ -173,13 +176,15 @@ class FakeSession implements SessionBinding {
 		_workspace: DispatchWorkspace,
 		_projectGoal: ProjectGoal,
 		launchToken: string,
-	): Promise<void> {
+	): Promise<LaunchClosureOutcome> {
 		this.interruptedLaunchChecks.push(launchToken);
 		if (this.interruptedLaunchFailure) throw this.interruptedLaunchFailure;
+		return this.launchClosureOutcome;
 	}
-	async cleanup(session: DispatchSession): Promise<void> {
+	async cleanup(session: DispatchSession): Promise<LaunchClosureOutcome> {
 		if (this.cleanupFailure) throw this.cleanupFailure;
 		this.cleaned.push(session.metadata.goalId ?? "unknown");
+		return this.launchClosureOutcome;
 	}
 }
 
@@ -216,11 +221,14 @@ class PersistedHerdrSession implements SessionBinding {
 		_workspace: DispatchWorkspace,
 		_projectGoal: ProjectGoal,
 		launchToken: string,
-	): Promise<void> {
+	): Promise<LaunchClosureOutcome> {
 		this.interruptedLaunchChecks.push(launchToken);
 		if (this.interruptedLaunchFailure) throw this.interruptedLaunchFailure;
+		return "proven";
 	}
-	async cleanup(): Promise<void> {}
+	async cleanup(): Promise<LaunchClosureOutcome> {
+		return "proven";
+	}
 }
 
 class FakeMerges implements MergeEvidenceBinding {
@@ -788,12 +796,12 @@ describe("resumable dispatch driver", () => {
 			const processBinding = new DetachedProcessSessionBinding(process.execPath, [], directory, 100);
 			await expect(
 				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
-			).resolves.toBeUndefined();
+			).resolves.toBe("proven");
 
 			const herdrBinding = new HerdrSessionBinding("task", directory, 100);
 			await expect(
 				herdrBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken),
-			).resolves.toBeUndefined();
+			).resolves.toBe("proven");
 
 			const sessionDirectory = join(directory, "sessions", "alpha");
 			const receiptPath = join(sessionDirectory, `launch-${launchToken}.json`);
@@ -806,7 +814,7 @@ describe("resumable dispatch driver", () => {
 
 			await expect(
 				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken, true),
-			).resolves.toBeUndefined();
+			).resolves.toBe("operator-asserted");
 			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 		} finally {
 			await rm(directory, { recursive: true, force: true });
@@ -838,7 +846,7 @@ describe("resumable dispatch driver", () => {
 
 			await expect(
 				processBinding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken, true),
-			).resolves.toBeUndefined();
+			).resolves.toBe("operator-asserted");
 			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 		} finally {
 			if (unrelated.pid) process.kill(-unrelated.pid, "SIGKILL");
@@ -876,7 +884,7 @@ describe("resumable dispatch driver", () => {
 
 			await expect(processBinding.cleanup(processSession)).rejects.toThrow("--confirm-launch-closed");
 			expect(await readFile(receiptPath, "utf8")).toContain(token);
-			await expect(processBinding.cleanup(processSession, true)).resolves.toBeUndefined();
+			await expect(processBinding.cleanup(processSession, true)).resolves.toBe("operator-asserted");
 			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			expect(process.kill(-orphaned, 0)).toBe(true);
 
@@ -899,7 +907,7 @@ describe("resumable dispatch driver", () => {
 
 			await expect(herdrBinding.cleanup(herdrSession)).rejects.toThrow("--confirm-launch-closed");
 			expect(await readFile(herdrReceiptPath, "utf8")).toContain(token);
-			await expect(herdrBinding.cleanup(herdrSession, true)).resolves.toBeUndefined();
+			await expect(herdrBinding.cleanup(herdrSession, true)).resolves.toBe("operator-asserted");
 			await expect(readFile(herdrReceiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(promptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 		} finally {
@@ -1337,6 +1345,102 @@ describe("resumable dispatch driver", () => {
 		}
 	});
 
+	it("carries an operator verdict for an unidentified Herdr pane whose agent was never started", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "stepstone-herdr-unknown-pane-"));
+		const bin = join(directory, "bin");
+		const panesPath = join(directory, "panes.json");
+		const sessionDirectory = join(directory, "sessions", "alpha");
+		const promptPath = join(sessionDirectory, "prompt.txt");
+		const receiptPath = join(sessionDirectory, "herdr-launch-token.json");
+		const oldPath = process.env.PATH;
+		try {
+			await mkdir(bin);
+			await mkdir(sessionDirectory, { recursive: true });
+			await writeFile(panesPath, JSON.stringify(["root-pane", "orphan-pane"]));
+			await writeFile(promptPath, "prompt");
+			await writeFile(receiptPath, JSON.stringify({ launchToken: "token" }));
+			const command = join(bin, "herdr");
+			await writeFile(
+				command,
+				[
+					"#!/usr/bin/env node",
+					'import { readFileSync } from "node:fs";',
+					"const panes = JSON.parse(readFileSync(process.env.STEPSTONE_TEST_PANES, 'utf8'));",
+					"const args = process.argv.slice(2);",
+					"if (args[0] === 'pane' && args[1] === 'list') console.log(JSON.stringify({ result: { panes: panes.map((pane_id) => ({ pane_id })) } }));",
+					"else process.exit(1);",
+				].join("\n"),
+			);
+			await chmod(command, 0o755);
+			process.env.PATH = `${bin}:${oldPath ?? ""}`;
+			process.env.STEPSTONE_TEST_PANES = panesPath;
+			const binding = new HerdrSessionBinding("task", directory, 100);
+			const session: DispatchSession = {
+				binding: "herdr",
+				metadata: {
+					pane: "unknown",
+					workspace: directory,
+					promptPath,
+					receiptPath,
+					beforePaneIds: JSON.stringify(["root-pane"]),
+					agentName: "ss-alpha-1",
+				},
+			};
+
+			await expect(binding.cleanup(session)).rejects.toThrow("--confirm-launch-closed");
+			expect(await readFile(receiptPath, "utf8")).toContain("token");
+
+			await expect(binding.cleanup(session, true)).resolves.toBe("operator-asserted");
+			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			await expect(readFile(promptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			expect(JSON.parse(await readFile(panesPath, "utf8"))).toEqual(["root-pane", "orphan-pane"]);
+		} finally {
+			process.env.PATH = oldPath;
+			delete process.env.STEPSTONE_TEST_PANES;
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("journals a session released on the operator's verdict as asserted rather than proven", async () => {
+		const stranded = (): DispatchEntry => ({
+			goal: goal("alpha"),
+			branch: "stepstone/alpha",
+			phase: "ambiguous",
+			workspace: { binding: "fake-workspace", path: "/work/alpha", metadata: {} },
+			session: { binding: "fake-session", metadata: { goalId: "alpha" } },
+			launchToken: "00000000-0000-4000-8000-000000000051",
+			updatedAt: "2026-02-01T00:00:00.000Z",
+		});
+
+		const asserted = fixture([goal("alpha")], 1);
+		const assertedRun = await asserted.create();
+		assertedRun.entries.alpha = stranded();
+		await asserted.store.save(assertedRun);
+		asserted.session.launchClosureOutcome = "operator-asserted";
+
+		await expect(asserted.makeDriver().recoverRelease(assertedRun.id, "alpha")).rejects.toThrow(
+			"no exact claim token",
+		);
+
+		const assertedEntry = (await asserted.store.load(assertedRun.id)).entries.alpha;
+		expect(asserted.session.cleaned).toEqual(["alpha"]);
+		expect(assertedEntry.message).toContain("operator's inspected verdict");
+		expect(assertedEntry.message).not.toContain("closed and verified");
+
+		const proven = fixture([goal("alpha")], 1);
+		const provenRun = await proven.create();
+		provenRun.entries.alpha = stranded();
+		await proven.store.save(provenRun);
+
+		await expect(proven.makeDriver().recoverRelease(provenRun.id, "alpha")).rejects.toThrow(
+			"no exact claim token",
+		);
+
+		const provenEntry = (await proven.store.load(provenRun.id)).entries.alpha;
+		expect(provenEntry.message).toContain("closed and verified");
+		expect(provenEntry.message).not.toContain("operator's inspected verdict");
+	});
+
 	it("recovers only the Herdr pane that appeared during an unidentified launch", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "stepstone-herdr-recovery-"));
 		const bin = join(directory, "bin");
@@ -1389,7 +1493,7 @@ describe("resumable dispatch driver", () => {
 			expect(await readFile(herdrReceiptPath, "utf8")).toContain(launchToken);
 			await expect(
 				binding.verifyInterruptedLaunchClosed(workspace, goal("alpha"), launchToken, true),
-			).resolves.toBeUndefined();
+			).resolves.toBe("operator-asserted");
 			await expect(readFile(herdrReceiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			process.env.PATH = `${bin}:${oldPath ?? ""}`;
 

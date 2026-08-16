@@ -26,6 +26,7 @@ import type {
 	DispatchSession,
 	DispatchStateStore,
 	DispatchWorkspace,
+	LaunchClosureOutcome,
 	MergeEvidence,
 	MergeEvidenceBinding,
 	RoadmapBinding,
@@ -1298,11 +1299,12 @@ async function acceptInterruptedLaunchVerdict(
 	operatorConfirmed: boolean,
 	unprovable: string,
 	accept: () => Promise<void>,
-): Promise<void> {
+): Promise<LaunchClosureOutcome> {
 	if (!operatorConfirmed) {
 		throw new Error(`${unprovable}; inspect that custody and rerun with --confirm-launch-closed`);
 	}
 	await accept();
+	return "operator-asserted";
 }
 
 export class DetachedProcessSessionBinding implements SessionBinding {
@@ -1440,13 +1442,13 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		goal: ProjectGoal,
 		launchToken: string,
 		operatorConfirmed = false,
-	): Promise<void> {
+	): Promise<LaunchClosureOutcome> {
 		if (!z.string().uuid().safeParse(launchToken).success) {
 			throw new Error("Interrupted process launch token is invalid");
 		}
 		const receiptPath = join(this.stateDirectory, "sessions", goal.id, `launch-${launchToken}.json`);
 		const journaled = await readOptionalFile(receiptPath);
-		if (journaled === undefined) return;
+		if (journaled === undefined) return "proven";
 		const receipt = z
 			.object({ pid: z.number().int().positive().optional(), token: z.literal(launchToken) })
 			.strict()
@@ -1467,7 +1469,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		}
 		if (!processExists(-pid)) {
 			await release();
-			return;
+			return "proven";
 		}
 		return await acceptInterruptedLaunchVerdict(
 			operatorConfirmed,
@@ -1476,7 +1478,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		);
 	}
 
-	async cleanup(session: DispatchSession, operatorConfirmed = false): Promise<void> {
+	async cleanup(session: DispatchSession, operatorConfirmed = false): Promise<LaunchClosureOutcome> {
 		const pid = Number(session.metadata.pid);
 		const token = session.metadata.token;
 		const receiptPath = session.metadata.receiptPath;
@@ -1496,7 +1498,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		if (!(await carriesSessionToken(pid, token))) {
 			if (!processExists(-pid)) {
 				await release();
-				return;
+				return "proven";
 			}
 			return await acceptInterruptedLaunchVerdict(
 				operatorConfirmed,
@@ -1508,7 +1510,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		for (let attempt = 0; attempt < 40; attempt += 1) {
 			if (!processExists(-pid)) {
 				await rm(receiptPath, { force: true });
-				return;
+				return "proven";
 			}
 			await delay(50);
 		}
@@ -1645,13 +1647,13 @@ export class HerdrSessionBinding implements SessionBinding {
 		goal: ProjectGoal,
 		launchToken: string,
 		operatorConfirmed = false,
-	): Promise<void> {
+	): Promise<LaunchClosureOutcome> {
 		const receiptPath = join(this.stateDirectory, "sessions", goal.id, `herdr-launch-${launchToken}.json`);
 		const promptPath = join(this.stateDirectory, "sessions", goal.id, "prompt.txt");
 		const journaled = await readOptionalFile(receiptPath);
 		if (journaled === undefined) {
 			await rm(promptPath, { force: true });
-			return;
+			return "proven";
 		}
 		const receipt = z
 			.object({
@@ -1695,9 +1697,10 @@ export class HerdrSessionBinding implements SessionBinding {
 			}
 		}
 		await release();
+		return "proven";
 	}
 
-	async cleanup(session: DispatchSession, operatorConfirmed = false): Promise<void> {
+	async cleanup(session: DispatchSession, operatorConfirmed = false): Promise<LaunchClosureOutcome> {
 		const cwd = session.metadata.workspace;
 		const promptPath = session.metadata.promptPath;
 		const receiptPath = session.metadata.receiptPath;
@@ -1732,9 +1735,15 @@ export class HerdrSessionBinding implements SessionBinding {
 					throw new Error(`Herdr agent ${agentName} reports a pane absent from the pane inventory`);
 				}
 				await finish();
-				return;
+				return "proven";
 			}
-			if (!owned) throw new Error(`Herdr could not authenticate live pane ${paneId}`);
+			if (!owned) {
+				return await acceptInterruptedLaunchVerdict(
+					operatorConfirmed,
+					`Herdr could not authenticate live pane ${paneId} against agent ${agentName}`,
+					finish,
+				);
+			}
 			await this.closePane(paneId, cwd);
 		} else {
 			const before = z.array(z.string()).safeParse(JSON.parse(session.metadata.beforePaneIds ?? "null"));
@@ -1746,17 +1755,29 @@ export class HerdrSessionBinding implements SessionBinding {
 			);
 			if (candidates.length === 0) {
 				await finish();
-				return;
+				return "proven";
 			}
-			const owned = await this.ownedAgentPane(agentName, cwd);
+			let owned: string | undefined;
+			try {
+				owned = await this.ownedAgentPane(agentName, cwd);
+			} catch (error) {
+				return await acceptInterruptedLaunchVerdict(
+					operatorConfirmed,
+					`Herdr could not be asked which post-launch pane belongs to agent ${agentName}: ${error instanceof Error ? error.message : String(error)}`,
+					finish,
+				);
+			}
 			if (!candidates.some((pane) => pane.pane_id === owned)) {
-				throw new Error(
+				return await acceptInterruptedLaunchVerdict(
+					operatorConfirmed,
 					"Herdr did not authenticate any post-launch pane to this persisted agent; custody remains ambiguous",
+					finish,
 				);
 			}
 			await this.closePane(owned, cwd);
 		}
 		await finish();
+		return "proven";
 	}
 
 	private async findOwnedAgentPane(agentName: string, cwd: string): Promise<string | undefined> {
