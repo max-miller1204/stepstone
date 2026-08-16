@@ -13,6 +13,7 @@ npm run no-pi-install:check
 
 `npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
 The `node src/cli.ts` entry point needs Node 22.18 or newer for native type stripping.
+`npm run dispatch` runs this checkout's second published executable, the dispatch driver in `src/dispatch.ts`, under that same requirement; [docs/dispatch.md](dispatch.md) documents what it does.
 The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for published executables, which Node refuses to type-strip under `node_modules`.
 
 ## Checks

@@ -4,7 +4,7 @@
 
 A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
 It carries the action and flag surface, the description-input rules, the sequencing reads, the exit-code meanings, the brainstorm-to-approved-plan capture workflow, the rules for dispatching an approved plan, and the rule that a lifecycle action needs an explicit request from the user.
-Its dispatch section states the one narrow exception to that last rule, the standing consent an approved dispatch loop carries to complete its own goals once their PRs merge, and names [docs/dispatch.md](dispatch.md) for the bindings and command sequences themselves.
+Its dispatch section sends an agent to the published `stepstone-dispatch` driver to start an approved run, states the one narrow exception to that last rule, the standing consent that approved run carries to complete its own goals once their PRs merge, and names [docs/dispatch.md](dispatch.md) for the bindings and command sequences themselves.
 
 ## Install
 
@@ -18,7 +18,7 @@ The [`skills` CLI](https://github.com/vercel-labs/skills) reads `.claude/skills/
 Installing the npm package does not install the skill.
 The tarball carries `.claude/skills/stepstone/SKILL.md` so the published package stays self-describing, but `node_modules` is not a directory agents scan for skills.
 
-The skill installs no code and pins no version: it invokes the published CLI as `npx -y stepstone@latest`, so an agent that loads it is always driving the current release.
+The skill installs no code and pins no version: it invokes the published CLI as `npx -y stepstone@latest` and the dispatch driver as `npx -y -p stepstone@latest stepstone-dispatch`, so an agent that loads it is always driving the current release.
 
 ## How it is produced
 
@@ -26,6 +26,6 @@ The skill installs no code and pins no version: it invokes the published CLI as 
 Never hand-edit it: run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce.
 
 The generated skill is deliberately repository-neutral, because one file serves every checkout and must never assume it was installed alongside this source tree.
-The tests enforce that too: no absolute path may appear in it, every invocation must use the cache-safe `npx -y stepstone@latest` form, and its examples may never hand an agent a copy-paste lifecycle command or a `--confirm` flag.
+The tests enforce that too: no absolute path may appear in it, every npx invocation must pin the cache-safe `stepstone@latest` specifier, and its examples may never hand an agent a copy-paste lifecycle command or a `--confirm` flag.
 
 Working on the skill itself is the one case for symlinking `.claude/skills/stepstone` into `~/.claude/skills/`, which makes the installed skill track your working tree.
