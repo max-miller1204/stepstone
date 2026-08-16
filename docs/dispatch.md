@@ -82,6 +82,7 @@ stepstone-dispatch inspect <run-id> <goal-id> --json
 
 A `launching` entry with a persisted launch token but no verified session handle is never releasable automatically.
 After inspecting the process table or Herdr agent, `--confirm-launch-closed` asks the selected binding to prove that no worker still carries the persisted launch identity before recovery may release the claim.
+Cleanup asks the same binding for the same proof before scrubbing a workspace whose launch identity outlived its session handle, so a goal completed from merged evidence holds its parallel slot in `cleanup-pending` until no worker can still be using that checkout.
 An interrupted workspace acquisition, any outcome after a process has spawned, a prompt submission timeout, an unreadable Herdr response, a merge-inspection failure, or a concurrency conflict preserves custody in the run record.
 `cleanup-pending` entries whose worker session has not been proven closed continue to consume parallel capacity.
 After inspecting that custody and proving no worker should retain it, release it explicitly:
@@ -214,7 +215,8 @@ mkdir -p "$runtime" || abandon
 ```
 
 `AGENT_COMMAND` names one executable; the published driver passes agent-specific configuration through repeatable `--agent-arg` values.
-The command preflight resolves and fingerprints that executable before persisting a run, and resume refuses a changed executable identity.
+The command preflight resolves and fingerprints that executable before persisting a run, and resume refuses a changed executable identity before it reconciles or launches anything.
+That refusal is scoped to the passes that can spawn a worker, so `status`, `inspect`, `recover`, and `cleanup` still read and journal a run whose agent binary was upgraded underneath it.
 The documented shell binding's bounded startup grace verifies that the detached process survived long enough to accept custody instead of trusting the successful fork that `nohup` reports before an `exec` failure.
 
 The log and pid file belong to the driver, not to the branch under review.

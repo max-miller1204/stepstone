@@ -186,12 +186,13 @@ function createBindings(
 				: undefined;
 	if (!workspace) throw new Error(`Unknown persisted workspace binding ${run.workspaceBinding}`);
 	const session =
-		run.sessionBinding === "process" && config.agentCommand
+		run.sessionBinding === "process" && config.agentCommand && config.agentCommandFingerprint
 			? new DetachedProcessSessionBinding(
 					config.agentCommand,
 					config.agentArgs,
 					stateDirectory,
 					config.startupGraceMs,
+					config.agentCommandFingerprint,
 				)
 			: run.sessionBinding === "herdr" && config.agentKind
 				? new HerdrSessionBinding(config.agentKind, stateDirectory, config.promptTimeoutMs)

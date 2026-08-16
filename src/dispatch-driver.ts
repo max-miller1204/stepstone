@@ -99,6 +99,7 @@ export interface SessionLaunchFailure extends Error {
 
 export interface SessionBinding {
 	readonly name: string;
+	verifyLaunchIdentity?(): Promise<void>;
 	launch(
 		workspace: DispatchWorkspace,
 		goal: ProjectGoal,
@@ -167,7 +168,10 @@ function hasCanonicalCustody(entry: DispatchEntry): boolean {
 }
 
 function consumesCapacity(entry: DispatchEntry): boolean {
-	return hasCanonicalCustody(entry) || (entry.phase === "cleanup-pending" && entry.session !== undefined);
+	return (
+		hasCanonicalCustody(entry) ||
+		(entry.phase === "cleanup-pending" && (entry.session !== undefined || entry.launchToken !== undefined))
+	);
 }
 
 function needsCleanup(entry: DispatchEntry): boolean {
@@ -235,6 +239,7 @@ export class DispatchDriver {
 	async advance(runId: string): Promise<DispatchRun> {
 		const run = await this.dependencies.store.load(runId);
 		this.assertBindings(run);
+		await this.dependencies.session.verifyLaunchIdentity?.();
 		await this.reconcile(run);
 		let slots = run.maxParallel - Object.values(run.entries).filter(consumesCapacity).length;
 		if (slots <= 0) return run;
@@ -318,12 +323,6 @@ export class DispatchDriver {
 			await this.persist(run, entry);
 		}
 		if (!entry.claimUpdatedAt) {
-			if (entry.phase === "preparing" || (entry.phase === "failed" && !entry.workspace)) {
-				entry.phase = "failed";
-				entry.message = "Pre-acquisition intent cleared by explicit recovery.";
-				await this.persist(run, entry);
-				return run;
-			}
 			throw new Error(
 				`Goal ${goalId} has no exact claim token; interrupted acquisition requires manual inspection`,
 			);
@@ -365,16 +364,10 @@ export class DispatchDriver {
 			if (
 				entry.workspace &&
 				entry.claimUpdatedAt &&
-				(entry.phase === "claimed" || entry.phase === "running" || entry.phase === "ambiguous")
+				(entry.phase === "claimed" || entry.phase === "running" || entry.phase === "ambiguous") &&
+				!(await this.verifyPersistedWorkspace(run, entry))
 			) {
-				try {
-					await this.dependencies.workspace.verify(entry.workspace, entry.branch);
-				} catch (error) {
-					entry.phase = "ambiguous";
-					entry.message = `Persisted workspace custody could not be verified: ${errorMessage(error)}`;
-					await this.persist(run, entry);
-					continue;
-				}
+				continue;
 			}
 			if (entry.phase === "claimed") {
 				await this.launchWorker(run, entry);
@@ -405,33 +398,17 @@ export class DispatchDriver {
 			return;
 		}
 		if (entry.phase === "acquiring") {
-			if (entry.workspace) {
-				try {
-					await this.dependencies.workspace.verify(entry.workspace, entry.branch);
-					await this.claimGoal(run, entry);
-				} catch (error) {
-					entry.phase = "ambiguous";
-					entry.message = `Persisted workspace custody could not be verified: ${errorMessage(error)}`;
-					await this.persist(run, entry);
-				}
-			} else {
+			if (!entry.workspace) {
 				entry.phase = "ambiguous";
 				entry.message =
 					"Workspace acquisition was interrupted before its result was journaled; custody requires explicit inspection.";
 				await this.persist(run, entry);
-			}
-			return;
-		}
-		if (entry.workspace) {
-			try {
-				await this.dependencies.workspace.verify(entry.workspace, entry.branch);
-			} catch (error) {
-				entry.phase = "ambiguous";
-				entry.message = `Persisted workspace custody could not be verified: ${errorMessage(error)}`;
-				await this.persist(run, entry);
 				return;
 			}
+			if (await this.verifyPersistedWorkspace(run, entry)) await this.claimGoal(run, entry);
+			return;
 		}
+		if (!(await this.verifyPersistedWorkspace(run, entry))) return;
 		const snapshot = await this.dependencies.roadmap.read();
 		const current = snapshot.goals.find((goal) => goal.id === entry.goal.id);
 		if (!current) {
@@ -690,22 +667,55 @@ export class DispatchDriver {
 				return;
 			}
 		}
+		if (entry.launchToken && entry.workspace) {
+			try {
+				await this.dependencies.session.verifyInterruptedLaunchClosed(
+					entry.workspace,
+					entry.goal,
+					entry.launchToken,
+				);
+				entry.launchToken = undefined;
+				entry.phase = "cleanup-pending";
+				entry.message = "Interrupted worker launch proven closed; workspace cleanup is pending.";
+				await this.persist(run, entry);
+			} catch (error) {
+				entry.phase = "cleanup-pending";
+				entry.message = `Cleanup is pending because the interrupted worker launch could not be proven closed: ${errorMessage(error)}`;
+				await this.persist(run, entry);
+				return;
+			}
+		}
 		try {
 			if (entry.workspace) {
 				const workspace = entry.workspace;
 				await this.dependencies.workspace.cleanup(workspace, entry.branch);
 				entry.cleanupMarker = workspace.metadata.marker;
 			}
-			entry.workspace = undefined;
-			entry.phase = "cleaned";
-			entry.message = entry.mergedPr
-				? `Completed and cleaned after ${entry.mergedPr.url}.`
-				: "Released and cleaned.";
-			await this.persist(run, entry);
 		} catch (error) {
 			entry.phase = "cleanup-pending";
 			entry.message = `Workspace cleanup is pending: ${errorMessage(error)}`;
 			await this.persist(run, entry);
+			return;
+		}
+		entry.workspace = undefined;
+		entry.launchToken = undefined;
+		entry.phase = "cleaned";
+		entry.message = entry.mergedPr
+			? `Completed and cleaned after ${entry.mergedPr.url}.`
+			: "Released and cleaned.";
+		await this.persist(run, entry);
+	}
+
+	private async verifyPersistedWorkspace(run: DispatchRun, entry: DispatchEntry): Promise<boolean> {
+		if (!entry.workspace) return true;
+		try {
+			await this.dependencies.workspace.verify(entry.workspace, entry.branch);
+			return true;
+		} catch (error) {
+			entry.phase = "ambiguous";
+			entry.message = `Persisted workspace custody could not be verified: ${errorMessage(error)}`;
+			await this.persist(run, entry);
+			return false;
 		}
 	}
 

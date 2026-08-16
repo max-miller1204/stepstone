@@ -466,7 +466,7 @@ const runSchema = z
 			if (entry.phase === "launching" && entry.session) {
 				context.addIssue({ code: "custom", path, message: "launching phase cannot claim a session handle" });
 			}
-			if ((entry.phase === "running" || entry.phase === "completed") && !entry.session) {
+			if (entry.phase === "running" && !entry.session) {
 				context.addIssue({ code: "custom", path, message: "phase requires a worker session" });
 			}
 			if (
@@ -584,14 +584,6 @@ function validateRun(value: unknown, path: string): DispatchRun {
 	return run as DispatchRun;
 }
 
-async function validateExecutableIdentity(run: DispatchRun, path: string): Promise<void> {
-	if (run.sessionBinding !== "process" || !run.bindingConfig.agentCommand) return;
-	const actual = await executableFingerprint(run.bindingConfig.agentCommand).catch(() => undefined);
-	if (!actual || actual !== run.bindingConfig.agentCommandFingerprint) {
-		throw new Error(`Dispatch state ${path} is invalid: agent executable identity changed`);
-	}
-}
-
 export class FileDispatchStateStore implements DispatchStateStore {
 	readonly directory: string;
 	constructor(directory: string) {
@@ -665,15 +657,12 @@ export class FileDispatchStateStore implements DispatchStateStore {
 
 	private async read(runId: string): Promise<DispatchRun> {
 		const path = this.path(runId);
-		const run = validateRun(JSON.parse(await readFile(path, "utf8")) as unknown, path);
-		await validateExecutableIdentity(run, path);
-		return run;
+		return validateRun(JSON.parse(await readFile(path, "utf8")) as unknown, path);
 	}
 
 	private async write(run: DispatchRun): Promise<void> {
 		const target = this.path(run.id);
-		const validated = validateRun(run, target);
-		await validateExecutableIdentity(validated, target);
+		validateRun(run, target);
 		const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
 		await writeFile(temporary, `${JSON.stringify(run, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 		await rename(temporary, target);
@@ -800,13 +789,7 @@ async function markWorkspaceRemoved(
 	path: string,
 	record: z.infer<typeof workspaceMarkerSchema>,
 ): Promise<void> {
-	const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-	await writeFile(
-		temporary,
-		`${JSON.stringify({ ...record, removedAt: new Date().toISOString() }, null, 2)}\n`,
-		{ encoding: "utf8", mode: 0o600 },
-	);
-	await rename(temporary, path);
+	await writePrivateJsonAtomically(path, { ...record, removedAt: new Date().toISOString() });
 }
 
 async function journalWorkspaceBranchRemoval(
@@ -1256,14 +1239,30 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 	private readonly args: string[];
 	private readonly stateDirectory: string;
 	private readonly startupGraceMs: number;
+	private readonly expectedFingerprint: string | undefined;
 
-	constructor(command: string, args: string[], stateDirectory: string, startupGraceMs = 1000) {
+	constructor(
+		command: string,
+		args: string[],
+		stateDirectory: string,
+		startupGraceMs = 1000,
+		expectedFingerprint?: string,
+	) {
 		this.command = command;
 		this.args = args;
 		this.stateDirectory = stateDirectory;
 		this.startupGraceMs = startupGraceMs;
+		this.expectedFingerprint = expectedFingerprint;
 		if (process.platform !== "linux") {
 			throw new Error(`Detached process sessions are supported only on Linux, not ${process.platform}`);
+		}
+	}
+
+	async verifyLaunchIdentity(): Promise<void> {
+		if (!this.expectedFingerprint) return;
+		const actual = await executableFingerprint(this.command).catch(() => undefined);
+		if (!actual || actual !== this.expectedFingerprint) {
+			throw new Error("Dispatch cannot launch because the agent executable identity changed");
 		}
 	}
 
@@ -1273,6 +1272,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 		prompt: string,
 		launchToken: string = randomUUID(),
 	): Promise<DispatchSession> {
+		await this.verifyLaunchIdentity();
 		const sessionDirectory = join(this.stateDirectory, "sessions", goal.id);
 		await mkdir(sessionDirectory, { recursive: true, mode: 0o700 });
 		const logPath = join(sessionDirectory, "agent.log");
@@ -1324,7 +1324,10 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 				(error: unknown) => ({ kind: "error" as const, error }),
 			);
 			promptInput.end(prompt);
-			const startup = await Promise.race([exited, delay(this.startupGraceMs, "running" as const)]);
+			const startup = await Promise.race([
+				exited,
+				delay(this.startupGraceMs, "running" as const, { ref: false }),
+			]);
 			if (startup === "exit") {
 				promptInput.destroy();
 				child.unref();
@@ -1335,7 +1338,7 @@ export class DetachedProcessSessionBinding implements SessionBinding {
 			}
 			const promptOutcome = await Promise.race([
 				promptSubmission,
-				delay(this.startupGraceMs, { kind: "pending" as const }),
+				delay(this.startupGraceMs, { kind: "pending" as const }, { ref: false }),
 			]);
 			if (promptOutcome.kind !== "submitted") {
 				const detail =

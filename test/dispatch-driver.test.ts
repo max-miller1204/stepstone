@@ -154,6 +154,10 @@ class FakeSession implements SessionBinding {
 	readonly interruptedLaunchChecks: string[] = [];
 	interruptedLaunchFailure?: Error;
 	failure?: Error;
+	launchIdentityFailure?: Error;
+	async verifyLaunchIdentity(): Promise<void> {
+		if (this.launchIdentityFailure) throw this.launchIdentityFailure;
+	}
 	async launch(
 		_workspace: DispatchWorkspace,
 		projectGoal: ProjectGoal,
@@ -175,6 +179,46 @@ class FakeSession implements SessionBinding {
 		if (this.cleanupFailure) throw this.cleanupFailure;
 		this.cleaned.push(session.metadata.goalId ?? "unknown");
 	}
+}
+
+class PersistedWorktreeWorkspace implements WorkspaceBinding {
+	readonly name = "worktree";
+	readonly acquired: string[] = [];
+	readonly cleaned: string[] = [];
+	async verify(): Promise<void> {}
+	async acquire(projectGoal: ProjectGoal, _branch: string, baseRevision: string): Promise<DispatchWorkspace> {
+		this.acquired.push(projectGoal.id);
+		return {
+			binding: this.name,
+			path: `/stepstone-${projectGoal.id}`,
+			metadata: {
+				marker: `00000000-0000-4000-8000-00000000001${this.acquired.length}`,
+				base: baseRevision,
+				gitdir: `/repo/.git/worktrees/${projectGoal.id}`,
+			},
+		};
+	}
+	async cleanup(_workspace: DispatchWorkspace, branch: string): Promise<void> {
+		this.cleaned.push(branch);
+	}
+}
+
+class PersistedHerdrSession implements SessionBinding {
+	readonly name = "herdr";
+	readonly interruptedLaunchChecks: string[] = [];
+	interruptedLaunchFailure?: Error;
+	async launch(): Promise<DispatchSession> {
+		throw new Error("worker host is unavailable");
+	}
+	async verifyInterruptedLaunchClosed(
+		_workspace: DispatchWorkspace,
+		_projectGoal: ProjectGoal,
+		launchToken: string,
+	): Promise<void> {
+		this.interruptedLaunchChecks.push(launchToken);
+		if (this.interruptedLaunchFailure) throw this.interruptedLaunchFailure;
+	}
+	async cleanup(): Promise<void> {}
 }
 
 class FakeMerges implements MergeEvidenceBinding {
@@ -525,8 +569,137 @@ describe("resumable dispatch driver", () => {
 			await expect(store.load(run.id)).rejects.toThrow("phase cannot retain a worker session");
 			expect(await readFile(sentinel, "utf8")).toBe("untouched");
 			await writeFile(path, JSON.stringify(tampered));
-			await expect(store.load(run.id)).rejects.toThrow("agent executable identity changed");
+			await expect(store.load(run.id)).resolves.toMatchObject({ id: run.id });
 			expect(await readFile(sentinel, "utf8")).toBe("untouched");
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("completes, proves closure, and cleans an interrupted launch whose PR later merges", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-interrupted-"));
+		const claimToken = "2026-01-01T00:00:00.000Z";
+		const launchToken = "00000000-0000-4000-8000-000000000007";
+		const run: DispatchRun = {
+			version: 1,
+			id: "interrupted-run",
+			repositoryRoot: "/repo",
+			approvedGoalIds: ["alpha", "beta"],
+			maxParallel: 1,
+			targetBranch: "main",
+			targetRevision: "0".repeat(40),
+			workspaceBinding: "worktree",
+			sessionBinding: "herdr",
+			bindingConfig: { agentArgs: [], agentKind: "task", promptTimeoutMs: 300000 },
+			createdAt: "2026-02-01T00:00:00.000Z",
+			updatedAt: "2026-02-01T00:00:00.000Z",
+			entries: {
+				alpha: {
+					goal: goal("alpha", { status: "active", branch: "stepstone/alpha", updatedAt: claimToken }),
+					branch: "stepstone/alpha",
+					phase: "ambiguous",
+					claimUpdatedAt: claimToken,
+					launchToken,
+					message: "Worker launch was interrupted before a session handle was persisted.",
+					workspace: {
+						binding: "worktree",
+						path: "/stepstone-alpha",
+						metadata: {
+							marker: "00000000-0000-4000-8000-000000000006",
+							base: "0".repeat(40),
+							gitdir: "/repo/.git/worktrees/alpha",
+						},
+					},
+					updatedAt: "2026-02-01T00:00:00.000Z",
+				},
+			},
+		};
+		try {
+			const store = new FileDispatchStateStore(directory);
+			await store.create(run);
+			const roadmap = new FakeRoadmap({
+				goals: [
+					goal("alpha", { status: "active", branch: "stepstone/alpha", updatedAt: claimToken }),
+					goal("beta"),
+				],
+				retiredIds: [],
+			});
+			const workspace = new PersistedWorktreeWorkspace();
+			const session = new PersistedHerdrSession();
+			const merges = new FakeMerges();
+			merges.evidence.set("stepstone/alpha", merged());
+			let tick = 0;
+			const makeDriver = () =>
+				new DispatchDriver({
+					roadmap,
+					workspace,
+					session,
+					merges,
+					store,
+					now: () => new Date(Date.parse("2026-03-01T00:00:00.000Z") + tick++),
+				});
+
+			session.interruptedLaunchFailure = new Error("worker still carries the launch identity");
+			const held = await makeDriver().advance(run.id);
+
+			expect(held.entries.alpha.phase).toBe("cleanup-pending");
+			expect(held.entries.alpha.launchToken).toBe(launchToken);
+			expect(held.entries.alpha.completionUpdatedAt).toBeDefined();
+			expect(roadmap.completions).toHaveLength(1);
+			expect(workspace.cleaned).toEqual([]);
+			expect(workspace.acquired).toEqual([]);
+			expect((await store.load(run.id)).entries.alpha.phase).toBe("cleanup-pending");
+
+			session.interruptedLaunchFailure = undefined;
+			const cleaned = await makeDriver().advance(run.id);
+
+			expect(cleaned.entries.alpha.phase).toBe("cleaned");
+			expect(cleaned.entries.alpha.launchToken).toBeUndefined();
+			expect(cleaned.entries.alpha.mergedPr?.url).toBe("https://example.test/pull/2");
+			expect(session.interruptedLaunchChecks).toEqual([launchToken, launchToken]);
+			expect(roadmap.completions).toHaveLength(1);
+			expect(workspace.acquired).toEqual(["beta"]);
+			expect(workspace.cleaned).toEqual(["stepstone/alpha", "stepstone/beta"]);
+			expect((await store.load(run.id)).entries.alpha.phase).toBe("cleaned");
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("refuses a resume pass whose session host cannot prove its launch identity", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		const run = await setup.create();
+		setup.session.launchIdentityFailure = new Error("agent executable identity changed");
+
+		await expect(setup.makeDriver().advance(run.id)).rejects.toThrow("agent executable identity changed");
+
+		expect(setup.workspace.acquired).toEqual([]);
+		expect(setup.roadmap.claims).toEqual([]);
+	});
+
+	it("refuses to spawn a worker whose agent executable identity changed", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "stepstone-dispatch-identity-"));
+		try {
+			const changed = new DetachedProcessSessionBinding(
+				process.execPath,
+				[],
+				directory,
+				100,
+				"1:2:3:4:5:6.7",
+			);
+			await expect(changed.verifyLaunchIdentity()).rejects.toThrow("agent executable identity changed");
+			await expect(
+				changed.launch({ binding: "worktree", path: directory, metadata: {} }, goal("alpha"), "prompt"),
+			).rejects.toThrow("agent executable identity changed");
+
+			const current = new DetachedProcessSessionBinding(
+				process.execPath,
+				[],
+				directory,
+				100,
+				await executableFingerprint(process.execPath),
+			);
+			await expect(current.verifyLaunchIdentity()).resolves.toBeUndefined();
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
