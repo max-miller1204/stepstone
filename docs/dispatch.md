@@ -62,6 +62,7 @@ The start result names a run ID.
 `start` takes the run's target branch and revision from the main worktree's own checkout, so it refuses a detached HEAD there.
 Runtime state is stored under the repository's Git common directory at `stepstone-dispatch/<run-id>.json`, outside the canonical roadmap and shared by the main checkout across process restarts.
 The record includes the selected target branch and revision, exact claim tokens, canonical completion and release receipts, transition intent, binding configuration, and workspace and session custody.
+Every record is validated against the run schema on each read and before each write, so a hand-edited or otherwise inconsistent state file is refused by name rather than acted on; that schema is also what caps `--startup-grace-ms` at 300000, `--prompt-timeout-ms` at 86400000, and `--max-parallel` at 1024, so a larger value fails when the run is persisted rather than when the flag is parsed.
 Each acquired workspace also has a private ownership marker in `stepstone-dispatch/workspaces/` and a unique owner token inside that worktree's resolved Git administrative directory.
 Immediately before deleting a Git branch, cleanup journals its exact tip in that marker, atomically deletes only that unchanged ref while the authenticated owned worktree is still registered as its checkout, then journals the completed branch deletion before removing the worktree.
 A retry may finish removing that same authenticated worktree once branch deletion is journaled.
@@ -122,6 +123,7 @@ Destructive cleanup requires a persisted canonical completion or release receipt
 If a claim mutation committed but its response was lost before the returned token could be journaled, the driver does not infer ownership from the deterministic branch name.
 After independently verifying that interrupted claim, an operator can provide the exact current token with `--claim-updated-at`; recovery checks the same branch and token again before releasing it.
 An acquisition interrupted before its workspace result was persisted has no exact claim to release and remains inspection-only rather than guessing that no checkout was acquired.
+Releasing settles a goal for this run rather than requeuing it: the released entry stays in the run's record, and each pass dispatches only an approved goal that has no entry yet, so a goal recovered this way is picked up by a later run instead of by the next `resume`.
 Cleanup likewise refuses an entry that still owns canonical custody:
 
 ```sh
@@ -136,6 +138,8 @@ With no goal ID it removes the noncanonical run record only after every entry is
 
 The executable performs one reconciliation and scheduling pass per invocation rather than becoming a daemon.
 This keeps restart behavior explicit and lets any scheduler, root session, or human decide when another `resume` pass should run.
+`resume`, `recover`, and `cleanup` hold a cross-process lock on the run for that whole pass, and `start` holds it for its own scheduling pass, so overlapping invocations serialize instead of interleaving.
+Each record is replaced atomically under the state directory's own lock, so a concurrent `status` or `inspect` reads a whole record rather than a partial write.
 
 ## Dispatch contract
 
