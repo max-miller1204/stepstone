@@ -89,7 +89,7 @@ That is enforced by source-level import scans and by a CI job that packs the tar
 | Document | Contents |
 | --- | --- |
 | [docs/usage.md](docs/usage.md) | Running the CLI: reads, writes, `--json` envelopes, exit codes, conflicts |
-| [docs/cli.md](docs/cli.md) | Generated command reference: every action, flag, and rule |
+| [docs/cli.md](docs/cli.md) | Generated `project` command reference: every action, flag, and rule |
 | [docs/goals.md](docs/goals.md) | The goal model: fields, statuses, IDs, order, groups, JSON plans |
 | [docs/dependencies.md](docs/dependencies.md) | Dependency edges and the sequencing reads behind `next`, `ready`, and `waves` |
 | [docs/dispatch.md](docs/dispatch.md) | Published resumable dispatch driver, custody recovery, and executable worktree/process and Treehouse/Herdr binding contracts |
