@@ -38,10 +38,13 @@ Repeated `--agent-arg` values are passed verbatim to a process session's executa
 The second form names no binding, so it takes the defaults `--workspace worktree --session process`.
 `--agent-command` is required by process sessions and `--agent-kind` by Herdr sessions.
 `--cwd <repository>` selects the repository an action runs against and defaults to the current directory.
+Whichever repository that is, every action refuses a linked worktree, the read-only ones included, so a run is only ever started, resumed, and inspected from the checkout that owns the roadmap.
 `--workspace-parent <path>` chooses where the worktree workspace creates its `stepstone-<goal-id>` checkouts, defaulting to the repository's parent directory; the Treehouse workspace takes placement from its lease pool and ignores the flag.
 `--startup-grace-ms <milliseconds>` bounds the wait that proves a spawned process-session worker survived its own startup, and defaults to 1000.
 `--prompt-timeout-ms <milliseconds>` bounds Herdr prompt submission, and defaults to 300000.
 `stepstone-dispatch --help` prints that same surface as a flag list.
+`--json` prints a `{"ok": true, "result": ...}` envelope on stdout, and puts a failed action's `{"ok": false, "error": {"message": ...}}` envelope there as well rather than on stderr, where the same message goes without the flag.
+Every failure exits 1, so a caller reads that envelope rather than the graded exit codes the `project` CLI returns.
 The driver reads the canonical ready frontier and launches only allow-listed goals that are open, unblocked, and unclaimed.
 It creates or acquires each workspace before claiming the goal, claims with the selected ready result's exact `updatedAt`, and never exceeds `--max-parallel`.
 The complete stored goal is submitted to the worker over standard input for process sessions and through a private mode-0600 prompt file for Herdr sessions, never as a process argument.
