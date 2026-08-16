@@ -41,6 +41,7 @@ export interface DispatchEntry {
 	session?: DispatchSession;
 	claimUpdatedAt?: string;
 	launchToken?: string;
+	custodyOperatorAsserted?: boolean;
 	mergedPr?: MergeEvidence;
 	message?: string;
 	updatedAt: string;
@@ -284,10 +285,12 @@ export class DispatchDriver {
 				entry.launchToken = undefined;
 				entry.session = undefined;
 				entry.phase = "ambiguous";
-				entry.message =
-					outcome === "operator-asserted"
-						? "Worker session released on the operator's inspected verdict, not on binding proof, before claim recovery."
-						: "Worker session closed and verified before claim recovery.";
+				this.journalCustodyRelease(
+					entry,
+					outcome,
+					"Worker session closed and verified before claim recovery.",
+					"Worker session released on the operator's inspected verdict, not on binding proof, before claim recovery.",
+				);
 				await this.persist(run, entry);
 			} catch (error) {
 				entry.phase = "ambiguous";
@@ -310,10 +313,12 @@ export class DispatchDriver {
 			);
 			entry.launchToken = undefined;
 			entry.phase = "ambiguous";
-			entry.message =
-				outcome === "operator-asserted"
-					? "Explicit recovery released the interrupted launch on the operator's inspected verdict, not on binding proof."
-					: "Explicit recovery verified that the interrupted launch has no live worker.";
+			this.journalCustodyRelease(
+				entry,
+				outcome,
+				"Explicit recovery verified that the interrupted launch has no live worker.",
+				"Explicit recovery released the interrupted launch on the operator's inspected verdict, not on binding proof.",
+			);
 			await this.persist(run, entry);
 		}
 		if (!entry.claimUpdatedAt && explicitClaimUpdatedAt) {
@@ -686,10 +691,12 @@ export class DispatchDriver {
 				entry.session = undefined;
 				entry.launchToken = undefined;
 				entry.phase = "cleanup-pending";
-				entry.message =
-					outcome === "operator-asserted"
-						? "Worker session released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending."
-						: "Worker session closed and verified; workspace cleanup is pending.";
+				this.journalCustodyRelease(
+					entry,
+					outcome,
+					"Worker session closed and verified; workspace cleanup is pending.",
+					"Worker session released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending.",
+				);
 				await this.persist(run, entry);
 			} catch (error) {
 				entry.phase = "cleanup-pending";
@@ -708,10 +715,12 @@ export class DispatchDriver {
 				);
 				entry.launchToken = undefined;
 				entry.phase = "cleanup-pending";
-				entry.message =
-					outcome === "operator-asserted"
-						? "Interrupted worker launch released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending."
-						: "Interrupted worker launch proven closed; workspace cleanup is pending.";
+				this.journalCustodyRelease(
+					entry,
+					outcome,
+					"Interrupted worker launch proven closed; workspace cleanup is pending.",
+					"Interrupted worker launch released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending.",
+				);
 				await this.persist(run, entry);
 			} catch (error) {
 				entry.phase = "cleanup-pending";
@@ -739,6 +748,16 @@ export class DispatchDriver {
 			? `Completed and cleaned after ${entry.mergedPr.url}.`
 			: "Released and cleaned.";
 		await this.persist(run, entry);
+	}
+
+	private journalCustodyRelease(
+		entry: DispatchEntry,
+		outcome: LaunchClosureOutcome,
+		proven: string,
+		asserted: string,
+	): void {
+		if (outcome === "operator-asserted") entry.custodyOperatorAsserted = true;
+		entry.message = outcome === "operator-asserted" ? asserted : proven;
 	}
 
 	private async verifyPersistedWorkspace(run: DispatchRun, entry: DispatchEntry): Promise<boolean> {

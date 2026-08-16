@@ -209,6 +209,7 @@ const entrySchema = z
 		completionUpdatedAt: timestampSchema.optional(),
 		cleanupMarker: z.string().uuid().optional(),
 		launchToken: z.string().uuid().optional(),
+		custodyOperatorAsserted: z.literal(true).optional(),
 		mergedPr: z
 			.object({
 				url: z.string().url(),
@@ -1768,6 +1769,9 @@ export class HerdrSessionBinding implements SessionBinding {
 				);
 			}
 			if (!candidates.some((pane) => pane.pane_id === owned)) {
+				if (panes.some((pane) => pane.pane_id === owned)) {
+					throw new Error(`Herdr worker pane ${owned} for agent ${agentName} is still live`);
+				}
 				return await acceptInterruptedLaunchVerdict(
 					operatorConfirmed,
 					"Herdr did not authenticate any post-launch pane to this persisted agent; custody remains ambiguous",

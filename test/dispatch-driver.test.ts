@@ -523,6 +523,7 @@ describe("resumable dispatch driver", () => {
 					goal: goal("alpha"),
 					branch: "stepstone/alpha",
 					phase: "ambiguous",
+					custodyOperatorAsserted: true,
 					workspace: {
 						binding: "worktree",
 						path: "/stepstone-alpha",
@@ -1368,6 +1369,7 @@ describe("resumable dispatch driver", () => {
 					"const panes = JSON.parse(readFileSync(process.env.STEPSTONE_TEST_PANES, 'utf8'));",
 					"const args = process.argv.slice(2);",
 					"if (args[0] === 'pane' && args[1] === 'list') console.log(JSON.stringify({ result: { panes: panes.map((pane_id) => ({ pane_id })) } }));",
+					"else if (args[0] === 'agent' && args[1] === 'get' && process.env.STEPSTONE_TEST_OWNED) console.log(JSON.stringify({ result: { agent: { pane_id: process.env.STEPSTONE_TEST_OWNED, cwd: process.env.STEPSTONE_TEST_CWD } } }));",
 					"else process.exit(1);",
 				].join("\n"),
 			);
@@ -1390,6 +1392,12 @@ describe("resumable dispatch driver", () => {
 			await expect(binding.cleanup(session)).rejects.toThrow("--confirm-launch-closed");
 			expect(await readFile(receiptPath, "utf8")).toContain("token");
 
+			process.env.STEPSTONE_TEST_OWNED = "root-pane";
+			process.env.STEPSTONE_TEST_CWD = directory;
+			await expect(binding.cleanup(session, true)).rejects.toThrow("is still live");
+			expect(await readFile(receiptPath, "utf8")).toContain("token");
+			delete process.env.STEPSTONE_TEST_OWNED;
+
 			await expect(binding.cleanup(session, true)).resolves.toBe("operator-asserted");
 			await expect(readFile(receiptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(promptPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
@@ -1397,6 +1405,8 @@ describe("resumable dispatch driver", () => {
 		} finally {
 			process.env.PATH = oldPath;
 			delete process.env.STEPSTONE_TEST_PANES;
+			delete process.env.STEPSTONE_TEST_OWNED;
+			delete process.env.STEPSTONE_TEST_CWD;
 			await rm(directory, { recursive: true, force: true });
 		}
 	});
@@ -1439,6 +1449,29 @@ describe("resumable dispatch driver", () => {
 		const provenEntry = (await proven.store.load(provenRun.id)).entries.alpha;
 		expect(provenEntry.message).toContain("closed and verified");
 		expect(provenEntry.message).not.toContain("operator's inspected verdict");
+	});
+
+	it("keeps an operator-asserted release readable after the entry reaches its terminal phase", async () => {
+		const asserted = fixture([goal("alpha")], 1);
+		const assertedRun = await asserted.create();
+		await asserted.makeDriver().advance(assertedRun.id);
+		asserted.session.launchClosureOutcome = "operator-asserted";
+
+		const recovered = await asserted.makeDriver().recoverRelease(assertedRun.id, "alpha", undefined, true);
+
+		expect(recovered.entries.alpha.phase).toBe("cleaned");
+		expect(recovered.entries.alpha.message).toBe("Released and cleaned.");
+		expect(recovered.entries.alpha.custodyOperatorAsserted).toBe(true);
+		expect((await asserted.store.load(assertedRun.id)).entries.alpha.custodyOperatorAsserted).toBe(true);
+
+		const proven = fixture([goal("alpha")], 1);
+		const provenRun = await proven.create();
+		await proven.makeDriver().advance(provenRun.id);
+
+		const released = await proven.makeDriver().recoverRelease(provenRun.id, "alpha", undefined, true);
+
+		expect(released.entries.alpha.phase).toBe("cleaned");
+		expect(released.entries.alpha.custodyOperatorAsserted).toBeUndefined();
 	});
 
 	it("recovers only the Herdr pane that appeared during an unidentified launch", async () => {

@@ -148,6 +148,7 @@ function summarize(run: DispatchRun): object {
 					claimUpdatedAt: entry.claimUpdatedAt,
 					workspace: entry.workspace?.path,
 					session: entry.session?.metadata,
+					custodyOperatorAsserted: entry.custodyOperatorAsserted,
 					mergedPr: entry.mergedPr,
 					message: entry.message,
 					updatedAt: entry.updatedAt,
