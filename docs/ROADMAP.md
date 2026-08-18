@@ -339,17 +339,17 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open]** context-surface: show the active goal inside each harness - `context-surface-show-the-active-goal`
 
-  Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged after the pivot.
+  Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged.
 
-  Survey what each harness actually offers before building anything: Claude Code has a statusline hook and session-start hooks, some harnesses have persistent context files, and several have no equivalent surface at all. The likely answer is that the MCP server exposes the active goal as a resource, the generated skill and AGENTS.md block tell the agent to read it at session start, and anything richer is a per-harness adapter shipped as an optional extra rather than core. Deliberately deferred until the MCP server lands, because the resource it would expose does not exist yet, and because building per-harness adapters before knowing which harnesses people actually use would be guessing.
+  Survey what each harness actually offers before building anything: some have a statusline or session-start hook, some read a persistent context file, and several have no equivalent surface at all. The answer is no longer a served resource, because the MCP server this goal was deferred behind has since been retired. The generated skill and AGENTS block tell the agent to read the active goal at session start, the CLI answers it on demand, and anything richer is a per-harness adapter shipped as an optional extra rather than core.
 
   Depends on `mcp-server-expose-the-worklist-over-mcp` (done).
 
 - **[open]** branch-scoped-active: per-worktree featured goal via links - `branch-scoped-active-per-worktree`
 
-  In a worktree, derive the widget and dashboard featured goal from the current git branch matched against the dedicated branch field, falling back to the stored single active goal. Per-worktree focus without changing active semantics.
+  In a worktree, derive the featured goal from the current Git branch matched against the stored branch field, falling back to the single active goal. Per-worktree focus without changing active semantics.
 
-  Generalized 2026-08-08 by the harness pivot: the original wording scoped this to the Pi widget and dashboard, which are now one surface among several. Derive the featured goal from the branch in every surface that shows one - the CLI, the goal board, whatever the MCP server exposes as the active-goal resource, and the Pi widget and dashboard - resolving it once in shared code rather than per renderer. Branch-derived focus is most valuable in the CLI and board, since that is where a fan-out session actually runs.
+  This stops being a convenience once starting a goal creates its own worktree: somebody who moves into a prepared checkout should not have to state which goal it is, because the branch already answers. Resolve it once in shared code rather than per renderer, so the CLI, the goal board, and the Pi surfaces agree. It matters most in the CLI and the board, which is where work inside a prepared worktree actually happens.
 
   Depends on `schema-fields-group-completedat-links` (done), `project-start-mark-a-goal-in-flight-and` (done).
 
@@ -361,7 +361,9 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open]** merge-driver: structural git merge for worklist.json - `merge-driver-structural-git-merge-for`
 
-  Custom git merge driver (pi-worklist merge-file registered via .gitattributes): union goals by ID; within a goal edited on both sides, union the array fields (dependsOn, links) and apply newest-updatedAt only to scalar fields, because goal-level last-writer-wins would drop a concurrent edit to a different aspect of the same goal; revision becomes max plus one. Only needed if branch sessions ever write the worklist; until then the root-session-on-main convention keeps merges conflict-free by construction.
+  Custom Git merge driver registered via .gitattributes: union goals by ID; within a goal edited on both sides, union the array fields (dependsOn, links) and apply newest-updatedAt only to scalar fields, because goal-level last-writer-wins would drop a concurrent edit to a different aspect of the same goal; revision becomes max plus one.
+
+  Still conditional. It is only needed if work inside a prepared worktree ever writes the roadmap, and the convention that the root checkout owns the roadmap keeps merges conflict-free by construction. Preparation preserves that convention rather than weakening it, so this stays unbuilt until something breaks it.
 
 ## Pi
 
@@ -451,7 +453,9 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
 
-  Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and dispatch claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
+  Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and workspace preparation, claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
+
+  This is the tier that would have caught the binding defects that shipped: driving the real executables from a real repository is what the existing suites avoid by standing in fake external tools that agree with whatever the code sends them.
 
   Depends on `deterministic-local-quality-gates` (done).
 
