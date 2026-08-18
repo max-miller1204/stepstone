@@ -346,23 +346,41 @@ describe("worklist application service", () => {
 		const id = added.result.goal.id;
 		const beforeRejections = await readFile(projectPath, "utf8");
 
-		const rejections: Array<[Parameters<typeof service.execute>[0], string]> = [
+		// The `details` are pinned beside the message because they are what a caller
+		// acts on: `fields` names what to change and `resolution` names the change,
+		// and an agent repairing its own operation reads the token rather than
+		// parsing the sentence. A rename that leaves the message intact is invisible
+		// to an assertion that stops at the error code.
+		type Rejection = [
+			Parameters<typeof service.execute>[0],
+			string,
+			{ fields: string[]; resolution: string },
+		];
+		const rejections: Rejection[] = [
 			[
 				{ scope: "project", action: "update", id, description: "Replace", appendDescription: "Add" },
 				"mutually exclusive",
+				{ fields: ["appendDescription", "description"], resolution: "provide-one-description-change" },
 			],
 			[
 				{ scope: "project", action: "update", id, title: "Renamed", appendDescription: "Add" },
 				"appending never changes the title",
+				{ fields: ["appendDescription", "title"], resolution: "remove-title-or-replace-description" },
 			],
-			[{ scope: "project", action: "update", id, appendDescription: "   " }, "must not be blank"],
+			[
+				{ scope: "project", action: "update", id, appendDescription: "   " },
+				"must not be blank",
+				{ fields: ["appendDescription"], resolution: "provide-non-blank-append-text" },
+			],
 			[
 				{ scope: "project", action: "add", title: "New", appendDescription: "Add" },
 				"only supported for project update",
+				{ fields: ["appendDescription"], resolution: "use-project-update" },
 			],
 			[
 				{ scope: "project", action: "update", id, title: "New", expectedUpdatedAt: "   " },
 				"must not be blank",
+				{ fields: ["expectedUpdatedAt"], resolution: "provide-non-blank-expected-updated-at" },
 			],
 			[
 				{
@@ -373,19 +391,21 @@ describe("worklist application service", () => {
 					expectedUpdatedAt: "2026-05-04T09:12:31.004Z",
 				},
 				"only supported for target-goal mutations",
+				{ fields: ["expectedUpdatedAt"], resolution: "remove-expected-updated-at" },
 			],
 			[
 				{ scope: "project", action: "list", id, expectedUpdatedAt: "2026-05-04T09:12:31.004Z" },
 				"only supported for target-goal mutations",
+				{ fields: ["expectedUpdatedAt"], resolution: "remove-expected-updated-at" },
 			],
 		];
-		for (const [operation, message] of rejections) {
+		for (const [operation, message, details] of rejections) {
 			// Each rejection is asserted against the same untouched fixture file.
 			// pi-lens-ignore: await-in-loop
 			const rejected = await service.execute(operation, { source: "cli" });
 			expect(rejected, JSON.stringify(operation)).toMatchObject({
 				ok: false,
-				error: { code: WORKLIST_ERROR_CODES.VALIDATION_FAILED },
+				error: { code: WORKLIST_ERROR_CODES.VALIDATION_FAILED, details },
 			});
 			expect(rejected.ok ? "" : rejected.error.message).toContain(message);
 		}

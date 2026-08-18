@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -151,17 +152,59 @@ describe("CLI module scanner", () => {
 	});
 });
 
-describe("the module graph behind compiled executables", () => {
-	it("reaches the terminal board, which is where a Pi import is most tempting", async () => {
-		const graph = await collectModuleGraph();
-		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
-		expect(files).toContain("src/tui/goal-board-runtime.ts");
-		expect(files).toContain("src/tui/goal-board.ts");
+/**
+ * The lists that have to agree about which executables this package publishes.
+ *
+ * Asserted here rather than in the pack suite because none of it needs a build:
+ * a bin missing from the build configuration emits no JavaScript, and behind
+ * `buildPackage()` that surfaces first as a read of a file that is not there.
+ */
+describe("the lists behind a published executable", () => {
+	async function repositoryJson<T>(file: string): Promise<T> {
+		return JSON.parse(await readFile(resolve(import.meta.dirname, "..", file), "utf8")) as T;
+	}
+
+	it("derives one existing source entry point from every published bin", async () => {
+		// The scan covers whatever this list holds, so the list itself was the gap:
+		// a bin nobody added to it used to be packed with its subtree unscanned.
+		const { bin } = await repositoryJson<{ bin?: Record<string, string> }>("package.json");
+		const published = Object.keys(bin ?? {});
+		expect(published.length, "package.json publishes no bin, so this assertion pins nothing").toBeGreaterThan(
+			0,
+		);
+		expect(executableEntryPoints).toHaveLength(published.length);
+		for (const entry of executableEntryPoints) expect(existsSync(entry), `${entry} is missing`).toBe(true);
 	});
 
-	it("walks every configured executable entry point", async () => {
+	it("compiles exactly those entry points and nothing else", async () => {
+		// `files` is the one list the build reads, and no code derives it: a bin the
+		// manifest publishes but this file omits is built into nothing at all.
+		const { files } = await repositoryJson<{ files?: string[] }>("tsconfig.build.json");
+		expect(
+			(files ?? []).map((file) => resolve(import.meta.dirname, "..", file)),
+			"tsconfig.build.json must compile the source entry point behind every published bin, and only those",
+		).toEqual(executableEntryPoints);
+	});
+});
+
+describe("the module graph behind compiled executables", () => {
+	it("walks each executable's subtree rather than only the entry points it was handed", async () => {
+		// `collectModuleGraph` seeds its map with the entry it is given, so asserting
+		// that every entry point is in the graph would pass for any list, an empty
+		// one included. These four modules are reached only by following imports:
+		// two behind the CLI, where the terminal board is the most tempting place to
+		// reach for Pi, and two behind the dispatch driver, whose bindings drive Git,
+		// child processes, and GitHub.
 		const graph = await collectExecutableModuleGraph();
-		for (const entry of executableEntryPoints) expect(graph.has(entry)).toBe(true);
+		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
+		expect(files).toEqual(
+			expect.arrayContaining([
+				"src/tui/goal-board.ts",
+				"src/tui/goal-board-runtime.ts",
+				"src/dispatch-driver.ts",
+				"src/dispatch-bindings.ts",
+			]),
+		);
 	});
 
 	it("imports nothing at runtime that a Pi-free install could not resolve", async () => {

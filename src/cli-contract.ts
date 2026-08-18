@@ -152,9 +152,6 @@ export const CLI_COMMAND_CONTRACT = {
 		/** Node floor for running src/cli.ts directly, which relies on native type stripping. */
 		sourceNodeFloor: "22.18",
 	},
-	agentSetup: {
-		skillInstallCommand: SKILL_INSTALL_COMMAND,
-	},
 	actions: [
 		{
 			name: "init",

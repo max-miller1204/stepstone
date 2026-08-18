@@ -57,7 +57,8 @@ The test suite includes real Pi RPC load tests in temporary repositories, so it 
 Editing one of those blocks therefore changes what is executed, and renaming or dropping a marker fails that file instead of quietly leaving a binding unexercised.
 
 `npm run imports:check` reads the merged module graph behind every entry in `executableEntryPoints` in `scripts/cli-import-graph.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
-Adding a published executable means adding its source entry there, so the check and its tests walk the expanded graph.
+That list is derived from the manifest's `bin` map rather than written by hand: each target is read back to the `src/` file the build emitted it from, and a target that resolves to no source file stops the check instead of being skipped.
+Publishing an executable is therefore one `bin` entry, and `test/cli-import-graph.test.ts` holds `tsconfig.build.json`'s `files` to that same derivation so the build cannot silently emit nothing for it.
 That is why a Pi type belongs in an `import type` statement rather than an inline `import { type Foo }`: the latter is a runtime import the scan will reject.
 
 `npm run no-pi-install:check` is the slower proof behind it.

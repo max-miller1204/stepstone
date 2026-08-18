@@ -18,14 +18,58 @@
  * emitted shape depends on how the file is compiled, and the type-only form is
  * already this codebase's convention.
  */
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isBuiltin } from "node:module";
 import { dirname, extname, relative, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dirname, "..");
-const entryPoint = resolve(repoRoot, "src/cli.ts");
-export const executableEntryPoints = [entryPoint, resolve(repoRoot, "src/dispatch.ts")];
+
+// The build's own layout, declared once in tsconfig.build.json as `rootDir` and
+// `outDir`: reading a compiled bin back to its source is the inverse of it.
+const SOURCE_DIRECTORY = "src";
+const COMPILED_DIRECTORY = "dist";
+
+/**
+ * Reads one `bin` target back to the source file the build emitted it from.
+ *
+ * A target that does not resolve stops the check rather than being skipped,
+ * because a dropped entry point takes its whole subtree - and any Pi peer
+ * inside it - out of the scan while still reporting a clean graph.
+ */
+function sourceEntryPointOf(command: string, compiled: string): string {
+	const prefix = `${COMPILED_DIRECTORY}/`;
+	const emitted = compiled.startsWith(prefix) ? compiled.slice(prefix.length) : compiled;
+	const source = resolve(repoRoot, SOURCE_DIRECTORY, emitted.replace(/\.js$/, ".ts"));
+	if (existsSync(source)) return source;
+	throw new Error(
+		`package.json publishes ${command} as ${compiled}, which this check cannot read back to a source ` +
+			`file: it expected ${relative(repoRoot, source)}. An entry point it cannot walk is a published ` +
+			"bin whose imports nobody scans, so teach sourceEntryPointOf in scripts/cli-import-graph.ts how " +
+			"the build emits it.",
+	);
+}
+
+/**
+ * The source entry point behind every published executable.
+ *
+ * Derived from the manifest's `bin` map rather than listed here, because that
+ * map is what an install actually puts on a user's PATH: a bin this list forgot
+ * is precisely where a fresh `@earendil-works/*` import survives all the way to
+ * someone running the published package.
+ */
+function readExecutableEntryPoints(): string[] {
+	const { bin } = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8")) as {
+		bin?: Record<string, string>;
+	};
+	const published = Object.entries(bin ?? {});
+	if (published.length === 0) {
+		throw new Error("package.json publishes no bin, so this check would scan nothing and pass vacuously.");
+	}
+	return published.map(([command, compiled]) => sourceEntryPointOf(command, compiled));
+}
+
+export const executableEntryPoints = readExecutableEntryPoints();
 
 export interface ModuleImport {
 	specifier: string;
@@ -281,7 +325,7 @@ function resolveRelative(fromFile: string, specifier: string): string | null {
  * the build compiles whatever the entry point references, so those files reach
  * the published tree even when nothing loads them at runtime.
  */
-export async function collectModuleGraph(entry = entryPoint): Promise<Map<string, ModuleImport[]>> {
+export async function collectModuleGraph(entry: string): Promise<Map<string, ModuleImport[]>> {
 	const graph = new Map<string, ModuleImport[]>();
 	const pending = [entry];
 	while (pending.length > 0) {

@@ -228,7 +228,27 @@ describe("published stepstone package", () => {
 			expect(paths, `${path} is written for this checkout and must not be packaged`).not.toContain(path);
 		}
 		expect(paths, `${SKILL_PATH} must be packaged so an install carries the skill`).toContain(SKILL_PATH);
-		expect(paths).toContain("node_modules/proper-lockfile/package.json");
+
+		// Read off the manifest rather than named here: a runtime dependency added to
+		// `dependencies` and left out of `bundledDependencies`, or bundled and never
+		// checked, breaks `npx -y stepstone@latest` at require time for the first
+		// person who installs offline, which is the arrangement the no-Pi install
+		// check promises with `--offline`.
+		const runtime = parseJson<{
+			dependencies?: Record<string, string>;
+			bundledDependencies?: string[];
+		}>(await readFile(resolve("package.json"), "utf8"));
+		const bundled = runtime.bundledDependencies ?? [];
+		expect(bundled.length, "the manifest bundles nothing, so this assertion pins nothing").toBeGreaterThan(0);
+		expect(
+			Object.keys(runtime.dependencies ?? {}).filter((dependency) => !bundled.includes(dependency)),
+			"every runtime dependency must be bundled, or an offline install cannot resolve it",
+		).toEqual([]);
+		for (const dependency of bundled) {
+			expect(paths, `${dependency} is bundled, so the tarball has to carry it`).toContain(
+				`node_modules/${dependency}/package.json`,
+			);
+		}
 		expect(paths, "README.md must be packaged; it is the package's front page").toContain("README.md");
 		// Every other documentation page ships, because it documents the package for
 		// somebody using it. Classified by walking the directory rather than from a

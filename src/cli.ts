@@ -16,6 +16,7 @@ import {
 	CLI_COMMAND_CONTRACT,
 	type CliFlagContract,
 	renderCliUsage,
+	SKILL_INSTALL_COMMAND,
 	WORKLIST_PATH_ENV,
 } from "./cli-contract.ts";
 import {
@@ -842,7 +843,6 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 		});
 	}
 
-	const skillCommand = CLI_COMMAND_CONTRACT.agentSetup.skillInstallCommand;
 	const envelope: WorklistApplicationResult = {
 		ok: true,
 		scope: "project",
@@ -853,7 +853,7 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 			agentsPath: refreshed.path,
 			integrations: {
 				skill: {
-					command: skillCommand,
+					command: SKILL_INSTALL_COMMAND,
 					guidance:
 						"This command installs globally. Remove `-g` to choose project-local installation instead.",
 				},
@@ -875,7 +875,7 @@ async function runInit(invocation: CliInvocation): Promise<void> {
 			status,
 			"",
 			"Optional integration was not installed:",
-			`Skill installation: ${skillCommand}`,
+			`Skill installation: ${SKILL_INSTALL_COMMAND}`,
 			"Choose the skill installation scope for your harness.",
 		].join("\n"),
 	);

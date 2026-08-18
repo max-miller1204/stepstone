@@ -44,6 +44,10 @@ Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a mo
 pi install npm:stepstone
 ```
 
+Installing the npm package and installing the Agent Skill are separate choices.
+`npx -y stepstone@latest` and `pi install npm:stepstone` deliver the CLI and the Pi extension; neither installs the skill, which is guidance a harness loads from its own skills directory.
+See [docs/skill.md](docs/skill.md) for the distinction.
+
 ## Try it
 
 ```sh

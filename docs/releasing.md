@@ -8,6 +8,14 @@ The `pi-package` npm keyword and the `pi.extensions` manifest field let the gall
 Publishing runs in CI, not from a maintainer's machine.
 Pushing a `v*.*.*` tag is what publishes; a commit or merge to `main` never does.
 
+## Choosing the version bump
+
+The package is below 1.0, so a breaking change takes a minor bump and a compatible one takes a patch.
+
+Breaking means a surface the published package exposed stops working: a `bin` the manifest no longer publishes, a documented integration that was retired, a field dropped from a `--json` result, a renamed command or flag.
+Those are the releases that break a configuration someone already committed, and the version is the only signal a client resolving `@latest` reads before it upgrades.
+The workflow's generated release notes name the pull requests merged since the previous tag, so what was removed is described there; the bump is what makes a consumer notice before reading them.
+
 ## Cutting a release
 
 Start from a clean, current `main` branch:
@@ -29,10 +37,11 @@ Create the release commit and tag with the appropriate semantic version bump:
 
 ```sh
 npm version patch
-# Use `npm version minor` or `npm version major` when appropriate.
+# `npm version minor` when the release removes or renames a published surface.
 ```
 
-The manifest's `version` script regenerates the generated documents before Git creates the release commit.
+A `preversion` hook runs `npm run docs:check` first, so a checkout whose generated documents are stale fails before the version is bumped and before any tag exists.
+Regenerate them with `npm run docs` in the commit that made them stale rather than folding them into the release commit.
 
 Push the version commit and its tag, which is the step that publishes:
 

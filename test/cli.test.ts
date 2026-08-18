@@ -834,26 +834,35 @@ describe("project goal CLI", () => {
 		await runCli(root, ["project", "add", "Existing goal"]);
 		const worklistPath = join(root, ".worklist", "worklist.json");
 		const before = await readFile(worklistPath, "utf8");
+		// Each case pins its `details` as well as its code, because the resolution
+		// token is the instruction: an agent whose plan was refused reads it to
+		// decide how to repair the plan, and a code alone says only that something
+		// about the batch was wrong. A refactor that renames or drops one is
+		// invisible to an assertion that stops at `VALIDATION_FAILED`.
 		const cases = [
 			{
 				name: "duplicate pre-collision slug",
 				plan: [{ title: "Same slug" }, { title: "Same slug!" }],
 				code: "VALIDATION_FAILED",
+				details: { fields: ["plan/0/title", "plan/1/title"], resolution: "rename-one-batch-goal" },
 			},
 			{
 				name: "unknown reference",
 				plan: [{ title: "Unknown dependency", dependsOn: ["missing-goal"] }],
 				code: "VALIDATION_FAILED",
+				details: { fields: ["dependsOn"], resolution: "add-batch-goal-or-use-existing-goal-id" },
 			},
 			{
 				name: "existing prefix instead of exact id",
 				plan: [{ title: "Prefix dependency", dependsOn: ["existing"] }],
 				code: "VALIDATION_FAILED",
+				details: { fields: ["dependsOn"], resolution: "add-batch-goal-or-use-existing-goal-id" },
 			},
 			{
 				name: "padded reference instead of exact id",
 				plan: [{ title: "Padded dependency", dependsOn: [" existing-goal "] }],
 				code: "VALIDATION_FAILED",
+				details: { fields: ["plan/0/dependsOn"], resolution: "remove-surrounding-reference-whitespace" },
 			},
 			{
 				name: "batch cycle",
@@ -862,6 +871,7 @@ describe("project goal CLI", () => {
 					{ title: "Cycle B", dependsOn: ["cycle-a"] },
 				],
 				code: "DEPENDENCY_CYCLE",
+				details: { fields: ["dependsOn"], resolution: "remove-an-edge-from-the-cycle" },
 			},
 		] as const;
 
@@ -874,7 +884,7 @@ describe("project goal CLI", () => {
 			expect(parseJson(rejected.stderr), testCase.name).toMatchObject({
 				ok: false,
 				action: "apply-plan",
-				error: { code: testCase.code },
+				error: { code: testCase.code, details: testCase.details },
 				meta: { changed: false },
 			});
 			expect(await readFile(worklistPath, "utf8"), testCase.name).toBe(before);
