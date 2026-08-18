@@ -4,12 +4,12 @@ commands:
   # `npm run ...` here exits 127 with "npm: not found". Prepending fnm's
   # default-alias bin restores npm where fnm is installed, and is a no-op
   # anywhere else because a PATH entry that does not exist is simply skipped.
+  #
+  # What that gate is stays in package.json rather than here, so this file and
+  # the repository's own hooks cannot come to disagree about what a check means.
   lint: >-
     export PATH="$HOME/.local/share/fnm/aliases/default/bin:$PATH";
-    npm run typecheck &&
-    npm run imports:check &&
-    npm run lint:check &&
-    npm run docs:check
+    npm run quality:static
 
 ignore_patterns:
   - ".claude/skills/stepstone/SKILL.md"

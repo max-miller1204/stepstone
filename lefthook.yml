@@ -1,0 +1,10 @@
+pre-commit:
+  commands:
+    staged-quality:
+      run: npm run quality:pre-commit
+
+pre-push:
+  commands:
+    pushed-commit-quality:
+      run: npm run quality:pre-push
+      use_stdin: true

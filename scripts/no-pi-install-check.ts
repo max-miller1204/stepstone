@@ -95,13 +95,28 @@ async function packTarball(destination: string): Promise<string> {
  * Installs the tarball on its own. Every Pi peer is declared optional, so npm
  * leaves them out unless something already depends on them, and `--omit=peer`
  * keeps that true even if that ever changes.
+ *
+ * `--offline` is a second assertion rather than a convenience: every runtime
+ * dependency is bundled into the tarball, so an install that still needs the
+ * registry is an install that would fail for someone without one. It is also
+ * what lets the pre-push hook, which runs this check, promise that it reaches
+ * no network at all.
  */
 async function installTarball(tarball: string, installDir: string): Promise<void> {
 	const manifest = { name: "no-pi-install-fixture", version: "0.0.0", private: true };
 	await writeFile(join(installDir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	await run(
 		"npm",
-		["install", tarball, "--omit=dev", "--omit=peer", "--no-audit", "--no-fund", "--loglevel=error"],
+		[
+			"install",
+			tarball,
+			"--omit=dev",
+			"--omit=peer",
+			"--offline",
+			"--no-audit",
+			"--no-fund",
+			"--loglevel=error",
+		],
 		installDir,
 	);
 }

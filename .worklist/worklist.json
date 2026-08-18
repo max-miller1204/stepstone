@@ -705,9 +705,10 @@
       "title": "Deterministic local quality gates",
       "description": "Replace token-heavy default validation with a fast staged-content pre-commit gate and a comprehensive pre-push gate that validates the exact pushed SHA in a detached temporary worktree. Use Lefthook only as orchestration and keep canonical npm scripts as the single source of truth. Do not cache pre-commit results unless the cache key includes the staged tree or index hash; cache successful pre-push results by pushed commit SHA and all relevant toolchain, lockfile, and gate-definition inputs. Avoid network access and automatic fixes in hooks, and retain AI review only as an explicit targeted command.",
       "group": "Quality",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-18T01:02:46.352Z",
-      "updatedAt": "2026-08-18T01:22:44.222Z"
+      "updatedAt": "2026-08-18T10:19:12.851Z",
+      "completedAt": "2026-08-18T10:19:12.851Z"
     },
     {
       "id": "authoritative-pull-request-quality-gates",
@@ -757,7 +758,16 @@
       "status": "open",
       "createdAt": "2026-08-18T01:10:33.397Z",
       "updatedAt": "2026-08-18T01:10:33.397Z"
+    },
+    {
+      "id": "make-repository-script-child-processes",
+      "title": "Make repository script child processes portable",
+      "description": "Route every npm invocation in scripts/no-pi-install-check.ts through process.execPath and npm_execpath, falling back to the bare npm command when that variable is unset, so no run depends on a shell resolving npm. This removes the largest class of the problem for free: under npm run the variable already names npm-cli.js, the spawn needs no shell and therefore no argument quoting, and the child npm is guaranteed to be the same npm that invoked the script.\n\nDriving the installed executables is deliberately left alone. That spawn is what the check exists to prove, since resolving the package's dist entry and running it under node would still catch a leaked Pi import but would stop exercising the shim an install actually puts on PATH, which is the part most likely to differ per platform. Since Node refuses to spawn a .bat or .cmd directly after the fix for CVE-2024-27980, the check cannot drive those shims on Windows, so add an explicit refusal naming that reason rather than letting a spawn fail with EINVAL from inside a helper.\n\nNote the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.",
+      "group": "Quality",
+      "status": "open",
+      "createdAt": "2026-08-18T10:24:48.362Z",
+      "updatedAt": "2026-08-18T10:24:48.362Z"
     }
   ],
-  "revision": 282
+  "revision": 285
 }

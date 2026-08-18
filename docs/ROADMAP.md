@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-59 goals: 17 open, 39 done, 3 archived.
+60 goals: 17 open, 40 done, 3 archived.
 
 ## Orchestrator
 
@@ -373,7 +373,7 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Quality
 
-- **[open]** Deterministic local quality gates - `deterministic-local-quality-gates`
+- **[done]** Deterministic local quality gates - `deterministic-local-quality-gates`
 
   Replace token-heavy default validation with a fast staged-content pre-commit gate and a comprehensive pre-push gate that validates the exact pushed SHA in a detached temporary worktree. Use Lefthook only as orchestration and keep canonical npm scripts as the single source of truth. Do not cache pre-commit results unless the cache key includes the staged tree or index hash; cache successful pre-push results by pushed commit SHA and all relevant toolchain, lockfile, and gate-definition inputs. Avoid network access and automatic fixes in hooks, and retain AI review only as an explicit targeted command.
 
@@ -383,7 +383,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Standardize pull request presentation with a repository-owned `.github/pull_request_template.md` using the same core headings as Colony: Summary, Why, Observable changes, Validation, Risk and rollback, Visual evidence, Reviewer notes, and Checklist. Keep headings stable, allow N/A for genuinely inapplicable sections, and do not treat template completion as semantic proof. Ensure both normal GitHub creation and any `gh`-based delivery command use the template instead of generating free-form agent prose.
 
-  Depends on `deterministic-local-quality-gates` (open), `exercise-stepstone-workflows-end-to-end` (open).
+  Depends on `deterministic-local-quality-gates` (done), `exercise-stepstone-workflows-end-to-end` (open).
 
 - **[open, blocked]** Harden repository supply chain - `harden-repository-supply-chain`
 
@@ -397,8 +397,16 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `harden-repository-supply-chain` (open).
 
-- **[open, blocked]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
+- **[open]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
 
   Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and dispatch claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
 
-  Depends on `deterministic-local-quality-gates` (open).
+  Depends on `deterministic-local-quality-gates` (done).
+
+- **[open]** Make repository script child processes portable - `make-repository-script-child-processes`
+
+  Route every npm invocation in scripts/no-pi-install-check.ts through process.execPath and npm_execpath, falling back to the bare npm command when that variable is unset, so no run depends on a shell resolving npm. This removes the largest class of the problem for free: under npm run the variable already names npm-cli.js, the spawn needs no shell and therefore no argument quoting, and the child npm is guaranteed to be the same npm that invoked the script.
+
+  Driving the installed executables is deliberately left alone. That spawn is what the check exists to prove, since resolving the package's dist entry and running it under node would still catch a leaked Pi import but would stop exercising the shim an install actually puts on PATH, which is the part most likely to differ per platform. Since Node refuses to spawn a .bat or .cmd directly after the fix for CVE-2024-27980, the check cannot drive those shims on Windows, so add an explicit refusal naming that reason rather than letting a spawn fail with EINVAL from inside a helper.
+
+  Note the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.
