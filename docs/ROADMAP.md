@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-59 goals: 16 open, 40 done, 3 archived.
+60 goals: 17 open, 40 done, 3 archived.
 
 ## Orchestrator
 
@@ -402,3 +402,11 @@ A goal's description is a record of what was decided when it was written rather 
   Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and dispatch claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
 
   Depends on `deterministic-local-quality-gates` (done).
+
+- **[open]** Make repository script child processes portable - `make-repository-script-child-processes`
+
+  Route every npm invocation in scripts/no-pi-install-check.ts through process.execPath and npm_execpath, falling back to the bare npm command when that variable is unset, so no run depends on a shell resolving npm. This removes the largest class of the problem for free: under npm run the variable already names npm-cli.js, the spawn needs no shell and therefore no argument quoting, and the child npm is guaranteed to be the same npm that invoked the script.
+
+  Driving the installed executables is deliberately left alone. That spawn is what the check exists to prove, since resolving the package's dist entry and running it under node would still catch a leaked Pi import but would stop exercising the shim an install actually puts on PATH, which is the part most likely to differ per platform. Since Node refuses to spawn a .bat or .cmd directly after the fix for CVE-2024-27980, the check cannot drive those shims on Windows, so add an explicit refusal naming that reason rather than letting a spawn fail with EINVAL from inside a helper.
+
+  Note the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.
