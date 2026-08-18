@@ -580,9 +580,9 @@
       "id": "archive-browsing-archived-goals-in-the",
       "title": "archive-browsing: archived goals in the Pi dashboard",
       "description": "Replaces earlier goal future-archive-ui. Re-scoped: the project ui board already has an archived filter, so the remaining gap is browsing archived goals inside the Pi dashboard, or closing this goal if that is not worth building.\n\nRe-scoped 2026-08-08 by the harness pivot: this is Pi-surface work. Project Goals are now the cross-harness product and Session Tasks are a Pi extension feature, kept working and documented but no longer receiving investment. The goal stays open because the Pi extension stays supported, but it sits behind the Harness group and behind any goal that serves every harness rather than one.",
-      "status": "open",
+      "status": "archived",
       "createdAt": "2026-08-04T02:37:54.548Z",
-      "updatedAt": "2026-08-08T23:54:05.075Z",
+      "updatedAt": "2026-08-18T21:51:52.477Z",
       "previousIds": [
         "goal-mse1szxx-daa779cc"
       ],
@@ -673,10 +673,10 @@
         "root-session-recipe-herdr-treehouse",
         "make-dispatch-bindings-safe"
       ],
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-14T19:26:11.603Z",
-      "updatedAt": "2026-08-18T21:44:49.971Z",
-      "branch": "stepstone/first-class-resumable-dispatch-driver"
+      "updatedAt": "2026-08-18T21:51:52.394Z",
+      "completedAt": "2026-08-18T21:51:52.394Z"
     },
     {
       "id": "retire-mcp-and-claude-plugin-surfaces",
@@ -874,5 +874,5 @@
       "updatedAt": "2026-08-18T21:42:28.061Z"
     }
   ],
-  "revision": 292
+  "revision": 294
 }

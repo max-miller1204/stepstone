@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-69 goals: 26 open, 40 done, 3 archived.
+69 goals: 24 open, 41 done, 4 archived.
 
 ## Orchestrator
 
@@ -277,7 +277,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `apply-plan-atomic-batch-import-of-a` (done), `sequencing-commands-project-next-ready` (done), `project-start-mark-a-goal-in-flight-and` (done).
 
-- **[open]** First-class resumable dispatch driver - `first-class-resumable-dispatch-driver`
+- **[done]** First-class resumable dispatch driver - `first-class-resumable-dispatch-driver`
 
   Turn the documented root-session dispatch contract into an executable driver that can run an explicitly approved Project Goal plan through a selectable workspace and session-hosting binding. The driver selects only ready goals, claims each branch with optimistic concurrency, enforces bounded parallelism, launches workers with complete goal context, recognizes only matching merged PRs as completion evidence, and safely releases or preserves custody according to whether an outcome is known or ambiguous. Persist enough local runtime state to resume after interruption, and expose status, inspection, recovery, and cleanup operations without making canonical roadmap state depend on Herdr, Treehouse, or any agent harness. Keep the existing documented bindings executable and covered as the behavioral contract.
 
@@ -389,7 +389,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `slug-ids-human-readable-goal-ids-and` (done).
 
-- **[open]** archive-browsing: archived goals in the Pi dashboard - `archive-browsing-archived-goals-in-the`
+- **[archived]** archive-browsing: archived goals in the Pi dashboard - `archive-browsing-archived-goals-in-the`
 
   Replaces earlier goal future-archive-ui. Re-scoped: the project ui board already has an archived filter, so the remaining gap is browsing archived goals inside the Pi dashboard, or closing this goal if that is not worth building.
 
