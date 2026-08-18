@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-69 goals: 24 open, 41 done, 4 archived.
+70 goals: 25 open, 41 done, 4 archived.
 
 ## Orchestrator
 
@@ -466,3 +466,11 @@ A goal's description is a record of what was decided when it was written rather 
   Driving the installed executables is deliberately left alone. That spawn is what the check exists to prove, since resolving the package's dist entry and running it under node would still catch a leaked Pi import but would stop exercising the shim an install actually puts on PATH, which is the part most likely to differ per platform. Since Node refuses to spawn a .bat or .cmd directly after the fix for CVE-2024-27980, the check cannot drive those shims on Windows, so add an explicit refusal naming that reason rather than letting a spawn fail with EINVAL from inside a helper.
 
   Note the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.
+
+- **[open]** Audit the roadmap for goals the project has outgrown - `audit-the-roadmap-for-goals-the-project`
+
+  Every document in this repository is held to the spellings the command contract renders, and the generated roadmap page is the one deliberate exemption, because goal prose is data rather than authored documentation. That exemption is also a hole: a goal description is the only place a reference to something that no longer exists survives indefinitely. One shift in direction left four descriptions planning around a retired transport and naming an executable that had not existed for two releases, and one goal open whose work had already shipped.
+
+  Half of that is beyond any check. A dead executable name is greppable, but prose that plans around a retired transport names no dead token, and a goal the project has outgrown reads perfectly. So the audit is guidance an agent follows rather than a command that asserts, and it belongs in the one skill rather than a second one: its own rule block on the command contract beside the capture, dependency, and dispatch rules, reached through trigger text in the skill description exactly as the dispatch guidance already is. A second skill would add an install to onboarding that is deliberately being simplified, duplicate a capture rule that has to stand on its own anyway, and put two near-identical trigger descriptions in competition.
+
+  Tell the agent what to look for: a description naming a command, flag, documentation page, or executable that resolves to nothing; a goal still open whose recorded branch has already merged; an edge that only ever meant waiting for a goal that is now done; a goal whose premise the project has since abandoned. Point the capture workflow at it as well, so a proposed batch is read against the goals it obsoletes at the moment it is proposed, which is when this drift is created rather than when it is discovered. That capture rule has to be self-contained, because guidance reaches a repository through whichever surface was installed. A skill runs only when asked, so anything that has to fail unattended stays a separate decision. Claim staleness belongs to the goal that owns claims; this one owns descriptions that stopped being true.

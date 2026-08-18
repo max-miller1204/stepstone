@@ -872,7 +872,16 @@
       "status": "open",
       "createdAt": "2026-08-18T21:42:28.061Z",
       "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "audit-the-roadmap-for-goals-the-project",
+      "title": "Audit the roadmap for goals the project has outgrown",
+      "description": "Every document in this repository is held to the spellings the command contract renders, and the generated roadmap page is the one deliberate exemption, because goal prose is data rather than authored documentation. That exemption is also a hole: a goal description is the only place a reference to something that no longer exists survives indefinitely. One shift in direction left four descriptions planning around a retired transport and naming an executable that had not existed for two releases, and one goal open whose work had already shipped.\n\nHalf of that is beyond any check. A dead executable name is greppable, but prose that plans around a retired transport names no dead token, and a goal the project has outgrown reads perfectly. So the audit is guidance an agent follows rather than a command that asserts, and it belongs in the one skill rather than a second one: its own rule block on the command contract beside the capture, dependency, and dispatch rules, reached through trigger text in the skill description exactly as the dispatch guidance already is. A second skill would add an install to onboarding that is deliberately being simplified, duplicate a capture rule that has to stand on its own anyway, and put two near-identical trigger descriptions in competition.\n\nTell the agent what to look for: a description naming a command, flag, documentation page, or executable that resolves to nothing; a goal still open whose recorded branch has already merged; an edge that only ever meant waiting for a goal that is now done; a goal whose premise the project has since abandoned. Point the capture workflow at it as well, so a proposed batch is read against the goals it obsoletes at the moment it is proposed, which is when this drift is created rather than when it is discovered. That capture rule has to be self-contained, because guidance reaches a repository through whichever surface was installed. A skill runs only when asked, so anything that has to fail unattended stays a separate decision. Claim staleness belongs to the goal that owns claims; this one owns descriptions that stopped being true.",
+      "group": "Quality",
+      "status": "open",
+      "createdAt": "2026-08-18T22:17:01.718Z",
+      "updatedAt": "2026-08-18T22:17:01.718Z"
     }
   ],
-  "revision": 294
+  "revision": 295
 }
