@@ -705,9 +705,10 @@
       "title": "Deterministic local quality gates",
       "description": "Replace token-heavy default validation with a fast staged-content pre-commit gate and a comprehensive pre-push gate that validates the exact pushed SHA in a detached temporary worktree. Use Lefthook only as orchestration and keep canonical npm scripts as the single source of truth. Do not cache pre-commit results unless the cache key includes the staged tree or index hash; cache successful pre-push results by pushed commit SHA and all relevant toolchain, lockfile, and gate-definition inputs. Avoid network access and automatic fixes in hooks, and retain AI review only as an explicit targeted command.",
       "group": "Quality",
-      "status": "active",
+      "status": "done",
       "createdAt": "2026-08-18T01:02:46.352Z",
-      "updatedAt": "2026-08-18T09:11:34.931Z"
+      "updatedAt": "2026-08-18T10:19:12.851Z",
+      "completedAt": "2026-08-18T10:19:12.851Z"
     },
     {
       "id": "authoritative-pull-request-quality-gates",
@@ -759,5 +760,5 @@
       "updatedAt": "2026-08-18T01:10:33.397Z"
     }
   ],
-  "revision": 283
+  "revision": 284
 }
