@@ -1,12 +1,12 @@
 {
 	"name": "stepstone",
-	"version": "0.9.4",
+	"version": "0.10.0",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "stepstone",
-			"version": "0.9.4",
+			"version": "0.10.0",
 			"bundleDependencies": [
 				"proper-lockfile",
 				"zod"
