@@ -26,6 +26,29 @@ The package ships TypeScript source directly because Pi loads extensions through
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
 | `npm run no-pi-install:check` | Every packed and installed executable works with no Pi present |
 | `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
+| `npm run quality:static` | Types, the import scan, Biome lint, and the generated documents, with no test run |
+| `npm run quality:pre-commit` | Biome checks the exact staged contents |
+| `npm run quality:pre-push` | The exact pushed commit passes the comprehensive offline gate in a detached worktree |
+
+Install the repository hooks once with `npm run hooks:install`.
+Lefthook only maps Git lifecycle events to the canonical npm scripts, so the same gates can be run directly and from other automation, and `.no-mistakes.yaml` names a script here rather than restating what it runs.
+
+The pre-commit gate materializes staged blobs in a temporary directory and never reads unstaged file contents.
+It hands every staged path to Biome and lets Biome decide which of them it can read, so a commit that touches only files Biome does not process passes rather than being refused.
+`biome.json` is materialized alongside those blobs and Biome is run from there, because the patterns in `files.includes` are relative and would otherwise match nothing.
+
+The pre-push gate installs from the pushed commit's shrinkwrap with npm's offline mode, then runs `check`, `pack:check`, and `no-pi-install:check` inside a detached temporary worktree.
+Nothing on that path reaches the network: the isolated install inside `no-pi-install:check` is offline as well, which the tarball's bundled dependencies make possible.
+If the npm cache lacks a pinned package, run `npm ci` while online before retrying the push.
+
+It caches only successful runs, keyed by the pushed commit, platform, architecture, and Node version.
+The commit already fixes the shrinkwrap and the gate definitions, so those are not hashed a second time.
+A push that ships no commit, whether it is up to date or deletes a branch, runs no gate rather than falling back to whatever HEAD is.
+Annotated tags are peeled to their commits before the run, so `git push --follow-tags` validates one tree once.
+A commit that defines no `quality:push:worktree`, which is every commit made before these gates existed, is reported as having nothing to run instead of failing on a missing script.
+Run where no push is feeding it, `npm run quality:pre-push` validates HEAD, and `npm run quality:pre-push -- <revision>...` validates the revisions named.
+
+AI review remains an explicit targeted command rather than part of either default hook.
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
 
