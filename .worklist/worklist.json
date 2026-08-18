@@ -767,7 +767,112 @@
       "status": "open",
       "createdAt": "2026-08-18T10:24:48.362Z",
       "updatedAt": "2026-08-18T10:24:48.362Z"
+    },
+    {
+      "id": "prepare-goal-workspaces-without",
+      "title": "Prepare goal workspaces without executing a harness",
+      "description": "The driver hosts agent sessions: it spawns detached process groups, starts and prompts Herdr panes, tracks PIDs and pane IDs, and carries a hardcoded list of other people's agent kinds. That session layer is most of the dispatch surface, it is the only reason four of the twelve phases exist, and every defect found so far has been in it. Stepstone should prepare and claim, never execute: no session hosting, no prompt submission, no launch custody, and no flag naming a harness. The parallel limit stops meaning concurrent workers and starts meaning how many goals may be claimed and prepared at once.",
+      "group": "Automation",
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "hand-a-prepared-workspace-its-goal-as-a",
+      "title": "Hand a prepared workspace its goal as a file",
+      "description": "Submitting a prompt over standard input or a pane is what forces Stepstone to know how each harness accepts input. Writing the goal into the prepared workspace instead needs nothing from the harness at all, which is the same reason the generated AGENTS.md block works everywhere it is dropped. A person who opens the workspace, and any agent that reads what is in it, both find the goal already there.",
+      "group": "Automation",
+      "dependsOn": [
+        "prepare-goal-workspaces-without"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "start-a-goal-into-its-own-worktree-from",
+      "title": "Start a goal into its own worktree from the CLI",
+      "description": "project start records a branch name and creates nothing, so the checkout a goal is worked in is still assembled by hand every time. Starting a goal should be able to create its branch and worktree and report where it is, using only Git, so the single most common manual step becomes one command rather than a recipe.",
+      "group": "Automation",
+      "dependsOn": [
+        "prepare-goal-workspaces-without"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "scrub-a-prepared-workspace-on-verified",
+      "title": "Scrub a prepared workspace on verified Git state",
+      "description": "Cleanup currently proves a worker session is closed before it removes a checkout, which is only possible because the driver started that worker. Preparation cannot know whether somebody still has a terminal open there, so the guard has to become Git state it can actually read: uncommitted changes, unpushed commits, an unmerged branch. That is a stronger guard than process liveness ever was, which is why an operator override had to exist alongside it.",
+      "group": "Automation",
+      "dependsOn": [
+        "prepare-goal-workspaces-without"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "notice-a-claim-nobody-is-working-on",
+      "title": "Notice a claim nobody is working on",
+      "description": "A claim today implies a live worker the driver can observe. Once preparation stops launching, a goal can be claimed and its workspace prepared and then never opened, holding the goal off the ready frontier with nothing to notice. This design buys that problem, so it needs an answer built in rather than discovered: surfacing untouched or aged claims, and letting one be abandoned back to the frontier.",
+      "group": "Automation",
+      "dependsOn": [
+        "prepare-goal-workspaces-without"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "prove-workspace-preparation-on-every",
+      "title": "Prove workspace preparation on every supported platform",
+      "description": "Detached process sessions are refused anywhere but Linux, because ownership was checked by reading a session token out of the process table. Nothing else in the driver needed that, so removing session hosting removes the restriction, and the project's claim to run in any ecosystem on any platform becomes checkable. CI covers Linux and macOS today and nothing covers Windows.",
+      "group": "Automation",
+      "dependsOn": [
+        "prepare-goal-workspaces-without"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "report-why-a-preparation-pass-refused",
+      "title": "Report why a preparation pass refused or rolled back",
+      "description": "A failure that rolls back cleanly reports only that it released and cleaned, discarding the reason the boundary gave, so an attempt that could not proceed is indistinguishable from a pass that had nothing to do. The paths that preserve custody already name their cause. Every terminal outcome a boundary failure produced should name that failure.",
+      "group": "Automation",
+      "dependsOn": [
+        "prepare-goal-workspaces-without"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "verify-the-remaining-external",
+      "title": "Verify the remaining external boundaries against real tools",
+      "description": "The dispatch suites drive fake external executables built from the binding's own expectations, so a binding that disagrees with the real tool's arguments, readiness, or error codes passes every check and fails only in front of a user. Three such defects shipped that way. Once only Git and the GitHub CLI remain, both of which are already required, verifying against the real tools is small enough to be routine.",
+      "group": "Automation",
+      "dependsOn": [
+        "prepare-goal-workspaces-without"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
+    },
+    {
+      "id": "fold-workspace-preparation-into-the",
+      "title": "Fold workspace preparation into the project CLI",
+      "description": "A driver that no longer runs anything is a claim ledger over Git worktrees, which is close to what starting a goal already does. Folding it into the one published CLI would retire the second executable, its entry point, and its packaging checks, and leave a single surface to learn. The second executable was published recently enough that nothing depends on it yet, and that stops being true as soon as anyone scripts against it.",
+      "group": "Automation",
+      "dependsOn": [
+        "start-a-goal-into-its-own-worktree-from"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T21:42:28.061Z",
+      "updatedAt": "2026-08-18T21:42:28.061Z"
     }
   ],
-  "revision": 285
+  "revision": 286
 }

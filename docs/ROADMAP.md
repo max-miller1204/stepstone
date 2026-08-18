@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-60 goals: 17 open, 40 done, 3 archived.
+69 goals: 26 open, 40 done, 3 archived.
 
 ## Orchestrator
 
@@ -282,6 +282,58 @@ A goal's description is a record of what was decided when it was written rather 
   Turn the documented root-session dispatch contract into an executable driver that can run an explicitly approved Project Goal plan through a selectable workspace and session-hosting binding. The driver selects only ready goals, claims each branch with optimistic concurrency, enforces bounded parallelism, launches workers with complete goal context, recognizes only matching merged PRs as completion evidence, and safely releases or preserves custody according to whether an outcome is known or ambiguous. Persist enough local runtime state to resume after interruption, and expose status, inspection, recovery, and cleanup operations without making canonical roadmap state depend on Herdr, Treehouse, or any agent harness. Keep the existing documented bindings executable and covered as the behavioral contract.
 
   Depends on `root-session-recipe-herdr-treehouse` (done), `make-dispatch-bindings-safe` (done).
+
+- **[open]** Prepare goal workspaces without executing a harness - `prepare-goal-workspaces-without`
+
+  The driver hosts agent sessions: it spawns detached process groups, starts and prompts Herdr panes, tracks PIDs and pane IDs, and carries a hardcoded list of other people's agent kinds. That session layer is most of the dispatch surface, it is the only reason four of the twelve phases exist, and every defect found so far has been in it. Stepstone should prepare and claim, never execute: no session hosting, no prompt submission, no launch custody, and no flag naming a harness. The parallel limit stops meaning concurrent workers and starts meaning how many goals may be claimed and prepared at once.
+
+- **[open, blocked]** Hand a prepared workspace its goal as a file - `hand-a-prepared-workspace-its-goal-as-a`
+
+  Submitting a prompt over standard input or a pane is what forces Stepstone to know how each harness accepts input. Writing the goal into the prepared workspace instead needs nothing from the harness at all, which is the same reason the generated AGENTS.md block works everywhere it is dropped. A person who opens the workspace, and any agent that reads what is in it, both find the goal already there.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Start a goal into its own worktree from the CLI - `start-a-goal-into-its-own-worktree-from`
+
+  project start records a branch name and creates nothing, so the checkout a goal is worked in is still assembled by hand every time. Starting a goal should be able to create its branch and worktree and report where it is, using only Git, so the single most common manual step becomes one command rather than a recipe.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
+
+  Cleanup currently proves a worker session is closed before it removes a checkout, which is only possible because the driver started that worker. Preparation cannot know whether somebody still has a terminal open there, so the guard has to become Git state it can actually read: uncommitted changes, unpushed commits, an unmerged branch. That is a stronger guard than process liveness ever was, which is why an operator override had to exist alongside it.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
+
+  A claim today implies a live worker the driver can observe. Once preparation stops launching, a goal can be claimed and its workspace prepared and then never opened, holding the goal off the ready frontier with nothing to notice. This design buys that problem, so it needs an answer built in rather than discovered: surfacing untouched or aged claims, and letting one be abandoned back to the frontier.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Prove workspace preparation on every supported platform - `prove-workspace-preparation-on-every`
+
+  Detached process sessions are refused anywhere but Linux, because ownership was checked by reading a session token out of the process table. Nothing else in the driver needed that, so removing session hosting removes the restriction, and the project's claim to run in any ecosystem on any platform becomes checkable. CI covers Linux and macOS today and nothing covers Windows.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Report why a preparation pass refused or rolled back - `report-why-a-preparation-pass-refused`
+
+  A failure that rolls back cleanly reports only that it released and cleaned, discarding the reason the boundary gave, so an attempt that could not proceed is indistinguishable from a pass that had nothing to do. The paths that preserve custody already name their cause. Every terminal outcome a boundary failure produced should name that failure.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Verify the remaining external boundaries against real tools - `verify-the-remaining-external`
+
+  The dispatch suites drive fake external executables built from the binding's own expectations, so a binding that disagrees with the real tool's arguments, readiness, or error codes passes every check and fails only in front of a user. Three such defects shipped that way. Once only Git and the GitHub CLI remain, both of which are already required, verifying against the real tools is small enough to be routine.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Fold workspace preparation into the project CLI - `fold-workspace-preparation-into-the`
+
+  A driver that no longer runs anything is a claim ledger over Git worktrees, which is close to what starting a goal already does. Folding it into the one published CLI would retire the second executable, its entry point, and its packaging checks, and leave a single surface to learn. The second executable was published recently enough that nothing depends on it yet, and that stops being true as soon as anyone scripts against it.
+
+  Depends on `start-a-goal-into-its-own-worktree-from` (open).
 
 ## Later
 
