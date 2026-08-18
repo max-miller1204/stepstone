@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-54 goals: 12 open, 39 done, 3 archived.
+59 goals: 17 open, 39 done, 3 archived.
 
 ## Orchestrator
 
@@ -370,3 +370,35 @@ A goal's description is a record of what was decided when it was written rather 
   Repair the packaged dispatch recipe so both bindings launch bounded parallel work without leaking or corrupting claims and workspaces. Herdr prompt submission must not wait indefinitely or interpret an ambiguous wait failure as permission to abandon a submitted worker; every clear must use the updatedAt returned by its own claim; detached launches need an executable startup handshake; Herdr agents and panes must close before returning Treehouse leases; and dirty-worktree cleanup must be non-interactive, explicit, and verified. Exercise the exact documented commands rather than substitute driver commands.
 
   Depends on `repair-project-start-semantics` (done).
+
+## Quality
+
+- **[open]** Deterministic local quality gates - `deterministic-local-quality-gates`
+
+  Replace token-heavy default validation with a fast staged-content pre-commit gate and a comprehensive pre-push gate that validates the exact pushed SHA in a detached temporary worktree. Use Lefthook only as orchestration and keep canonical npm scripts as the single source of truth. Do not cache pre-commit results unless the cache key includes the staged tree or index hash; cache successful pre-push results by pushed commit SHA and all relevant toolchain, lockfile, and gate-definition inputs. Avoid network access and automatic fixes in hooks, and retain AI review only as an explicit targeted command.
+
+- **[open, blocked]** Authoritative pull request quality gates - `authoritative-pull-request-quality-gates`
+
+  Make GitHub the non-bypassable enforcement layer by reusing the canonical local gate in required checks, preserving Ubuntu and macOS coverage, testing the supported Node floor and current LTS, validating merge_group results through the merge queue, and clearly separating reproducible checks from network-backed policy checks. Retire no-mistakes from the default pre-PR workflow only after these protections cover the same deterministic behavior.
+
+  Standardize pull request presentation with a repository-owned `.github/pull_request_template.md` using the same core headings as Colony: Summary, Why, Observable changes, Validation, Risk and rollback, Visual evidence, Reviewer notes, and Checklist. Keep headings stable, allow N/A for genuinely inapplicable sections, and do not treat template completion as semantic proof. Ensure both normal GitHub creation and any `gh`-based delivery command use the template instead of generating free-form agent prose.
+
+  Depends on `deterministic-local-quality-gates` (open), `exercise-stepstone-workflows-end-to-end` (open).
+
+- **[open, blocked]** Harden repository supply chain - `harden-repository-supply-chain`
+
+  Catch secrets, unsafe workflows, dependency risks, dead package surfaces, and malformed published artifacts before merge. Add Gitleaks, actionlint, zizmor, CodeQL, GitHub dependency review, GitHub Actions dependency updates with full-SHA pins, Knip configured for every dynamic and executable entry point, and publint against the packed tarball; add TypeScript package-surface validation only where public typed exports warrant it.
+
+  Depends on `authoritative-pull-request-quality-gates` (open).
+
+- **[open, blocked]** Adversarial test quality program - `adversarial-test-quality-program`
+
+  Strengthen confidence beyond example-based tests with fast-check properties for dependency ordering, ID migration, storage round trips, branch-aware behavior, and locking invariants; deterministic multi-process stress scenarios for mutation and path migration; and scheduled Stryker mutation testing that measures whether the suite detects plausible defects without slowing every push.
+
+  Depends on `harden-repository-supply-chain` (open).
+
+- **[open, blocked]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
+
+  Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and dispatch claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
+
+  Depends on `deterministic-local-quality-gates` (open).

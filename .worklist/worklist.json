@@ -699,7 +699,65 @@
       "status": "open",
       "createdAt": "2026-08-14T19:52:07.371Z",
       "updatedAt": "2026-08-14T19:52:07.371Z"
+    },
+    {
+      "id": "deterministic-local-quality-gates",
+      "title": "Deterministic local quality gates",
+      "description": "Replace token-heavy default validation with a fast staged-content pre-commit gate and a comprehensive pre-push gate that validates the exact pushed SHA in a detached temporary worktree. Use Lefthook only as orchestration and keep canonical npm scripts as the single source of truth. Do not cache pre-commit results unless the cache key includes the staged tree or index hash; cache successful pre-push results by pushed commit SHA and all relevant toolchain, lockfile, and gate-definition inputs. Avoid network access and automatic fixes in hooks, and retain AI review only as an explicit targeted command.",
+      "group": "Quality",
+      "status": "open",
+      "createdAt": "2026-08-18T01:02:46.352Z",
+      "updatedAt": "2026-08-18T01:22:44.222Z"
+    },
+    {
+      "id": "authoritative-pull-request-quality-gates",
+      "title": "Authoritative pull request quality gates",
+      "description": "Make GitHub the non-bypassable enforcement layer by reusing the canonical local gate in required checks, preserving Ubuntu and macOS coverage, testing the supported Node floor and current LTS, validating merge_group results through the merge queue, and clearly separating reproducible checks from network-backed policy checks. Retire no-mistakes from the default pre-PR workflow only after these protections cover the same deterministic behavior.\n\nStandardize pull request presentation with a repository-owned `.github/pull_request_template.md` using the same core headings as Colony: Summary, Why, Observable changes, Validation, Risk and rollback, Visual evidence, Reviewer notes, and Checklist. Keep headings stable, allow N/A for genuinely inapplicable sections, and do not treat template completion as semantic proof. Ensure both normal GitHub creation and any `gh`-based delivery command use the template instead of generating free-form agent prose.",
+      "group": "Quality",
+      "dependsOn": [
+        "deterministic-local-quality-gates",
+        "exercise-stepstone-workflows-end-to-end"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T01:02:46.352Z",
+      "updatedAt": "2026-08-18T01:10:46.382Z"
+    },
+    {
+      "id": "harden-repository-supply-chain",
+      "title": "Harden repository supply chain",
+      "description": "Catch secrets, unsafe workflows, dependency risks, dead package surfaces, and malformed published artifacts before merge. Add Gitleaks, actionlint, zizmor, CodeQL, GitHub dependency review, GitHub Actions dependency updates with full-SHA pins, Knip configured for every dynamic and executable entry point, and publint against the packed tarball; add TypeScript package-surface validation only where public typed exports warrant it.",
+      "group": "Quality",
+      "dependsOn": [
+        "authoritative-pull-request-quality-gates"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T01:02:46.352Z",
+      "updatedAt": "2026-08-18T01:02:46.352Z"
+    },
+    {
+      "id": "adversarial-test-quality-program",
+      "title": "Adversarial test quality program",
+      "description": "Strengthen confidence beyond example-based tests with fast-check properties for dependency ordering, ID migration, storage round trips, branch-aware behavior, and locking invariants; deterministic multi-process stress scenarios for mutation and path migration; and scheduled Stryker mutation testing that measures whether the suite detects plausible defects without slowing every push.",
+      "group": "Quality",
+      "dependsOn": [
+        "harden-repository-supply-chain"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T01:02:46.352Z",
+      "updatedAt": "2026-08-18T01:02:46.352Z"
+    },
+    {
+      "id": "exercise-stepstone-workflows-end-to-end",
+      "title": "Exercise Stepstone workflows end to end",
+      "description": "Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and dispatch claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.",
+      "group": "Quality",
+      "dependsOn": [
+        "deterministic-local-quality-gates"
+      ],
+      "status": "open",
+      "createdAt": "2026-08-18T01:10:33.397Z",
+      "updatedAt": "2026-08-18T01:10:33.397Z"
     }
   ],
-  "revision": 278
+  "revision": 282
 }
