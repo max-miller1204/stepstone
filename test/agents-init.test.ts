@@ -19,8 +19,8 @@ import { AgentsBlockError, agentsFileNeedsRefresh } from "../src/agents.ts";
 import {
 	AGENTS_BLOCK_END,
 	AGENTS_BLOCK_START,
-	CLI_COMMAND_CONTRACT,
 	renderAgentsMarkdownBlock,
+	SKILL_INSTALL_COMMAND,
 	WORKLIST_PATH_ENV,
 } from "../src/cli-contract.ts";
 
@@ -97,9 +97,7 @@ describe("project init AGENTS.md generation", () => {
 			meta: { changed: boolean; semanticNoOp: boolean; cliVersion: string };
 		}>(result.stdout);
 		expect(envelope.result.agentsPath).toBe(join(root, "AGENTS.md"));
-		expect(envelope.result.integrations.skill.command).toBe(
-			CLI_COMMAND_CONTRACT.agentSetup.skillInstallCommand,
-		);
+		expect(envelope.result.integrations.skill.command).toBe(SKILL_INSTALL_COMMAND);
 		expect(Object.keys(envelope.result.integrations)).toEqual(["skill"]);
 		// init reports through the same envelope boundary as every other action, so
 		// the metadata the CLI stamps for all of them has to reach this one too.
@@ -124,7 +122,7 @@ describe("project init AGENTS.md generation", () => {
 		expect(written).toBe(`${original}\n\n${renderAgentsMarkdownBlock()}\n`);
 		expect(markerCount(written, AGENTS_BLOCK_START)).toBe(1);
 		expect(markerCount(written, AGENTS_BLOCK_END)).toBe(1);
-		expect(result.stdout).toContain(CLI_COMMAND_CONTRACT.agentSetup.skillInstallCommand);
+		expect(result.stdout).toContain(SKILL_INSTALL_COMMAND);
 		expect(result.stdout).toContain("Optional integration was not installed:");
 		expect(result.stdout).toContain("Choose the skill installation scope for your harness.");
 		expect(result.stdout).not.toContain("--package");

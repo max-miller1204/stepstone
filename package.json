@@ -65,7 +65,7 @@
 		"quality:push:worktree": "npm run check && npm run pack:check && npm run no-pi-install:check",
 		"quality:static": "npm run typecheck && npm run imports:check && npm run lint:check && npm run docs:check",
 		"prepack": "npm run build",
-		"version": "npm run docs",
+		"preversion": "npm run docs:check",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",

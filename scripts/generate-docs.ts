@@ -1,7 +1,7 @@
 /**
- * Writes every artifact generated from src/cli-contract.ts and package metadata,
- * refreshes only the marker-delimited Stepstone block in this repository's
- * AGENTS.md, and renders the roadmap from this repository's own goal file.
+ * Writes every artifact generated from src/cli-contract.ts, refreshes only the
+ * marker-delimited Stepstone block in this repository's AGENTS.md, and renders
+ * the roadmap from this repository's own goal file.
  *
  *   npm run docs         # write the files
  *   npm run docs:check   # exit 1 if a committed file is stale
