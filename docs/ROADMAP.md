@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 1 active, 24 open, 41 done, 4 archived.
+70 goals: 24 open, 42 done, 4 archived.
 
 ## Orchestrator
 
@@ -118,7 +118,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Pin the active goal to the top with a distinct marker, dim done and archived rows in the all view, add staleness markers for goals untouched for 30+ days, and show per-status counts in the header. Sorting is deliberately out of scope: the sort cycle moved into schema-fields so it is built once on canonical file order instead of shipping on createdAt and being reworked one goal later.
 
-- **[active]** tui-groups: collapsible group sections in the goal board - `tui-groups-collapsible-group-sections`
+- **[done]** tui-groups: collapsible group sections in the goal board - `tui-groups-collapsible-group-sections`
 
   Render goals under collapsible section headers with counts; ungrouped goals fall into an implicit last section. Collapse and expand on the header row with ephemeral per-run state initially. CLI: --group on add and update, list --group filter, group shown in project show.
 
@@ -367,13 +367,13 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Pi
 
-- **[open, blocked]** pi-tui-parity: mirror board polish in the Pi widget and dashboard - `pi-tui-parity-mirror-board-polish-in`
+- **[open]** pi-tui-parity: mirror board polish in the Pi widget and dashboard - `pi-tui-parity-mirror-board-polish-in`
 
   Bring the inline Pi surfaces up to the same visual system as the terminal board so the board does not become the favored child: status dimming and staleness markers in the dashboard goal list, group sections in the dashboard, a counts line and distinct active-goal treatment in the widget, and the new schema fields (group, dependencies, completedAt) surfaced in the dashboard detail view. One visual language, two renderers: keep every treatment consistent with what tui-polish and tui-groups established rather than inventing a second style.
 
   Re-scoped 2026-08-08 by the harness pivot: this is Pi-surface work. Project Goals are now the cross-harness product and Session Tasks are a Pi extension feature, kept working and documented but no longer receiving investment. The goal stays open because the Pi extension stays supported, but it sits behind the Harness group and behind any goal that serves every harness rather than one.
 
-  Depends on `tui-polish-quick-readability-wins-in` (done), `tui-groups-collapsible-group-sections` (active).
+  Depends on `tui-polish-quick-readability-wins-in` (done), `tui-groups-collapsible-group-sections` (done).
 
 - **[open]** focus-mode: show only Session Tasks linked to the active goal - `focus-mode-show-only-session-tasks`
 
