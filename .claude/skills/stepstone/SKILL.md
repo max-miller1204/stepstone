@@ -57,7 +57,7 @@ Flags:
 - `--description <text>` - Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update.
 - `--append-description <text>` - Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update.
 - `--append` - Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update.
-- `--group <name>` - Put the goal in a free-form section, such as Foundation; an empty name clears it; only for project add and update.
+- `--group <name>` - Filter list to one free-form section, or put an added or updated goal in that section; names match exactly and are case sensitive, an empty name selects ungrouped goals for list and clears the field for update, and it may be provided only once; only for project list, add, and update.
 - `--depends-on <id>` - Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update.
 - `--link <url>` - Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update.
 - `--branch <name>` - Record the branch working on a goal; project start defaults to the current Git branch; only for project start.

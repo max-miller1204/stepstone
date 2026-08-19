@@ -313,6 +313,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 				index++;
 				break;
 			case "--group":
+				if (group !== undefined) fail(`--group may be provided only once\n\n${USAGE}`, 2);
 				group = readClearableFlagValue(head, index, part, "a section name, or '' to clear it");
 				index++;
 				break;
@@ -506,6 +507,38 @@ function formatGoalLine(goal: ProjectGoal): string {
 function formatGoalList(goals: ProjectGoal[]): string {
 	if (goals.length === 0) return "No project goals.";
 	return goals.map(formatGoalLine).join("\n");
+}
+
+/**
+ * The section a goal reads as being filed under.
+ *
+ * A goal file is editable by hand and the schema only requires a string here, so
+ * a blank or padded group is normalized the way a written one would have been
+ * rather than becoming a section no filter can name.
+ */
+function goalSection(goal: ProjectGoal): string | undefined {
+	return goal.group?.trim() || undefined;
+}
+
+/** A section name inside prose, where it can hold spaces the sentence would swallow. */
+function quoteSection(name: string): string {
+	return `"${name}"`;
+}
+
+/**
+ * Why a `--group` filter matched nothing, which the shared empty line cannot say.
+ *
+ * A roadmap with goals on it and a section name that names none of them is a
+ * typo the caller can fix, so it reads differently from an empty roadmap and
+ * names the sections that do exist rather than leaving the caller to guess.
+ */
+function formatEmptyGroup(goals: readonly ProjectGoal[], group: string): string {
+	if (goals.length === 0) return "No project goals.";
+	if (group === "") return "No ungrouped project goals; every goal is filed under a section.";
+	const sections = [...new Set(goals.flatMap((goal) => [goalSection(goal) ?? []].flat()))];
+	if (sections.length === 0)
+		return `No project goals in section ${quoteSection(group)}; no goal has a section.`;
+	return `No project goals in section ${quoteSection(group)}. Sections in use: ${sections.map(quoteSection).join(", ")}.`;
 }
 
 /**
@@ -1142,9 +1175,24 @@ async function run(invocation: CliInvocation): Promise<void> {
 			await runInteractiveBoard(invocation, service, location);
 			return;
 		case "list": {
-			const envelope = await executeCliOperation(service, { scope: "project", action: "list" });
-			const goals = (envelope.ok ? envelope.result.goals : undefined) ?? [];
-			report(invocation, envelope, formatGoalList(goals));
+			const { goals, meta } = await readGoals(service);
+			// Trimmed to match the write path, where a group is stored trimmed and a
+			// whitespace-only name clears the field. Reading and writing have to agree
+			// on what one argument means, or the name a goal was filed under is a name
+			// the filter cannot find.
+			const section = invocation.group?.trim();
+			const filtered =
+				section === undefined
+					? goals
+					: goals.filter((goal) =>
+							section === "" ? goalSection(goal) === undefined : goalSection(goal) === section,
+						);
+			const result = { scope: "project", action: "list", goals: filtered } as const;
+			const message =
+				filtered.length === 0 && section !== undefined
+					? formatEmptyGroup(goals, section)
+					: formatGoalList(filtered);
+			report(invocation, readEnvelope("list", result, meta), message);
 			return;
 		}
 		case "show": {

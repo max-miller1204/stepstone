@@ -73,6 +73,13 @@ function detailLines(board: GoalBoard, width = 100, rows = 20): string[] {
 }
 
 /** Every goal row of the list pane, reduced to `<marker> <title>` and any badge. */
+/** Every list-pane cell, section headers included, as the user sees them. */
+function listedCells(board: GoalBoard, width = 100, rows = 20): string[] {
+	return plainFrame(board, width, rows)
+		.map((line) => line.split("│")[1] ?? "")
+		.filter((cell) => cell.trim() !== "");
+}
+
 function listedRows(board: GoalBoard, width = 100, rows = 20): string[] {
 	return plainFrame(board, width, rows)
 		.map((line) => line.split("│")[1] ?? "")
@@ -191,6 +198,136 @@ describe("goal board presentation", () => {
 		press(board, "o");
 		expect(header()).toContain("⇅ File");
 		expect(listedRows(board)[1]).toContain("Add focus mode");
+	});
+
+	it("renders named sections with ungrouped goals last and collapses them ephemerally", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "loose", title: "Loose" }),
+			goal({ id: "two", title: "Second", group: "Foundation" }),
+			goal({ id: "later", title: "Later", group: "Delivery" }),
+		]);
+		const frame = () => plainFrame(board, 100, 24).join("\n");
+		expect(frame()).toMatch(
+			/▾ Foundation\s+\(2\)[\s\S]*First[\s\S]*Second[\s\S]*▾ Delivery\s+\(1\)[\s\S]*Later[\s\S]*▾ Ungrouped\s+\(1\)[\s\S]*Loose/,
+		);
+
+		press(board, `${ESC}[A `);
+		expect(frame()).toContain("▸ Foundation");
+		expect(frame()).not.toContain("○ First");
+		expect(frame()).not.toContain("○ Second");
+		press(board, "\r");
+		expect(frame()).toContain("▾ Foundation");
+		expect(frame()).toContain("○ First");
+	});
+
+	it("leaves a roadmap with no groups as a plain list of goals", () => {
+		const board = createBoard([goal({ id: "one", title: "First" }), goal({ id: "two", title: "Second" })]);
+		const rows = listedRows(board);
+		expect(rows[0]).toContain("First");
+		expect(plainFrame(board, 100, 24).join("\n")).not.toContain("Ungrouped");
+	});
+
+	it("reads a hand-written blank group as ungrouped rather than a nameless section", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "blank", title: "Blank", group: "   " }),
+			goal({ id: "padded", title: "Padded", group: " Foundation " }),
+		]);
+		const frame = plainFrame(board, 100, 24).join("\n");
+		expect(frame).toMatch(
+			/▾ Foundation\s+\(2\)[\s\S]*First[\s\S]*Padded[\s\S]*▾ Ungrouped\s+\(1\)[\s\S]*Blank/,
+		);
+	});
+
+	it("leads the pane with a section it expands, so the goals revealed are on screen", () => {
+		const goals = Array.from({ length: 6 }, (_, index) =>
+			goal({ id: `g-${index}`, title: `Goal ${index}`, group: index < 3 ? "Alpha" : "Beta" }),
+		);
+		const board = createBoard(goals);
+		// Select the Beta header, which the pane can only show on its last row.
+		press(board, "jjj");
+		expect(listedCells(board, 100, 10).at(-1)).toContain("Beta");
+
+		press(board, " ");
+		expect(listedCells(board, 100, 10).at(-1)).toContain("▸ Beta");
+
+		// Expanding has to show what it revealed rather than leaving the header
+		// pinned to the last row with all three goals still below the fold.
+		press(board, " ");
+		const cells = listedCells(board, 100, 10);
+		const header = cells.findIndex((row) => row.includes("▾ Beta"));
+		expect(header).toBeGreaterThanOrEqual(0);
+		expect(cells.slice(header + 1).join("\n")).toContain("Goal 3");
+	});
+
+	it("fills the pane exactly on a terminal too narrow to carry a section count", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "l", title: "L" }),
+		]);
+		for (const width of [8, 10, 12, 20]) {
+			const frame = plainFrame(board, width, 10);
+			for (const line of frame) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			// The header row is the one that used to overrun the frame it sits in.
+			for (const line of frame.filter((candidate) => /[▾▸]/.test(candidate))) {
+				expect(visibleWidth(line)).toBe(width);
+			}
+		}
+	});
+
+	it("steps into a section that is already open rather than swallowing the key", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "two", title: "Second", group: "Foundation" }),
+		]);
+		// Up from the first goal lands on its header; the section is already open.
+		press(board, `${ESC}[A`);
+		expect(board.selectedGoal).toBeUndefined();
+		press(board, "\r");
+		expect(board.selectedGoal?.id).toBe("one");
+	});
+
+	it("shows a search hit that a collapsed section would otherwise hide", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "loose", title: "Loose" }),
+		]);
+		const frame = () => plainFrame(board, 100, 24).join("\n");
+		press(board, `${ESC}[A `);
+		expect(frame()).toContain("▸ Foundation");
+
+		// The header reports one match, so the list has to be able to show it.
+		press(board, "/First\r");
+		expect(frame()).toContain("▾ Foundation");
+		expect(frame()).toContain("First");
+		expect(board.selectedGoal?.id).toBe("one");
+
+		// Clearing the query hands the section back the collapse the user set.
+		press(board, ESC);
+		expect(frame()).toContain("▸ Foundation");
+	});
+
+	it("says a goal key needs a goal when a section header is selected", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "loose", title: "Loose" }),
+		]);
+		press(board, `${ESC}[A`);
+		expect(board.selectedGoal).toBeUndefined();
+		expect(press(board, "c")).toEqual([]);
+		expect(plainFrame(board).at(-2)).toContain("is a section. Select a goal first.");
+	});
+
+	it("counts hidden goals rather than rows, which is what the pane title counts", () => {
+		const goals = Array.from({ length: 4 }, (_, index) =>
+			goal({ id: `g-${index}`, title: `Goal ${index}`, group: index < 2 ? "Alpha" : "Beta" }),
+		);
+		const board = createBoard(goals);
+		// Three list rows of six: Alpha and its two goals, leaving the Beta header
+		// and its two goals below the fold. Three rows are hidden, but two goals are.
+		const hint = plainFrame(board, 100, 8).find((line) => line.includes("more"));
+		expect(hint).toContain("2 more");
 	});
 
 	it("counts every status in the header, where a message cannot cover them", () => {
@@ -586,6 +723,27 @@ describe("goal board navigation", () => {
 		expect(() => board.render(100, 20)).not.toThrow();
 	});
 
+	it("keeps the cleared query's goal in view by landing on the section holding it", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "Alpha one", group: "Alpha" }),
+			goal({ id: "two", title: "Alpha two", group: "Alpha" }),
+			goal({ id: "far", title: "Beta far", group: "Beta" }),
+		]);
+		// Collapse Beta, then search into it: the query overrides the collapse.
+		press(board, "jj");
+		press(board, " ");
+		press(board, "/far\r");
+		expect(board.selectedGoal?.id).toBe("far");
+
+		// Clearing the query re-collapses Beta, so the goal's row is gone. The
+		// selection belongs on its section, not back at the top of the roadmap.
+		press(board, ESC);
+		expect(board.selectedGoal).toBeUndefined();
+		expect(plainFrame(board).at(-2)).not.toContain("Alpha one");
+		const selectedRow = plainFrame(board, 100, 20).find((line) => line.includes("❯"));
+		expect(selectedRow).toContain("Beta");
+	});
+
 	it("abandons a refined search back to the committed query", () => {
 		const board = createBoard();
 		press(board, "/focus\r");
@@ -606,8 +764,9 @@ describe("goal board reordering", () => {
 				kind: "reorder",
 				goalId: "g-open-1",
 				delta: 1,
-				visibleGoalIds: ["g-active", "g-open-1", "g-open-2"],
+				sectionGoalIds: ["g-active", "g-open-1", "g-open-2"],
 				success: expect.stringContaining("down"),
+				blocked: "Already last.",
 			},
 		]);
 		expect(press(board, "K")).toEqual([
@@ -615,8 +774,9 @@ describe("goal board reordering", () => {
 				kind: "reorder",
 				goalId: "g-open-1",
 				delta: -1,
-				visibleGoalIds: ["g-active", "g-open-1", "g-open-2"],
+				sectionGoalIds: ["g-active", "g-open-1", "g-open-2"],
 				success: expect.stringContaining("up"),
+				blocked: "Already first.",
 			},
 		]);
 	});
@@ -645,6 +805,80 @@ describe("goal board reordering", () => {
 		expect(plainFrame(filtered).at(-2)).toContain("Already last.");
 	});
 
+	it("treats a section boundary as an end, since a crossing move would not show", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "two", title: "Second", group: "Foundation" }),
+			goal({ id: "later", title: "Later", group: "Delivery" }),
+			goal({ id: "loose", title: "Loose" }),
+		]);
+		// Down from the header onto the section's last goal, which has nowhere to go.
+		press(board, `${ESC}[B`);
+		expect(board.selectedGoal?.id).toBe("two");
+		expect(press(board, "J")).toEqual([]);
+		expect(plainFrame(board).at(-2)).toContain("Already last in Foundation.");
+
+		// Up inside the section still moves, and anchors on the section's own rows.
+		expect(press(board, "K")).toEqual([
+			{
+				kind: "reorder",
+				goalId: "two",
+				delta: -1,
+				sectionGoalIds: ["one", "two"],
+				success: expect.stringContaining("up"),
+				blocked: "Already first in Foundation.",
+			},
+		]);
+
+		// An ungrouped goal is at an end of its own implicit section, not of the list.
+		press(board, "G");
+		expect(board.selectedGoal?.id).toBe("loose");
+		expect(press(board, "K")).toEqual([]);
+		expect(plainFrame(board).at(-2)).toContain("Already first.");
+	});
+
+	it("keeps a section where it was when its own first goal moves down", () => {
+		// Foundation and Delivery interleave in file order, so a move written as
+		// "source after anchor" would hand Foundation's position to Delivery.
+		const goals = [
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "later", title: "Later", group: "Delivery" }),
+			goal({ id: "two", title: "Second", group: "Foundation" }),
+		];
+		const board = createBoard(goals);
+		const [intent] = press(board, "J");
+		if (intent?.kind !== "reorder") throw new Error("Expected reorder intent");
+		expect(board.resolveReorder(intent)).toEqual({
+			scope: "project",
+			action: "move",
+			id: "two",
+			beforeId: "one",
+		});
+
+		// Applying that move keeps Foundation first and swaps its two goals.
+		const moved = createBoard([goals[2], goals[0], goals[1]]);
+		const rows = plainFrame(moved, 100, 24).join("\n");
+		expect(rows).toMatch(/▾ Foundation[\s\S]*Second[\s\S]*First[\s\S]*▾ Delivery[\s\S]*Later/);
+	});
+
+	it("lands a deletion on the neighbouring goal rather than the top of the board", () => {
+		const goals = [
+			goal({ id: "a1", title: "A one", group: "Alpha" }),
+			goal({ id: "b1", title: "B one", group: "Beta" }),
+			goal({ id: "b2", title: "B two", group: "Beta" }),
+			goal({ id: "c1", title: "C one", group: "Gamma" }),
+		];
+		const board = createBoard(goals);
+		// Rows are [Alpha, a1, Beta, b1, b2, Gamma, c1]; select b2 at index 4.
+		press(board, "jjj");
+		expect(board.selectedGoal?.id).toBe("b2");
+
+		// Removing it leaves a section header at index 4, which must not send the
+		// cursor back to the first goal of the whole roadmap.
+		board.setGoals([goals[0], goals[1], goals[3]]);
+		expect(board.selectedGoal?.id).toBe("c1");
+	});
+
 	it("keeps queued filtered reorder references valid across ID migration", () => {
 		const original = [
 			goal({ id: "old-a", title: "A" }),
@@ -661,11 +895,13 @@ describe("goal board reordering", () => {
 			{ ...original[2], id: "new-b", previousIds: ["old-b"] },
 		]);
 
+		// A downward move is written as "put the neighbour before the moved goal",
+		// which is the same pair order and cannot shift the section it sits in.
 		expect(board.resolveReorder(intent)).toEqual({
 			scope: "project",
 			action: "move",
-			id: "new-a",
-			afterId: "new-b",
+			id: "new-b",
+			beforeId: "new-a",
 		});
 	});
 

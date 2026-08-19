@@ -333,8 +333,9 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "--group",
 			usage: "--group <name>",
-			summary: "Put the goal in a free-form section, such as Foundation; an empty name clears it",
-			actions: ["add", "update"],
+			summary:
+				"Filter list to one free-form section, or put an added or updated goal in that section; names match exactly and are case sensitive, an empty name selects ungrouped goals for list and clears the field for update, and it may be provided only once",
+			actions: ["list", "add", "update"],
 		},
 		{
 			name: "--depends-on",

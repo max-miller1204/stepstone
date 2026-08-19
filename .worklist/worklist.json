@@ -455,9 +455,9 @@
       "id": "tui-groups-collapsible-group-sections",
       "title": "tui-groups: collapsible group sections in the goal board",
       "description": "Render goals under collapsible section headers with counts; ungrouped goals fall into an implicit last section. Collapse and expand on the header row with ephemeral per-run state initially. CLI: --group on add and update, list --group filter, group shown in project show.",
-      "status": "open",
+      "status": "active",
       "createdAt": "2026-08-04T02:37:39.763Z",
-      "updatedAt": "2026-08-05T05:02:33.099Z",
+      "updatedAt": "2026-08-19T09:04:46.306Z",
       "previousIds": [
         "goal-mse1soj7-f2b8683c"
       ],
@@ -883,5 +883,5 @@
       "updatedAt": "2026-08-18T22:17:01.718Z"
     }
   ],
-  "revision": 295
+  "revision": 296
 }
