@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-60 goals: 17 open, 40 done, 3 archived.
+70 goals: 25 open, 41 done, 4 archived.
 
 ## Orchestrator
 
@@ -277,27 +277,79 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `apply-plan-atomic-batch-import-of-a` (done), `sequencing-commands-project-next-ready` (done), `project-start-mark-a-goal-in-flight-and` (done).
 
-- **[open]** First-class resumable dispatch driver - `first-class-resumable-dispatch-driver`
+- **[done]** First-class resumable dispatch driver - `first-class-resumable-dispatch-driver`
 
   Turn the documented root-session dispatch contract into an executable driver that can run an explicitly approved Project Goal plan through a selectable workspace and session-hosting binding. The driver selects only ready goals, claims each branch with optimistic concurrency, enforces bounded parallelism, launches workers with complete goal context, recognizes only matching merged PRs as completion evidence, and safely releases or preserves custody according to whether an outcome is known or ambiguous. Persist enough local runtime state to resume after interruption, and expose status, inspection, recovery, and cleanup operations without making canonical roadmap state depend on Herdr, Treehouse, or any agent harness. Keep the existing documented bindings executable and covered as the behavioral contract.
 
   Depends on `root-session-recipe-herdr-treehouse` (done), `make-dispatch-bindings-safe` (done).
 
+- **[open]** Prepare goal workspaces without executing a harness - `prepare-goal-workspaces-without`
+
+  The driver hosts agent sessions: it spawns detached process groups, starts and prompts Herdr panes, tracks PIDs and pane IDs, and carries a hardcoded list of other people's agent kinds. That session layer is most of the dispatch surface, it is the only reason four of the twelve phases exist, and every defect found so far has been in it. Stepstone should prepare and claim, never execute: no session hosting, no prompt submission, no launch custody, and no flag naming a harness. The parallel limit stops meaning concurrent workers and starts meaning how many goals may be claimed and prepared at once.
+
+- **[open, blocked]** Hand a prepared workspace its goal as a file - `hand-a-prepared-workspace-its-goal-as-a`
+
+  Submitting a prompt over standard input or a pane is what forces Stepstone to know how each harness accepts input. Writing the goal into the prepared workspace instead needs nothing from the harness at all, which is the same reason the generated AGENTS.md block works everywhere it is dropped. A person who opens the workspace, and any agent that reads what is in it, both find the goal already there.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Start a goal into its own worktree from the CLI - `start-a-goal-into-its-own-worktree-from`
+
+  project start records a branch name and creates nothing, so the checkout a goal is worked in is still assembled by hand every time. Starting a goal should be able to create its branch and worktree and report where it is, using only Git, so the single most common manual step becomes one command rather than a recipe.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
+
+  Cleanup currently proves a worker session is closed before it removes a checkout, which is only possible because the driver started that worker. Preparation cannot know whether somebody still has a terminal open there, so the guard has to become Git state it can actually read: uncommitted changes, unpushed commits, an unmerged branch. That is a stronger guard than process liveness ever was, which is why an operator override had to exist alongside it.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
+
+  A claim today implies a live worker the driver can observe. Once preparation stops launching, a goal can be claimed and its workspace prepared and then never opened, holding the goal off the ready frontier with nothing to notice. This design buys that problem, so it needs an answer built in rather than discovered: surfacing untouched or aged claims, and letting one be abandoned back to the frontier.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Prove workspace preparation on every supported platform - `prove-workspace-preparation-on-every`
+
+  Detached process sessions are refused anywhere but Linux, because ownership was checked by reading a session token out of the process table. Nothing else in the driver needed that, so removing session hosting removes the restriction, and the project's claim to run in any ecosystem on any platform becomes checkable. CI covers Linux and macOS today and nothing covers Windows.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Report why a preparation pass refused or rolled back - `report-why-a-preparation-pass-refused`
+
+  A failure that rolls back cleanly reports only that it released and cleaned, discarding the reason the boundary gave, so an attempt that could not proceed is indistinguishable from a pass that had nothing to do. The paths that preserve custody already name their cause. Every terminal outcome a boundary failure produced should name that failure.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Verify the remaining external boundaries against real tools - `verify-the-remaining-external`
+
+  The dispatch suites drive fake external executables built from the binding's own expectations, so a binding that disagrees with the real tool's arguments, readiness, or error codes passes every check and fails only in front of a user. Three such defects shipped that way. Once only Git and the GitHub CLI remain, both of which are already required, verifying against the real tools is small enough to be routine.
+
+  Depends on `prepare-goal-workspaces-without` (open).
+
+- **[open, blocked]** Fold workspace preparation into the project CLI - `fold-workspace-preparation-into-the`
+
+  A driver that no longer runs anything is a claim ledger over Git worktrees, which is close to what starting a goal already does. Folding it into the one published CLI would retire the second executable, its entry point, and its packaging checks, and leave a single surface to learn. The second executable was published recently enough that nothing depends on it yet, and that stops being true as soon as anyone scripts against it.
+
+  Depends on `start-a-goal-into-its-own-worktree-from` (open).
+
 ## Later
 
 - **[open]** context-surface: show the active goal inside each harness - `context-surface-show-the-active-goal`
 
-  Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged after the pivot.
+  Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged.
 
-  Survey what each harness actually offers before building anything: Claude Code has a statusline hook and session-start hooks, some harnesses have persistent context files, and several have no equivalent surface at all. The likely answer is that the MCP server exposes the active goal as a resource, the generated skill and AGENTS.md block tell the agent to read it at session start, and anything richer is a per-harness adapter shipped as an optional extra rather than core. Deliberately deferred until the MCP server lands, because the resource it would expose does not exist yet, and because building per-harness adapters before knowing which harnesses people actually use would be guessing.
+  Survey what each harness actually offers before building anything: some have a statusline or session-start hook, some read a persistent context file, and several have no equivalent surface at all. The answer is no longer a served resource, because the MCP server this goal was deferred behind has since been retired. The generated skill and AGENTS block tell the agent to read the active goal at session start, the CLI answers it on demand, and anything richer is a per-harness adapter shipped as an optional extra rather than core.
 
   Depends on `mcp-server-expose-the-worklist-over-mcp` (done).
 
 - **[open]** branch-scoped-active: per-worktree featured goal via links - `branch-scoped-active-per-worktree`
 
-  In a worktree, derive the widget and dashboard featured goal from the current git branch matched against the dedicated branch field, falling back to the stored single active goal. Per-worktree focus without changing active semantics.
+  In a worktree, derive the featured goal from the current Git branch matched against the stored branch field, falling back to the single active goal. Per-worktree focus without changing active semantics.
 
-  Generalized 2026-08-08 by the harness pivot: the original wording scoped this to the Pi widget and dashboard, which are now one surface among several. Derive the featured goal from the branch in every surface that shows one - the CLI, the goal board, whatever the MCP server exposes as the active-goal resource, and the Pi widget and dashboard - resolving it once in shared code rather than per renderer. Branch-derived focus is most valuable in the CLI and board, since that is where a fan-out session actually runs.
+  This stops being a convenience once starting a goal creates its own worktree: somebody who moves into a prepared checkout should not have to state which goal it is, because the branch already answers. Resolve it once in shared code rather than per renderer, so the CLI, the goal board, and the Pi surfaces agree. It matters most in the CLI and the board, which is where work inside a prepared worktree actually happens.
 
   Depends on `schema-fields-group-completedat-links` (done), `project-start-mark-a-goal-in-flight-and` (done).
 
@@ -309,7 +361,9 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open]** merge-driver: structural git merge for worklist.json - `merge-driver-structural-git-merge-for`
 
-  Custom git merge driver (pi-worklist merge-file registered via .gitattributes): union goals by ID; within a goal edited on both sides, union the array fields (dependsOn, links) and apply newest-updatedAt only to scalar fields, because goal-level last-writer-wins would drop a concurrent edit to a different aspect of the same goal; revision becomes max plus one. Only needed if branch sessions ever write the worklist; until then the root-session-on-main convention keeps merges conflict-free by construction.
+  Custom Git merge driver registered via .gitattributes: union goals by ID; within a goal edited on both sides, union the array fields (dependsOn, links) and apply newest-updatedAt only to scalar fields, because goal-level last-writer-wins would drop a concurrent edit to a different aspect of the same goal; revision becomes max plus one.
+
+  Still conditional. It is only needed if work inside a prepared worktree ever writes the roadmap, and the convention that the root checkout owns the roadmap keeps merges conflict-free by construction. Preparation preserves that convention rather than weakening it, so this stays unbuilt until something breaks it.
 
 ## Pi
 
@@ -335,7 +389,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `slug-ids-human-readable-goal-ids-and` (done).
 
-- **[open]** archive-browsing: archived goals in the Pi dashboard - `archive-browsing-archived-goals-in-the`
+- **[archived]** archive-browsing: archived goals in the Pi dashboard - `archive-browsing-archived-goals-in-the`
 
   Replaces earlier goal future-archive-ui. Re-scoped: the project ui board already has an archived filter, so the remaining gap is browsing archived goals inside the Pi dashboard, or closing this goal if that is not worth building.
 
@@ -399,7 +453,9 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
 
-  Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and dispatch claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
+  Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and workspace preparation, claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
+
+  This is the tier that would have caught the binding defects that shipped: driving the real executables from a real repository is what the existing suites avoid by standing in fake external tools that agree with whatever the code sends them.
 
   Depends on `deterministic-local-quality-gates` (done).
 
@@ -410,3 +466,11 @@ A goal's description is a record of what was decided when it was written rather 
   Driving the installed executables is deliberately left alone. That spawn is what the check exists to prove, since resolving the package's dist entry and running it under node would still catch a leaked Pi import but would stop exercising the shim an install actually puts on PATH, which is the part most likely to differ per platform. Since Node refuses to spawn a .bat or .cmd directly after the fix for CVE-2024-27980, the check cannot drive those shims on Windows, so add an explicit refusal naming that reason rather than letting a spawn fail with EINVAL from inside a helper.
 
   Note the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.
+
+- **[open]** Audit the roadmap for goals the project has outgrown - `audit-the-roadmap-for-goals-the-project`
+
+  Every document in this repository is held to the spellings the command contract renders, and the generated roadmap page is the one deliberate exemption, because goal prose is data rather than authored documentation. That exemption is also a hole: a goal description is the only place a reference to something that no longer exists survives indefinitely. One shift in direction left four descriptions planning around a retired transport and naming an executable that had not existed for two releases, and one goal open whose work had already shipped.
+
+  Half of that is beyond any check. A dead executable name is greppable, but prose that plans around a retired transport names no dead token, and a goal the project has outgrown reads perfectly. So the audit is guidance an agent follows rather than a command that asserts, and it belongs in the one skill rather than a second one: its own rule block on the command contract beside the capture, dependency, and dispatch rules, reached through trigger text in the skill description exactly as the dispatch guidance already is. A second skill would add an install to onboarding that is deliberately being simplified, duplicate a capture rule that has to stand on its own anyway, and put two near-identical trigger descriptions in competition.
+
+  Tell the agent what to look for: a description naming a command, flag, documentation page, or executable that resolves to nothing; a goal still open whose recorded branch has already merged; an edge that only ever meant waiting for a goal that is now done; a goal whose premise the project has since abandoned. Point the capture workflow at it as well, so a proposed batch is read against the goals it obsoletes at the moment it is proposed, which is when this drift is created rather than when it is discovered. That capture rule has to be self-contained, because guidance reaches a repository through whichever surface was installed. A skill runs only when asked, so anything that has to fail unattended stays a separate decision. Claim staleness belongs to the goal that owns claims; this one owns descriptions that stopped being true.
