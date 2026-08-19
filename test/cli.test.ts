@@ -1373,6 +1373,42 @@ describe("project goal CLI", () => {
 		expect(cleared.code).toBe(0);
 		expect((await readGoals(root))[0]).not.toHaveProperty("group");
 
+		const second = await runCli(root, ["project", "add", "Ungrouped"]);
+		expect(second.code).toBe(0);
+		const refiled = await runCli(root, ["project", "update", "ship-it", "--group", "Later"]);
+		expect(refiled.code).toBe(0);
+		const groupedList = await runCli(root, ["project", "list", "--group", "Later", "--json"]);
+		expect(groupedList.code).toBe(0);
+		expect(JSON.parse(groupedList.stdout).result.goals.map((goal: ProjectGoal) => goal.id)).toEqual([
+			"ship-it",
+		]);
+		const ungroupedList = await runCli(root, ["project", "list", "--group", "", "--json"]);
+		expect(JSON.parse(ungroupedList.stdout).result.goals.map((goal: ProjectGoal) => goal.id)).toEqual([
+			"ungrouped",
+		]);
+
+		// A section that names no goal is a typo to fix, so it does not read like an
+		// empty roadmap and it names the sections that do exist.
+		const missingGroup = await runCli(root, ["project", "list", "--group", "Nope"]);
+		expect(missingGroup.code).toBe(0);
+		expect(missingGroup.stdout).toContain('No project goals in section "Nope".');
+		expect(missingGroup.stdout).toContain('Sections in use: "Later".');
+
+		// The write path stores a group trimmed, so the filter has to read it the same
+		// way; otherwise the name a goal was filed under is one the filter cannot find.
+		const padded = await runCli(root, ["project", "list", "--group", "  Later  ", "--json"]);
+		expect(padded.code).toBe(0);
+		expect(JSON.parse(padded.stdout).result.goals.map((goal: ProjectGoal) => goal.id)).toEqual(["ship-it"]);
+		const blank = await runCli(root, ["project", "list", "--group", "   ", "--json"]);
+		expect(blank.code).toBe(0);
+		expect(JSON.parse(blank.stdout).result.goals.map((goal: ProjectGoal) => goal.id)).toEqual(["ungrouped"]);
+
+		// One goal holds one section, so a second --group is a mistake rather than an
+		// override, exactly as a second --description is.
+		const repeated = await runCli(root, ["project", "list", "--group", "Later", "--group", "Nope"]);
+		expect(repeated.code).toBe(2);
+		expect(repeated.stderr).toContain("--group may be provided only once");
+
 		// A group is a section name, so omitting it is a usage error rather than a
 		// silent way to clear the field.
 		const missingValue = await runCli(root, ["project", "update", "ship-it", "--group"]);
@@ -1381,7 +1417,7 @@ describe("project goal CLI", () => {
 
 		const wrongAction = await runCli(root, ["project", "find", "ship", "--group", "Later"]);
 		expect(wrongAction.code).toBe(2);
-		expect(wrongAction.stderr).toContain("--group is only supported by project add, update");
+		expect(wrongAction.stderr).toContain("--group is only supported by project list, add, update");
 	});
 
 	it("sets, replaces, clears, validates, and preserves goal links", async () => {

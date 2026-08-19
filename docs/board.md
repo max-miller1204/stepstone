@@ -16,10 +16,24 @@ The detail pane also spells out a goal's group, branch, completion time, depende
 Each dependency is listed with the target's own status marker, so whether it is still in the way reads in the same visual language as the list.
 Below about 76 columns the two panes stack instead, and the layout stays aligned for titles containing wide or combined characters.
 
+## Sections
+
+Goals are listed under the section named by their `group`, as a header row carrying a disclosure marker and the number of goals it holds.
+Goals with no group fall into an implicit `Ungrouped` section, which is always last.
+That header appears only where there is a named section to distinguish it from, so a roadmap where nothing is grouped is a plain list of goals rather than one section holding all of them.
+Sections appear in the order their first goal appears in the list, so the roadmap's own order decides them rather than anything the board stores.
+
+`←` and `→`, or Space, collapse and expand the selected header, and a collapsed section hides its goals while its header keeps reporting how many there are.
+On a section already open, `→` and Enter step onto its first goal instead, the way they would open a node in a tree.
+Collapse is ephemeral per board run: it is never written to the goal file, and it is deliberately not shared with anyone else reading the same roadmap.
+A search overrides it, because every section shown under a query holds a match and hiding one would report a hit the list does not show; the sections the user collapsed come back when the query is cleared.
+
 ## Order, filtering, and emphasis
 
 `o` cycles the order through file, status, and recent, and the header names the current one.
-File order is the default and is the roadmap's canonical order, so the board shows exactly what the file says and `K` and `J`, or Shift+Up and Shift+Down, rearrange it against the neighbouring visible row.
+File order is the default and is the roadmap's canonical order, so the board shows exactly what the file says and `K` and `J`, or Shift+Up and Shift+Down, rearrange it against the neighbouring visible row inside the goal's own section.
+A section boundary is an end of the list for a move, and the board says which section it ended, because a goal that crossed one would be filed back under its own header and report a move the screen never shows.
+A move is written to the file as the neighbouring goal landing before the moved one rather than the moved one landing after its neighbour; both spell the same pair order, and only the first leaves every section where it was.
 Reordering is refused outside file order, where the rows are not where the file puts them and a move would edit an arrangement the screen is not showing.
 Status and recent are views over that same order, which stays their tiebreak, so an arrangement survives a trip through them.
 Those two views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
@@ -40,6 +54,7 @@ The header shows per-status totals across the whole roadmap, so a filtered list 
 | --- | --- |
 | `↑` `↓` or `j` `k` | Move the selection, or scroll the detail pane once it has focus |
 | `←` `→` or Tab | Move focus between the list and the detail pane |
+| `←` `→`, Space, Enter | On a section header: collapse it, or expand it and step inside |
 | `g` `G`, Page Up, Page Down | Jump to the ends, or page through either pane |
 | Space | Advance: an open goal activates, the active goal completes, a settled goal reopens |
 | `s` | Make the selected open goal the single active goal |
@@ -47,7 +62,7 @@ The header shows per-status totals across the whole roadmap, so a filtered list 
 | `E` | Edit the selected goal's description in `$VISUAL` or `$EDITOR` |
 | `c` `r` `x` `d` | Complete, reopen, archive, or delete the selected goal |
 | `f`, `o` | Cycle the status filter, or the order: file, status, recent |
-| `K` `J` or Shift+Up, Shift+Down | Move the selected goal up or down, in file order only |
+| `K` `J` or Shift+Up, Shift+Down | Move the selected goal up or down within its section, in file order only |
 | `/` | Search titles and descriptions |
 | `R`, `?`, `q` | Reload from disk, show the key map, or quit |
 

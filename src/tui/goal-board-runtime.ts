@@ -282,7 +282,10 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 				if (intent.kind === "reorder") {
 					const operation = board.resolveReorder(intent);
 					if (!operation) {
-						board.setMessage(intent.delta < 0 ? "Already first." : "Already last.", "info");
+						// The board decided this wording when it read the section; repeating
+						// it here keeps a move that raced a reload from answering the same
+						// condition differently than the next keypress will.
+						board.setMessage(intent.blocked, "info");
 						return;
 					}
 					await applyOperation(operation, intent.success);
