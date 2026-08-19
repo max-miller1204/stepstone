@@ -1,5 +1,5 @@
 import type { WorklistOperation } from "../application-service.ts";
-import { dependentGoals, isGoalBlocked, resolveDependencies } from "../dependencies.ts";
+import { dependencyWaves, dependentGoals, isGoalBlocked, resolveDependencies } from "../dependencies.ts";
 import { GOAL_STATUS_RANK, goalStatusCounts } from "../format.ts";
 import { findGoalByStoredId, matchesGoalQuery } from "../goal-selection.ts";
 import type { ProjectGoal, ProjectGoalStatus } from "../types.ts";
@@ -51,17 +51,38 @@ const FILTER_LABELS: Readonly<Record<GoalFilter, string>> = {
  *
  * `file` is first and is the default because it is the roadmap's canonical
  * order: it is what the file stores, what `move` edits, and what every other
- * reader of the worklist sees. The other two are views over that same order,
- * which stays their tiebreak, so switching back never loses the arrangement.
+ * reader of the worklist sees. The rest are views over that same order, which
+ * stays their tiebreak, so switching back never loses the arrangement.
+ *
+ * `dependency` is the schedule the graph implies rather than a fourth way to
+ * arrange the file: it ranks each goal by the wave `project waves` puts it in, so
+ * the board and the CLI read the edges the same way, and the file the user
+ * arranged is left exactly as it is. Sections still partition the list, so the
+ * waves order the goals inside each section rather than flattening the roadmap
+ * into one frontier - the same relationship status and recent order have to
+ * sections, and `project waves` stays the flat read of the whole graph.
  */
-export const GOAL_SORTS = ["file", "status", "recent"] as const;
+export const GOAL_SORTS = ["file", "status", "recent", "dependency"] as const;
 export type GoalSort = (typeof GOAL_SORTS)[number];
 
 const SORT_LABELS: Readonly<Record<GoalSort, string>> = {
 	file: "⇅ File",
 	status: "⇅ Status",
 	recent: "⇅ Recent",
+	dependency: "⇅ Dependency",
 };
+
+/**
+ * Where the goals no wave holds sort in dependency order.
+ *
+ * A done or archived goal is already behind everything it released, so it sits
+ * ahead of the first wave rather than being given a layer of its own. A goal on
+ * a hand-edited cycle, or waiting on an edge that names no goal, is in no wave
+ * at all and sorts last, so the list reads as the schedule and then what is
+ * stuck rather than quietly dropping the goals nobody can start.
+ */
+const SETTLED_WAVE = 0;
+const UNREACHABLE_WAVE = Number.MAX_SAFE_INTEGER;
 
 /**
  * One glyph per status.
@@ -82,6 +103,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Narrower than this and a row drops its staleness badge rather than its title. */
 const MIN_BADGED_TITLE_WIDTH = 12;
+
+/** Columns a goal is inset by under its section header, so the list reads as a tree. */
+const SECTION_INDENT = 2;
 
 /** Below this width the two panes stack instead of sitting side by side. */
 const MIN_SPLIT_WIDTH = 76;
@@ -147,8 +171,9 @@ type BoardMode =
 	| { kind: "help" };
 
 type ListRow =
-	| { kind: "group"; key: string; label: string; count: number; collapsed: boolean }
-	| { kind: "goal"; key: string; goal: ProjectGoal };
+	| { kind: "group"; key: string; label: string; goals: readonly ProjectGoal[]; collapsed: boolean }
+	/** `indented` is false only where the whole list is one plain run of goals. */
+	| { kind: "goal"; key: string; goal: ProjectGoal; indented: boolean };
 
 const UNGROUPED_KEY = "\u0000ungrouped";
 const UNGROUPED_LABEL = "Ungrouped";
@@ -237,7 +262,7 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
 	{ keys: "c / r / x", description: "Complete, reopen, or archive (asks first)" },
 	{ keys: "d", description: "Delete permanently (asks first)" },
 	{ keys: "f", description: "Cycle the status filter" },
-	{ keys: "o", description: "Cycle the order: file, status, recent" },
+	{ keys: "o", description: "Cycle the order: file, status, recent, dependency" },
 	{ keys: "K / J", description: "Move the selected goal within its section (file order only)" },
 	{ keys: "/", description: "Search titles and descriptions" },
 	{ keys: "R", description: "Reload from disk" },
@@ -336,8 +361,22 @@ export class GoalBoard {
 	private message: BoardMessage | undefined;
 	/** Where the selection sat before a reload, so a deletion lands on a neighbor. */
 	private lastSelectedIndex = 0;
-	/** Group names collapsed during this board run. Never persisted. */
-	private readonly collapsedGroups = new Set<string>();
+	/**
+	 * Group names expanded during this board run. Never persisted.
+	 *
+	 * Sections start closed, so the board opens on the shape of the roadmap - the
+	 * sections and how much each holds - rather than on every goal in it, and a
+	 * roadmap grows sections without ever growing the screenful the board opens
+	 * on. Held as the expanded set rather than the collapsed one so a section name
+	 * the board was never asked to open - one arriving from a reload, or a group
+	 * written in another terminal - starts closed like every other section instead
+	 * of opening on arrival. A name the user did open is remembered by name, so a
+	 * section that empties out and later comes back comes back open.
+	 */
+	private readonly expandedGroups = new Set<string>();
+
+	/** Wave numbers for `dependency` order, rebuilt whenever the goals are replaced. */
+	private waveRanks: { goals: readonly ProjectGoal[]; ranks: Map<string, number> } | undefined;
 
 	constructor(options: GoalBoardOptions) {
 		this.palette = options.palette;
@@ -427,6 +466,8 @@ export class GoalBoard {
 	private visibleGoals(): ProjectGoal[] {
 		const fileOrder = new Map(this.goals.map((goal, index) => [goal.id, index]));
 		const rank = (goal: ProjectGoal): number => fileOrder.get(goal.id) ?? 0;
+		const waves = this.sort === "dependency" ? this.dependencyRanks() : undefined;
+		const wave = (goal: ProjectGoal): number => waves?.get(goal.id) ?? SETTLED_WAVE;
 		return this.goals
 			.filter((goal) => matchesFilter(goal, this.filter) && matchesGoalQuery(goal, this.query))
 			.sort((left, right) => {
@@ -435,12 +476,43 @@ export class GoalBoard {
 				if (this.sort === "status") {
 					const status = GOAL_STATUS_RANK[left.status] - GOAL_STATUS_RANK[right.status];
 					if (status !== 0) return status;
+				} else if (this.sort === "dependency") {
+					const layer = wave(left) - wave(right);
+					if (layer !== 0) return layer;
 				} else {
 					const updated = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
 					if (Number.isFinite(updated) && updated !== 0) return updated;
 				}
 				return rank(left) - rank(right);
 			});
+	}
+
+	/**
+	 * Each unfinished goal's wave number, as `dependency` order reads it.
+	 *
+	 * The layers come from `dependencyWaves`, so the board orders the roadmap by
+	 * the same schedule `project waves` prints instead of a second reading of the
+	 * same edges. Goals the schedule cannot place - settled ones, which are behind
+	 * it, and unreachable ones, which no wave releases - are absent here and take
+	 * their rank from the constants beside it.
+	 *
+	 * Cached against the goal array itself, which is replaced wholesale on every
+	 * load, so the one invalidation trigger is the one thing that can change the
+	 * graph. That is what makes a cache safe here where `listRows` deliberately
+	 * has none: this answer depends on the goals and on nothing else about the
+	 * view, and it is recomputed several times per keystroke without it.
+	 */
+	private dependencyRanks(): Map<string, number> {
+		if (this.waveRanks?.goals !== this.goals) {
+			const ranks = new Map<string, number>();
+			const { waves, unreachable } = dependencyWaves(this.goals);
+			waves.forEach((wave, index) => {
+				for (const goal of wave) ranks.set(goal.id, index + 1);
+			});
+			for (const goal of unreachable) ranks.set(goal.id, UNREACHABLE_WAVE);
+			this.waveRanks = { goals: this.goals, ranks };
+		}
+		return this.waveRanks.ranks;
 	}
 
 	/**
@@ -457,7 +529,7 @@ export class GoalBoard {
 	 *
 	 * Deliberately recomputed on every access, including several times while
 	 * handling one keystroke, rather than cached. A cache here would have to be
-	 * invalidated on the goals, the filter, the sort, the query, and the collapsed
+	 * invalidated on the goals, the filter, the sort, the query, and the expanded
 	 * set, which is five triggers mutated from call sites all over this class, and
 	 * a stale row list is a wrong selection rather than a slow one. The whole
 	 * keystroke-and-render path measures about 1ms on this project's own 70-goal
@@ -482,7 +554,12 @@ export class GoalBoard {
 		);
 		if (ungrouped.length > 0) {
 			if (sections.length === 0) {
-				return ungrouped.map((goal) => ({ kind: "goal" as const, key: goalRowKey(goal), goal }));
+				return ungrouped.map((goal) => ({
+					kind: "goal" as const,
+					key: goalRowKey(goal),
+					goal,
+					indented: false,
+				}));
 			}
 			sections.push({ key: UNGROUPED_KEY, label: UNGROUPED_LABEL, goals: ungrouped });
 		}
@@ -492,16 +569,23 @@ export class GoalBoard {
 			// A search overrides collapse rather than clearing it: every section shown
 			// under a query holds a match, so hiding one would report a hit the list
 			// does not show, and the collapse the user set returns when the query does.
-			const collapsed = this.query === "" && this.collapsedGroups.has(section.key);
+			const collapsed = this.query === "" && !this.expandedGroups.has(section.key);
 			rows.push({
 				kind: "group",
 				key: groupRowKey(section.key),
 				label: section.label,
-				count: section.goals.length,
+				goals: section.goals,
 				collapsed,
 			});
 			if (!collapsed) {
-				rows.push(...section.goals.map((goal) => ({ kind: "goal" as const, key: goalRowKey(goal), goal })));
+				rows.push(
+					...section.goals.map((goal) => ({
+						kind: "goal" as const,
+						key: goalRowKey(goal),
+						goal,
+						indented: true,
+					})),
+				);
 			}
 		}
 		return rows;
@@ -527,8 +611,8 @@ export class GoalBoard {
 		const groupKey = row.key.slice("group:".length);
 		const collapse = force === "collapse" || (force === undefined && !row.collapsed);
 		if (collapse === row.collapsed) return false;
-		if (collapse) this.collapsedGroups.add(groupKey);
-		else this.collapsedGroups.delete(groupKey);
+		if (collapse) this.expandedGroups.delete(groupKey);
+		else this.expandedGroups.add(groupKey);
 		// Expanding leads the pane with the header, so the goals it just revealed are
 		// what fills the rows below it. Left alone, a header sitting on the last row
 		// stays there and expanding it shows the user nothing at all; reset to the
@@ -934,7 +1018,11 @@ export class GoalBoard {
 		const index = GOAL_FILTERS.indexOf(this.filter);
 		this.filter = GOAL_FILTERS[(index + 1) % GOAL_FILTERS.length];
 		this.listScroll = 0;
-		if (this.selectedIndex() < 0 || this.selectedGoal === undefined) this.selectFirstGoal();
+		// Only a selection the new filter took off the list is worth moving. A
+		// section header is a row like any other, and sections outlive a filter, so
+		// resetting to the top because the cursor was not on a goal would throw away
+		// the user's place on every press of the key that changes the least.
+		if (this.selectedIndex() < 0) this.selectFirstGoal();
 	}
 
 	private cycleSort(): void {
@@ -1104,7 +1192,7 @@ export class GoalBoard {
 		const left = ` ${accent(bold("Project Goals"))} ${dim("·")} ${muted(this.repositoryLabel)}`;
 		const search = this.query === "" ? "" : ` ${dim("·")} ${accent(`/${singleLine(this.query)}`)}`;
 		const view = `${muted(FILTER_LABELS[this.filter])} ${dim("·")} ${muted(SORT_LABELS[this.sort])} ${dim("·")} ${muted(`${shown} of ${total}`)} `;
-		const counts = this.renderStatusCounts();
+		const counts = this.renderStatusCounts(this.goals);
 		const chips = counts === "" ? "" : `${counts}${dim(SEPARATOR)}`;
 		// Counts are the first thing dropped when the header runs out of room:
 		// which goals are on screen right now outranks the shape of the roadmap.
@@ -1121,9 +1209,9 @@ export class GoalBoard {
 	 * filtered and the status line is not always free: a message or an open
 	 * prompt would otherwise take the roadmap's shape off the screen with it.
 	 */
-	private renderStatusCounts(): string {
+	private renderStatusCounts(goals: readonly ProjectGoal[]): string {
 		const { dim } = this.palette;
-		return goalStatusCounts(this.goals)
+		return goalStatusCounts(goals)
 			.map((entry) => this.statusStyle(entry.status)(`${STATUS_MARKERS[entry.status]} ${entry.count}`))
 			.join(dim(SEPARATOR));
 	}
@@ -1257,7 +1345,7 @@ export class GoalBoard {
 			lines.push(
 				row.kind === "group"
 					? this.renderGroupRow(row, width, index === selected)
-					: this.renderGoalRow(row.goal, width, available, index === selected),
+					: this.renderGoalRow(row, width, available, index === selected),
 			);
 		}
 
@@ -1266,7 +1354,7 @@ export class GoalBoard {
 		// below the fold contributes the goals it holds rather than its one row.
 		const hidden = rows
 			.slice(this.listScroll + height)
-			.reduce((total, row) => total + (row.kind === "goal" ? 1 : row.collapsed ? row.count : 0), 0);
+			.reduce((total, row) => total + (row.kind === "goal" ? 1 : row.collapsed ? row.goals.length : 0), 0);
 		const hint = hidden > 0 ? ` ${hidden} more ` : "";
 		return { lines, hint };
 	}
@@ -1281,7 +1369,7 @@ export class GoalBoard {
 		// sits against the pane border as the selection crosses a header.
 		const pointer = isSelected ? (this.focus === "list" ? accent("❯") : muted("❯")) : " ";
 		const disclosure = row.collapsed ? "▸" : "▾";
-		const count = `(${row.count})`;
+		const count = `(${row.goals.length})`;
 		const countSlot = visibleWidth(count) + 1;
 		const label = truncateToWidth(singleLine(row.label), Math.max(1, width - countSlot - 5));
 		const text = ` ${pointer} ${disclosure} ${label}`;
@@ -1296,18 +1384,33 @@ export class GoalBoard {
 	 * One list row: pointer, status marker, title, and a staleness badge pushed to
 	 * the right edge. The row always fills exactly `width` cells so the pane
 	 * borders stay aligned whatever the title and the badge turn out to be.
+	 *
+	 * A goal under a section header is inset from it, so the list reads as a tree
+	 * rather than as headers and goals sharing one column. The pointer stays where
+	 * it is: it is the cursor, and a cursor that changes column as the selection
+	 * crosses a header reads as the list shifting rather than the selection moving.
 	 */
-	private renderGoalRow(goal: ProjectGoal, width: number, available: number, isSelected: boolean): string {
+	private renderGoalRow(
+		row: Extract<ListRow, { kind: "goal" }>,
+		width: number,
+		available: number,
+		isSelected: boolean,
+	): string {
 		const { accent, muted, dim, bold, warning } = this.palette;
+		const goal = row.goal;
+		const inset = row.indented ? " ".repeat(SECTION_INDENT) : "";
+		// What the title and the badge share, once the pointer, the marker, their
+		// spaces, and the inset have taken theirs.
+		const titleSpace = available - 4 - visibleWidth(inset);
 		const stale = stalenessDays(goal, this.now());
 		const badge = stale === undefined ? "" : `${stale}d`;
 		// A space on each side keeps the badge off both the title and the border.
 		// It is a nudge, though, so a list too narrow to carry one goes without.
 		const slot = badge === "" ? 0 : visibleWidth(badge) + 2;
-		const badgeSlot = available - 4 - slot >= MIN_BADGED_TITLE_WIDTH ? slot : 0;
+		const badgeSlot = titleSpace - slot >= MIN_BADGED_TITLE_WIDTH ? slot : 0;
 		const pointer = isSelected ? (this.focus === "list" ? accent("❯") : muted("❯")) : " ";
 		const marker = this.statusStyle(goal.status)(STATUS_MARKERS[goal.status]);
-		const title = truncateToWidth(singleLine(goal.title), Math.max(1, available - 4 - badgeSlot));
+		const title = truncateToWidth(singleLine(goal.title), Math.max(1, titleSpace - badgeSlot));
 		// Settled work recedes only where it sits alongside live work, and the
 		// selected row always keeps full contrast so the cursor is never the dim one.
 		const emphasized = isSelected && this.focus === "list";
@@ -1324,23 +1427,65 @@ export class GoalBoard {
 				: dimmed
 					? dim(title)
 					: title;
-		const row = ` ${pointer} ${marker} ${label}`;
-		if (badgeSlot === 0) return fitToWidth(row, width);
+		const line = ` ${pointer} ${inset}${marker} ${label}`;
+		if (badgeSlot === 0) return fitToWidth(line, width);
 		const pad = " ".repeat(badgeSlot - visibleWidth(badge) - 1);
-		return `${fitToWidth(row, width - badgeSlot)}${pad}${warning(badge)} `;
+		return `${fitToWidth(line, width - badgeSlot)}${pad}${warning(badge)} `;
+	}
+
+	/** One `LABEL value` row of the detail pane, whatever the pane is describing. */
+	private detailField(label: string, value: string, style: Style): string {
+		const { muted } = this.palette;
+		return `${muted(label.padEnd(DETAIL_LABEL_WIDTH))}${style(value)}`;
+	}
+
+	/**
+	 * The detail pane for a section header.
+	 *
+	 * Sections start closed, so this is the first thing the pane shows and it has
+	 * to earn the space: what the section holds, how much of it is waiting, and
+	 * the key that opens it. The goals counted are the ones the section is showing
+	 * rather than every goal filed under it, so a filtered or searched board never
+	 * reports goals its own list is hiding.
+	 */
+	private buildSectionDetailLines(row: Extract<ListRow, { kind: "group" }>, width: number): string[] {
+		const { accent, bold, dim, warning } = this.palette;
+		const lines = wrapText(row.label, width).map((line) => accent(bold(line)));
+		lines.push("");
+		lines.push(this.detailField("GOALS", `${row.goals.length}`, plain));
+		// A breakdown of one status is the count above spelled a second way, so the
+		// row appears only where the section actually holds a mix.
+		if (goalStatusCounts(row.goals).length > 1) {
+			lines.push(this.detailField("STATUS", this.renderStatusCounts(row.goals), plain));
+		}
+		// Only worth a row where something is actually waiting; the number is what
+		// the section costs to start, which is what the header count cannot say.
+		const blocked = row.goals.filter((goal) => isGoalBlocked(this.goals, goal)).length;
+		// Marked the way a blocked goal is marked in its own pane, rather than dimmed
+		// the way the list recedes one: a count of what cannot start is worth reading.
+		if (blocked > 0) lines.push(this.detailField("BLOCKED", `${blocked}`, warning));
+		lines.push("");
+		lines.push(
+			dim(row.collapsed ? "Press → to open this section." : "Press → to step inside, or ← to close."),
+		);
+		return lines;
 	}
 
 	private buildDetailLines(width: number): string[] {
 		const { accent, bold, muted, dim, warning, danger } = this.palette;
-		const goal = this.selectedGoal;
+		const row = this.selectedRow();
+		if (row?.kind === "group") return this.buildSectionDetailLines(row, width);
+		// Read from the row already in hand rather than `selectedGoal`, which would
+		// rebuild the whole row list a second time for every frame.
+		const goal = row?.goal;
 		if (!goal) return [dim("No goal selected.")];
 
 		const lines: string[] = [];
 		for (const line of wrapText(goal.title, width)) lines.push(accent(bold(line)));
 		lines.push("");
 
-		const field = (label: string, value: string, style: Style) =>
-			`${muted(label.padEnd(DETAIL_LABEL_WIDTH))}${style(value)}`;
+		const field = (label: string, value: string, style: Style) => this.detailField(label, value, style);
+
 		/**
 		 * A marked goal ID under a label, wrapped rather than cut.
 		 *
