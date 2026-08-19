@@ -80,6 +80,20 @@ function listedCells(board: GoalBoard, width = 100, rows = 20): string[] {
 		.filter((cell) => cell.trim() !== "");
 }
 
+/**
+ * Open every section and land back on the first goal, the way a user walks down
+ * the list opening what they want to read. Sections start closed, so a test
+ * about goal rows says so here rather than opening them one fixture at a time.
+ */
+function expandAll(board: GoalBoard, steps = 40): void {
+	press(board, "g");
+	for (let step = 0; step < steps; step += 1) {
+		if (board.selectedGoal === undefined) press(board, " ");
+		press(board, `${ESC}[B`);
+	}
+	press(board, "g");
+}
+
 function listedRows(board: GoalBoard, width = 100, rows = 20): string[] {
 	return plainFrame(board, width, rows)
 		.map((line) => line.split("│")[1] ?? "")
@@ -170,7 +184,7 @@ describe("goal board presentation", () => {
 		press(board, "fff");
 		// File order shows the goal where the file puts it: last.
 		expect(listedRows(board).at(-1)).toContain("Started last");
-		for (const sort of ["o", "o"]) {
+		for (const sort of ["o", "o", "o"]) {
 			press(board, sort);
 			const rows = listedRows(board);
 			// The lifted row also carries its own marker, so it reads as the odd row
@@ -181,7 +195,7 @@ describe("goal board presentation", () => {
 		}
 	});
 
-	it("cycles the order through file, status, and recent, keeping file order as the tiebreak", () => {
+	it("cycles the order through file, status, recent, and dependency, keeping file order as the tiebreak", () => {
 		const board = createBoard();
 		const header = () => plainFrame(board)[0] ?? "";
 		expect(header()).toContain("⇅ File");
@@ -196,11 +210,98 @@ describe("goal board presentation", () => {
 		board.setGoals(touched);
 		expect(listedRows(board)[1]).toContain("日本語");
 		press(board, "o");
+		expect(header()).toContain("⇅ Dependency");
+		press(board, "o");
 		expect(header()).toContain("⇅ File");
 		expect(listedRows(board)[1]).toContain("Add focus mode");
 	});
 
-	it("renders named sections with ungrouped goals last and collapses them ephemerally", () => {
+	it("orders by the same dependency waves the CLI reports, stuck goals last", () => {
+		const board = createBoard([
+			goal({ id: "third", title: "Third", dependsOn: ["second"] }),
+			goal({ id: "cyclic", title: "Cyclic", dependsOn: ["cyclic-too"] }),
+			goal({ id: "cyclic-too", title: "Cyclic too", dependsOn: ["cyclic"] }),
+			goal({ id: "second", title: "Second", dependsOn: ["first"] }),
+			goal({ id: "first", title: "First" }),
+			goal({ id: "landed", title: "Landed", status: "done" }),
+		]);
+		press(board, "fff");
+		press(board, "ooo");
+		expect(plainFrame(board)[0]).toContain("⇅ Dependency");
+		// Landed work sits ahead of the wave it released; a hand-edited cycle is in
+		// no wave at all and sorts last rather than vanishing from the list.
+		expect(listedRows(board).map((row) => row.slice(2))).toEqual([
+			"Landed",
+			"First",
+			"Second",
+			"Third",
+			"Cyclic",
+			"Cyclic too",
+		]);
+
+		// The file itself is untouched by the view: file order still reads as written.
+		press(board, "o");
+		expect(listedRows(board)[0]).toContain("Third");
+	});
+
+	it("keeps the selection where it is when the filter changes under it", () => {
+		const board = createBoard([
+			goal({ id: "a1", title: "A one", group: "Alpha" }),
+			goal({ id: "b1", title: "B one", group: "Beta" }),
+			goal({ id: "b2", title: "B two", group: "Beta", status: "done" }),
+		]);
+		const pointerRow = () => plainFrame(board, 100, 20).find((line) => line.includes("❯")) ?? "";
+		press(board, "j");
+		expect(pointerRow()).toContain("Beta");
+
+		// Beta survives the filter, so the cursor has no reason to move: a header is
+		// a row like any other, and cycling the filter is the key that changes least.
+		press(board, "f");
+		expect(pointerRow()).toContain("Beta");
+
+		// Back to open, on the section holding the only open goal.
+		press(board, "fff");
+		press(board, "g");
+		expect(pointerRow()).toContain("Alpha");
+
+		// A section the filter did take off the list is a selection that is gone,
+		// which is the one case that lands the cursor somewhere else.
+		press(board, "f");
+		expect(pointerRow()).toContain("Beta");
+	});
+
+	it("describes the selected section, because a closed board is all headers", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "two", title: "Second", group: "Foundation", status: "done" }),
+			goal({ id: "three", title: "Third", group: "Foundation", dependsOn: ["one"] }),
+		]);
+		press(board, "fff");
+		const detail = detailLines(board).filter((line) => line !== "");
+		expect(detail[0]).toBe("Foundation");
+		expect(detail).toContain("GOALS     3");
+		expect(detail).toContain("STATUS    ○ 2 · ✓ 1");
+		expect(detail).toContain("BLOCKED   1");
+		expect(detail.at(-1)).toBe("Press → to open this section.");
+
+		// Once it is open the same rows stand, and the hint names the way inside.
+		press(board, "\r");
+		expect(
+			detailLines(board)
+				.filter((line) => line !== "")
+				.at(-1),
+		).toBe("Press → to step inside, or ← to close.");
+
+		// A section holding one kind of goal has no breakdown to give.
+		const single = createBoard([goal({ id: "solo", title: "Solo", group: "Foundation" })]);
+		expect(detailLines(single).filter((line) => line !== "")).toEqual([
+			"Foundation",
+			"GOALS     1",
+			"Press → to open this section.",
+		]);
+	});
+
+	it("opens with every section closed, so the first screen is the shape of the roadmap", () => {
 		const board = createBoard([
 			goal({ id: "one", title: "First", group: "Foundation" }),
 			goal({ id: "loose", title: "Loose" }),
@@ -208,17 +309,54 @@ describe("goal board presentation", () => {
 			goal({ id: "later", title: "Later", group: "Delivery" }),
 		]);
 		const frame = () => plainFrame(board, 100, 24).join("\n");
+		expect(frame()).toMatch(/▸ Foundation\s+\(2\)[\s\S]*▸ Delivery\s+\(1\)[\s\S]*▸ Ungrouped\s+\(1\)/);
+		// The counts are the whole of what a closed board says about its goals.
+		for (const title of ["First", "Second", "Later", "Loose"]) expect(frame()).not.toContain(title);
+		expect(board.selectedGoal).toBeUndefined();
+
+		// Opening them leaves the sections in the order their first goal appears,
+		// with the implicit bucket last.
+		expandAll(board);
 		expect(frame()).toMatch(
 			/▾ Foundation\s+\(2\)[\s\S]*First[\s\S]*Second[\s\S]*▾ Delivery\s+\(1\)[\s\S]*Later[\s\S]*▾ Ungrouped\s+\(1\)[\s\S]*Loose/,
 		);
+	});
 
-		press(board, `${ESC}[A `);
-		expect(frame()).toContain("▸ Foundation");
-		expect(frame()).not.toContain("○ First");
-		expect(frame()).not.toContain("○ Second");
-		press(board, "\r");
+	it("collapses and expands the selected section without writing anything", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "two", title: "Second", group: "Foundation" }),
+		]);
+		const frame = () => plainFrame(board, 100, 24).join("\n");
+		expect(press(board, " ")).toEqual([]);
 		expect(frame()).toContain("▾ Foundation");
 		expect(frame()).toContain("○ First");
+		expect(frame()).toContain("○ Second");
+
+		expect(press(board, " ")).toEqual([]);
+		expect(frame()).toContain("▸ Foundation");
+		expect(frame()).not.toContain("○ First");
+		press(board, "\r");
+		expect(frame()).toContain("▾ Foundation");
+	});
+
+	it("insets a section's goals under its header, and leaves a plain list flush", () => {
+		const board = createBoard([
+			goal({ id: "one", title: "First", group: "Foundation" }),
+			goal({ id: "loose", title: "Loose" }),
+		]);
+		expandAll(board);
+		const cells = listedCells(board, 100, 24);
+		const header = cells.find((cell) => cell.includes("Foundation")) ?? "";
+		const child = cells.find((cell) => cell.includes("First")) ?? "";
+		expect(header.indexOf("▾")).toBeGreaterThan(0);
+		expect(child.indexOf("○")).toBe(header.indexOf("▾") + 2);
+
+		// A roadmap with no sections has no header to be inset from, so its goals
+		// keep the column they had before sections existed.
+		const plain = createBoard([goal({ id: "only", title: "Only" })]);
+		const row = listedCells(plain, 100, 24)[0] ?? "";
+		expect(row.indexOf("○")).toBe(header.indexOf("▾"));
 	});
 
 	it("leaves a roadmap with no groups as a plain list of goals", () => {
@@ -234,6 +372,7 @@ describe("goal board presentation", () => {
 			goal({ id: "blank", title: "Blank", group: "   " }),
 			goal({ id: "padded", title: "Padded", group: " Foundation " }),
 		]);
+		expandAll(board);
 		const frame = plainFrame(board, 100, 24).join("\n");
 		expect(frame).toMatch(
 			/▾ Foundation\s+\(2\)[\s\S]*First[\s\S]*Padded[\s\S]*▾ Ungrouped\s+\(1\)[\s\S]*Blank/,
@@ -245,11 +384,9 @@ describe("goal board presentation", () => {
 			goal({ id: `g-${index}`, title: `Goal ${index}`, group: index < 3 ? "Alpha" : "Beta" }),
 		);
 		const board = createBoard(goals);
-		// Select the Beta header, which the pane can only show on its last row.
-		press(board, "jjj");
-		expect(listedCells(board, 100, 10).at(-1)).toContain("Beta");
-
+		// Open Alpha, which fills the pane and leaves the Beta header on its last row.
 		press(board, " ");
+		press(board, "jjjj");
 		expect(listedCells(board, 100, 10).at(-1)).toContain("▸ Beta");
 
 		// Expanding has to show what it revealed rather than leaving the header
@@ -281,8 +418,9 @@ describe("goal board presentation", () => {
 			goal({ id: "one", title: "First", group: "Foundation" }),
 			goal({ id: "two", title: "Second", group: "Foundation" }),
 		]);
-		// Up from the first goal lands on its header; the section is already open.
-		press(board, `${ESC}[A`);
+		// The first key opens the closed section, and the second steps inside it.
+		expect(board.selectedGoal).toBeUndefined();
+		press(board, "\r");
 		expect(board.selectedGoal).toBeUndefined();
 		press(board, "\r");
 		expect(board.selectedGoal?.id).toBe("one");
@@ -294,7 +432,6 @@ describe("goal board presentation", () => {
 			goal({ id: "loose", title: "Loose" }),
 		]);
 		const frame = () => plainFrame(board, 100, 24).join("\n");
-		press(board, `${ESC}[A `);
 		expect(frame()).toContain("▸ Foundation");
 
 		// The header reports one match, so the list has to be able to show it.
@@ -303,9 +440,16 @@ describe("goal board presentation", () => {
 		expect(frame()).toContain("First");
 		expect(board.selectedGoal?.id).toBe("one");
 
-		// Clearing the query hands the section back the collapse the user set.
+		// Clearing the query hands the section back the collapse it had.
 		press(board, ESC);
 		expect(frame()).toContain("▸ Foundation");
+
+		// A section the user opened is theirs, so a search and its clearing leave it
+		// open rather than closing it back to the board's own default.
+		press(board, " ");
+		press(board, "/Loose\r");
+		press(board, ESC);
+		expect(frame()).toContain("▾ Foundation");
 	});
 
 	it("says a goal key needs a goal when a section header is selected", () => {
@@ -313,7 +457,6 @@ describe("goal board presentation", () => {
 			goal({ id: "one", title: "First", group: "Foundation" }),
 			goal({ id: "loose", title: "Loose" }),
 		]);
-		press(board, `${ESC}[A`);
 		expect(board.selectedGoal).toBeUndefined();
 		expect(press(board, "c")).toEqual([]);
 		expect(plainFrame(board).at(-2)).toContain("is a section. Select a goal first.");
@@ -324,8 +467,9 @@ describe("goal board presentation", () => {
 			goal({ id: `g-${index}`, title: `Goal ${index}`, group: index < 2 ? "Alpha" : "Beta" }),
 		);
 		const board = createBoard(goals);
-		// Three list rows of six: Alpha and its two goals, leaving the Beta header
-		// and its two goals below the fold. Three rows are hidden, but two goals are.
+		// Three list rows of four: Alpha and its two goals, leaving the closed Beta
+		// header below the fold. One row is hidden, but the two goals it holds are.
+		press(board, " ");
 		const hint = plainFrame(board, 100, 8).find((line) => line.includes("more"));
 		expect(hint).toContain("2 more");
 	});
@@ -598,6 +742,7 @@ describe("goal board presentation", () => {
 			}),
 		]);
 		press(detailed, "f");
+		expandAll(detailed);
 		const frame = plainFrame(detailed, 120, 24).join("\n");
 		expect(frame).toContain("GROUP     Foundation");
 		expect(frame).toContain("BRANCH    feat/retire-importer");
@@ -729,9 +874,7 @@ describe("goal board navigation", () => {
 			goal({ id: "two", title: "Alpha two", group: "Alpha" }),
 			goal({ id: "far", title: "Beta far", group: "Beta" }),
 		]);
-		// Collapse Beta, then search into it: the query overrides the collapse.
-		press(board, "jj");
-		press(board, " ");
+		// Search into a closed section: the query overrides the collapse.
 		press(board, "/far\r");
 		expect(board.selectedGoal?.id).toBe("far");
 
@@ -812,7 +955,8 @@ describe("goal board reordering", () => {
 			goal({ id: "later", title: "Later", group: "Delivery" }),
 			goal({ id: "loose", title: "Loose" }),
 		]);
-		// Down from the header onto the section's last goal, which has nowhere to go.
+		expandAll(board);
+		// Down from the section's first goal onto its last, which has nowhere to go.
 		press(board, `${ESC}[B`);
 		expect(board.selectedGoal?.id).toBe("two");
 		expect(press(board, "J")).toEqual([]);
@@ -846,6 +990,7 @@ describe("goal board reordering", () => {
 			goal({ id: "two", title: "Second", group: "Foundation" }),
 		];
 		const board = createBoard(goals);
+		expandAll(board);
 		const [intent] = press(board, "J");
 		if (intent?.kind !== "reorder") throw new Error("Expected reorder intent");
 		expect(board.resolveReorder(intent)).toEqual({
@@ -857,6 +1002,7 @@ describe("goal board reordering", () => {
 
 		// Applying that move keeps Foundation first and swaps its two goals.
 		const moved = createBoard([goals[2], goals[0], goals[1]]);
+		expandAll(moved);
 		const rows = plainFrame(moved, 100, 24).join("\n");
 		expect(rows).toMatch(/▾ Foundation[\s\S]*Second[\s\S]*First[\s\S]*▾ Delivery[\s\S]*Later/);
 	});
@@ -869,6 +1015,7 @@ describe("goal board reordering", () => {
 			goal({ id: "c1", title: "C one", group: "Gamma" }),
 		];
 		const board = createBoard(goals);
+		expandAll(board);
 		// Rows are [Alpha, a1, Beta, b1, b2, Gamma, c1]; select b2 at index 4.
 		press(board, "jjj");
 		expect(board.selectedGoal?.id).toBe("b2");
@@ -907,10 +1054,12 @@ describe("goal board reordering", () => {
 
 	it("reorders only in file order, since the other views are not the file", () => {
 		const board = createBoard();
+		for (const derived of ["status", "recent", "dependency"]) {
+			press(board, "o");
+			expect(press(board, "J"), derived).toEqual([]);
+			expect(plainFrame(board).at(-2)).toContain("Reorder in file order only");
+		}
 		press(board, "o");
-		expect(press(board, "J")).toEqual([]);
-		expect(plainFrame(board).at(-2)).toContain("Reorder in file order only");
-		press(board, "oo");
 		expect(press(board, "J")).toMatchObject([{ kind: "reorder" }]);
 	});
 });

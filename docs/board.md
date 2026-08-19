@@ -22,21 +22,33 @@ Goals are listed under the section named by their `group`, as a header row carry
 Goals with no group fall into an implicit `Ungrouped` section, which is always last.
 That header appears only where there is a named section to distinguish it from, so a roadmap where nothing is grouped is a plain list of goals rather than one section holding all of them.
 Sections appear in the order their first goal appears in the list, so the roadmap's own order decides them rather than anything the board stores.
+A section's goals are inset from its header, so the list reads as a tree rather than as headers and goals sharing one column.
+The selection pointer keeps its own column at the left edge, because a cursor that moved sideways as the selection crossed a header would read as the list shifting rather than the selection moving.
+
+Sections start closed, so the board opens on the shape of the roadmap - which sections there are and how much each holds - rather than on every goal in it, and a roadmap that grows a section never grows the screenful the board opens on.
+The board holds the sections that have been opened rather than the ones that have been closed, so a section that appears while the board is up, from a reload or a group written in another terminal, starts closed like every other one instead of opening on arrival.
+With a header selected, the detail pane describes that section rather than standing empty: how many goals it holds, the statuses they are in where they are not all the same, how many are waiting on work that has not landed, and the key that opens it.
+It counts the goals the section is showing rather than every goal filed under it, so a filtered or searched board never reports goals its own list is hiding.
 
 `←` and `→`, or Space, collapse and expand the selected header, and a collapsed section hides its goals while its header keeps reporting how many there are.
 On a section already open, `→` and Enter step onto its first goal instead, the way they would open a node in a tree.
 Collapse is ephemeral per board run: it is never written to the goal file, and it is deliberately not shared with anyone else reading the same roadmap.
-A search overrides it, because every section shown under a query holds a match and hiding one would report a hit the list does not show; the sections the user collapsed come back when the query is cleared.
+A search overrides it, because every section shown under a query holds a match and hiding one would report a hit the list does not show; each section goes back to the collapse it had when the query is cleared.
 
 ## Order, filtering, and emphasis
 
-`o` cycles the order through file, status, and recent, and the header names the current one.
+`o` cycles the order through file, status, recent, and dependency, and the header names the current one.
 File order is the default and is the roadmap's canonical order, so the board shows exactly what the file says and `K` and `J`, or Shift+Up and Shift+Down, rearrange it against the neighbouring visible row inside the goal's own section.
 A section boundary is an end of the list for a move, and the board says which section it ended, because a goal that crossed one would be filed back under its own header and report a move the screen never shows.
 A move is written to the file as the neighbouring goal landing before the moved one rather than the moved one landing after its neighbour; both spell the same pair order, and only the first leaves every section where it was.
 Reordering is refused outside file order, where the rows are not where the file puts them and a move would edit an arrangement the screen is not showing.
-Status and recent are views over that same order, which stays their tiebreak, so an arrangement survives a trip through them.
-Those two views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
+Status, recent, and dependency are views over that same order, which stays their tiebreak, so an arrangement survives a trip through them.
+Those views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
+
+Dependency order ranks each goal by the wave `project waves` puts it in, so the board and the CLI read the same edges the same way.
+Sections still hold the goals filed under them, so those waves order the list inside each section rather than flattening the roadmap into a single frontier; `project waves` is the flat read, and it is the one to ask when the question is what the whole roadmap can start next.
+Work that has already landed sits ahead of the wave it released, and a goal no wave can hold - one on a hand-edited cycle, or one waiting on an edge that names no goal - sorts last rather than dropping out of the list.
+It is a view and never a rewrite: the dependency graph says what may start while the file order is the arrangement somebody made, and neither is edited to mirror the other.
 
 The status line names the active goal in full in every order, which keeps it readable while the list is filtered to something else or scrolled past it.
 When a repository holds two worklists, the warning about them stands above that line for as long as that stays true, because the board owns the whole screen and a warning printed before it opened sits on a buffer nobody can see.
@@ -61,7 +73,7 @@ The header shows per-status totals across the whole roadmap, so a filtered list 
 | `a`, `e` | Add a goal, or rename the selected one |
 | `E` | Edit the selected goal's description in `$VISUAL` or `$EDITOR` |
 | `c` `r` `x` `d` | Complete, reopen, archive, or delete the selected goal |
-| `f`, `o` | Cycle the status filter, or the order: file, status, recent |
+| `f`, `o` | Cycle the status filter, or the order: file, status, recent, dependency |
 | `K` `J` or Shift+Up, Shift+Down | Move the selected goal up or down within its section, in file order only |
 | `/` | Search titles and descriptions |
 | `R`, `?`, `q` | Reload from disk, show the key map, or quit |
