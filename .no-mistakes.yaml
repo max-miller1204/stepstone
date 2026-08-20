@@ -15,3 +15,8 @@ ignore_patterns:
   - ".claude/skills/stepstone/SKILL.md"
   - "docs/cli.md"
   - "docs/ROADMAP.md"
+
+# Pin the harness explicitly rather than inheriting the global agent chain, so
+# this repository keeps the claude review profile (model and effort are set
+# per-agent in the global agent_args_override) even if that chain changes.
+agent: claude
