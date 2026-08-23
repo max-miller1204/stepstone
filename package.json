@@ -117,7 +117,7 @@
 		"@earendil-works/pi-tui": "*",
 		"@types/node": "^24.0.0",
 		"@types/proper-lockfile": "^4.1.4",
-		"lefthook": "^1.13.6",
+		"lefthook": "^2.1.10",
 		"typebox": "*",
 		"typescript": "^7.0.2",
 		"vitest": "^4.1.10"
