@@ -71,6 +71,7 @@ export interface DashboardState {
 	scope: "session" | "project";
 	selectedId?: string;
 	selectedGroup?: string;
+	selectedIndex?: number;
 	sessionFilter?: Exclude<DashboardFilter, "archived">;
 	projectFilter?: DashboardFilter;
 	expandedGroups?: string[];
@@ -188,11 +189,22 @@ export class Dashboard {
 		}
 
 		const rows = this.rows();
-		const selectedIndex = rows.findIndex((row) => {
-			if (initialState?.selectedId !== undefined) return this.rowItem(row)?.id === initialState.selectedId;
-			return row.kind === "group" && row.key === `group:${initialState?.selectedGroup}`;
-		});
-		this.selected = selectedIndex >= 0 ? selectedIndex : 0;
+		const selectedItemIndex = rows.findIndex(
+			(row) => initialState?.selectedId !== undefined && this.rowItem(row)?.id === initialState.selectedId,
+		);
+		const selectedGroupIndex = rows.findIndex(
+			(row) => row.kind === "group" && row.key === `group:${initialState?.selectedGroup}`,
+		);
+		const nearestIndex = Math.min(
+			Math.max(0, initialState?.selectedIndex ?? 0),
+			Math.max(0, rows.length - 1),
+		);
+		this.selected =
+			selectedItemIndex >= 0
+				? selectedItemIndex
+				: selectedGroupIndex >= 0
+					? selectedGroupIndex
+					: nearestIndex;
 	}
 
 	private visibleTasks(): SessionTask[] {
@@ -231,11 +243,16 @@ export class Dashboard {
 	private state(): DashboardState {
 		const row = this.rows()[this.selected];
 		const selectedId = this.rowItem(row)?.id;
-		const selectedGroup = row?.kind === "group" ? row.key.slice("group:".length) : undefined;
+		let selectedGroup = row?.kind === "group" ? row.key.slice("group:".length) : undefined;
+		if (row?.kind === "goal") {
+			const sections = goalSections(this.visibleGoals());
+			if (!isUngroupedList(sections)) selectedGroup = sectionHolding(sections, row.goal.id)?.key;
+		}
 		return {
 			scope: this.scope,
 			...(selectedId !== undefined ? { selectedId } : {}),
 			...(selectedGroup !== undefined ? { selectedGroup } : {}),
+			selectedIndex: this.selected,
 			sessionFilter: this.sessionFilter,
 			projectFilter: this.projectFilter,
 			expandedGroups: [...this.expandedGroups],
@@ -435,7 +452,7 @@ export class Dashboard {
 		const help =
 			this.scope === "session"
 				? "tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  enter view  space advance  a append  i insert  shift+↑↓ move  e edit  d delete  esc close"
-				: "tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  ←→/space collapse  enter open/view  a add  shift+↑↓ move  e edit  d delete  esc close";
+				: "tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  ←→ collapse/open  space advance/toggle section  enter open/view  a add  shift+↑↓ move  e edit  d delete  esc close";
 
 		const terminalHeight = this.terminalRows();
 		const targetHeight = Number.isFinite(terminalHeight)

@@ -109,9 +109,16 @@ function dashboardInput(
 	return result;
 }
 
-function restoredDashboardState(state: DashboardState, expandedGroups: string[] = []): DashboardState {
+function restoredDashboardState(
+	state: DashboardState,
+	selectedIndex: number,
+	expandedGroups: string[] = [],
+	selectedGroup?: string,
+): DashboardState {
 	return {
 		...state,
+		...(selectedGroup === undefined ? {} : { selectedGroup }),
+		selectedIndex,
 		sessionFilter: "open",
 		projectFilter: "open",
 		expandedGroups,
@@ -123,11 +130,11 @@ describe("dashboard ordering controls", () => {
 		const state: DashboardState = { scope: "project", selectedId: "g1" };
 		expect(dashboardInput("\r", state)).toEqual({
 			action: { kind: "view", scope: "project", id: "g1" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 0),
 		});
 		expect(dashboardInput(" ", state)).toEqual({
 			action: { kind: "advance", scope: "project", id: "g1" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 0),
 		});
 	});
 
@@ -141,13 +148,13 @@ describe("dashboard ordering controls", () => {
 		const state: DashboardState = { scope: "project", selectedId: "g2" };
 		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
 			action: { kind: "move", scope: "project", id: "g2", beforeId: "g1" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 1),
 		});
 		// A goal moving down is written as the pair it ends up in, so the goal that
 		// ends up first keeps the file position its section is placed by.
 		expect(dashboardInput("\u001b[1;2B", state, tasks, roadmap)).toEqual({
 			action: { kind: "move", scope: "project", id: "g3", beforeId: "g2" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 1),
 		});
 
 		// The ends of the list have no neighbour to anchor against, so nothing moves.
@@ -165,11 +172,11 @@ describe("dashboard ordering controls", () => {
 
 		expect(dashboardInput("\r", state, tasks, roadmap)).toEqual({
 			action: { kind: "view", scope: "project", id: "alpha-two" },
-			state: restoredDashboardState(state, ["Alpha"]),
+			state: restoredDashboardState(state, 2, ["Alpha"], "Alpha"),
 		});
 		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
 			action: { kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" },
-			state: restoredDashboardState(state, ["Alpha"]),
+			state: restoredDashboardState(state, 2, ["Alpha"], "Alpha"),
 		});
 
 		const dashboard = new Dashboard(
@@ -293,11 +300,11 @@ describe("dashboard ordering controls", () => {
 		const state: DashboardState = { scope: "session", selectedId: "t3" };
 		expect(dashboardInput("i", state)).toEqual({
 			action: { kind: "insert", scope: "session", beforeId: "t3" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 2),
 		});
 		expect(dashboardInput("a", state)).toEqual({
 			action: { kind: "add", scope: "session" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 2),
 		});
 	});
 
@@ -305,17 +312,17 @@ describe("dashboard ordering controls", () => {
 		const state: DashboardState = { scope: "session", selectedId: "t3" };
 		expect(dashboardInput("\u001b[1;2A", state)).toEqual({
 			action: { kind: "move", scope: "session", id: "t3", beforeId: "t2" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 2),
 		});
 		expect(dashboardInput("\u001b[1;2B", state)).toEqual({
 			action: { kind: "move", scope: "session", id: "t3", afterId: "t4" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 2),
 		});
 
 		const reordered = [...tasks.slice(0, 2), tasks[3], tasks[2], ...tasks.slice(4)];
 		expect(dashboardInput("a", state, reordered)).toEqual({
 			action: { kind: "add", scope: "session" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 1),
 		});
 	});
 
@@ -325,7 +332,7 @@ describe("dashboard ordering controls", () => {
 		expect(dashboardInput("\u001b[1;2A", state)).toBeUndefined();
 		expect(dashboardInput("a", state)).toEqual({
 			action: { kind: "add", scope: "project" },
-			state: restoredDashboardState(state),
+			state: restoredDashboardState(state, 0),
 		});
 	});
 });
@@ -490,6 +497,47 @@ describe("dashboard navigation and project rendering", () => {
 		expect(fiveRows.length).toBeLessThanOrEqual(5);
 		expect(fiveRows.join("\n")).toContain("Described goal");
 		expect(fiveRows.every((line) => visibleWidth(line) <= 60)).toBe(true);
+	});
+
+	it("lands the returned cursor near where an action removed it from the filter", () => {
+		const longTasks: SessionTask[] = Array.from({ length: 20 }, (_, index) => ({
+			id: `sel-${index}`,
+			title: `Selectable task ${index}`,
+			status: "todo",
+		}));
+		let result: DashboardResult | undefined;
+		const dashboard = new Dashboard(
+			longTasks,
+			[],
+			identityTheme,
+			(value) => {
+				result = value;
+			},
+			{ scope: "session", selectedId: "sel-15" },
+		);
+		dashboard.handleInput(" ");
+		expect(result?.action).toEqual({ kind: "advance", scope: "session", id: "sel-15" });
+
+		// Completing Task 15 leaves the Open filter under the same state: the
+		// cursor falls onto the row that took its place rather than back to the top.
+		const completed = longTasks.map((task) =>
+			task.id === "sel-15" ? { ...task, status: "done" as const } : task,
+		);
+		const reopened = new Dashboard(completed, [], identityTheme, () => {}, result?.state);
+		reopened.handleInput("\r");
+		let viewed: string | undefined;
+		const viewer = new Dashboard(
+			completed,
+			[],
+			identityTheme,
+			(value) => {
+				viewed = value.action.kind === "view" ? value.action.id : undefined;
+			},
+			result?.state,
+		);
+		viewer.handleInput("\r");
+		expect(viewed).not.toBe("sel-0");
+		expect(viewed === "sel-14" || viewed === "sel-16").toBe(true);
 	});
 
 	it("filters Session Tasks between open, done, and all", () => {
