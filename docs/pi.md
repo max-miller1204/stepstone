@@ -34,19 +34,22 @@ How a release reaches npm and the gallery is in [docs/releasing.md](https://gith
 ## The dashboard
 
 Run `/tasks` with no arguments to open the dashboard, a two-section view over Session Tasks and Project Goals.
-Use Tab to switch lists and arrow keys to navigate.
+Use Tab to switch lists, Up and Down or `j` and `k` to navigate, and Page Up and Page Down to move through a long list.
+The dashboard keeps the selected row in a terminal-height viewport, with counts for the rows above and below whenever the list continues off screen.
+Press `f` to cycle the status filter: Session Tasks offer open, done, and all, while Project Goals offer open, done, archived, and all.
 
 In Session Tasks, `a` appends, `i` inserts before the selected task, and Shift+Up or Shift+Down moves the selected task.
 Project Goals support `a` to add and the same Shift+Up and Shift+Down to reorder, but not insertion at a position.
 A goal moves within its own section, where a section boundary is an end of the list, and the move is written to the file exactly as the board writes it, so one keystroke means the same thing on both surfaces.
-In either scope, press Enter to open a detail window, Space to advance status, `e` to edit, `d` to delete, and Escape to close.
+On a task or goal in either scope, press Enter to open a detail window, Space to advance status, `e` to edit, `d` to delete, and Escape to close.
 Session Task edits change the title, while Project Goal edits can also change the description.
 
 The Project Goals pane reads in the same visual language as the [terminal goal board](board.md), which owns what each treatment means: the active goal keeps its own marker and full contrast, settled goals recede, a goal that has gone stale carries its age, and a goal waiting on work that has not landed is marked blocked.
 Goals are filed into headed sections by the rule the board's [sections](board.md#sections) describe, down to a roadmap where nothing is grouped staying a plain list.
-The one difference is that sections are always open here: collapse is the board's answer to owning a whole screen, and an inline pane has nothing to spend a screenful of headers on.
-A `Goals:` line above the list reports per-status counts across the whole roadmap.
-Archived goals are never listed in this pane and there is no filter key to reveal them, so that line also says how many of the counted goals are listed whenever the two numbers differ.
+Grouped roadmaps open with every section collapsed, just like the board.
+Select a section header and press Space to toggle it, Right or Enter to open it, or Left to close it; Enter on an open section steps into its first goal.
+A `Goals:` line above the list reports per-status counts across the whole roadmap and says how many are listed whenever the current filter hides some of them.
+The current filter and open sections survive actions while the dashboard remains open, but a new `/tasks` invocation starts again on the compact, collapsed roadmap shape.
 
 The detail window wraps complete descriptions and the metadata it displays instead of truncating them.
 Use Up and Down or `j` and `k` to scroll long details, with Page Up and Page Down for larger jumps, then Enter or Escape to return to the dashboard.

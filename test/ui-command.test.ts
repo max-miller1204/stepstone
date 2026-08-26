@@ -109,16 +109,25 @@ function dashboardInput(
 	return result;
 }
 
+function restoredDashboardState(state: DashboardState, expandedGroups: string[] = []): DashboardState {
+	return {
+		...state,
+		sessionFilter: "open",
+		projectFilter: "open",
+		expandedGroups,
+	};
+}
+
 describe("dashboard ordering controls", () => {
 	it("opens details with Enter and reserves Space for status changes", () => {
 		const state: DashboardState = { scope: "project", selectedId: "g1" };
 		expect(dashboardInput("\r", state)).toEqual({
 			action: { kind: "view", scope: "project", id: "g1" },
-			state,
+			state: restoredDashboardState(state),
 		});
 		expect(dashboardInput(" ", state)).toEqual({
 			action: { kind: "advance", scope: "project", id: "g1" },
-			state,
+			state: restoredDashboardState(state),
 		});
 	});
 
@@ -132,13 +141,13 @@ describe("dashboard ordering controls", () => {
 		const state: DashboardState = { scope: "project", selectedId: "g2" };
 		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
 			action: { kind: "move", scope: "project", id: "g2", beforeId: "g1" },
-			state,
+			state: restoredDashboardState(state),
 		});
 		// A goal moving down is written as the pair it ends up in, so the goal that
 		// ends up first keeps the file position its section is placed by.
 		expect(dashboardInput("\u001b[1;2B", state, tasks, roadmap)).toEqual({
 			action: { kind: "move", scope: "project", id: "g3", beforeId: "g2" },
-			state,
+			state: restoredDashboardState(state),
 		});
 
 		// The ends of the list have no neighbour to anchor against, so nothing moves.
@@ -156,11 +165,11 @@ describe("dashboard ordering controls", () => {
 
 		expect(dashboardInput("\r", state, tasks, roadmap)).toEqual({
 			action: { kind: "view", scope: "project", id: "alpha-two" },
-			state,
+			state: restoredDashboardState(state, ["Alpha"]),
 		});
 		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
 			action: { kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" },
-			state,
+			state: restoredDashboardState(state, ["Alpha"]),
 		});
 
 		const dashboard = new Dashboard(
@@ -174,7 +183,7 @@ describe("dashboard ordering controls", () => {
 		const output = dashboard.render(100).join("\n");
 		expect(output).toContain("  ○ Alpha one alpha-one");
 		expect(output).toContain(">   ○ Alpha two alpha-two");
-		expect(output.indexOf("Alpha two")).toBeLessThan(output.indexOf("Beta one"));
+		expect(output.indexOf("Alpha two")).toBeLessThan(output.indexOf("Beta"));
 	});
 
 	it("says how many of the counted Project Goals the pane lists", () => {
@@ -284,11 +293,11 @@ describe("dashboard ordering controls", () => {
 		const state: DashboardState = { scope: "session", selectedId: "t3" };
 		expect(dashboardInput("i", state)).toEqual({
 			action: { kind: "insert", scope: "session", beforeId: "t3" },
-			state,
+			state: restoredDashboardState(state),
 		});
 		expect(dashboardInput("a", state)).toEqual({
 			action: { kind: "add", scope: "session" },
-			state,
+			state: restoredDashboardState(state),
 		});
 	});
 
@@ -296,17 +305,17 @@ describe("dashboard ordering controls", () => {
 		const state: DashboardState = { scope: "session", selectedId: "t3" };
 		expect(dashboardInput("\u001b[1;2A", state)).toEqual({
 			action: { kind: "move", scope: "session", id: "t3", beforeId: "t2" },
-			state,
+			state: restoredDashboardState(state),
 		});
 		expect(dashboardInput("\u001b[1;2B", state)).toEqual({
 			action: { kind: "move", scope: "session", id: "t3", afterId: "t4" },
-			state,
+			state: restoredDashboardState(state),
 		});
 
 		const reordered = [...tasks.slice(0, 2), tasks[3], tasks[2], ...tasks.slice(4)];
 		expect(dashboardInput("a", state, reordered)).toEqual({
 			action: { kind: "add", scope: "session" },
-			state,
+			state: restoredDashboardState(state),
 		});
 	});
 
@@ -316,43 +325,44 @@ describe("dashboard ordering controls", () => {
 		expect(dashboardInput("\u001b[1;2A", state)).toBeUndefined();
 		expect(dashboardInput("a", state)).toEqual({
 			action: { kind: "add", scope: "project" },
-			state,
+			state: restoredDashboardState(state),
 		});
 	});
 });
 
-describe("dashboard project rendering", () => {
-	it("groups Project Goals and mirrors board status cues", () => {
-		const roadmap: ProjectGoal[] = [
-			{
-				...goals[0],
-				id: "active",
-				title: "Active goal",
-				group: "Foundation",
-				status: "active",
-			},
-			{
-				...goals[0],
-				id: "done",
-				title: "Done goal",
-				group: "Foundation",
-				status: "done",
-			},
-			{
-				...goals[0],
-				id: "waiting",
-				title: "Waiting goal",
-				status: "open",
-				updatedAt: "2025-12-01T00:00:00.000Z",
-			},
-			{
-				...goals[0],
-				id: "archived",
-				title: "Archived goal",
-				group: "Retired",
-				status: "archived",
-			},
-		];
+describe("dashboard navigation and project rendering", () => {
+	const roadmap: ProjectGoal[] = [
+		{
+			...goals[0],
+			id: "active",
+			title: "Active goal",
+			group: "Foundation",
+			status: "active",
+		},
+		{
+			...goals[0],
+			id: "done",
+			title: "Done goal",
+			group: "Foundation",
+			status: "done",
+		},
+		{
+			...goals[0],
+			id: "waiting",
+			title: "Waiting goal",
+			status: "open",
+			updatedAt: "2025-12-01T00:00:00.000Z",
+		},
+		{
+			...goals[0],
+			id: "archived",
+			title: "Archived goal",
+			group: "Retired",
+			status: "archived",
+		},
+	];
+
+	it("opens grouped Project Goals collapsed and expands the selected section", () => {
 		const dashboard = new Dashboard(
 			[],
 			roadmap,
@@ -361,15 +371,193 @@ describe("dashboard project rendering", () => {
 			{ scope: "project" },
 			() => Date.parse("2026-01-06T00:00:00.000Z"),
 		);
-		const output = dashboard.render(100).join("\n");
+		const collapsed = dashboard.render(100).join("\n");
 
-		expect(output).toContain("Goals: ◆ 1 · ○ 1 · ✓ 1 · ◌ 1");
-		expect(output).toContain("▾ Foundation (2)");
-		expect(output).toContain("▾ Ungrouped (1)");
-		expect(output).toContain(">   ◆ Active goal active");
-		expect(output).toContain("✓ Done goal done");
-		expect(output).toMatch(/○ Waiting goal \d+d waiting/);
-		expect(output).not.toContain("Archived goal archived");
+		expect(collapsed).toContain("Filter: Open (f to change)");
+		expect(collapsed).toContain("Goals: ◆ 1 · ○ 1 · ✓ 1 · ◌ 1 · 2 of 4 listed");
+		expect(collapsed).toContain("> ▸ Foundation (1)");
+		expect(collapsed).toContain("  ▸ Ungrouped (1)");
+		expect(collapsed).not.toContain("Active goal active");
+
+		dashboard.handleInput(" ");
+		const expanded = dashboard.render(100).join("\n");
+		expect(expanded).toContain("> ▾ Foundation (1)");
+		expect(expanded).toContain("    ◆ Active goal active");
+		expect(expanded).not.toContain("Waiting goal waiting");
+
+		dashboard.handleInput("\u001b[B");
+		dashboard.handleInput("\u001b[B");
+		dashboard.handleInput(" ");
+		expect(dashboard.render(100).join("\n")).toMatch(/○ Waiting goal \d+d waiting/);
+
+		dashboard.handleInput("\u001b[A");
+		dashboard.handleInput("\u001b[A");
+		dashboard.handleInput(" ");
+		expect(dashboard.render(100).join("\n")).not.toContain("Active goal active");
+	});
+
+	it("cycles open, done, archived, and all Project Goal filters and preserves view state", () => {
+		let result: DashboardResult | undefined;
+		const dashboard = new Dashboard(
+			[],
+			roadmap,
+			identityTheme,
+			(value) => {
+				result = value;
+			},
+			{ scope: "project" },
+		);
+		dashboard.handleInput(" ");
+		dashboard.handleInput("f");
+		const done = dashboard.render(100).join("\n");
+		expect(done).toContain("Filter: Done (f to change)");
+		expect(done).toContain("▾ Foundation (1)");
+		expect(done).toContain("✓ Done goal done");
+		expect(done).not.toContain("Active goal active");
+
+		dashboard.handleInput("a");
+		expect(result?.state).toMatchObject({
+			scope: "project",
+			projectFilter: "done",
+			expandedGroups: ["Foundation"],
+		});
+		const restored = new Dashboard([], roadmap, identityTheme, () => {}, result?.state);
+		expect(restored.render(100).join("\n")).toContain("✓ Done goal done");
+
+		dashboard.handleInput("f");
+		expect(dashboard.render(100).join("\n")).toContain("Filter: Archived (f to change)");
+		dashboard.handleInput("f");
+		expect(dashboard.render(100).join("\n")).toContain("Filter: All (f to change)");
+		dashboard.handleInput("f");
+		expect(dashboard.render(100).join("\n")).toContain("Filter: Open (f to change)");
+	});
+
+	it("reveals children when a section at the viewport bottom expands", () => {
+		const grouped = Array.from(
+			{ length: 5 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `group-goal-${index}`,
+				title: `Grouped goal ${index}`,
+				group: `Group ${index}`,
+				status: "open",
+			}),
+		);
+		const dashboard = new Dashboard(
+			[],
+			grouped,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 12,
+		);
+		dashboard.render(72);
+		dashboard.handleInput("\u001b[B");
+		dashboard.handleInput("\u001b[B");
+		dashboard.render(72);
+		dashboard.handleInput(" ");
+		const expanded = dashboard.render(72).join("\n");
+
+		expect(expanded).toContain("> ▾ Group 2 (1)");
+		expect(expanded).toContain("Grouped goal 2");
+	});
+
+	it("never renders beyond a short terminal, even with Project Goal details", () => {
+		const described: ProjectGoal = {
+			...goals[0],
+			id: "described",
+			title: "Described goal",
+			description: "A description that belongs below the selected goal.",
+			status: "open",
+		};
+		const renderAt = (height: number) =>
+			new Dashboard(
+				[],
+				[described],
+				identityTheme,
+				() => {},
+				{ scope: "project", selectedId: described.id },
+				Date.now,
+				() => height,
+			).render(60);
+
+		const tenRows = renderAt(10);
+		expect(tenRows.length).toBeLessThanOrEqual(10);
+		expect(tenRows.join("\n")).toContain("Description: A description");
+
+		const fiveRows = renderAt(5);
+		expect(fiveRows.length).toBeLessThanOrEqual(5);
+		expect(fiveRows.join("\n")).toContain("Described goal");
+		expect(fiveRows.every((line) => visibleWidth(line) <= 60)).toBe(true);
+	});
+
+	it("filters Session Tasks between open, done, and all", () => {
+		const dashboard = new Dashboard(tasks, [], identityTheme, () => {}, { scope: "session" });
+		const open = dashboard.render(80).join("\n");
+		expect(open).toContain("Filter: Open (f to change)");
+		expect(open).not.toContain("Task 0");
+		expect(open).toContain("Task 1");
+
+		dashboard.handleInput("f");
+		const done = dashboard.render(80).join("\n");
+		expect(done).toContain("Filter: Done (f to change)");
+		expect(done).toContain("Task 0");
+		expect(done).not.toContain("Task 1");
+
+		dashboard.handleInput("f");
+		const all = dashboard.render(80).join("\n");
+		expect(all).toContain("Filter: All (f to change)");
+		expect(all).toContain("Task 0");
+		expect(all).toContain("Task 1");
+	});
+
+	it("keeps a long list within the terminal viewport and scrolls the selection", () => {
+		const longTasks: SessionTask[] = Array.from({ length: 20 }, (_, index) => ({
+			id: `long-${index}`,
+			title: `Long task ${index}`,
+			status: "todo",
+		}));
+		let result: DashboardResult | undefined;
+		const dashboard = new Dashboard(
+			longTasks,
+			[],
+			identityTheme,
+			(value) => {
+				result = value;
+			},
+			{ scope: "session" },
+			Date.now,
+			() => 12,
+		);
+		const first = dashboard.render(72);
+		expect(first).toHaveLength(9);
+		expect(first.join("\n")).toContain("0 above · 17 below");
+		expect(first.join("\n")).toContain("Long task 0");
+
+		dashboard.handleInput("\u001b[6~");
+		dashboard.handleInput("\u001b[B");
+		const scrolled = dashboard.render(72);
+		expect(scrolled).toHaveLength(9);
+		expect(scrolled.join("\n")).toContain("above");
+		expect(scrolled.join("\n")).toContain("Long task 9");
+		expect(scrolled.join("\n")).not.toContain("Long task 0");
+		expect(scrolled.every((line) => visibleWidth(line) <= 72)).toBe(true);
+
+		dashboard.handleInput("\r");
+		expect(result?.action).toEqual({ kind: "view", scope: "session", id: "long-9" });
+
+		const tiny = new Dashboard(
+			longTasks,
+			[],
+			identityTheme,
+			() => {},
+			{ scope: "session" },
+			Date.now,
+			() => 4,
+		).render(72);
+		expect(tiny.length).toBeLessThanOrEqual(4);
+		expect(tiny.join("\n")).toContain("0 above · 19 below");
 	});
 });
 

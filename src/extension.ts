@@ -471,6 +471,8 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 						theme,
 						done,
 						dashboardState,
+						Date.now,
+						() => tui.terminal.rows,
 					);
 					return {
 						render: (width) => dashboard.render(width),

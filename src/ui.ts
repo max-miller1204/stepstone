@@ -65,9 +65,15 @@ export type DashboardAction =
 	| { kind: "advance"; scope: "session" | "project"; id: string }
 	| { kind: "delete"; scope: "session" | "project"; id: string };
 
+export type DashboardFilter = "open" | "done" | "archived" | "all";
+
 export interface DashboardState {
 	scope: "session" | "project";
 	selectedId?: string;
+	selectedGroup?: string;
+	sessionFilter?: Exclude<DashboardFilter, "archived">;
+	projectFilter?: DashboardFilter;
+	expandedGroups?: string[];
 }
 
 export interface DashboardResult {
@@ -76,25 +82,82 @@ export interface DashboardResult {
 }
 
 type DashboardProjectRow =
-	| { kind: "group"; label: string; count: number }
-	| { kind: "goal"; goal: ProjectGoal; indented: boolean };
+	| {
+			kind: "group";
+			key: string;
+			label: string;
+			goals: readonly ProjectGoal[];
+			collapsed: boolean;
+	  }
+	| { kind: "goal"; key: string; goal: ProjectGoal; indented: boolean };
 
-function groupedProjectRows(goals: readonly ProjectGoal[]): DashboardProjectRow[] {
+type DashboardRow = { kind: "task"; key: string; task: SessionTask } | DashboardProjectRow;
+
+const SESSION_FILTERS: readonly Exclude<DashboardFilter, "archived">[] = ["open", "done", "all"];
+const PROJECT_FILTERS: readonly DashboardFilter[] = ["open", "done", "archived", "all"];
+const DASHBOARD_FILTER_LABELS: Record<DashboardFilter, string> = {
+	open: "Open",
+	done: "Done",
+	archived: "Archived",
+	all: "All",
+};
+
+function taskMatchesFilter(task: SessionTask, filter: Exclude<DashboardFilter, "archived">): boolean {
+	if (filter === "all") return true;
+	return filter === "done" ? task.status === "done" : task.status !== "done";
+}
+
+function goalMatchesFilter(goal: ProjectGoal, filter: DashboardFilter): boolean {
+	if (filter === "all") return true;
+	if (filter === "open") return goal.status === "open" || goal.status === "active";
+	return goal.status === filter;
+}
+
+function groupedProjectRows(
+	goals: readonly ProjectGoal[],
+	expandedGroups: ReadonlySet<string>,
+): DashboardProjectRow[] {
 	const sections = goalSections(goals);
 	if (isUngroupedList(sections))
-		return sections[0].goals.map((goal) => ({ kind: "goal", goal, indented: false }));
+		return sections[0].goals.map((goal) => ({
+			kind: "goal",
+			key: `goal:${goal.id}`,
+			goal,
+			indented: false,
+		}));
 
 	const rows: DashboardProjectRow[] = [];
 	for (const section of sections) {
-		rows.push({ kind: "group", label: section.label, count: section.goals.length });
-		rows.push(...section.goals.map((goal) => ({ kind: "goal" as const, goal, indented: true })));
+		const collapsed = !expandedGroups.has(section.key);
+		rows.push({
+			kind: "group",
+			key: `group:${section.key}`,
+			label: section.label,
+			goals: section.goals,
+			collapsed,
+		});
+		if (!collapsed) {
+			rows.push(
+				...section.goals.map((goal) => ({
+					kind: "goal" as const,
+					key: `goal:${goal.id}`,
+					goal,
+					indented: true,
+				})),
+			);
+		}
 	}
 	return rows;
 }
 
 export class Dashboard {
 	private scope: "session" | "project";
-	private selected: number;
+	private selected = 0;
+	private listScroll = 0;
+	private sessionFilter: Exclude<DashboardFilter, "archived">;
+	private projectFilter: DashboardFilter;
+	private readonly expandedGroups: Set<string>;
+
 	constructor(
 		private readonly tasks: SessionTask[],
 		private readonly goals: ProjectGoal[],
@@ -102,64 +165,88 @@ export class Dashboard {
 		private readonly done: (result: DashboardResult) => void,
 		initialState?: DashboardState,
 		private readonly now: () => number = Date.now,
+		private readonly terminalRows: () => number = () => Number.POSITIVE_INFINITY,
 	) {
 		this.scope = initialState?.scope ?? "session";
-		const selectedIndex = initialState?.selectedId
-			? this.items().findIndex((item) => item.id === initialState.selectedId)
-			: -1;
+		this.sessionFilter = initialState?.sessionFilter ?? "open";
+		this.projectFilter = initialState?.projectFilter ?? "open";
+		this.expandedGroups = new Set(initialState?.expandedGroups ?? []);
+
+		// A state from the pre-collapse dashboard names only a goal. Keep that goal
+		// reachable when possible rather than replacing its restored selection with
+		// the section header that now starts closed.
+		if (initialState?.selectedId && initialState.expandedGroups === undefined) {
+			const sections = goalSections(this.visibleGoals());
+			if (!isUngroupedList(sections)) {
+				for (const section of sections) {
+					if (section.goals.some((goal) => goal.id === initialState.selectedId)) {
+						this.expandedGroups.add(section.key);
+						break;
+					}
+				}
+			}
+		}
+
+		const rows = this.rows();
+		const selectedIndex = rows.findIndex((row) => {
+			if (initialState?.selectedId !== undefined) return this.rowItem(row)?.id === initialState.selectedId;
+			return row.kind === "group" && row.key === `group:${initialState?.selectedGroup}`;
+		});
 		this.selected = selectedIndex >= 0 ? selectedIndex : 0;
+	}
+
+	private visibleTasks(): SessionTask[] {
+		return this.tasks.filter((task) => taskMatchesFilter(task, this.sessionFilter));
 	}
 
 	/** The goals the Project Goal pane lists, before they are grouped into rows. */
 	private visibleGoals(): ProjectGoal[] {
-		return this.goals.filter((goal) => goal.status !== "archived");
+		return this.goals.filter((goal) => goalMatchesFilter(goal, this.projectFilter));
 	}
 
-	/**
-	 * The roadmap's shape, counted over every goal rather than the listed ones.
-	 *
-	 * The chips state what the roadmap holds, which is the same thing the terminal
-	 * board's header states, so an archived goal is counted here even though this
-	 * pane never lists one and offers no filter key to reveal it. That would leave
-	 * a chip standing for rows nobody can find, so the board's `shown of total` is
-	 * carried over to say how many of the counted goals are on screen, and it is
-	 * only worth a reader's attention when the two numbers differ.
-	 */
+	/** The roadmap's shape plus how much of it the current filter lists. */
 	private goalCountSummary(): string {
 		const listed = this.visibleGoals().length;
 		const counts = goalCountLine(this.goals);
 		return listed === this.goals.length ? counts : `${counts} · ${listed} of ${this.goals.length} listed`;
 	}
 
+	private rows(): DashboardRow[] {
+		if (this.scope === "session") {
+			return this.visibleTasks().map((task) => ({ kind: "task", key: `task:${task.id}`, task }));
+		}
+		return groupedProjectRows(this.visibleGoals(), this.expandedGroups);
+	}
+
 	private items(): Array<SessionTask | ProjectGoal> {
-		if (this.scope === "session") return this.tasks;
-		return groupedProjectRows(this.visibleGoals())
-			.filter((row): row is Extract<DashboardProjectRow, { kind: "goal" }> => row.kind === "goal")
-			.map((row) => row.goal);
+		return this.scope === "session" ? this.visibleTasks() : this.visibleGoals();
+	}
+
+	private rowItem(row: DashboardRow | undefined): SessionTask | ProjectGoal | undefined {
+		if (row?.kind === "task") return row.task;
+		if (row?.kind === "goal") return row.goal;
+		return undefined;
+	}
+
+	private state(): DashboardState {
+		const row = this.rows()[this.selected];
+		const selectedId = this.rowItem(row)?.id;
+		const selectedGroup = row?.kind === "group" ? row.key.slice("group:".length) : undefined;
+		return {
+			scope: this.scope,
+			...(selectedId !== undefined ? { selectedId } : {}),
+			...(selectedGroup !== undefined ? { selectedGroup } : {}),
+			sessionFilter: this.sessionFilter,
+			projectFilter: this.projectFilter,
+			expandedGroups: [...this.expandedGroups],
+		};
 	}
 
 	private finish(action: DashboardAction): void {
-		const selectedId = this.items()[this.selected]?.id;
-		this.done({
-			action,
-			state: { scope: this.scope, ...(selectedId !== undefined ? { selectedId } : {}) },
-		});
+		this.done({ action, state: this.state() });
 	}
 
-	/**
-	 * Reorder the selected item within the list it is shown in.
-	 *
-	 * A Session Task anchors on the neighboring row rather than a stored index, so
-	 * a move lands where the user watched it land even when the list is a filtered
-	 * view of a longer one.
-	 *
-	 * A Project Goal moves through the rule the terminal board reorders by, so one
-	 * keystroke cannot mean two things across the two surfaces: the goal steps
-	 * within its own section, a section boundary is an end of the list, and the
-	 * pair is written so that re-inserting a section's first goal cannot hand its
-	 * file position - and with it the section's place on the roadmap - to a goal
-	 * filed under a different section.
-	 */
+	/** Reorder the selected item within the filtered list it is shown in. */
 	private moveAction(
 		item: { id: string },
 		items: Array<{ id: string }>,
@@ -170,46 +257,125 @@ export class Dashboard {
 			const placement = section && resolveSectionReorder(section.goals, item.id, delta);
 			return placement ? { kind: "move", scope: "project", ...placement } : undefined;
 		}
-		const anchor = items[this.selected + delta];
+		const index = items.findIndex((candidate) => candidate.id === item.id);
+		const anchor = items[index + delta];
 		if (!anchor) return undefined;
 		return delta < 0
 			? { kind: "move", scope: "session", id: item.id, beforeId: anchor.id }
 			: { kind: "move", scope: "session", id: item.id, afterId: anchor.id };
 	}
 
-	private handleMove(data: string, items: Array<{ id: string }>): boolean {
+	private handleMove(data: string): boolean {
 		const delta = matchesKey(data, Key.shift("up"))
 			? -1
 			: matchesKey(data, Key.shift("down"))
 				? 1
 				: undefined;
 		if (delta === undefined) return false;
-		const item = items[this.selected];
-		const action = item && this.moveAction(item, items, delta);
+		const item = this.rowItem(this.rows()[this.selected]);
+		const action = item && this.moveAction(item, this.items(), delta);
 		if (action) this.finish(action);
 		return true;
 	}
 
+	private cycleFilter(): void {
+		const rows = this.rows();
+		const selectedKey = rows[this.selected]?.key;
+		if (this.scope === "session") {
+			const index = SESSION_FILTERS.indexOf(this.sessionFilter);
+			this.sessionFilter = SESSION_FILTERS[(index + 1) % SESSION_FILTERS.length];
+		} else {
+			const index = PROJECT_FILTERS.indexOf(this.projectFilter);
+			this.projectFilter = PROJECT_FILTERS[(index + 1) % PROJECT_FILTERS.length];
+		}
+		const nextRows = this.rows();
+		const nextIndex = nextRows.findIndex((row) => row.key === selectedKey);
+		this.selected = nextIndex >= 0 ? nextIndex : 0;
+		this.listScroll = 0;
+	}
+
+	private toggleSelectedGroup(force?: "expand" | "collapse"): boolean {
+		const row = this.rows()[this.selected];
+		if (row?.kind !== "group") return false;
+		const key = row.key.slice("group:".length);
+		const collapse = force === "collapse" || (force === undefined && !row.collapsed);
+		if (collapse === row.collapsed) return false;
+		if (collapse) this.expandedGroups.delete(key);
+		else {
+			this.expandedGroups.add(key);
+			// Lead the viewport with the header so expanding the last visible row
+			// reveals its children instead of leaving every new row below the fold.
+			this.listScroll = this.selected;
+		}
+		return true;
+	}
+
+	private enterSelectedGroup(): boolean {
+		const row = this.rows()[this.selected];
+		if (row?.kind !== "group") return false;
+		if (row.collapsed) return this.toggleSelectedGroup("expand");
+		const child = this.rows()[this.selected + 1];
+		if (child?.kind !== "goal") return false;
+		this.selected += 1;
+		return true;
+	}
+
+	private collapseGoalGroup(): boolean {
+		const row = this.rows()[this.selected];
+		if (row?.kind !== "goal" || !row.indented) return false;
+		const rows = this.rows();
+		for (let index = this.selected - 1; index >= 0; index -= 1) {
+			const candidate = rows[index];
+			if (candidate?.kind !== "group") continue;
+			this.selected = index;
+			return this.toggleSelectedGroup("collapse");
+		}
+		return false;
+	}
+
 	handleInput(data: string): void {
-		const items = this.items();
 		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
 			this.finish({ kind: "close" });
 			return;
 		}
-		if (matchesKey(data, Key.tab) || matchesKey(data, Key.left) || matchesKey(data, Key.right)) {
+		if (matchesKey(data, Key.tab)) {
 			this.scope = this.scope === "session" ? "project" : "session";
 			this.selected = 0;
+			this.listScroll = 0;
 			return;
 		}
-		if (this.handleMove(data, items)) return;
-		if (matchesKey(data, Key.up)) this.selected = Math.max(0, this.selected - 1);
-		if (matchesKey(data, Key.down))
-			this.selected = Math.min(Math.max(0, items.length - 1), this.selected + 1);
+		if (data === "f") {
+			this.cycleFilter();
+			return;
+		}
+		if (this.scope === "project" && matchesKey(data, Key.right) && this.enterSelectedGroup()) return;
+		if (
+			this.scope === "project" &&
+			matchesKey(data, Key.left) &&
+			(this.toggleSelectedGroup("collapse") || this.collapseGoalGroup())
+		)
+			return;
+		if (this.handleMove(data)) return;
+
+		const rows = this.rows();
+		if (matchesKey(data, Key.up) || data === "k") this.selected = Math.max(0, this.selected - 1);
+		if (matchesKey(data, Key.down) || data === "j")
+			this.selected = Math.min(Math.max(0, rows.length - 1), this.selected + 1);
+		if (matchesKey(data, Key.pageUp)) this.selected = Math.max(0, this.selected - 8);
+		if (matchesKey(data, Key.pageDown))
+			this.selected = Math.min(Math.max(0, rows.length - 1), this.selected + 8);
 		if (data === "a") {
 			this.finish({ kind: "add", scope: this.scope });
 			return;
 		}
-		const item = items[this.selected];
+
+		const row = this.rows()[this.selected];
+		if (row?.kind === "group") {
+			if (matchesKey(data, Key.space)) this.toggleSelectedGroup();
+			else if (matchesKey(data, Key.enter)) this.enterSelectedGroup();
+			return;
+		}
+		const item = this.rowItem(row);
 		if (!item) return;
 		if (data === "i" && this.scope === "session") {
 			this.finish({ kind: "insert", scope: "session", beforeId: item.id });
@@ -222,63 +388,160 @@ export class Dashboard {
 		}
 	}
 
+	private renderRow(row: DashboardRow, index: number): string {
+		const th = this.theme;
+		const prefix = index === this.selected ? th.fg("accent", ">") : " ";
+		if (row.kind === "group") {
+			const disclosure = row.collapsed ? "▸" : "▾";
+			return `${prefix} ${th.bold(`${disclosure} ${compactDescription(row.label)}`)} ${th.fg("dim", `(${row.goals.length})`)}`;
+		}
+		if (row.kind === "task") {
+			const marker = row.task.status === "done" ? "✓" : row.task.status === "doing" ? "●" : "○";
+			return `${prefix} ${marker} ${compactDescription(row.task.title)} ${th.fg("dim", row.task.id)}`;
+		}
+
+		const goal = row.goal;
+		const inset = row.indented ? "  " : "";
+		const marker =
+			goal.status === "active"
+				? th.fg("accent", GOAL_STATUS_MARKERS.active)
+				: GOAL_STATUS_MARKERS[goal.status];
+		const settled = goal.status === "done" || goal.status === "archived";
+		const title = compactDescription(goal.title);
+		const styled =
+			goal.status === "active" ? th.fg("accent", th.bold(title)) : settled ? th.fg("dim", title) : title;
+		const stale = goalStalenessDays(goal, this.now());
+		const badge = stale === undefined ? "" : ` ${th.fg("muted", `${stale}d`)}`;
+		const blocked = isGoalBlocked(this.goals, goal) ? ` ${th.fg("muted", "blocked")}` : "";
+		return `${prefix} ${inset}${marker} ${styled}${badge}${blocked} ${th.fg("dim", goal.id)}`;
+	}
+
 	render(width: number): string[] {
 		const th = this.theme;
-		const lines = [
-			th.fg("accent", th.bold("Worklist")),
-			`${this.scope === "session" ? th.fg("accent", "[Session Tasks]") : "Session Tasks"}  ${this.scope === "project" ? th.fg("accent", "[Project Goals]") : "Project Goals"}`,
-			"",
-		];
-		const items = this.items();
-		if (this.scope === "project" && this.goals.length > 0) {
-			lines.push(th.fg("muted", `Goals: ${this.goalCountSummary()}`), "");
-		}
-		if (!items.length) lines.push(th.fg("dim", "  No items. Press a to add one."));
-		if (this.scope === "project") {
-			let itemIndex = 0;
-			for (const row of groupedProjectRows(this.visibleGoals())) {
-				if (row.kind === "group") {
-					// Stored strings are flattened before they become rows: a newline inside
-					// a group name would otherwise render one more physical line than the
-					// caller asked for, the way it would on the board.
-					lines.push(`  ${th.bold(`▾ ${compactDescription(row.label)}`)} ${th.fg("dim", `(${row.count})`)}`);
-					continue;
-				}
-				const goal = row.goal;
-				const prefix = itemIndex === this.selected ? th.fg("accent", ">") : " ";
-				const inset = row.indented ? "  " : "";
-				const marker =
-					goal.status === "active"
-						? th.fg("accent", GOAL_STATUS_MARKERS.active)
-						: GOAL_STATUS_MARKERS[goal.status];
-				const settled = goal.status === "done" || goal.status === "archived";
-				const title = compactDescription(goal.title);
-				const styled =
-					goal.status === "active" ? th.fg("accent", th.bold(title)) : settled ? th.fg("dim", title) : title;
-				const stale = goalStalenessDays(goal, this.now());
-				const badge = stale === undefined ? "" : ` ${th.fg("muted", `${stale}d`)}`;
-				const blocked = isGoalBlocked(this.goals, goal) ? ` ${th.fg("muted", "blocked")}` : "";
-				lines.push(`${prefix} ${inset}${marker} ${styled}${badge}${blocked} ${th.fg("dim", goal.id)}`);
-				itemIndex += 1;
-			}
-		} else {
-			items.forEach((item, index) => {
-				const status = item.status;
-				const marker = status === "done" ? "✓" : status === "doing" ? "●" : "○";
-				const prefix = index === this.selected ? th.fg("accent", ">") : " ";
-				lines.push(`${prefix} ${marker} ${compactDescription(item.title)} ${th.fg("dim", item.id)}`);
-			});
-		}
-		const selected = items[this.selected];
-		if (this.scope === "project" && selected && "description" in selected && selected.description) {
-			lines.push("", th.fg("muted", `Description: ${compactDescription(selected.description)}`));
-		}
+		const rows = this.rows();
+		const selectedItem = this.rowItem(rows[this.selected]);
+		const filter = this.scope === "session" ? this.sessionFilter : this.projectFilter;
+		const title = th.fg("accent", th.bold("Worklist"));
+		const tabs = `${this.scope === "session" ? th.fg("accent", "[Session Tasks]") : "Session Tasks"}  ${this.scope === "project" ? th.fg("accent", "[Project Goals]") : "Project Goals"}`;
+		const filterLine = th.fg("muted", `Filter: ${DASHBOARD_FILTER_LABELS[filter]} (f to change)`);
+		const summary =
+			this.scope === "project" && this.goals.length > 0
+				? th.fg("muted", `Goals: ${this.goalCountSummary()}`)
+				: undefined;
+		const description =
+			this.scope === "project" && selectedItem && "description" in selectedItem && selectedItem.description
+				? th.fg("muted", `Description: ${compactDescription(selectedItem.description)}`)
+				: undefined;
 		const help =
 			this.scope === "session"
-				? "tab switch  ↑↓ navigate  enter view  space advance  a append  i insert  shift+↑↓ move  e edit  d delete  esc close"
-				: "tab switch  ↑↓ navigate  enter view  space advance  a add  shift+↑↓ move  e edit  d delete  esc close";
-		lines.push("", th.fg("dim", help));
-		return lines.map((line) => truncateToWidth(line, width));
+				? "tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  enter view  space advance  a append  i insert  shift+↑↓ move  e edit  d delete  esc close"
+				: "tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  ←→/space collapse  enter open/view  a add  shift+↑↓ move  e edit  d delete  esc close";
+
+		const terminalHeight = this.terminalRows();
+		const targetHeight = Number.isFinite(terminalHeight)
+			? Math.max(1, Math.floor(terminalHeight * 0.8))
+			: Number.POSITIVE_INFINITY;
+		let showTitle = true;
+		let showTabs = true;
+		let showFilter = true;
+		let showSummary = summary !== undefined;
+		let showDescription = description !== undefined;
+		let showHelp = true;
+		const fixedRows = () =>
+			Number(showTitle) +
+			Number(showTabs) +
+			Number(showFilter) +
+			Number(showSummary) +
+			Number(showDescription) +
+			Number(showHelp);
+		if (Number.isFinite(targetHeight)) {
+			// A list row is the one irreducible part of the dashboard. On a very short
+			// terminal, discard optional context and then chrome in priority order so
+			// render() never hands Pi more rows than the terminal can display.
+			for (const hide of [
+				() => {
+					showDescription = false;
+				},
+				() => {
+					showSummary = false;
+				},
+				() => {
+					showTitle = false;
+				},
+				() => {
+					showHelp = false;
+				},
+				() => {
+					showTabs = false;
+				},
+				() => {
+					showFilter = false;
+				},
+			]) {
+				if (fixedRows() + 1 <= targetHeight) break;
+				hide();
+			}
+		}
+
+		// The compact overflow row is independent of the full key map. If the key
+		// map no longer fits, spend lower-priority chrome on this orientation cue so
+		// a clipped list still says that more rows exist and in which direction.
+		let showCompactOverflow = !showHelp && rows.length > 1 && targetHeight >= 2;
+		if (showCompactOverflow && Number.isFinite(targetHeight)) {
+			if (fixedRows() + 2 > targetHeight && showTabs) showTabs = false;
+			if (fixedRows() + 2 > targetHeight && showFilter) showFilter = false;
+			showCompactOverflow = fixedRows() + 2 <= targetHeight;
+		}
+
+		const top = [
+			...(showTitle ? [title] : []),
+			...(showTabs ? [tabs] : []),
+			...(showFilter ? [filterLine] : []),
+			...(showSummary && summary !== undefined ? [summary] : []),
+		];
+		const bottom = [
+			...(showDescription && description !== undefined ? [description] : []),
+			...(showHelp ? [th.fg("dim", help)] : []),
+			...(showCompactOverflow ? [""] : []),
+		];
+		if (!Number.isFinite(targetHeight)) {
+			top.push("");
+			bottom.unshift("");
+		} else {
+			// Keep the normal view breathable without spending rows that a short list
+			// or terminal needs for content.
+			let spare =
+				targetHeight - fixedRows() - Number(showCompactOverflow) - Math.max(1, Math.min(3, rows.length || 1));
+			if (spare > 0) {
+				top.push("");
+				spare -= 1;
+			}
+			if (spare > 0) bottom.unshift("");
+		}
+
+		const listHeight = Number.isFinite(targetHeight)
+			? Math.max(1, targetHeight - top.length - bottom.length)
+			: Math.max(1, rows.length);
+		this.listScroll = Math.min(this.listScroll, Math.max(0, rows.length - listHeight));
+		if (this.selected < this.listScroll) this.listScroll = this.selected;
+		if (this.selected >= this.listScroll + listHeight) this.listScroll = this.selected - listHeight + 1;
+
+		const listLines = rows.length
+			? rows
+					.slice(this.listScroll, this.listScroll + listHeight)
+					.map((row, offset) => this.renderRow(row, this.listScroll + offset))
+			: [th.fg("dim", "  No items in this view. Press f to change the filter or a to add one.")];
+		const hiddenAbove = this.listScroll;
+		const hiddenBelow = Math.max(0, rows.length - (this.listScroll + listLines.length));
+		if (hiddenAbove > 0 || hiddenBelow > 0) {
+			if (showHelp) {
+				bottom[bottom.length - 1] = th.fg("dim", `${hiddenAbove} above · ${hiddenBelow} below  ${help}`);
+			} else if (showCompactOverflow) {
+				bottom[bottom.length - 1] = th.fg("dim", `${hiddenAbove} above · ${hiddenBelow} below`);
+			}
+		}
+
+		return [...top, ...listLines, ...bottom].map((line) => truncateToWidth(line, width));
 	}
 
 	invalidate(): void {}
