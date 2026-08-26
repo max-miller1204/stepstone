@@ -38,19 +38,28 @@ Use Tab to switch lists and arrow keys to navigate.
 
 In Session Tasks, `a` appends, `i` inserts before the selected task, and Shift+Up or Shift+Down moves the selected task.
 Project Goals support `a` to add and the same Shift+Up and Shift+Down to reorder, but not insertion at a position.
+A goal moves within its own section, where a section boundary is an end of the list, and the move is written to the file exactly as the board writes it, so one keystroke means the same thing on both surfaces.
 In either scope, press Enter to open a detail window, Space to advance status, `e` to edit, `d` to delete, and Escape to close.
 Session Task edits change the title, while Project Goal edits can also change the description.
 
+The Project Goals pane reads in the same visual language as the [terminal goal board](board.md), which owns what each treatment means: the active goal keeps its own marker and full contrast, settled goals recede, a goal that has gone stale carries its age, and a goal waiting on work that has not landed is marked blocked.
+Goals are filed into headed sections by the rule the board's [sections](board.md#sections) describe, down to a roadmap where nothing is grouped staying a plain list.
+The one difference is that sections are always open here: collapse is the board's answer to owning a whole screen, and an inline pane has nothing to spend a screenful of headers on.
+A `Goals:` line above the list reports per-status counts across the whole roadmap.
+Archived goals are never listed in this pane and there is no filter key to reveal them, so that line also says how many of the counted goals are listed whenever the two numbers differ.
+
 The detail window wraps complete descriptions and the metadata it displays instead of truncating them.
 Use Up and Down or `j` and `k` to scroll long details, with Page Up and Page Down for larger jumps, then Enter or Escape to return to the dashboard.
-For a Session Task associated with a Project Goal, the detail window also shows the goal title and full description.
+For a Project Goal it also spells out the goal's group, branch, dependencies with each target's own status marker and whether it is satisfied, the goals it blocks, its links, and when it was completed, omitting every row the goal has nothing to fill.
+For a Session Task associated with a Project Goal, the detail window also shows the goal title, its group, and its full description.
 The dashboard keeps the current list and the selected task across each action, so a moved task stays selected at its new position.
 
 The full-screen [terminal goal board](board.md) is a separate, roadmap-only view that runs outside any session; the dashboard is the one that shows both lists.
 
 ## The widget and the prompt
 
-A compact widget shows the active Project Goal and up to three unfinished Session Tasks, with a `+N more` line when the queue is longer.
+A compact widget marks the active Project Goal with the board's own active marker, reports the roadmap's per-status counts on a line of its own, and lists up to three unfinished Session Tasks, with a `+N more` line when the queue is longer.
+It appears whenever the repository has any Project Goals, so a roadmap with no active goal and an empty task queue still reports its shape.
 Only the active goal and an intentionally bounded list of incomplete task titles and statuses are added to the current turn's system prompt, preserving their relative queue order, so the session's state is present without the roadmap crowding the context.
 
 ## Direct commands
