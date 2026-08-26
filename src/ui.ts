@@ -236,7 +236,7 @@ export class Dashboard {
 		if (!items.length) lines.push(th.fg("dim", "  No items. Press a to add one."));
 		if (this.scope === "project") {
 			let itemIndex = 0;
-			for (const row of groupedProjectRows(items as ProjectGoal[])) {
+			for (const row of groupedProjectRows(this.visibleGoals())) {
 				if (row.kind === "group") {
 					lines.push(`  ${th.bold(`▾ ${row.label}`)} ${th.fg("dim", `(${row.count})`)}`);
 					continue;

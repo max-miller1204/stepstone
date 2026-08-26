@@ -85,12 +85,6 @@ const LOCAL_GIT_ENV_KEYS = [
 	"GIT_WORK_TREE",
 ];
 
-function scrubLocalGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-	const scrubbed = { ...env };
-	for (const key of LOCAL_GIT_ENV_KEYS) delete scrubbed[key];
-	return scrubbed;
-}
-
 for (const key of LOCAL_GIT_ENV_KEYS) delete process.env[key];
 
 interface RunOptions {
@@ -132,7 +126,6 @@ function run(command: string, args: string[], options: RunOptions): string {
 	const result = spawnSync(command, args, {
 		cwd: options.cwd ?? repositoryRoot(),
 		encoding: "utf8",
-		env: scrubLocalGitEnv(),
 		input: options.input,
 		// Git's own plumbing answers with a path list rather than a page of text,
 		// and npm's output is inherited rather than captured, so the default megabyte

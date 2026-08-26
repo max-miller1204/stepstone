@@ -107,11 +107,12 @@ describe("generated roadmap", () => {
 		expect(ungrouped).toContain("`blank-group`");
 	});
 
-	it("flattens a group name so stored whitespace cannot forge a section", () => {
+	it("uses shared group identity while flattening headings enough to be markdown", () => {
 		const markdown = renderRoadmapMarkdown(
 			worklist([
 				goal({ id: "multiline", title: "Multiline", group: "Later\n## Foundation" }),
-				goal({ id: "spaced", title: "Spaced", group: "  Later   ## Foundation  " }),
+				goal({ id: "single-spaced", title: "Single spaced", group: "Pi Surfaces" }),
+				goal({ id: "spaced", title: "Spaced", group: "  Pi  Surfaces  " }),
 			]),
 		);
 		// A heading is the page's only structural element, so a stored newline may
@@ -119,12 +120,17 @@ describe("generated roadmap", () => {
 		expect(markdown.split("\n").filter((line) => line.startsWith("#"))).toEqual([
 			"# Roadmap",
 			"## Later ## Foundation",
+			"## Pi Surfaces",
+			"## Pi  Surfaces",
 		]);
-		// Groups that differ only in whitespace read as one heading, so they are one
-		// section rather than two the page shows under the same name.
-		const section = markdown.split("\n## Later ## Foundation\n")[1] ?? "";
-		expect(section).toContain("`multiline`");
-		expect(section).toContain("`spaced`");
+		// Group identity matches the board and Pi dashboard: trimming alone decides
+		// whether names are the same, so internal whitespace does not merge sections.
+		const singleSpacedSection = markdown.split("\n## Pi  Surfaces\n")[0] ?? "";
+		expect(singleSpacedSection).toContain("`single-spaced`");
+		expect(singleSpacedSection).not.toContain("`spaced`");
+		const doubleSpacedSection = markdown.split("\n## Pi  Surfaces\n")[1] ?? "";
+		expect(doubleSpacedSection).toContain("`spaced`");
+		expect(doubleSpacedSection).not.toContain("`single-spaced`");
 	});
 
 	it("states each goal's status, and that the graph has it waiting", () => {

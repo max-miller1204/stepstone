@@ -1,6 +1,6 @@
 import { GENERATOR_PATH, WORKLIST_RELATIVE_PATH } from "./cli-contract.ts";
 import { isGoalBlocked, resolveDependencies } from "./dependencies.ts";
-import { compactDescription, goalCount, goalStatusCounts } from "./format.ts";
+import { compactDescription, goalCount, goalSection, goalStatusCounts } from "./format.ts";
 import type { ProjectGoal, ProjectWorklist } from "./types.ts";
 
 /**
@@ -47,13 +47,24 @@ interface RoadmapSection {
  * sorted: a group is placed by the first goal that names it, and the goals
  * inside one stay in the order somebody arranged them in.
  */
+function roadmapGroupHeading(group: string): string {
+	return group
+		.replace(/\r\n?/g, "\n")
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean)
+		.join(" ");
+}
+
 function roadmapSections(goals: readonly ProjectGoal[]): RoadmapSection[] {
 	const sections = new Map<string, RoadmapSection>();
 	for (const goal of goals) {
-		const heading = compactDescription(goal.group ?? "") || UNGROUPED_HEADING;
-		const section = sections.get(heading) ?? { heading, goals: [] };
-		section.goals.push(goal);
-		sections.set(heading, section);
+		const section = goalSection(goal);
+		const key = section ?? UNGROUPED_HEADING;
+		const heading = section === undefined ? UNGROUPED_HEADING : roadmapGroupHeading(section);
+		const existing = sections.get(key) ?? { heading, goals: [] };
+		existing.goals.push(goal);
+		sections.set(key, existing);
 	}
 	return [...sections.values()];
 }
