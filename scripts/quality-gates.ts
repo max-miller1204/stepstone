@@ -65,6 +65,34 @@ const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
  */
 const NPM_NEEDS_SHELL = process.platform === "win32";
 
+/**
+ * Git runs hooks with repository-local environment variables such as GIT_DIR.
+ * The gates intentionally run Git by cwd and spawn tests that create their own
+ * temporary repositories, so those inherited variables would make every nested
+ * `git init` and `git rev-parse` talk to the hook's repository instead. Scrub
+ * only Git's local repository selectors, leaving transport and auth variables
+ * such as GIT_SSH_COMMAND alone.
+ */
+const LOCAL_GIT_ENV_KEYS = [
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_COMMON_DIR",
+	"GIT_DIR",
+	"GIT_INDEX_FILE",
+	"GIT_NAMESPACE",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_PREFIX",
+	"GIT_QUARANTINE_PATH",
+	"GIT_WORK_TREE",
+];
+
+function scrubLocalGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+	const scrubbed = { ...env };
+	for (const key of LOCAL_GIT_ENV_KEYS) delete scrubbed[key];
+	return scrubbed;
+}
+
+for (const key of LOCAL_GIT_ENV_KEYS) delete process.env[key];
+
 interface RunOptions {
 	/** Where to run. Defaults to the repository root. */
 	cwd?: string;
@@ -104,6 +132,7 @@ function run(command: string, args: string[], options: RunOptions): string {
 	const result = spawnSync(command, args, {
 		cwd: options.cwd ?? repositoryRoot(),
 		encoding: "utf8",
+		env: scrubLocalGitEnv(),
 		input: options.input,
 		// Git's own plumbing answers with a path list rather than a page of text,
 		// and npm's output is inherited rather than captured, so the default megabyte
