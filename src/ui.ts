@@ -76,25 +76,18 @@ export interface DashboardResult {
 }
 
 type DashboardProjectRow =
-	| { kind: "group"; key: string; label: string; count: number }
-	| { kind: "goal"; key: string; goal: ProjectGoal; indented: boolean };
+	| { kind: "group"; label: string; count: number }
+	| { kind: "goal"; goal: ProjectGoal; indented: boolean };
 
 function groupedProjectRows(goals: readonly ProjectGoal[]): DashboardProjectRow[] {
 	const sections = goalSections(goals);
 	if (isUngroupedList(sections))
-		return sections[0].goals.map((goal) => ({ kind: "goal", key: goal.id, goal, indented: false }));
+		return sections[0].goals.map((goal) => ({ kind: "goal", goal, indented: false }));
 
 	const rows: DashboardProjectRow[] = [];
 	for (const section of sections) {
-		rows.push({
-			kind: "group",
-			key: `group:${section.key}`,
-			label: section.label,
-			count: section.goals.length,
-		});
-		rows.push(
-			...section.goals.map((goal) => ({ kind: "goal" as const, key: goal.id, goal, indented: true })),
-		);
+		rows.push({ kind: "group", label: section.label, count: section.goals.length });
+		rows.push(...section.goals.map((goal) => ({ kind: "goal" as const, goal, indented: true })));
 	}
 	return rows;
 }
@@ -120,6 +113,22 @@ export class Dashboard {
 	/** The goals the Project Goal pane lists, before they are grouped into rows. */
 	private visibleGoals(): ProjectGoal[] {
 		return this.goals.filter((goal) => goal.status !== "archived");
+	}
+
+	/**
+	 * The roadmap's shape, counted over every goal rather than the listed ones.
+	 *
+	 * The chips state what the roadmap holds, which is the same thing the terminal
+	 * board's header states, so an archived goal is counted here even though this
+	 * pane never lists one and offers no filter key to reveal it. That would leave
+	 * a chip standing for rows nobody can find, so the board's `shown of total` is
+	 * carried over to say how many of the counted goals are on screen, and it is
+	 * only worth a reader's attention when the two numbers differ.
+	 */
+	private goalCountSummary(): string {
+		const listed = this.visibleGoals().length;
+		const counts = goalCountLine(this.goals);
+		return listed === this.goals.length ? counts : `${counts} · ${listed} of ${this.goals.length} listed`;
 	}
 
 	private items(): Array<SessionTask | ProjectGoal> {
@@ -222,7 +231,7 @@ export class Dashboard {
 		];
 		const items = this.items();
 		if (this.scope === "project" && this.goals.length > 0) {
-			lines.push(th.fg("muted", `Goals: ${goalCountLine(this.goals)}`), "");
+			lines.push(th.fg("muted", `Goals: ${this.goalCountSummary()}`), "");
 		}
 		if (!items.length) lines.push(th.fg("dim", "  No items. Press a to add one."));
 		if (this.scope === "project") {
@@ -281,8 +290,14 @@ export type DashboardDetailItem =
 
 export interface DashboardDetailOptions {
 	item: DashboardDetailItem;
-	/** The roadmap snapshot the selected goal came from, used for derived dependency rows. */
-	goals?: readonly ProjectGoal[];
+	/**
+	 * The roadmap snapshot the selected goal came from, used for derived dependency rows.
+	 *
+	 * Required rather than defaulted to the one selected goal: an edge resolves
+	 * against the goals it is given, so a caller that passed nothing would have
+	 * every real dependency rendered as missing rather than as what it is.
+	 */
+	goals: readonly ProjectGoal[];
 	theme: Theme;
 	terminalRows: () => number;
 	done: () => void;
@@ -347,7 +362,7 @@ function buildDetailContent(options: DashboardDetailOptions, width: number): str
 	};
 
 	if (item.scope === "project") {
-		buildGoalDetailSections(item.goal, options.goals ?? [item.goal], addSection);
+		buildGoalDetailSections(item.goal, options.goals, addSection);
 	} else {
 		const { task, goal } = item;
 		addSection("Title", task.title, "accent");

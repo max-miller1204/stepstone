@@ -177,6 +177,31 @@ describe("dashboard ordering controls", () => {
 		expect(output.indexOf("Alpha two")).toBeLessThan(output.indexOf("Beta one"));
 	});
 
+	it("says how many of the counted Project Goals the pane lists", () => {
+		const render = (roadmap: ProjectGoal[]) =>
+			new Dashboard(
+				tasks,
+				roadmap,
+				identityTheme,
+				() => {},
+				{ scope: "project" },
+				() => Date.parse("2026-01-06T00:00:00.000Z"),
+			)
+				.render(100)
+				.join("\n");
+		const live: ProjectGoal = { ...goals[0], id: "live-one", title: "Live one", status: "open" };
+		const archived: ProjectGoal = { ...goals[0], id: "gone-one", title: "Gone one", status: "archived" };
+
+		const withArchived = render([live, archived]);
+		expect(withArchived).toContain("Goals: ○ 1 · ◌ 1 · 1 of 2 listed");
+		expect(withArchived).not.toContain("Gone one");
+
+		// Every counted goal is on screen, so there is nothing to reconcile.
+		const listedOnly = render([live]);
+		expect(listedOnly).toContain("Goals: ○ 1");
+		expect(listedOnly).not.toContain("listed");
+	});
+
 	it("stops grouped Project Goal moves at section boundaries", () => {
 		const roadmap: ProjectGoal[] = [
 			{ ...goals[0], id: "alpha-one", title: "Alpha one", group: "Alpha", status: "open" },
@@ -330,6 +355,7 @@ describe("dashboard detail view", () => {
 		};
 		const detail = new DashboardDetail({
 			item: { scope: "project", goal },
+			goals: [goal],
 			theme,
 			terminalRows: () => 40,
 			done: () => {},
@@ -349,6 +375,7 @@ describe("dashboard detail view", () => {
 		const task = { ...tasks[1], goalId: goals[0].id };
 		const detail = new DashboardDetail({
 			item: { scope: "session", task, goal: goals[0] },
+			goals,
 			theme,
 			terminalRows: () => 40,
 			done: () => {},
@@ -410,6 +437,7 @@ describe("dashboard detail view", () => {
 		const goal = { ...goals[0], description: "line ".repeat(200) };
 		const detail = new DashboardDetail({
 			item: { scope: "project", goal },
+			goals: [goal],
 			theme,
 			terminalRows: () => 12,
 			done: () => {
