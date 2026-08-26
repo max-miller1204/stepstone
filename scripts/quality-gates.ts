@@ -65,6 +65,40 @@ const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
  */
 const NPM_NEEDS_SHELL = process.platform === "win32";
 
+/**
+ * Git runs hooks with repository-local environment variables such as GIT_DIR.
+ * The gates intentionally run Git by cwd and spawn tests that create their own
+ * temporary repositories, so those inherited variables would make every nested
+ * `git init` and `git rev-parse` talk to the hook's repository instead. Scrub
+ * only Git's local repository selectors, leaving transport and auth variables
+ * such as GIT_SSH_COMMAND alone.
+ */
+const LOCAL_GIT_ENV_KEYS = [
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	"GIT_COMMON_DIR",
+	"GIT_DIR",
+	"GIT_INDEX_FILE",
+	"GIT_NAMESPACE",
+	"GIT_OBJECT_DIRECTORY",
+	"GIT_PREFIX",
+	"GIT_QUARANTINE_PATH",
+	"GIT_WORK_TREE",
+];
+
+/**
+ * Git's index for this hook invocation, captured before the scrub below.
+ *
+ * Git always exports GIT_INDEX_FILE to a pre-commit hook, and for a partial
+ * commit (`git commit -- <path>`, `--only`, `-p`) it names a temporary index
+ * holding exactly the tree that will be committed rather than the real one.
+ * The index-reading helpers hand it back to Git one command at a time rather
+ * than leaving it in the environment, where an absolute index path would follow
+ * a nested `git init` into the temporary repositories the tests build.
+ */
+const HOOK_INDEX_FILE = process.env.GIT_INDEX_FILE;
+
+for (const key of LOCAL_GIT_ENV_KEYS) delete process.env[key];
+
 interface RunOptions {
 	/** Where to run. Defaults to the repository root. */
 	cwd?: string;
@@ -74,6 +108,8 @@ interface RunOptions {
 	input?: string;
 	/** Return the child's stdout rather than letting it write to this process's. */
 	capture?: boolean;
+	/** Extra environment entries for this run only, layered over the scrubbed environment. */
+	env?: Record<string, string>;
 	/** Run through the platform shell. See `NPM_NEEDS_SHELL`, its only caller. */
 	shell?: boolean;
 }
@@ -104,6 +140,7 @@ function run(command: string, args: string[], options: RunOptions): string {
 	const result = spawnSync(command, args, {
 		cwd: options.cwd ?? repositoryRoot(),
 		encoding: "utf8",
+		env: options.env === undefined ? undefined : { ...process.env, ...options.env },
 		input: options.input,
 		// Git's own plumbing answers with a path list rather than a page of text,
 		// and npm's output is inherited rather than captured, so the default megabyte
@@ -147,12 +184,19 @@ function git(args: string[], options: Partial<RunOptions> = {}): string {
 	return run("git", args, { capture: true, timeoutMs: GIT_COMMAND_TIMEOUT_MS, ...options });
 }
 
+/** A Git command that reads the index the invoking hook was handed, if any. */
+function indexGit(args: string[], options: Partial<RunOptions> = {}): string {
+	const hookIndex: Record<string, string> =
+		HOOK_INDEX_FILE === undefined ? {} : { GIT_INDEX_FILE: HOOK_INDEX_FILE };
+	return git(args, { ...options, env: hookIndex });
+}
+
 function nulSeparated(output: string): string[] {
 	return output.split("\0").filter(Boolean);
 }
 
 function stagedPaths(): string[] {
-	return nulSeparated(git(["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]));
+	return nulSeparated(indexGit(["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]));
 }
 
 /**
@@ -162,7 +206,7 @@ function stagedPaths(): string[] {
  * Biome falls back to its own defaults exactly as `npm run check` would.
  */
 function trackedConfig(): string[] {
-	return nulSeparated(git(["ls-files", "-z", "--", BIOME_CONFIG]));
+	return nulSeparated(indexGit(["ls-files", "-z", "--", BIOME_CONFIG]));
 }
 
 /**
@@ -175,7 +219,7 @@ function trackedConfig(): string[] {
  * arrive with one.
  */
 function snapshotIndex(paths: string[], destination: string): void {
-	git(["checkout-index", "--force", "-z", "--stdin", `--prefix=${destination.replaceAll("\\", "/")}/`], {
+	indexGit(["checkout-index", "--force", "-z", "--stdin", `--prefix=${destination.replaceAll("\\", "/")}/`], {
 		input: `${paths.join("\0")}\0`,
 		timeoutMs: GIT_CHECKOUT_TIMEOUT_MS,
 	});

@@ -1,12 +1,19 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { parseTasksCommand, WORKLIST_PROMPT_GUIDELINES } from "../src/extension.ts";
+import { addProjectGoal, moveProjectGoal, readProjectGoals } from "../src/project-mutations.ts";
+import { readProjectWorklist } from "../src/project-store.ts";
+import { renderRoadmapMarkdown } from "../src/roadmap.ts";
 import type { ProjectGoal, SessionTask } from "../src/types.ts";
 import {
 	buildPromptSummary,
 	buildWidgetLines,
 	Dashboard,
+	type DashboardAction,
 	DashboardDetail,
 	type DashboardResult,
 	type DashboardState,
@@ -28,12 +35,31 @@ const goals: ProjectGoal[] = [
 	},
 ];
 
+const identityTheme = {
+	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+} as Theme;
+
 describe("widget and prompt summary", () => {
 	it("caps the widget and hides completed tasks", () => {
 		const lines = buildWidgetLines(tasks, goals);
-		expect(lines).toHaveLength(5);
+		expect(lines).toHaveLength(6);
+		expect(lines[0]).toBe("◆ Active: Ship v1");
+		expect(lines[1]).toBe("Goals: ◆ 1");
 		expect(lines.join("\n")).not.toContain("Task 0");
 		expect(lines.at(-1)).toBe("+2 more");
+	});
+
+	it("shows compact Project Goal status counts even without an active goal", () => {
+		const lines = buildWidgetLines(
+			[],
+			[
+				{ ...goals[0], status: "open" },
+				{ ...goals[0], id: "done", title: "Done", status: "done" },
+				{ ...goals[0], id: "archived", title: "Archived", status: "archived" },
+			],
+		);
+		expect(lines).toEqual(["Goals: ○ 1 · ✓ 1 · ◌ 1"]);
 	});
 
 	it("caps prompt task detail", () => {
@@ -108,14 +134,150 @@ describe("dashboard ordering controls", () => {
 			action: { kind: "move", scope: "project", id: "g2", beforeId: "g1" },
 			state,
 		});
+		// A goal moving down is written as the pair it ends up in, so the goal that
+		// ends up first keeps the file position its section is placed by.
 		expect(dashboardInput("\u001b[1;2B", state, tasks, roadmap)).toEqual({
-			action: { kind: "move", scope: "project", id: "g2", afterId: "g3" },
+			action: { kind: "move", scope: "project", id: "g3", beforeId: "g2" },
 			state,
 		});
 
 		// The ends of the list have no neighbour to anchor against, so nothing moves.
 		const first: DashboardState = { scope: "project", selectedId: "g1" };
 		expect(dashboardInput("\u001b[1;2A", first, tasks, roadmap)).toBeUndefined();
+	});
+
+	it("targets actions and moves to the rendered grouped Project Goal order", () => {
+		const roadmap: ProjectGoal[] = [
+			{ ...goals[0], id: "alpha-one", title: "Alpha one", group: "Alpha", status: "open" },
+			{ ...goals[0], id: "beta-one", title: "Beta one", group: "Beta", status: "open" },
+			{ ...goals[0], id: "alpha-two", title: "Alpha two", group: "Alpha", status: "open" },
+		];
+		const state: DashboardState = { scope: "project", selectedId: "alpha-two" };
+
+		expect(dashboardInput("\r", state, tasks, roadmap)).toEqual({
+			action: { kind: "view", scope: "project", id: "alpha-two" },
+			state,
+		});
+		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
+			action: { kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" },
+			state,
+		});
+
+		const dashboard = new Dashboard(
+			tasks,
+			roadmap,
+			identityTheme,
+			() => {},
+			state,
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100).join("\n");
+		expect(output).toContain("  ○ Alpha one alpha-one");
+		expect(output).toContain(">   ○ Alpha two alpha-two");
+		expect(output.indexOf("Alpha two")).toBeLessThan(output.indexOf("Beta one"));
+	});
+
+	it("says how many of the counted Project Goals the pane lists", () => {
+		const render = (roadmap: ProjectGoal[]) =>
+			new Dashboard(
+				tasks,
+				roadmap,
+				identityTheme,
+				() => {},
+				{ scope: "project" },
+				() => Date.parse("2026-01-06T00:00:00.000Z"),
+			)
+				.render(100)
+				.join("\n");
+		const live: ProjectGoal = { ...goals[0], id: "live-one", title: "Live one", status: "open" };
+		const archived: ProjectGoal = { ...goals[0], id: "gone-one", title: "Gone one", status: "archived" };
+
+		const withArchived = render([live, archived]);
+		expect(withArchived).toContain("Goals: ○ 1 · ◌ 1 · 1 of 2 listed");
+		expect(withArchived).not.toContain("Gone one");
+
+		// Every counted goal is on screen, so there is nothing to reconcile.
+		const listedOnly = render([live]);
+		expect(listedOnly).toContain("Goals: ○ 1");
+		expect(listedOnly).not.toContain("listed");
+	});
+
+	it("stops grouped Project Goal moves at section boundaries", () => {
+		const roadmap: ProjectGoal[] = [
+			{ ...goals[0], id: "alpha-one", title: "Alpha one", group: "Alpha", status: "open" },
+			{ ...goals[0], id: "beta-one", title: "Beta one", group: "Beta", status: "open" },
+			{ ...goals[0], id: "alpha-two", title: "Alpha two", group: "Alpha", status: "open" },
+			{ ...goals[0], id: "loose-one", title: "Loose one", status: "open" },
+		];
+
+		expect(
+			dashboardInput("\u001b[1;2B", { scope: "project", selectedId: "alpha-two" }, tasks, roadmap),
+		).toBeUndefined();
+		expect(
+			dashboardInput("\u001b[1;2A", { scope: "project", selectedId: "beta-one" }, tasks, roadmap),
+		).toBeUndefined();
+		expect(
+			dashboardInput("\u001b[1;2A", { scope: "project", selectedId: "loose-one" }, tasks, roadmap),
+		).toBeUndefined();
+	});
+
+	it("keeps section order when a grouped Project Goal steps down its own section", async () => {
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-dashboard-")), ".worklist", "worklist.json");
+		await addProjectGoal(path, "Alpha one", { group: "Alpha" });
+		await addProjectGoal(path, "Beta one", { group: "Beta" });
+		await addProjectGoal(path, "Alpha two", { group: "Alpha" });
+		const { goals: roadmap } = await readProjectGoals(path);
+
+		const result = dashboardInput(
+			"\u001b[1;2B",
+			{ scope: "project", selectedId: "alpha-one" },
+			tasks,
+			roadmap,
+		);
+		const action = result?.action as Extract<DashboardAction, { kind: "move" }> | undefined;
+		expect(action).toEqual({ kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" });
+		expect(result?.state.selectedId).toBe("alpha-one");
+		if (action?.beforeId === undefined) throw new Error("expected a before-anchored move");
+
+		const moved = await moveProjectGoal(path, action.id, { beforeId: action.beforeId });
+		expect(moved.goals.map((goal) => goal.id)).toEqual(["alpha-two", "alpha-one", "beta-one"]);
+
+		// The generated page is where a crossed section order would be committed, so
+		// the move is checked against its headings rather than the file order alone.
+		const { data } = await readProjectWorklist(path);
+		const headings = renderRoadmapMarkdown(data)
+			.split("\n")
+			.filter((line) => line.startsWith("## "));
+		expect(headings).toEqual(["## Alpha", "## Beta"]);
+	});
+
+	it("returns no entry carrying a newline from stored goal and group text", () => {
+		const multiline: ProjectGoal = {
+			...goals[0],
+			id: "multi",
+			title: "Two\nlines",
+			group: "Pi\nSurfaces",
+			status: "active",
+			description: "Line one\nline two",
+		};
+
+		const widget = buildWidgetLines([], [multiline]);
+		expect(widget.every((line) => !line.includes("\n"))).toBe(true);
+		expect(widget[0]).toBe("◆ Active: Two lines");
+
+		const dashboard = new Dashboard(
+			[],
+			[multiline],
+			identityTheme,
+			() => {},
+			{ scope: "project", selectedId: "multi" },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100);
+		expect(output.every((line) => !line.includes("\n"))).toBe(true);
+		expect(output.join("\n")).toContain("▾ Pi Surfaces");
+		expect(output.join("\n")).toContain("◆ Two lines multi");
+		expect(output.join("\n")).toContain("Description: Line one line two");
 	});
 
 	it("inserts before the selected Session Task and appends separately", () => {
@@ -159,11 +321,60 @@ describe("dashboard ordering controls", () => {
 	});
 });
 
+describe("dashboard project rendering", () => {
+	it("groups Project Goals and mirrors board status cues", () => {
+		const roadmap: ProjectGoal[] = [
+			{
+				...goals[0],
+				id: "active",
+				title: "Active goal",
+				group: "Foundation",
+				status: "active",
+			},
+			{
+				...goals[0],
+				id: "done",
+				title: "Done goal",
+				group: "Foundation",
+				status: "done",
+			},
+			{
+				...goals[0],
+				id: "waiting",
+				title: "Waiting goal",
+				status: "open",
+				updatedAt: "2025-12-01T00:00:00.000Z",
+			},
+			{
+				...goals[0],
+				id: "archived",
+				title: "Archived goal",
+				group: "Retired",
+				status: "archived",
+			},
+		];
+		const dashboard = new Dashboard(
+			[],
+			roadmap,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100).join("\n");
+
+		expect(output).toContain("Goals: ◆ 1 · ○ 1 · ✓ 1 · ◌ 1");
+		expect(output).toContain("▾ Foundation (2)");
+		expect(output).toContain("▾ Ungrouped (1)");
+		expect(output).toContain(">   ◆ Active goal active");
+		expect(output).toContain("✓ Done goal done");
+		expect(output).toMatch(/○ Waiting goal \d+d waiting/);
+		expect(output).not.toContain("Archived goal archived");
+	});
+});
+
 describe("dashboard detail view", () => {
-	const theme = {
-		fg: (_color: string, text: string) => text,
-		bold: (text: string) => text,
-	} as Theme;
+	const theme = identityTheme;
 
 	it("wraps and displays the complete Project Goal description", () => {
 		const goal = {
@@ -173,6 +384,7 @@ describe("dashboard detail view", () => {
 		};
 		const detail = new DashboardDetail({
 			item: { scope: "project", goal },
+			goals: [goal],
 			theme,
 			terminalRows: () => 40,
 			done: () => {},
@@ -192,6 +404,7 @@ describe("dashboard detail view", () => {
 		const task = { ...tasks[1], goalId: goals[0].id };
 		const detail = new DashboardDetail({
 			item: { scope: "session", task, goal: goals[0] },
+			goals,
 			theme,
 			terminalRows: () => 40,
 			done: () => {},
@@ -203,11 +416,57 @@ describe("dashboard detail view", () => {
 		expect(output).toContain(goals[0].description);
 	});
 
+	it("surfaces Project Goal grouping, dependencies, completion time, and links", () => {
+		const dependency: ProjectGoal = {
+			...goals[0],
+			id: "dependency",
+			title: "Dependency",
+			status: "done",
+			completedAt: "2026-01-03T12:00:00.000Z",
+		};
+		const goal: ProjectGoal = {
+			...goals[0],
+			id: "delivery",
+			title: "Delivery",
+			status: "done",
+			group: "Delivery",
+			completedAt: "2026-01-04T09:30:00.000Z",
+			dependsOn: [dependency.id],
+			links: ["https://example.com/evidence"],
+		};
+		const dependent: ProjectGoal = {
+			...goals[0],
+			id: "dependent",
+			title: "Dependent",
+			status: "open",
+			dependsOn: [goal.id],
+		};
+		const detail = new DashboardDetail({
+			item: { scope: "project", goal },
+			goals: [dependency, goal, dependent],
+			theme,
+			terminalRows: () => 40,
+			done: () => {},
+		});
+		const output = detail.render(72).join("\n");
+
+		expect(output).toContain("Group");
+		expect(output).toContain("Delivery");
+		expect(output).toContain("Completed");
+		expect(output).toContain("2026-01-04");
+		expect(output).toContain("Depends on");
+		expect(output).toContain("✓ dependency (satisfied)");
+		expect(output).toContain("Blocks");
+		expect(output).toContain("○ dependent");
+		expect(output).toContain("https://example.com/evidence");
+	});
+
 	it("scrolls long details and closes with Escape", () => {
 		let closed = false;
 		const goal = { ...goals[0], description: "line ".repeat(200) };
 		const detail = new DashboardDetail({
 			item: { scope: "project", goal },
+			goals: [goal],
 			theme,
 			terminalRows: () => 12,
 			done: () => {

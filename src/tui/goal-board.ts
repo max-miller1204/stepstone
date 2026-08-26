@@ -1,6 +1,17 @@
 import type { WorklistOperation } from "../application-service.ts";
 import { dependencyWaves, dependentGoals, isGoalBlocked, resolveDependencies } from "../dependencies.ts";
-import { GOAL_STATUS_RANK, goalStatusCounts } from "../format.ts";
+import {
+	formatGoalTimestamp,
+	GOAL_STATUS_MARKERS,
+	GOAL_STATUS_RANK,
+	goalSection,
+	goalSections,
+	goalStalenessDays,
+	goalStatusCounts,
+	isUngroupedList,
+	resolveSectionReorder,
+	UNGROUPED_SECTION_KEY,
+} from "../format.ts";
 import { findGoalByStoredId, matchesGoalQuery } from "../goal-selection.ts";
 import type { ProjectGoal, ProjectGoalStatus } from "../types.ts";
 import type { KeyEvent } from "./keys.ts";
@@ -84,23 +95,6 @@ const SORT_LABELS: Readonly<Record<GoalSort, string>> = {
 const SETTLED_WAVE = 0;
 const UNREACHABLE_WAVE = Number.MAX_SAFE_INTEGER;
 
-/**
- * One glyph per status.
- *
- * The active goal gets a diamond rather than a fourth circle so the pinned row
- * still reads as the odd one out on a terminal with no color at all.
- */
-const STATUS_MARKERS: Readonly<Record<ProjectGoalStatus, string>> = {
-	active: "◆",
-	open: "○",
-	done: "✓",
-	archived: "◌",
-};
-
-/** A goal still in play and untouched for this long is worth pointing at. */
-const STALE_AFTER_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /** Narrower than this and a row drops its staleness badge rather than its title. */
 const MIN_BADGED_TITLE_WIDTH = 12;
 
@@ -175,9 +169,6 @@ type ListRow =
 	/** `indented` is false only where the whole list is one plain run of goals. */
 	| { kind: "goal"; key: string; goal: ProjectGoal; indented: boolean };
 
-const UNGROUPED_KEY = "\u0000ungrouped";
-const UNGROUPED_LABEL = "Ungrouped";
-
 /** The list row key for a section, whose name shares a namespace with goal ids. */
 function groupRowKey(sectionKey: string): string {
 	return `group:${sectionKey}`;
@@ -185,17 +176,6 @@ function groupRowKey(sectionKey: string): string {
 
 function goalRowKey(goal: ProjectGoal): string {
 	return `goal:${goal.id}`;
-}
-
-/**
- * The section a goal reads as being filed under.
- *
- * A goal file is editable by hand and the schema only requires a string here, so
- * a blank or padded group is normalized the way a written one would have been
- * rather than rendering a header with no name on it.
- */
-function goalSection(goal: ProjectGoal): string | undefined {
-	return goal.group?.trim() || undefined;
 }
 
 /** Where a selection key sits among rows, or -1 when nothing is selected. */
@@ -293,29 +273,6 @@ function matchesFilter(goal: ProjectGoal, filter: GoalFilter): boolean {
 /** The one goal in flight, which every derived order lifts to the top. */
 function isActive(goal: ProjectGoal): boolean {
 	return goal.status === "active";
-}
-
-/**
- * Whole days since a goal was last touched, once that crosses the threshold.
- *
- * Only work still in play can go stale: a done or archived goal is finished
- * rather than neglected, so its age says nothing the board should nag about.
- */
-function stalenessDays(goal: ProjectGoal, now: number): number | undefined {
-	if (goal.status !== "open" && goal.status !== "active") return undefined;
-	const updated = Date.parse(goal.updatedAt);
-	if (!Number.isFinite(updated)) return undefined;
-	const days = Math.floor((now - updated) / DAY_MS);
-	return days >= STALE_AFTER_DAYS ? days : undefined;
-}
-
-/** Render an ISO timestamp as local `YYYY-MM-DD HH:MM`, or pass it through unchanged. */
-function formatTimestamp(value: string): string {
-	const parsed = new Date(value);
-	if (Number.isNaN(parsed.getTime())) return value;
-	const pad = (part: number) => String(part).padStart(2, "0");
-	const date = `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
-	return `${date} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 }
 
 function quoteTitle(title: string): string {
@@ -416,14 +373,11 @@ export class GoalBoard {
 	/**
 	 * The file move that lands the reorder the user asked for on screen.
 	 *
-	 * The pair is always rewritten as "put the goal that ends up first immediately
-	 * before the goal that ends up second", never as "put the moved goal after its
-	 * neighbour". Both spell the same two-goal order, but only the first leaves a
-	 * section where it was: sections are ordered by the earliest file position any
-	 * of their goals holds, so re-inserting a section's own first goal further down
-	 * hands that position to whatever goal happens to sit between them and makes an
-	 * unrelated section jump the queue. Inserting at a position the section already
-	 * occupies cannot move the section at all.
+	 * The placement itself comes from the shared rule every goal surface reorders
+	 * by, so the board and the inline dashboard write the same file for the same
+	 * keystroke. Resolved here against the goals as they are now, so an intent
+	 * that raced a reload still names goals this board holds, and a source that
+	 * has since gone falls back to a direction step the mutation resolves itself.
 	 */
 	resolveReorder(intent: Extract<BoardIntent, { kind: "reorder" }>): WorklistOperation | undefined {
 		const sectionIds = new Set(
@@ -442,11 +396,8 @@ export class GoalBoard {
 				direction: intent.delta < 0 ? "up" : "down",
 			};
 		}
-		const sourceIndex = section.findIndex((goal) => goal.id === source.id);
-		const anchor = section[sourceIndex + intent.delta];
-		if (!anchor) return undefined;
-		const [first, second] = intent.delta < 0 ? [source, anchor] : [anchor, source];
-		return { scope: "project", action: "move", id: first.id, beforeId: second.id };
+		const placement = resolveSectionReorder(section, source.id, intent.delta);
+		return placement && { scope: "project", action: "move", ...placement };
 	}
 
 	get selectedGoal(): ProjectGoal | undefined {
@@ -516,11 +467,8 @@ export class GoalBoard {
 	}
 
 	/**
-	 * Group filtered goals in first-appearance order, with ungrouped goals last.
-	 *
-	 * The implicit bucket is kept beside the named sections rather than inside
-	 * them, so a goal filed under a group that happens to spell the bucket's own
-	 * key cannot overwrite it and disappear from the board.
+	 * The filtered goals as rows, grouped through the shared section rule so the
+	 * board and the inline dashboard cannot file the same roadmap two ways.
 	 *
 	 * A roadmap where nothing is grouped is a plain list rather than one section
 	 * holding everything: a header that is the only header says nothing, and it
@@ -537,31 +485,14 @@ export class GoalBoard {
 	 * somewhere past 1500. Measure before trading that correctness for speed.
 	 */
 	private listRows(): ListRow[] {
-		const named = new Map<string, ProjectGoal[]>();
-		const ungrouped: ProjectGoal[] = [];
-		for (const goal of this.visibleGoals()) {
-			const section = goalSection(goal);
-			if (section === undefined) {
-				ungrouped.push(goal);
-				continue;
-			}
-			const existing = named.get(section);
-			if (existing) existing.push(goal);
-			else named.set(section, [goal]);
-		}
-		const sections: { key: string; label: string; goals: ProjectGoal[] }[] = [...named].map(
-			([label, goals]) => ({ key: label, label, goals }),
-		);
-		if (ungrouped.length > 0) {
-			if (sections.length === 0) {
-				return ungrouped.map((goal) => ({
-					kind: "goal" as const,
-					key: goalRowKey(goal),
-					goal,
-					indented: false,
-				}));
-			}
-			sections.push({ key: UNGROUPED_KEY, label: UNGROUPED_LABEL, goals: ungrouped });
+		const sections = goalSections(this.visibleGoals());
+		if (isUngroupedList(sections)) {
+			return sections[0].goals.map((goal) => ({
+				kind: "goal" as const,
+				key: goalRowKey(goal),
+				goal,
+				indented: false,
+			}));
 		}
 
 		const rows: ListRow[] = [];
@@ -698,7 +629,7 @@ export class GoalBoard {
 	private restoreSelection(goal: ProjectGoal | undefined): void {
 		const rows = this.listRows();
 		if (goal !== undefined) {
-			const wanted = [goalRowKey(goal), groupRowKey(goalSection(goal) ?? UNGROUPED_KEY)];
+			const wanted = [goalRowKey(goal), groupRowKey(goalSection(goal) ?? UNGROUPED_SECTION_KEY)];
 			for (const key of wanted) {
 				const index = rows.findIndex((row) => row.key === key);
 				if (index >= 0) {
@@ -1212,7 +1143,7 @@ export class GoalBoard {
 	private renderStatusCounts(goals: readonly ProjectGoal[]): string {
 		const { dim } = this.palette;
 		return goalStatusCounts(goals)
-			.map((entry) => this.statusStyle(entry.status)(`${STATUS_MARKERS[entry.status]} ${entry.count}`))
+			.map((entry) => this.statusStyle(entry.status)(`${GOAL_STATUS_MARKERS[entry.status]} ${entry.count}`))
 			.join(dim(SEPARATOR));
 	}
 
@@ -1402,14 +1333,14 @@ export class GoalBoard {
 		// What the title and the badge share, once the pointer, the marker, their
 		// spaces, and the inset have taken theirs.
 		const titleSpace = available - 4 - visibleWidth(inset);
-		const stale = stalenessDays(goal, this.now());
+		const stale = goalStalenessDays(goal, this.now());
 		const badge = stale === undefined ? "" : `${stale}d`;
 		// A space on each side keeps the badge off both the title and the border.
 		// It is a nudge, though, so a list too narrow to carry one goes without.
 		const slot = badge === "" ? 0 : visibleWidth(badge) + 2;
 		const badgeSlot = titleSpace - slot >= MIN_BADGED_TITLE_WIDTH ? slot : 0;
 		const pointer = isSelected ? (this.focus === "list" ? accent("❯") : muted("❯")) : " ";
-		const marker = this.statusStyle(goal.status)(STATUS_MARKERS[goal.status]);
+		const marker = this.statusStyle(goal.status)(GOAL_STATUS_MARKERS[goal.status]);
 		const title = truncateToWidth(singleLine(goal.title), Math.max(1, titleSpace - badgeSlot));
 		// Settled work recedes only where it sits alongside live work, and the
 		// selected row always keeps full contrast so the cursor is never the dim one.
@@ -1507,12 +1438,12 @@ export class GoalBoard {
 		if (goal.group !== undefined) lines.push(field("GROUP", singleLine(goal.group), muted));
 		if (goal.branch !== undefined) lines.push(field("BRANCH", singleLine(goal.branch), accent));
 		// The badge in the list is only a number; spell out what it means here.
-		const stale = stalenessDays(goal, this.now());
+		const stale = goalStalenessDays(goal, this.now());
 		const note = stale === undefined ? "" : `${SEPARATOR}${stale}d untouched`;
-		lines.push(field("UPDATED", formatTimestamp(goal.updatedAt), dim) + warning(note));
-		lines.push(field("CREATED", formatTimestamp(goal.createdAt), dim));
+		lines.push(field("UPDATED", formatGoalTimestamp(goal.updatedAt), dim) + warning(note));
+		lines.push(field("CREATED", formatGoalTimestamp(goal.createdAt), dim));
 		if (goal.completedAt !== undefined) {
-			lines.push(field("DONE", formatTimestamp(goal.completedAt), dim));
+			lines.push(field("DONE", formatGoalTimestamp(goal.completedAt), dim));
 		}
 		// The ID is what every CLI command takes, so it must be readable in full.
 		for (const [index, chunk] of wrapText(goal.id, Math.max(1, width - DETAIL_LABEL_WIDTH)).entries()) {
@@ -1524,7 +1455,7 @@ export class GoalBoard {
 		// derived here from everyone else's edges rather than read from a field.
 		for (const [index, entry] of resolveDependencies(this.goals, goal).entries()) {
 			const marker = entry.goal
-				? this.statusStyle(entry.goal.status)(STATUS_MARKERS[entry.goal.status])
+				? this.statusStyle(entry.goal.status)(GOAL_STATUS_MARKERS[entry.goal.status])
 				: danger("?");
 			// An edge naming no goal can never be satisfied, so it is called out rather
 			// than listed as though something will eventually finish it.
@@ -1533,7 +1464,7 @@ export class GoalBoard {
 			pushDetailIdRows(index === 0 ? "DEPENDS" : "", marker, text, style);
 		}
 		for (const [index, blocked] of dependentGoals(this.goals, goal).entries()) {
-			const marker = this.statusStyle(blocked.status)(STATUS_MARKERS[blocked.status]);
+			const marker = this.statusStyle(blocked.status)(GOAL_STATUS_MARKERS[blocked.status]);
 			pushDetailIdRows(index === 0 ? "BLOCKS" : "", marker, blocked.id, plain);
 		}
 		// Links are informational, so they are listed verbatim and wrapped rather

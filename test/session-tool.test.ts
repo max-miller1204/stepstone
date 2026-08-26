@@ -654,7 +654,7 @@ describe("session state and tool", () => {
 		} as unknown as ExtensionContext;
 
 		await start({}, context);
-		const goalLines = ["Goal: Cross the first stone"];
+		const goalLines = ["◆ Active: Cross the first stone", "Goals: ◆ 1"];
 		expect(widgetCalls).toEqual([{ id: CLI_COMMAND_CONTRACT.binary, value: goalLines }]);
 
 		await shutdown({}, context);

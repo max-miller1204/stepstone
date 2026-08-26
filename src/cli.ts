@@ -29,7 +29,7 @@ import {
 	resolveDependencies,
 	unfinishedGoals,
 } from "./dependencies.ts";
-import { goalCount } from "./format.ts";
+import { goalCount, goalSection } from "./format.ts";
 import {
 	createWorklistLocator,
 	currentGitBranch,
@@ -507,17 +507,6 @@ function formatGoalLine(goal: ProjectGoal): string {
 function formatGoalList(goals: ProjectGoal[]): string {
 	if (goals.length === 0) return "No project goals.";
 	return goals.map(formatGoalLine).join("\n");
-}
-
-/**
- * The section a goal reads as being filed under.
- *
- * A goal file is editable by hand and the schema only requires a string here, so
- * a blank or padded group is normalized the way a written one would have been
- * rather than becoming a section no filter can name.
- */
-function goalSection(goal: ProjectGoal): string | undefined {
-	return goal.group?.trim() || undefined;
 }
 
 /** A section name inside prose, where it can hold spaces the sentence would swallow. */

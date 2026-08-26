@@ -93,7 +93,7 @@ describe("generated roadmap", () => {
 		expect(foundation).not.toContain("`first-harness`");
 	});
 
-	it("gives goals that name no group a section of their own", () => {
+	it("gives goals that name no group a section of their own, after every named one", () => {
 		const markdown = renderRoadmapMarkdown(
 			worklist([
 				goal({ id: "no-group", title: "No group" }),
@@ -101,17 +101,40 @@ describe("generated roadmap", () => {
 				goal({ id: "grouped", title: "Grouped", group: "Foundation" }),
 			]),
 		);
-		expect(sectionHeadings(markdown)).toEqual(["Ungrouped", "Foundation"]);
-		const ungrouped = markdown.split("\n## Foundation\n")[0] ?? "";
+		// The implicit bucket comes last, as it does on the board and the dashboard,
+		// rather than where its first goal happens to appear in the file.
+		expect(sectionHeadings(markdown)).toEqual(["Foundation", "Ungrouped"]);
+		const ungrouped = markdown.split("\n## Ungrouped\n")[1] ?? "";
 		expect(ungrouped).toContain("`no-group`");
 		expect(ungrouped).toContain("`blank-group`");
 	});
 
-	it("flattens a group name so stored whitespace cannot forge a section", () => {
+	it("keeps a group literally named Ungrouped apart from the implicit bucket", () => {
+		const markdown = renderRoadmapMarkdown(
+			worklist([
+				goal({ id: "ungrouped-goal", title: "No group" }),
+				goal({ id: "named-ungrouped", title: "Named Ungrouped", group: "Ungrouped" }),
+				goal({ id: "grouped", title: "Grouped", group: "Foundation" }),
+			]),
+		);
+		// The shared sentinel key decides identity, so a group someone actually named
+		// "Ungrouped" is its own section even though both headings spell the same;
+		// the page never interleaves the two groups' goals under one heading.
+		expect(sectionHeadings(markdown)).toEqual(["Ungrouped", "Foundation", "Ungrouped"]);
+		const sections = markdown.split("\n## Ungrouped\n").slice(1);
+		expect(sections).toHaveLength(2);
+		expect(sections[0]).toContain("`named-ungrouped`");
+		expect(sections[0]).not.toContain("`ungrouped-goal`");
+		expect(sections[1]).toContain("`ungrouped-goal`");
+		expect(sections[1]).not.toContain("`named-ungrouped`");
+	});
+
+	it("uses shared group identity while flattening headings enough to be markdown", () => {
 		const markdown = renderRoadmapMarkdown(
 			worklist([
 				goal({ id: "multiline", title: "Multiline", group: "Later\n## Foundation" }),
-				goal({ id: "spaced", title: "Spaced", group: "  Later   ## Foundation  " }),
+				goal({ id: "single-spaced", title: "Single spaced", group: "Pi Surfaces" }),
+				goal({ id: "spaced", title: "Spaced", group: "  Pi  Surfaces  " }),
 			]),
 		);
 		// A heading is the page's only structural element, so a stored newline may
@@ -119,12 +142,17 @@ describe("generated roadmap", () => {
 		expect(markdown.split("\n").filter((line) => line.startsWith("#"))).toEqual([
 			"# Roadmap",
 			"## Later ## Foundation",
+			"## Pi Surfaces",
+			"## Pi  Surfaces",
 		]);
-		// Groups that differ only in whitespace read as one heading, so they are one
-		// section rather than two the page shows under the same name.
-		const section = markdown.split("\n## Later ## Foundation\n")[1] ?? "";
-		expect(section).toContain("`multiline`");
-		expect(section).toContain("`spaced`");
+		// Group identity matches the board and Pi dashboard: trimming alone decides
+		// whether names are the same, so internal whitespace does not merge sections.
+		const singleSpacedSection = markdown.split("\n## Pi  Surfaces\n")[0] ?? "";
+		expect(singleSpacedSection).toContain("`single-spaced`");
+		expect(singleSpacedSection).not.toContain("`spaced`");
+		const doubleSpacedSection = markdown.split("\n## Pi  Surfaces\n")[1] ?? "";
+		expect(doubleSpacedSection).toContain("`spaced`");
+		expect(doubleSpacedSection).not.toContain("`single-spaced`");
 	});
 
 	it("states each goal's status, and that the graph has it waiting", () => {
