@@ -1,12 +1,19 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { parseTasksCommand, WORKLIST_PROMPT_GUIDELINES } from "../src/extension.ts";
+import { addProjectGoal, moveProjectGoal, readProjectGoals } from "../src/project-mutations.ts";
+import { readProjectWorklist } from "../src/project-store.ts";
+import { renderRoadmapMarkdown } from "../src/roadmap.ts";
 import type { ProjectGoal, SessionTask } from "../src/types.ts";
 import {
 	buildPromptSummary,
 	buildWidgetLines,
 	Dashboard,
+	type DashboardAction,
 	DashboardDetail,
 	type DashboardResult,
 	type DashboardState,
@@ -127,8 +134,10 @@ describe("dashboard ordering controls", () => {
 			action: { kind: "move", scope: "project", id: "g2", beforeId: "g1" },
 			state,
 		});
+		// A goal moving down is written as the pair it ends up in, so the goal that
+		// ends up first keeps the file position its section is placed by.
 		expect(dashboardInput("\u001b[1;2B", state, tasks, roadmap)).toEqual({
-			action: { kind: "move", scope: "project", id: "g2", afterId: "g3" },
+			action: { kind: "move", scope: "project", id: "g3", beforeId: "g2" },
 			state,
 		});
 
@@ -185,6 +194,36 @@ describe("dashboard ordering controls", () => {
 		expect(
 			dashboardInput("\u001b[1;2A", { scope: "project", selectedId: "loose-one" }, tasks, roadmap),
 		).toBeUndefined();
+	});
+
+	it("keeps section order when a grouped Project Goal steps down its own section", async () => {
+		const path = join(await mkdtemp(join(tmpdir(), "stepstone-dashboard-")), ".worklist", "worklist.json");
+		await addProjectGoal(path, "Alpha one", { group: "Alpha" });
+		await addProjectGoal(path, "Beta one", { group: "Beta" });
+		await addProjectGoal(path, "Alpha two", { group: "Alpha" });
+		const { goals: roadmap } = await readProjectGoals(path);
+
+		const result = dashboardInput(
+			"\u001b[1;2B",
+			{ scope: "project", selectedId: "alpha-one" },
+			tasks,
+			roadmap,
+		);
+		const action = result?.action as Extract<DashboardAction, { kind: "move" }> | undefined;
+		expect(action).toEqual({ kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" });
+		expect(result?.state.selectedId).toBe("alpha-one");
+		if (action?.beforeId === undefined) throw new Error("expected a before-anchored move");
+
+		const moved = await moveProjectGoal(path, action.id, { beforeId: action.beforeId });
+		expect(moved.goals.map((goal) => goal.id)).toEqual(["alpha-two", "alpha-one", "beta-one"]);
+
+		// The generated page is where a crossed section order would be committed, so
+		// the move is checked against its headings rather than the file order alone.
+		const { data } = await readProjectWorklist(path);
+		const headings = renderRoadmapMarkdown(data)
+			.split("\n")
+			.filter((line) => line.startsWith("## "));
+		expect(headings).toEqual(["## Alpha", "## Beta"]);
 	});
 
 	it("inserts before the selected Session Task and appends separately", () => {

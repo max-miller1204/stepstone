@@ -1,42 +1,23 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { dependentGoals, isGoalBlocked, resolveDependencies } from "./dependencies.ts";
-import { compactDescription, goalStatusCounts } from "./format.ts";
-import type { ProjectGoal, ProjectGoalStatus, SessionTask, SessionTaskPlacement } from "./types.ts";
-
-const STATUS_MARKERS: Readonly<Record<ProjectGoalStatus, string>> = {
-	active: "◆",
-	open: "○",
-	done: "✓",
-	archived: "◌",
-};
-
-const STALE_AFTER_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function goalSection(goal: ProjectGoal): string | undefined {
-	return goal.group?.trim() || undefined;
-}
-
-function stalenessDays(goal: ProjectGoal, now: number = Date.now()): number | undefined {
-	if (goal.status !== "open" && goal.status !== "active") return undefined;
-	const updated = Date.parse(goal.updatedAt);
-	if (!Number.isFinite(updated)) return undefined;
-	const days = Math.floor((now - updated) / DAY_MS);
-	return days >= STALE_AFTER_DAYS ? days : undefined;
-}
-
-function formatTimestamp(value: string): string {
-	const parsed = new Date(value);
-	if (Number.isNaN(parsed.getTime())) return value;
-	const pad = (part: number) => String(part).padStart(2, "0");
-	const date = `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
-	return `${date} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
-}
+import {
+	compactDescription,
+	formatGoalTimestamp,
+	GOAL_STATUS_MARKERS,
+	goalSection,
+	goalSections,
+	goalStalenessDays,
+	goalStatusCounts,
+	isUngroupedList,
+	resolveSectionReorder,
+	sectionHolding,
+} from "./format.ts";
+import type { ProjectGoal, SessionTask, SessionTaskPlacement } from "./types.ts";
 
 function goalCountLine(goals: readonly ProjectGoal[]): string {
 	return goalStatusCounts(goals)
-		.map((entry) => `${STATUS_MARKERS[entry.status]} ${entry.count}`)
+		.map((entry) => `${GOAL_STATUS_MARKERS[entry.status]} ${entry.count}`)
 		.join(" · ");
 }
 
@@ -45,7 +26,7 @@ export function buildWidgetLines(tasks: SessionTask[], goals: ProjectGoal[]): st
 	const pending = tasks.filter((task) => task.status !== "done");
 	if (!active && goals.length === 0 && pending.length === 0) return [];
 	const lines: string[] = [];
-	if (active) lines.push(`${STATUS_MARKERS.active} Active: ${active.title}`);
+	if (active) lines.push(`${GOAL_STATUS_MARKERS.active} Active: ${active.title}`);
 	if (goals.length > 0) lines.push(`Goals: ${goalCountLine(goals)}`);
 	for (const task of pending.slice(0, 3)) {
 		lines.push(`${task.status === "doing" ? "●" : "○"} ${task.title}`);
@@ -99,29 +80,21 @@ type DashboardProjectRow =
 	| { kind: "goal"; key: string; goal: ProjectGoal; indented: boolean };
 
 function groupedProjectRows(goals: readonly ProjectGoal[]): DashboardProjectRow[] {
-	const hasGroups = goals.some((goal) => goalSection(goal) !== undefined);
-	if (!hasGroups) return goals.map((goal) => ({ kind: "goal", key: goal.id, goal, indented: false }));
+	const sections = goalSections(goals);
+	if (isUngroupedList(sections))
+		return sections[0].goals.map((goal) => ({ kind: "goal", key: goal.id, goal, indented: false }));
 
-	const groups = new Map<string, ProjectGoal[]>();
-	const ungrouped: ProjectGoal[] = [];
-	for (const goal of goals) {
-		const section = goalSection(goal);
-		if (!section) {
-			ungrouped.push(goal);
-			continue;
-		}
-		const existing = groups.get(section);
-		if (existing) existing.push(goal);
-		else groups.set(section, [goal]);
-	}
 	const rows: DashboardProjectRow[] = [];
-	for (const [label, sectionGoals] of groups) {
-		rows.push({ kind: "group", key: `group:${label}`, label, count: sectionGoals.length });
-		rows.push(...sectionGoals.map((goal) => ({ kind: "goal" as const, key: goal.id, goal, indented: true })));
-	}
-	if (ungrouped.length > 0) {
-		rows.push({ kind: "group", key: "group:\u0000ungrouped", label: "Ungrouped", count: ungrouped.length });
-		rows.push(...ungrouped.map((goal) => ({ kind: "goal" as const, key: goal.id, goal, indented: true })));
+	for (const section of sections) {
+		rows.push({
+			kind: "group",
+			key: `group:${section.key}`,
+			label: section.label,
+			count: section.goals.length,
+		});
+		rows.push(
+			...section.goals.map((goal) => ({ kind: "goal" as const, key: goal.id, goal, indented: true })),
+		);
 	}
 	return rows;
 }
@@ -144,9 +117,14 @@ export class Dashboard {
 		this.selected = selectedIndex >= 0 ? selectedIndex : 0;
 	}
 
+	/** The goals the Project Goal pane lists, before they are grouped into rows. */
+	private visibleGoals(): ProjectGoal[] {
+		return this.goals.filter((goal) => goal.status !== "archived");
+	}
+
 	private items(): Array<SessionTask | ProjectGoal> {
 		if (this.scope === "session") return this.tasks;
-		return groupedProjectRows(this.goals.filter((goal) => goal.status !== "archived"))
+		return groupedProjectRows(this.visibleGoals())
 			.filter((row): row is Extract<DashboardProjectRow, { kind: "goal" }> => row.kind === "goal")
 			.map((row) => row.goal);
 	}
@@ -162,34 +140,45 @@ export class Dashboard {
 	/**
 	 * Reorder the selected item within the list it is shown in.
 	 *
-	 * The anchor is the neighboring row rather than a stored index, so a move
-	 * lands where the user watched it land even when the list is a filtered view
-	 * of a longer one.
+	 * A Session Task anchors on the neighboring row rather than a stored index, so
+	 * a move lands where the user watched it land even when the list is a filtered
+	 * view of a longer one.
+	 *
+	 * A Project Goal moves through the rule the terminal board reorders by, so one
+	 * keystroke cannot mean two things across the two surfaces: the goal steps
+	 * within its own section, a section boundary is an end of the list, and the
+	 * pair is written so that re-inserting a section's first goal cannot hand its
+	 * file position - and with it the section's place on the roadmap - to a goal
+	 * filed under a different section.
 	 */
-	private canAnchorMove(item: { id: string }, anchor: { id: string }): boolean {
-		if (this.scope !== "project") return true;
-		const goal = item as ProjectGoal;
-		const anchorGoal = anchor as ProjectGoal;
-		return goalSection(goal) === goalSection(anchorGoal);
+	private moveAction(
+		item: { id: string },
+		items: Array<{ id: string }>,
+		delta: -1 | 1,
+	): DashboardAction | undefined {
+		if (this.scope === "project") {
+			const section = sectionHolding(goalSections(this.visibleGoals()), item.id);
+			const placement = section && resolveSectionReorder(section.goals, item.id, delta);
+			return placement ? { kind: "move", scope: "project", ...placement } : undefined;
+		}
+		const anchor = items[this.selected + delta];
+		if (!anchor) return undefined;
+		return delta < 0
+			? { kind: "move", scope: "session", id: item.id, beforeId: anchor.id }
+			: { kind: "move", scope: "session", id: item.id, afterId: anchor.id };
 	}
 
 	private handleMove(data: string, items: Array<{ id: string }>): boolean {
+		const delta = matchesKey(data, Key.shift("up"))
+			? -1
+			: matchesKey(data, Key.shift("down"))
+				? 1
+				: undefined;
+		if (delta === undefined) return false;
 		const item = items[this.selected];
-		if (matchesKey(data, Key.shift("up"))) {
-			const anchor = items[this.selected - 1];
-			if (item && anchor && this.canAnchorMove(item, anchor)) {
-				this.finish({ kind: "move", scope: this.scope, id: item.id, beforeId: anchor.id });
-			}
-			return true;
-		}
-		if (matchesKey(data, Key.shift("down"))) {
-			const anchor = items[this.selected + 1];
-			if (item && anchor && this.canAnchorMove(item, anchor)) {
-				this.finish({ kind: "move", scope: this.scope, id: item.id, afterId: anchor.id });
-			}
-			return true;
-		}
-		return false;
+		const action = item && this.moveAction(item, items, delta);
+		if (action) this.finish(action);
+		return true;
 	}
 
 	handleInput(data: string): void {
@@ -247,7 +236,9 @@ export class Dashboard {
 				const prefix = itemIndex === this.selected ? th.fg("accent", ">") : " ";
 				const inset = row.indented ? "  " : "";
 				const marker =
-					goal.status === "active" ? th.fg("accent", STATUS_MARKERS.active) : STATUS_MARKERS[goal.status];
+					goal.status === "active"
+						? th.fg("accent", GOAL_STATUS_MARKERS.active)
+						: GOAL_STATUS_MARKERS[goal.status];
 				const settled = goal.status === "done" || goal.status === "archived";
 				const title =
 					goal.status === "active"
@@ -255,7 +246,7 @@ export class Dashboard {
 						: settled
 							? th.fg("dim", goal.title)
 							: goal.title;
-				const stale = stalenessDays(goal, this.now());
+				const stale = goalStalenessDays(goal, this.now());
 				const badge = stale === undefined ? "" : ` ${th.fg("muted", `${stale}d`)}`;
 				const blocked = isGoalBlocked(this.goals, goal) ? ` ${th.fg("muted", "blocked")}` : "";
 				lines.push(`${prefix} ${inset}${marker} ${title}${badge}${blocked} ${th.fg("dim", goal.id)}`);
@@ -304,17 +295,17 @@ function buildGoalDetailSections(
 ): void {
 	addSection("Title", goal.title, "accent");
 	const blocked = isGoalBlocked(goals, goal) ? " · blocked" : "";
-	addSection("Status", `${STATUS_MARKERS[goal.status]} ${goal.status.toUpperCase()}${blocked}`);
+	addSection("Status", `${GOAL_STATUS_MARKERS[goal.status]} ${goal.status.toUpperCase()}${blocked}`);
 	if (goal.group !== undefined) addSection("Group", goalSection(goal) ?? "Ungrouped", "muted");
 	if (goal.branch !== undefined) addSection("Branch", goal.branch, "muted");
-	const stale = stalenessDays(goal);
+	const stale = goalStalenessDays(goal);
 	addSection(
 		"Updated",
-		`${formatTimestamp(goal.updatedAt)}${stale === undefined ? "" : ` · ${stale}d untouched`}`,
+		`${formatGoalTimestamp(goal.updatedAt)}${stale === undefined ? "" : ` · ${stale}d untouched`}`,
 		"muted",
 	);
-	addSection("Created", formatTimestamp(goal.createdAt), "muted");
-	if (goal.completedAt !== undefined) addSection("Completed", formatTimestamp(goal.completedAt), "muted");
+	addSection("Created", formatGoalTimestamp(goal.createdAt), "muted");
+	if (goal.completedAt !== undefined) addSection("Completed", formatGoalTimestamp(goal.completedAt), "muted");
 	addSection("ID", goal.id, "muted");
 	const dependencies = resolveDependencies(goals, goal);
 	if (dependencies.length > 0) {
@@ -324,7 +315,7 @@ function buildGoalDetailSections(
 				.map((entry) => {
 					if (!entry.goal) return `? ${entry.id} (missing)`;
 					const state = entry.satisfied ? "satisfied" : "waiting";
-					return `${STATUS_MARKERS[entry.goal.status]} ${entry.id} (${state})`;
+					return `${GOAL_STATUS_MARKERS[entry.goal.status]} ${entry.id} (${state})`;
 				})
 				.join("\n"),
 			"muted",
@@ -334,7 +325,7 @@ function buildGoalDetailSections(
 	if (dependents.length > 0) {
 		addSection(
 			"Blocks",
-			dependents.map((dependent) => `${STATUS_MARKERS[dependent.status]} ${dependent.id}`).join("\n"),
+			dependents.map((dependent) => `${GOAL_STATUS_MARKERS[dependent.status]} ${dependent.id}`).join("\n"),
 			"muted",
 		);
 	}
