@@ -93,7 +93,7 @@ describe("generated roadmap", () => {
 		expect(foundation).not.toContain("`first-harness`");
 	});
 
-	it("gives goals that name no group a section of their own", () => {
+	it("gives goals that name no group a section of their own, after every named one", () => {
 		const markdown = renderRoadmapMarkdown(
 			worklist([
 				goal({ id: "no-group", title: "No group" }),
@@ -101,10 +101,32 @@ describe("generated roadmap", () => {
 				goal({ id: "grouped", title: "Grouped", group: "Foundation" }),
 			]),
 		);
-		expect(sectionHeadings(markdown)).toEqual(["Ungrouped", "Foundation"]);
-		const ungrouped = markdown.split("\n## Foundation\n")[0] ?? "";
+		// The implicit bucket comes last, as it does on the board and the dashboard,
+		// rather than where its first goal happens to appear in the file.
+		expect(sectionHeadings(markdown)).toEqual(["Foundation", "Ungrouped"]);
+		const ungrouped = markdown.split("\n## Ungrouped\n")[1] ?? "";
 		expect(ungrouped).toContain("`no-group`");
 		expect(ungrouped).toContain("`blank-group`");
+	});
+
+	it("keeps a group literally named Ungrouped apart from the implicit bucket", () => {
+		const markdown = renderRoadmapMarkdown(
+			worklist([
+				goal({ id: "ungrouped-goal", title: "No group" }),
+				goal({ id: "named-ungrouped", title: "Named Ungrouped", group: "Ungrouped" }),
+				goal({ id: "grouped", title: "Grouped", group: "Foundation" }),
+			]),
+		);
+		// The shared sentinel key decides identity, so a group someone actually named
+		// "Ungrouped" is its own section even though both headings spell the same;
+		// the page never interleaves the two groups' goals under one heading.
+		expect(sectionHeadings(markdown)).toEqual(["Ungrouped", "Foundation", "Ungrouped"]);
+		const sections = markdown.split("\n## Ungrouped\n").slice(1);
+		expect(sections).toHaveLength(2);
+		expect(sections[0]).toContain("`named-ungrouped`");
+		expect(sections[0]).not.toContain("`ungrouped-goal`");
+		expect(sections[1]).toContain("`ungrouped-goal`");
+		expect(sections[1]).not.toContain("`named-ungrouped`");
 	});
 
 	it("uses shared group identity while flattening headings enough to be markdown", () => {

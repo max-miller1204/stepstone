@@ -1,6 +1,6 @@
 import { GENERATOR_PATH, WORKLIST_RELATIVE_PATH } from "./cli-contract.ts";
 import { isGoalBlocked, resolveDependencies } from "./dependencies.ts";
-import { compactDescription, goalCount, goalSection, goalStatusCounts } from "./format.ts";
+import { compactDescription, goalCount, goalSections, goalStatusCounts } from "./format.ts";
 import type { ProjectGoal, ProjectWorklist } from "./types.ts";
 
 /**
@@ -41,11 +41,13 @@ interface RoadmapSection {
 }
 
 /**
- * The page's sections, in the order their groups first appear in the file.
+ * Flatten a stored group name into one heading line.
  *
- * File order is the roadmap's own order, so sections follow it rather than being
- * sorted: a group is placed by the first goal that names it, and the goals
- * inside one stay in the order somebody arranged them in.
+ * A heading is the page's only structural element, so a stored newline may
+ * neither open a section nobody named nor leave prose outside a list item;
+ * collapsing only the line breaks cannot merge sections `goalSection` keeps
+ * apart, because groups that differ only in internal whitespace stay distinct
+ * keys on either side of the flattening.
  */
 function roadmapGroupHeading(group: string): string {
 	return group
@@ -56,17 +58,21 @@ function roadmapGroupHeading(group: string): string {
 		.join(" ");
 }
 
+/**
+ * The page's sections, in the order their groups first appear in the file.
+ *
+ * Built from the shared `goalSections` helper so the page files goals under the
+ * same sections the board and the Pi dashboard show: the sentinel key keeps a
+ * group literally named "Ungrouped" separate from the implicit bucket of goals
+ * that name no group, and that bucket comes last rather than where it first
+ * appears, matching what the board documents for its own sections. The goals
+ * inside one section stay in the order somebody arranged them in.
+ */
 function roadmapSections(goals: readonly ProjectGoal[]): RoadmapSection[] {
-	const sections = new Map<string, RoadmapSection>();
-	for (const goal of goals) {
-		const section = goalSection(goal);
-		const key = section ?? UNGROUPED_HEADING;
-		const heading = section === undefined ? UNGROUPED_HEADING : roadmapGroupHeading(section);
-		const existing = sections.get(key) ?? { heading, goals: [] };
-		existing.goals.push(goal);
-		sections.set(key, existing);
-	}
-	return [...sections.values()];
+	return goalSections(goals).map((section) => ({
+		heading: section.named ? roadmapGroupHeading(section.label) : UNGROUPED_HEADING,
+		goals: section.goals,
+	}));
 }
 
 /**

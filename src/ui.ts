@@ -26,10 +26,10 @@ export function buildWidgetLines(tasks: SessionTask[], goals: ProjectGoal[]): st
 	const pending = tasks.filter((task) => task.status !== "done");
 	if (!active && goals.length === 0 && pending.length === 0) return [];
 	const lines: string[] = [];
-	if (active) lines.push(`${GOAL_STATUS_MARKERS.active} Active: ${active.title}`);
+	if (active) lines.push(`${GOAL_STATUS_MARKERS.active} Active: ${compactDescription(active.title)}`);
 	if (goals.length > 0) lines.push(`Goals: ${goalCountLine(goals)}`);
 	for (const task of pending.slice(0, 3)) {
-		lines.push(`${task.status === "doing" ? "●" : "○"} ${task.title}`);
+		lines.push(`${task.status === "doing" ? "●" : "○"} ${compactDescription(task.title)}`);
 	}
 	if (pending.length > 3) lines.push(`+${pending.length - 3} more`);
 	return lines;
@@ -42,12 +42,12 @@ export function buildPromptSummary(tasks: SessionTask[], goals: ProjectGoal[], m
 	const lines = ["[WORKLIST]"];
 	if (active) {
 		const description = active.description ? ` - ${compactDescription(active.description)}` : "";
-		lines.push(`Active project goal: ${active.title}${description}`);
+		lines.push(`Active project goal: ${compactDescription(active.title)}${description}`);
 	}
 	if (pending.length) {
 		lines.push("Incomplete session tasks:");
 		for (const task of pending) {
-			lines.push(`- [${task.status === "doing" ? "doing" : "todo"}] ${task.title}`);
+			lines.push(`- [${task.status === "doing" ? "doing" : "todo"}] ${compactDescription(task.title)}`);
 		}
 	}
 	const remaining = tasks.filter((task) => task.status !== "done").length - pending.length;
@@ -238,7 +238,10 @@ export class Dashboard {
 			let itemIndex = 0;
 			for (const row of groupedProjectRows(this.visibleGoals())) {
 				if (row.kind === "group") {
-					lines.push(`  ${th.bold(`▾ ${row.label}`)} ${th.fg("dim", `(${row.count})`)}`);
+					// Stored strings are flattened before they become rows: a newline inside
+					// a group name would otherwise render one more physical line than the
+					// caller asked for, the way it would on the board.
+					lines.push(`  ${th.bold(`▾ ${compactDescription(row.label)}`)} ${th.fg("dim", `(${row.count})`)}`);
 					continue;
 				}
 				const goal = row.goal;
@@ -249,16 +252,13 @@ export class Dashboard {
 						? th.fg("accent", GOAL_STATUS_MARKERS.active)
 						: GOAL_STATUS_MARKERS[goal.status];
 				const settled = goal.status === "done" || goal.status === "archived";
-				const title =
-					goal.status === "active"
-						? th.fg("accent", th.bold(goal.title))
-						: settled
-							? th.fg("dim", goal.title)
-							: goal.title;
+				const title = compactDescription(goal.title);
+				const styled =
+					goal.status === "active" ? th.fg("accent", th.bold(title)) : settled ? th.fg("dim", title) : title;
 				const stale = goalStalenessDays(goal, this.now());
 				const badge = stale === undefined ? "" : ` ${th.fg("muted", `${stale}d`)}`;
 				const blocked = isGoalBlocked(this.goals, goal) ? ` ${th.fg("muted", "blocked")}` : "";
-				lines.push(`${prefix} ${inset}${marker} ${title}${badge}${blocked} ${th.fg("dim", goal.id)}`);
+				lines.push(`${prefix} ${inset}${marker} ${styled}${badge}${blocked} ${th.fg("dim", goal.id)}`);
 				itemIndex += 1;
 			}
 		} else {
@@ -266,7 +266,7 @@ export class Dashboard {
 				const status = item.status;
 				const marker = status === "done" ? "✓" : status === "doing" ? "●" : "○";
 				const prefix = index === this.selected ? th.fg("accent", ">") : " ";
-				lines.push(`${prefix} ${marker} ${item.title} ${th.fg("dim", item.id)}`);
+				lines.push(`${prefix} ${marker} ${compactDescription(item.title)} ${th.fg("dim", item.id)}`);
 			});
 		}
 		const selected = items[this.selected];

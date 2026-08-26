@@ -251,6 +251,35 @@ describe("dashboard ordering controls", () => {
 		expect(headings).toEqual(["## Alpha", "## Beta"]);
 	});
 
+	it("returns no entry carrying a newline from stored goal and group text", () => {
+		const multiline: ProjectGoal = {
+			...goals[0],
+			id: "multi",
+			title: "Two\nlines",
+			group: "Pi\nSurfaces",
+			status: "active",
+			description: "Line one\nline two",
+		};
+
+		const widget = buildWidgetLines([], [multiline]);
+		expect(widget.every((line) => !line.includes("\n"))).toBe(true);
+		expect(widget[0]).toBe("◆ Active: Two lines");
+
+		const dashboard = new Dashboard(
+			[],
+			[multiline],
+			identityTheme,
+			() => {},
+			{ scope: "project", selectedId: "multi" },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100);
+		expect(output.every((line) => !line.includes("\n"))).toBe(true);
+		expect(output.join("\n")).toContain("▾ Pi Surfaces");
+		expect(output.join("\n")).toContain("◆ Two lines multi");
+		expect(output.join("\n")).toContain("Description: Line one line two");
+	});
+
 	it("inserts before the selected Session Task and appends separately", () => {
 		const state: DashboardState = { scope: "session", selectedId: "t3" };
 		expect(dashboardInput("i", state)).toEqual({
