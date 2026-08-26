@@ -541,14 +541,15 @@
       "id": "pi-tui-parity-mirror-board-polish-in",
       "title": "pi-tui-parity: mirror board polish in the Pi widget and dashboard",
       "description": "Bring the inline Pi surfaces up to the same visual system as the terminal board so the board does not become the favored child: status dimming and staleness markers in the dashboard goal list, group sections in the dashboard, a counts line and distinct active-goal treatment in the widget, and the new schema fields (group, dependencies, completedAt) surfaced in the dashboard detail view. One visual language, two renderers: keep every treatment consistent with what tui-polish and tui-groups established rather than inventing a second style.\n\nRe-scoped 2026-08-08 by the harness pivot: this is Pi-surface work. Project Goals are now the cross-harness product and Session Tasks are a Pi extension feature, kept working and documented but no longer receiving investment. The goal stays open because the Pi extension stays supported, but it sits behind the Harness group and behind any goal that serves every harness rather than one.",
-      "status": "open",
+      "status": "done",
       "createdAt": "2026-08-04T20:13:32.848Z",
-      "updatedAt": "2026-08-08T23:54:04.898Z",
+      "updatedAt": "2026-08-26T05:21:31.204Z",
       "group": "Pi",
       "dependsOn": [
         "tui-polish-quick-readability-wins-in",
         "tui-groups-collapsible-group-sections"
-      ]
+      ],
+      "completedAt": "2026-08-26T05:21:31.204Z"
     },
     {
       "id": "focus-mode-show-only-session-tasks",
@@ -884,5 +885,5 @@
       "updatedAt": "2026-08-18T22:17:01.718Z"
     }
   ],
-  "revision": 297
+  "revision": 299
 }

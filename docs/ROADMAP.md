@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 24 open, 42 done, 4 archived.
+70 goals: 23 open, 43 done, 4 archived.
 
 ## Orchestrator
 
@@ -367,7 +367,7 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Pi
 
-- **[open]** pi-tui-parity: mirror board polish in the Pi widget and dashboard - `pi-tui-parity-mirror-board-polish-in`
+- **[done]** pi-tui-parity: mirror board polish in the Pi widget and dashboard - `pi-tui-parity-mirror-board-polish-in`
 
   Bring the inline Pi surfaces up to the same visual system as the terminal board so the board does not become the favored child: status dimming and staleness markers in the dashboard goal list, group sections in the dashboard, a counts line and distinct active-goal treatment in the widget, and the new schema fields (group, dependencies, completedAt) surfaced in the dashboard detail view. One visual language, two renderers: keep every treatment consistent with what tui-polish and tui-groups established rather than inventing a second style.
 

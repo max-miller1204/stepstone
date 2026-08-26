@@ -28,12 +28,31 @@ const goals: ProjectGoal[] = [
 	},
 ];
 
+const identityTheme = {
+	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+} as Theme;
+
 describe("widget and prompt summary", () => {
 	it("caps the widget and hides completed tasks", () => {
 		const lines = buildWidgetLines(tasks, goals);
-		expect(lines).toHaveLength(5);
+		expect(lines).toHaveLength(6);
+		expect(lines[0]).toBe("◆ Active: Ship v1");
+		expect(lines[1]).toBe("Goals: ◆ 1");
 		expect(lines.join("\n")).not.toContain("Task 0");
 		expect(lines.at(-1)).toBe("+2 more");
+	});
+
+	it("shows compact Project Goal status counts even without an active goal", () => {
+		const lines = buildWidgetLines(
+			[],
+			[
+				{ ...goals[0], status: "open" },
+				{ ...goals[0], id: "done", title: "Done", status: "done" },
+				{ ...goals[0], id: "archived", title: "Archived", status: "archived" },
+			],
+		);
+		expect(lines).toEqual(["Goals: ○ 1 · ✓ 1 · ◌ 1"]);
 	});
 
 	it("caps prompt task detail", () => {
@@ -118,6 +137,56 @@ describe("dashboard ordering controls", () => {
 		expect(dashboardInput("\u001b[1;2A", first, tasks, roadmap)).toBeUndefined();
 	});
 
+	it("targets actions and moves to the rendered grouped Project Goal order", () => {
+		const roadmap: ProjectGoal[] = [
+			{ ...goals[0], id: "alpha-one", title: "Alpha one", group: "Alpha", status: "open" },
+			{ ...goals[0], id: "beta-one", title: "Beta one", group: "Beta", status: "open" },
+			{ ...goals[0], id: "alpha-two", title: "Alpha two", group: "Alpha", status: "open" },
+		];
+		const state: DashboardState = { scope: "project", selectedId: "alpha-two" };
+
+		expect(dashboardInput("\r", state, tasks, roadmap)).toEqual({
+			action: { kind: "view", scope: "project", id: "alpha-two" },
+			state,
+		});
+		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
+			action: { kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" },
+			state,
+		});
+
+		const dashboard = new Dashboard(
+			tasks,
+			roadmap,
+			identityTheme,
+			() => {},
+			state,
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100).join("\n");
+		expect(output).toContain("  ○ Alpha one alpha-one");
+		expect(output).toContain(">   ○ Alpha two alpha-two");
+		expect(output.indexOf("Alpha two")).toBeLessThan(output.indexOf("Beta one"));
+	});
+
+	it("stops grouped Project Goal moves at section boundaries", () => {
+		const roadmap: ProjectGoal[] = [
+			{ ...goals[0], id: "alpha-one", title: "Alpha one", group: "Alpha", status: "open" },
+			{ ...goals[0], id: "beta-one", title: "Beta one", group: "Beta", status: "open" },
+			{ ...goals[0], id: "alpha-two", title: "Alpha two", group: "Alpha", status: "open" },
+			{ ...goals[0], id: "loose-one", title: "Loose one", status: "open" },
+		];
+
+		expect(
+			dashboardInput("\u001b[1;2B", { scope: "project", selectedId: "alpha-two" }, tasks, roadmap),
+		).toBeUndefined();
+		expect(
+			dashboardInput("\u001b[1;2A", { scope: "project", selectedId: "beta-one" }, tasks, roadmap),
+		).toBeUndefined();
+		expect(
+			dashboardInput("\u001b[1;2A", { scope: "project", selectedId: "loose-one" }, tasks, roadmap),
+		).toBeUndefined();
+	});
+
 	it("inserts before the selected Session Task and appends separately", () => {
 		const state: DashboardState = { scope: "session", selectedId: "t3" };
 		expect(dashboardInput("i", state)).toEqual({
@@ -159,11 +228,60 @@ describe("dashboard ordering controls", () => {
 	});
 });
 
+describe("dashboard project rendering", () => {
+	it("groups Project Goals and mirrors board status cues", () => {
+		const roadmap: ProjectGoal[] = [
+			{
+				...goals[0],
+				id: "active",
+				title: "Active goal",
+				group: "Foundation",
+				status: "active",
+			},
+			{
+				...goals[0],
+				id: "done",
+				title: "Done goal",
+				group: "Foundation",
+				status: "done",
+			},
+			{
+				...goals[0],
+				id: "waiting",
+				title: "Waiting goal",
+				status: "open",
+				updatedAt: "2025-12-01T00:00:00.000Z",
+			},
+			{
+				...goals[0],
+				id: "archived",
+				title: "Archived goal",
+				group: "Retired",
+				status: "archived",
+			},
+		];
+		const dashboard = new Dashboard(
+			[],
+			roadmap,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100).join("\n");
+
+		expect(output).toContain("Goals: ◆ 1 · ○ 1 · ✓ 1 · ◌ 1");
+		expect(output).toContain("▾ Foundation (2)");
+		expect(output).toContain("▾ Ungrouped (1)");
+		expect(output).toContain(">   ◆ Active goal active");
+		expect(output).toContain("✓ Done goal done");
+		expect(output).toMatch(/○ Waiting goal \d+d waiting/);
+		expect(output).not.toContain("Archived goal archived");
+	});
+});
+
 describe("dashboard detail view", () => {
-	const theme = {
-		fg: (_color: string, text: string) => text,
-		bold: (text: string) => text,
-	} as Theme;
+	const theme = identityTheme;
 
 	it("wraps and displays the complete Project Goal description", () => {
 		const goal = {
@@ -201,6 +319,51 @@ describe("dashboard detail view", () => {
 		expect(output).toContain("Session Task Details");
 		expect(output).toContain("Associated Project Goal");
 		expect(output).toContain(goals[0].description);
+	});
+
+	it("surfaces Project Goal grouping, dependencies, completion time, and links", () => {
+		const dependency: ProjectGoal = {
+			...goals[0],
+			id: "dependency",
+			title: "Dependency",
+			status: "done",
+			completedAt: "2026-01-03T12:00:00.000Z",
+		};
+		const goal: ProjectGoal = {
+			...goals[0],
+			id: "delivery",
+			title: "Delivery",
+			status: "done",
+			group: "Delivery",
+			completedAt: "2026-01-04T09:30:00.000Z",
+			dependsOn: [dependency.id],
+			links: ["https://example.com/evidence"],
+		};
+		const dependent: ProjectGoal = {
+			...goals[0],
+			id: "dependent",
+			title: "Dependent",
+			status: "open",
+			dependsOn: [goal.id],
+		};
+		const detail = new DashboardDetail({
+			item: { scope: "project", goal },
+			goals: [dependency, goal, dependent],
+			theme,
+			terminalRows: () => 40,
+			done: () => {},
+		});
+		const output = detail.render(72).join("\n");
+
+		expect(output).toContain("Group");
+		expect(output).toContain("Delivery");
+		expect(output).toContain("Completed");
+		expect(output).toContain("2026-01-04");
+		expect(output).toContain("Depends on");
+		expect(output).toContain("✓ dependency (satisfied)");
+		expect(output).toContain("Blocks");
+		expect(output).toContain("○ dependent");
+		expect(output).toContain("https://example.com/evidence");
 	});
 
 	it("scrolls long details and closes with Escape", () => {

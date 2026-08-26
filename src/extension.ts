@@ -273,7 +273,13 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 	async function showDashboardDetail(item: DashboardDetailItem, ctx: ExtensionContext): Promise<void> {
 		await ctx.ui.custom<void>(
 			(tui, theme, _keys, done) => {
-				const detail = new DashboardDetail({ item, theme, terminalRows: () => tui.terminal.rows, done });
+				const detail = new DashboardDetail({
+					item,
+					goals: projectGoals,
+					theme,
+					terminalRows: () => tui.terminal.rows,
+					done,
+				});
 				return {
 					render: (width) => detail.render(width),
 					invalidate: () => detail.invalidate(),

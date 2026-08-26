@@ -1,14 +1,52 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { compactDescription } from "./format.ts";
-import type { ProjectGoal, SessionTask, SessionTaskPlacement } from "./types.ts";
+import { dependentGoals, isGoalBlocked, resolveDependencies } from "./dependencies.ts";
+import { compactDescription, goalStatusCounts } from "./format.ts";
+import type { ProjectGoal, ProjectGoalStatus, SessionTask, SessionTaskPlacement } from "./types.ts";
+
+const STATUS_MARKERS: Readonly<Record<ProjectGoalStatus, string>> = {
+	active: "◆",
+	open: "○",
+	done: "✓",
+	archived: "◌",
+};
+
+const STALE_AFTER_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function goalSection(goal: ProjectGoal): string | undefined {
+	return goal.group?.trim() || undefined;
+}
+
+function stalenessDays(goal: ProjectGoal, now: number = Date.now()): number | undefined {
+	if (goal.status !== "open" && goal.status !== "active") return undefined;
+	const updated = Date.parse(goal.updatedAt);
+	if (!Number.isFinite(updated)) return undefined;
+	const days = Math.floor((now - updated) / DAY_MS);
+	return days >= STALE_AFTER_DAYS ? days : undefined;
+}
+
+function formatTimestamp(value: string): string {
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) return value;
+	const pad = (part: number) => String(part).padStart(2, "0");
+	const date = `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
+	return `${date} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+function goalCountLine(goals: readonly ProjectGoal[]): string {
+	return goalStatusCounts(goals)
+		.map((entry) => `${STATUS_MARKERS[entry.status]} ${entry.count}`)
+		.join(" · ");
+}
 
 export function buildWidgetLines(tasks: SessionTask[], goals: ProjectGoal[]): string[] {
 	const active = goals.find((goal) => goal.status === "active");
 	const pending = tasks.filter((task) => task.status !== "done");
-	if (!active && pending.length === 0) return [];
+	if (!active && goals.length === 0 && pending.length === 0) return [];
 	const lines: string[] = [];
-	if (active) lines.push(`Goal: ${active.title}`);
+	if (active) lines.push(`${STATUS_MARKERS.active} Active: ${active.title}`);
+	if (goals.length > 0) lines.push(`Goals: ${goalCountLine(goals)}`);
 	for (const task of pending.slice(0, 3)) {
 		lines.push(`${task.status === "doing" ? "●" : "○"} ${task.title}`);
 	}
@@ -56,6 +94,38 @@ export interface DashboardResult {
 	state: DashboardState;
 }
 
+type DashboardProjectRow =
+	| { kind: "group"; key: string; label: string; count: number }
+	| { kind: "goal"; key: string; goal: ProjectGoal; indented: boolean };
+
+function groupedProjectRows(goals: readonly ProjectGoal[]): DashboardProjectRow[] {
+	const hasGroups = goals.some((goal) => goalSection(goal) !== undefined);
+	if (!hasGroups) return goals.map((goal) => ({ kind: "goal", key: goal.id, goal, indented: false }));
+
+	const groups = new Map<string, ProjectGoal[]>();
+	const ungrouped: ProjectGoal[] = [];
+	for (const goal of goals) {
+		const section = goalSection(goal);
+		if (!section) {
+			ungrouped.push(goal);
+			continue;
+		}
+		const existing = groups.get(section);
+		if (existing) existing.push(goal);
+		else groups.set(section, [goal]);
+	}
+	const rows: DashboardProjectRow[] = [];
+	for (const [label, sectionGoals] of groups) {
+		rows.push({ kind: "group", key: `group:${label}`, label, count: sectionGoals.length });
+		rows.push(...sectionGoals.map((goal) => ({ kind: "goal" as const, key: goal.id, goal, indented: true })));
+	}
+	if (ungrouped.length > 0) {
+		rows.push({ kind: "group", key: "group:\u0000ungrouped", label: "Ungrouped", count: ungrouped.length });
+		rows.push(...ungrouped.map((goal) => ({ kind: "goal" as const, key: goal.id, goal, indented: true })));
+	}
+	return rows;
+}
+
 export class Dashboard {
 	private scope: "session" | "project";
 	private selected: number;
@@ -65,6 +135,7 @@ export class Dashboard {
 		private readonly theme: Theme,
 		private readonly done: (result: DashboardResult) => void,
 		initialState?: DashboardState,
+		private readonly now: () => number = Date.now,
 	) {
 		this.scope = initialState?.scope ?? "session";
 		const selectedIndex = initialState?.selectedId
@@ -74,7 +145,10 @@ export class Dashboard {
 	}
 
 	private items(): Array<SessionTask | ProjectGoal> {
-		return this.scope === "session" ? this.tasks : this.goals.filter((goal) => goal.status !== "archived");
+		if (this.scope === "session") return this.tasks;
+		return groupedProjectRows(this.goals.filter((goal) => goal.status !== "archived"))
+			.filter((row): row is Extract<DashboardProjectRow, { kind: "goal" }> => row.kind === "goal")
+			.map((row) => row.goal);
 	}
 
 	private finish(action: DashboardAction): void {
@@ -92,18 +166,25 @@ export class Dashboard {
 	 * lands where the user watched it land even when the list is a filtered view
 	 * of a longer one.
 	 */
+	private canAnchorMove(item: { id: string }, anchor: { id: string }): boolean {
+		if (this.scope !== "project") return true;
+		const goal = item as ProjectGoal;
+		const anchorGoal = anchor as ProjectGoal;
+		return goalSection(goal) === goalSection(anchorGoal);
+	}
+
 	private handleMove(data: string, items: Array<{ id: string }>): boolean {
 		const item = items[this.selected];
 		if (matchesKey(data, Key.shift("up"))) {
 			const anchor = items[this.selected - 1];
-			if (item && anchor) {
+			if (item && anchor && this.canAnchorMove(item, anchor)) {
 				this.finish({ kind: "move", scope: this.scope, id: item.id, beforeId: anchor.id });
 			}
 			return true;
 		}
 		if (matchesKey(data, Key.shift("down"))) {
 			const anchor = items[this.selected + 1];
-			if (item && anchor) {
+			if (item && anchor && this.canAnchorMove(item, anchor)) {
 				this.finish({ kind: "move", scope: this.scope, id: item.id, afterId: anchor.id });
 			}
 			return true;
@@ -151,13 +232,43 @@ export class Dashboard {
 			"",
 		];
 		const items = this.items();
+		if (this.scope === "project" && this.goals.length > 0) {
+			lines.push(th.fg("muted", `Goals: ${goalCountLine(this.goals)}`), "");
+		}
 		if (!items.length) lines.push(th.fg("dim", "  No items. Press a to add one."));
-		items.forEach((item, index) => {
-			const status = item.status;
-			const marker = status === "done" ? "✓" : status === "doing" || status === "active" ? "●" : "○";
-			const prefix = index === this.selected ? th.fg("accent", ">") : " ";
-			lines.push(`${prefix} ${marker} ${item.title} ${th.fg("dim", item.id)}`);
-		});
+		if (this.scope === "project") {
+			let itemIndex = 0;
+			for (const row of groupedProjectRows(items as ProjectGoal[])) {
+				if (row.kind === "group") {
+					lines.push(`  ${th.bold(`▾ ${row.label}`)} ${th.fg("dim", `(${row.count})`)}`);
+					continue;
+				}
+				const goal = row.goal;
+				const prefix = itemIndex === this.selected ? th.fg("accent", ">") : " ";
+				const inset = row.indented ? "  " : "";
+				const marker =
+					goal.status === "active" ? th.fg("accent", STATUS_MARKERS.active) : STATUS_MARKERS[goal.status];
+				const settled = goal.status === "done" || goal.status === "archived";
+				const title =
+					goal.status === "active"
+						? th.fg("accent", th.bold(goal.title))
+						: settled
+							? th.fg("dim", goal.title)
+							: goal.title;
+				const stale = stalenessDays(goal, this.now());
+				const badge = stale === undefined ? "" : ` ${th.fg("muted", `${stale}d`)}`;
+				const blocked = isGoalBlocked(this.goals, goal) ? ` ${th.fg("muted", "blocked")}` : "";
+				lines.push(`${prefix} ${inset}${marker} ${title}${badge}${blocked} ${th.fg("dim", goal.id)}`);
+				itemIndex += 1;
+			}
+		} else {
+			items.forEach((item, index) => {
+				const status = item.status;
+				const marker = status === "done" ? "✓" : status === "doing" ? "●" : "○";
+				const prefix = index === this.selected ? th.fg("accent", ">") : " ";
+				lines.push(`${prefix} ${marker} ${item.title} ${th.fg("dim", item.id)}`);
+			});
+		}
 		const selected = items[this.selected];
 		if (this.scope === "project" && selected && "description" in selected && selected.description) {
 			lines.push("", th.fg("muted", `Description: ${compactDescription(selected.description)}`));
@@ -179,29 +290,73 @@ export type DashboardDetailItem =
 
 export interface DashboardDetailOptions {
 	item: DashboardDetailItem;
+	/** The roadmap snapshot the selected goal came from, used for derived dependency rows. */
+	goals?: readonly ProjectGoal[];
 	theme: Theme;
 	terminalRows: () => number;
 	done: () => void;
 }
 
-function buildDetailContent(item: DashboardDetailItem, theme: Theme, width: number): string[] {
+function buildGoalDetailSections(
+	goal: ProjectGoal,
+	goals: readonly ProjectGoal[],
+	addSection: (label: string, value: string, color?: "text" | "accent" | "muted" | "dim") => void,
+): void {
+	addSection("Title", goal.title, "accent");
+	const blocked = isGoalBlocked(goals, goal) ? " · blocked" : "";
+	addSection("Status", `${STATUS_MARKERS[goal.status]} ${goal.status.toUpperCase()}${blocked}`);
+	if (goal.group !== undefined) addSection("Group", goalSection(goal) ?? "Ungrouped", "muted");
+	if (goal.branch !== undefined) addSection("Branch", goal.branch, "muted");
+	const stale = stalenessDays(goal);
+	addSection(
+		"Updated",
+		`${formatTimestamp(goal.updatedAt)}${stale === undefined ? "" : ` · ${stale}d untouched`}`,
+		"muted",
+	);
+	addSection("Created", formatTimestamp(goal.createdAt), "muted");
+	if (goal.completedAt !== undefined) addSection("Completed", formatTimestamp(goal.completedAt), "muted");
+	addSection("ID", goal.id, "muted");
+	const dependencies = resolveDependencies(goals, goal);
+	if (dependencies.length > 0) {
+		addSection(
+			"Depends on",
+			dependencies
+				.map((entry) => {
+					if (!entry.goal) return `? ${entry.id} (missing)`;
+					const state = entry.satisfied ? "satisfied" : "waiting";
+					return `${STATUS_MARKERS[entry.goal.status]} ${entry.id} (${state})`;
+				})
+				.join("\n"),
+			"muted",
+		);
+	}
+	const dependents = dependentGoals(goals, goal);
+	if (dependents.length > 0) {
+		addSection(
+			"Blocks",
+			dependents.map((dependent) => `${STATUS_MARKERS[dependent.status]} ${dependent.id}`).join("\n"),
+			"muted",
+		);
+	}
+	if (goal.links?.length) addSection("Links", goal.links.join("\n"), "muted");
+	addSection("Description", goal.description?.trim() || "Not provided");
+}
+
+function buildDetailContent(options: DashboardDetailOptions, width: number): string[] {
+	const { item, theme } = options;
 	const content: string[] = [];
-	const addSection = (label: string, value: string, color: "text" | "accent" | "muted" = "text") => {
+	const addSection = (label: string, value: string, color: "text" | "accent" | "muted" | "dim" = "text") => {
 		content.push(theme.fg("dim", label));
-		for (const line of wrapTextWithAnsi(value || "Not provided", width)) {
-			content.push(theme.fg(color, line));
+		for (const paragraph of (value || "Not provided").split("\n")) {
+			for (const line of wrapTextWithAnsi(paragraph || " ", width)) {
+				content.push(theme.fg(color, line));
+			}
 		}
 		content.push("");
 	};
 
 	if (item.scope === "project") {
-		const { goal } = item;
-		addSection("Title", goal.title, "accent");
-		addSection("Status", goal.status.toUpperCase());
-		addSection("Description", goal.description?.trim() || "Not provided");
-		addSection("ID", goal.id, "muted");
-		addSection("Created", goal.createdAt, "muted");
-		addSection("Updated", goal.updatedAt, "muted");
+		buildGoalDetailSections(item.goal, options.goals ?? [item.goal], addSection);
 	} else {
 		const { task, goal } = item;
 		addSection("Title", task.title, "accent");
@@ -209,6 +364,7 @@ function buildDetailContent(item: DashboardDetailItem, theme: Theme, width: numb
 		addSection("ID", task.id, "muted");
 		if (goal) {
 			addSection("Associated Project Goal", goal.title, "accent");
+			if (goal.group !== undefined) addSection("Goal Group", goalSection(goal) ?? "Ungrouped", "muted");
 			addSection("Goal Description", goal.description?.trim() || "Not provided");
 			addSection("Goal ID", goal.id, "muted");
 		} else if (task.goalId) {
@@ -226,7 +382,7 @@ function renderDetailPanel(
 ): { lines: string[]; scrollOffset: number } {
 	const { item, theme, terminalRows } = options;
 	const innerWidth = Math.max(1, width - 2);
-	const content = buildDetailContent(item, theme, Math.max(1, innerWidth - 2));
+	const content = buildDetailContent(options, Math.max(1, innerWidth - 2));
 	const bodyRows = Math.max(4, Math.floor(terminalRows() * 0.8) - 3);
 	const maxOffset = Math.max(0, content.length - bodyRows);
 	const boundedOffset = Math.min(scrollOffset, maxOffset);
