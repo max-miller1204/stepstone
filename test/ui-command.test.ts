@@ -508,6 +508,120 @@ describe("dashboard navigation and project rendering", () => {
 		expect(expanded).toContain("0 above · 3 below");
 	});
 
+	it("keeps every key hint on screen at an ordinary terminal width", () => {
+		const many: SessionTask[] = Array.from({ length: 30 }, (_, index) => ({
+			id: `key-${String(index).padStart(2, "0")}`,
+			title: `Key task ${String(index).padStart(2, "0")}`,
+			status: "todo",
+		}));
+		const sessionLines = new Dashboard(
+			many,
+			[],
+			identityTheme,
+			() => {},
+			{ scope: "session" },
+			Date.now,
+			() => 24,
+		).render(80);
+
+		expect(sessionLines.every((line) => visibleWidth(line) <= 80)).toBe(true);
+		for (const hint of ["tab switch", "space advance", "shift+↑↓ move", "e edit", "esc close"]) {
+			expect(sessionLines.join("\n")).toContain(hint);
+		}
+		// The count that says the list continues has a row of its own, so it cannot
+		// push the first row of the key map off the screen.
+		expect(sessionLines.some((line) => /^\d+ above · \d+ below$/.test(line))).toBe(true);
+		expect(sessionLines.some((line) => line.includes("above ·") && line.includes("tab switch"))).toBe(false);
+
+		const roadmap: ProjectGoal[] = Array.from(
+			{ length: 30 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `key-goal-${String(index).padStart(2, "0")}`,
+				title: `Key goal ${String(index).padStart(2, "0")}`,
+				status: "open",
+				description: undefined,
+			}),
+		);
+		const projectLines = new Dashboard(
+			[],
+			roadmap,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 24,
+		).render(80);
+
+		expect(projectLines.every((line) => visibleWidth(line) <= 80)).toBe(true);
+		// The hint this pane exists to teach: Space means one thing on a goal and
+		// another on a section header, and both readings have to reach the screen.
+		expect(projectLines.join("\n")).toContain("space advance/toggle section");
+		expect(projectLines.join("\n")).toContain("esc close");
+		expect(projectLines.some((line) => /^\d+ above · \d+ below$/.test(line))).toBe(true);
+	});
+
+	it("stays inside a short terminal however narrow the key map has to wrap", () => {
+		const many: SessionTask[] = Array.from({ length: 30 }, (_, index) => ({
+			id: `tight-${String(index).padStart(2, "0")}`,
+			title: `Tight task ${String(index).padStart(2, "0")}`,
+			status: "todo",
+		}));
+		for (const [terminalRows, width] of [
+			[24, 30],
+			[10, 30],
+			[6, 40],
+			[4, 24],
+		] as const) {
+			const lines = new Dashboard(
+				many,
+				[],
+				identityTheme,
+				() => {},
+				{ scope: "session" },
+				Date.now,
+				() => terminalRows,
+			).render(width);
+			expect(lines.length).toBeLessThanOrEqual(Math.max(1, Math.floor(terminalRows * 0.8)));
+			expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+			expect(lines.some((line) => line.includes("Tight task "))).toBe(true);
+		}
+	});
+
+	it("spends no row on descriptions when the listed goals have none", () => {
+		const build = (described: boolean): ProjectGoal[] =>
+			Array.from(
+				{ length: 12 },
+				(_, index): ProjectGoal => ({
+					...goals[0],
+					id: `plain-${String(index).padStart(2, "0")}`,
+					title: `Plain goal ${String(index).padStart(2, "0")}`,
+					status: "open",
+					description: described && index === 0 ? "The only description on this roadmap" : undefined,
+				}),
+			);
+		const render = (roadmap: ProjectGoal[]) =>
+			new Dashboard(
+				[],
+				roadmap,
+				identityTheme,
+				() => {},
+				{ scope: "project" },
+				Date.now,
+				() => 20,
+			).render(72);
+
+		const withDescriptions = render(build(true)).join("\n");
+		expect(withDescriptions).toContain("Description: The only description on this roadmap");
+		expect(withDescriptions).toContain("0 above · 7 below");
+
+		// Nothing to describe, so the row goes back to the list rather than sitting
+		// blank above the key map for the life of the roadmap.
+		const withoutDescriptions = render(build(false)).join("\n");
+		expect(withoutDescriptions).not.toContain("Description:");
+		expect(withoutDescriptions).toContain("0 above · 6 below");
+	});
+
 	it("keeps the Project Goal list the same height across described and plain goals", () => {
 		const roadmap: ProjectGoal[] = Array.from(
 			{ length: 12 },
@@ -530,9 +644,9 @@ describe("dashboard navigation and project rendering", () => {
 		);
 		const described = dashboard.render(72);
 		expect(described.join("\n")).toContain("Description: Only this goal carries a description");
-		expect(described.join("\n")).toContain("0 above · 4 below");
-		expect(described.join("\n")).toContain("Goal 07");
-		expect(described.join("\n")).not.toContain("Goal 08");
+		expect(described.join("\n")).toContain("0 above · 7 below");
+		expect(described.join("\n")).toContain("Goal 04");
+		expect(described.join("\n")).not.toContain("Goal 05");
 
 		// Moving onto a goal with nothing to describe must not hand the list the row
 		// the description gave up, or the rows below the cursor shift under it.
@@ -540,9 +654,9 @@ describe("dashboard navigation and project rendering", () => {
 		const plain = dashboard.render(72);
 		expect(plain).toHaveLength(described.length);
 		expect(plain.join("\n")).not.toContain("Description:");
-		expect(plain.join("\n")).toContain("0 above · 4 below");
-		expect(plain.join("\n")).toContain("Goal 07");
-		expect(plain.join("\n")).not.toContain("Goal 08");
+		expect(plain.join("\n")).toContain("0 above · 7 below");
+		expect(plain.join("\n")).toContain("Goal 04");
+		expect(plain.join("\n")).not.toContain("Goal 05");
 
 		// The reserved row is still the first chrome a short terminal gives up.
 		const short = new Dashboard(

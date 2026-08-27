@@ -104,6 +104,29 @@ type DashboardRow = { kind: "task"; key: string; task: SessionTask } | Dashboard
 
 const SESSION_FILTERS: readonly Exclude<DashboardFilter, "archived">[] = ["open", "done", "all"];
 const PROJECT_FILTERS: readonly DashboardFilter[] = ["open", "done", "archived", "all"];
+/** Rows the wrapped key map may occupy before the rest of it is left off screen. */
+const HELP_ROW_LIMIT = 3;
+
+/**
+ * The key map packed into rows no wider than the pane, one hint at a time.
+ *
+ * Wrapped on the gaps between hints rather than on any space, because a hint
+ * split across two rows reads as two different keys.
+ */
+function wrapKeyHints(help: string, width: number): string[] {
+	const lines: string[] = [];
+	let current = "";
+	for (const hint of help.split("  ").filter(Boolean)) {
+		const candidate = current ? `${current}  ${hint}` : hint;
+		if (current && visibleWidth(candidate) > width) {
+			lines.push(current);
+			current = hint;
+		} else current = candidate;
+	}
+	if (current) lines.push(current);
+	return lines;
+}
+
 const DASHBOARD_FILTER_LABELS: Record<DashboardFilter, string> = {
 	open: "Open",
 	done: "Done",
@@ -531,11 +554,13 @@ export class Dashboard {
 				: undefined;
 		const selectedDescription =
 			selectedItem && "description" in selectedItem ? selectedItem.description : undefined;
-		// Reserved for the whole pane rather than filled per row: a row that appears
-		// only for a described goal would resize the list as the cursor walks past
-		// one, which moves the list under a cursor that did not move.
+		// Reserved for the listed goals rather than filled per row: a row that appears
+		// only for a described goal would resize the list as the cursor walks past one,
+		// which moves the list under a cursor that did not move. What the filter lists
+		// does not change under the cursor, so a roadmap that describes nothing spends
+		// nothing on the row.
 		const description =
-			this.scope === "project" && rows.length > 0
+			this.scope === "project" && this.visibleGoals().some((goal) => goal.description)
 				? selectedDescription
 					? th.fg("muted", `Description: ${compactDescription(selectedDescription)}`)
 					: ""
@@ -601,31 +626,53 @@ export class Dashboard {
 			showCompactOverflow = fixedRows() + 2 <= targetHeight;
 		}
 
+		// The key map is the one row that has to be read rather than glanced at, so it
+		// is laid out as text: at ordinary widths it needs more than one row, and the
+		// hints this pane exists to teach are the ones a single truncated row loses.
+		const helpLines = wrapKeyHints(help, Math.max(1, width));
+		let helpRows = showHelp ? 1 : 0;
+		let overflowRow = false;
+		let topSpacer = false;
+		let bottomSpacer = false;
+		if (!Number.isFinite(targetHeight)) {
+			helpRows = showHelp ? Math.min(HELP_ROW_LIMIT, helpLines.length) : 0;
+			topSpacer = true;
+			bottomSpacer = true;
+		} else {
+			// Rows the list does not need are spent on the key map and on a row of its
+			// own for the overflow count, which would otherwise push the map's first
+			// row off screen; whatever is left over keeps the view breathable.
+			let spare =
+				targetHeight - fixedRows() - Number(showCompactOverflow) - Math.max(1, Math.min(3, rows.length || 1));
+			if (showHelp && rows.length > 1 && spare > 0) {
+				overflowRow = true;
+				spare -= 1;
+			}
+			while (showHelp && spare > 0 && helpRows < Math.min(HELP_ROW_LIMIT, helpLines.length)) {
+				helpRows += 1;
+				spare -= 1;
+			}
+			if (spare > 0) {
+				topSpacer = true;
+				spare -= 1;
+			}
+			if (spare > 0) bottomSpacer = true;
+		}
+
 		const top = [
 			...(showTitle ? [title] : []),
 			...(showTabs ? [tabs] : []),
 			...(showFilter ? [filterLine] : []),
 			...(showSummary && summary !== undefined ? [summary] : []),
+			...(topSpacer ? [""] : []),
 		];
-		const bottom = [
-			...(showDescription && description !== undefined ? [description] : []),
-			...(showHelp ? [th.fg("dim", help)] : []),
-			...(showCompactOverflow ? [""] : []),
-		];
-		if (!Number.isFinite(targetHeight)) {
-			top.push("");
-			bottom.unshift("");
-		} else {
-			// Keep the normal view breathable without spending rows that a short list
-			// or terminal needs for content.
-			let spare =
-				targetHeight - fixedRows() - Number(showCompactOverflow) - Math.max(1, Math.min(3, rows.length || 1));
-			if (spare > 0) {
-				top.push("");
-				spare -= 1;
-			}
-			if (spare > 0) bottom.unshift("");
-		}
+		const bottom: string[] = [];
+		if (bottomSpacer) bottom.push("");
+		if (showDescription && description !== undefined) bottom.push(description);
+		const overflowIndex = overflowRow ? bottom.push("") - 1 : -1;
+		const helpIndex = showHelp ? bottom.length : -1;
+		if (showHelp) bottom.push(...helpLines.slice(0, helpRows).map((line) => th.fg("dim", line)));
+		if (showCompactOverflow) bottom.push("");
 
 		const listHeight = Number.isFinite(targetHeight)
 			? Math.max(1, targetHeight - top.length - bottom.length)
@@ -643,11 +690,10 @@ export class Dashboard {
 		const hiddenAbove = this.listScroll;
 		const hiddenBelow = Math.max(0, rows.length - (this.listScroll + listLines.length));
 		if (hiddenAbove > 0 || hiddenBelow > 0) {
-			if (showHelp) {
-				bottom[bottom.length - 1] = th.fg("dim", `${hiddenAbove} above · ${hiddenBelow} below  ${help}`);
-			} else if (showCompactOverflow) {
-				bottom[bottom.length - 1] = th.fg("dim", `${hiddenAbove} above · ${hiddenBelow} below`);
-			}
+			const overflow = `${hiddenAbove} above · ${hiddenBelow} below`;
+			if (overflowIndex >= 0) bottom[overflowIndex] = th.fg("dim", overflow);
+			else if (helpIndex >= 0) bottom[helpIndex] = th.fg("dim", `${overflow}  ${helpLines[0]}`);
+			else if (showCompactOverflow) bottom[bottom.length - 1] = th.fg("dim", overflow);
 		}
 
 		return [...top, ...listLines, ...bottom].map((line) => truncateToWidth(line, width));
