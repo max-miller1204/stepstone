@@ -637,13 +637,13 @@ export class Dashboard {
 		if (!Number.isFinite(targetHeight)) {
 			helpRows = showHelp ? Math.min(HELP_ROW_LIMIT, helpLines.length) : 0;
 			topSpacer = true;
-			bottomSpacer = true;
+			bottomSpacer = !showDescription;
 		} else {
-			// Every row below is one the list could have had. The key map is spent
-			// first, then a row of its own for the overflow count, which would
-			// otherwise push the map's first row off screen; the blank spacers come
-			// last, out of rows the list has no use for, so a list that wants the
-			// whole viewport is never traded for breathing room.
+			// Every row below is one the list could have had. The overflow count is
+			// spent first, so a clipped list always says so on a row of its own
+			// rather than over the key map's first row; the map comes next, and the
+			// blank spacers last, out of rows the list has no use for, so a list that
+			// wants the whole viewport is never traded for breathing room.
 			const capacity = targetHeight - fixedRows() - Number(showCompactOverflow);
 			let optional = Math.max(0, capacity - Math.max(1, Math.min(3, rows.length || 1)));
 			let unused = Math.max(0, capacity - Math.max(1, rows.length));
@@ -653,12 +653,18 @@ export class Dashboard {
 				unused = Math.max(0, unused - taken);
 				return taken;
 			};
-			if (showHelp) helpRows += spend(Math.min(HELP_ROW_LIMIT, helpLines.length) - 1);
-			// Reserved only for a list that already overflows, so the count can never
-			// be the reason the list it counts stopped fitting.
-			if (showHelp && rows.length > capacity - (helpRows - 1)) overflowRow = spend(1) > 0;
+			const helpWant = showHelp ? Math.min(HELP_ROW_LIMIT, helpLines.length) - 1 : 0;
+			// Measured against the widest the key map is allowed to grow, so a list
+			// that only overflows once the map has grown is counted here too, and a
+			// list that fits either way never reserves a row it cannot fill.
+			if (showHelp && rows.length > capacity - Math.min(helpWant, optional)) {
+				overflowRow = spend(1) > 0;
+			}
+			helpRows += spend(helpWant);
 			if (unused > 0 && spend(1) > 0) topSpacer = true;
-			if (unused > 0 && spend(1) > 0) bottomSpacer = true;
+			// The reserved description row already separates the list from the chrome,
+			// so a spacer under it would only read as a second, emptier gap.
+			if (!showDescription && unused > 0 && spend(1) > 0) bottomSpacer = true;
 		}
 
 		const top = [
@@ -694,8 +700,13 @@ export class Dashboard {
 		if (hiddenAbove > 0 || hiddenBelow > 0) {
 			const overflow = `${hiddenAbove} above · ${hiddenBelow} below`;
 			if (overflowIndex >= 0) bottom[overflowIndex] = th.fg("dim", overflow);
-			else if (helpIndex >= 0) bottom[helpIndex] = th.fg("dim", `${overflow}  ${helpLines[0]}`);
-			else if (showCompactOverflow) bottom[bottom.length - 1] = th.fg("dim", overflow);
+			else if (helpIndex >= 0) {
+				// Nothing was left to give the count a row, so it shares the map's
+				// first row, which is re-packed against what the count leaves rather
+				// than cut through whatever hint the width happens to land on.
+				const shared = wrapKeyHints(help, Math.max(1, width - visibleWidth(overflow) - 2))[0] ?? "";
+				bottom[helpIndex] = th.fg("dim", `${overflow}  ${shared}`);
+			} else if (showCompactOverflow) bottom[bottom.length - 1] = th.fg("dim", overflow);
 		}
 
 		return [...top, ...listLines, ...bottom].map((line) => truncateToWidth(line, width));

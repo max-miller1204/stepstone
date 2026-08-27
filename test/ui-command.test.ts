@@ -508,6 +508,117 @@ describe("dashboard navigation and project rendering", () => {
 		expect(expanded).toContain("0 above · 3 below");
 	});
 
+	it("never stacks a blank spacer on the reserved description row", () => {
+		const blankRuns = (lines: string[]) =>
+			lines.filter((line, index) => line === "" && lines[index + 1] === "").length;
+
+		const grouped: ProjectGoal[] = Array.from(
+			{ length: 9 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `stack-${index}`,
+				title: `Stacked goal ${index}`,
+				group: ["Alpha", "Beta", "Gamma"][index % 3],
+				status: "open",
+				description: "Every goal on this roadmap is described",
+			}),
+		);
+		// A grouped roadmap opens collapsed, so the cursor is on a header and the
+		// reserved row can only render blank: it must not sit under a second blank.
+		const collapsed = new Dashboard(
+			[],
+			grouped,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 24,
+		).render(90);
+		expect(collapsed.filter((line) => line.includes("Stacked goal "))).toHaveLength(0);
+		expect(blankRuns(collapsed)).toBe(0);
+
+		const ungrouped: ProjectGoal[] = Array.from(
+			{ length: 5 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `single-${index}`,
+				title: `Single goal ${index}`,
+				status: "open",
+				description: index === 0 ? "Only the first goal is described" : undefined,
+			}),
+		);
+		const dashboard = new Dashboard(
+			[],
+			ungrouped,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 24,
+		);
+		expect(blankRuns(dashboard.render(80))).toBe(0);
+		dashboard.handleInput("\u001b[B");
+		const onUndescribed = dashboard.render(80);
+		expect(onUndescribed.join("\n")).not.toContain("Description:");
+		expect(blankRuns(onUndescribed)).toBe(0);
+	});
+
+	it("keeps the count and the key hints whole when rows are scarce", () => {
+		const many: SessionTask[] = Array.from({ length: 20 }, (_, index) => ({
+			id: `scarce-${index}`,
+			title: `Scarce task ${index}`,
+			status: "todo",
+		}));
+		const scarce = new Dashboard(
+			many,
+			[],
+			identityTheme,
+			() => {},
+			{ scope: "session" },
+			Date.now,
+			() => 10,
+		).render(80);
+		// The count gets its row before the key map grows, so the map's first row
+		// still reads as whole hints instead of being cut through one.
+		expect(scarce).toContain("0 above · 17 below");
+		expect(scarce.some((line) => line.includes("enter view"))).toBe(true);
+		expect(scarce.some((line) => line.endsWith("..."))).toBe(false);
+
+		const grouped: ProjectGoal[] = Array.from(
+			{ length: 5 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `tight-goal-${index}`,
+				title: `Tight goal ${index}`,
+				group: `Tight ${index}`,
+				status: "open",
+			}),
+		);
+		const dashboard = new Dashboard(
+			[],
+			grouped,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 12,
+		);
+		dashboard.render(72);
+		dashboard.handleInput("\u001b[B");
+		dashboard.handleInput("\u001b[B");
+		dashboard.render(72);
+		dashboard.handleInput(" ");
+		const shared = dashboard.render(72);
+
+		// Nothing was left to give the count a row here, so it shares the map's
+		// first row - which is re-packed to whole hints rather than truncated.
+		const sharedRow = shared.find((line) => line.includes("above ·"));
+		expect(sharedRow).toBeDefined();
+		expect(sharedRow?.startsWith("2 above · 1 below  tab switch")).toBe(true);
+		expect(sharedRow?.endsWith("...")).toBe(false);
+		expect(sharedRow?.endsWith("navigate")).toBe(true);
+	});
+
 	it("spends no row on a count when every row of the list is on screen", () => {
 		const render = (count: number) =>
 			new Dashboard(
