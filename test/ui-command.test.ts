@@ -734,6 +734,40 @@ describe("dashboard navigation and project rendering", () => {
 		expect(after).toBe(before);
 	});
 
+	it("pages one item at a time when the terminal fits a single list row", () => {
+		const paged: SessionTask[] = Array.from({ length: 20 }, (_, index) => ({
+			id: `one-${String(index).padStart(2, "0")}`,
+			title: `Single task ${String(index).padStart(2, "0")}`,
+			status: "todo",
+		}));
+		let result: DashboardResult | undefined;
+		const dashboard = new Dashboard(
+			paged,
+			[],
+			identityTheme,
+			(value) => {
+				result = value;
+			},
+			{ scope: "session" },
+			Date.now,
+			() => 4,
+		);
+		const first = dashboard.render(72);
+		expect(first.join("\n")).toContain("0 above · 19 below");
+		expect(first.filter((line) => line.includes("Single task "))).toHaveLength(1);
+
+		// One row is the whole screenful, so a page is one item: nothing may be
+		// stepped over that the viewport never drew.
+		dashboard.handleInput("\u001b[6~");
+		expect(dashboard.render(72).join("\n")).toContain("Single task 01");
+		dashboard.handleInput("\u001b[6~");
+		expect(dashboard.render(72).join("\n")).toContain("Single task 02");
+		dashboard.handleInput("\u001b[5~");
+		expect(dashboard.render(72).join("\n")).toContain("Single task 01");
+		dashboard.handleInput("\r");
+		expect(result?.action).toEqual({ kind: "view", scope: "session", id: "one-01" });
+	});
+
 	it("pages by the rows the terminal is showing, not a fixed step", () => {
 		const paged: SessionTask[] = Array.from({ length: 40 }, (_, index) => ({
 			id: `page-${String(index).padStart(2, "0")}`,

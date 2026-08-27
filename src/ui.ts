@@ -458,9 +458,10 @@ export class Dashboard {
 		if (matchesKey(data, Key.up) || data === "k") this.selected = Math.max(0, this.selected - 1);
 		if (matchesKey(data, Key.down) || data === "j")
 			this.selected = Math.min(Math.max(0, rows.length - 1), this.selected + 1);
-		// A page is the rows the terminal is showing, less one kept as context. Before
-		// the first render there is no measurement to page by, so a page is a guess.
-		const page = this.listHeight > 1 ? this.listHeight - 1 : 8;
+		// A page is the rows the terminal is showing, less one kept as context, and at
+		// least one row: a viewport that holds a single row still pages by that row.
+		// Only before the first render, where there is nothing measured, is it a guess.
+		const page = this.listHeight > 0 ? Math.max(1, this.listHeight - 1) : 8;
 		if (matchesKey(data, Key.pageUp)) this.selected = Math.max(0, this.selected - page);
 		if (matchesKey(data, Key.pageDown))
 			this.selected = Math.min(Math.max(0, rows.length - 1), this.selected + page);
