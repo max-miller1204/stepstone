@@ -47,7 +47,7 @@ Session Task edits change the title, while Project Goal edits can also change th
 The Project Goals pane reads in the same visual language as the [terminal goal board](board.md), which owns what each treatment means: the active goal keeps its own marker and full contrast, settled goals recede, a goal that has gone stale carries its age, and a goal waiting on work that has not landed is marked blocked.
 Goals are filed into headed sections by the rule the board's [sections](board.md#sections) describe, down to a roadmap where nothing is grouped staying a plain list.
 Grouped roadmaps open with every section collapsed, just like the board.
-Select a section header and press Space to toggle it, Right or Enter to open it, or Left to close it; Enter on an open section steps into its first goal.
+Select a section header and press Space to toggle it, Right or Enter to open it, or Left to close it; Enter on an open section steps into its first goal, and Left on a goal inside a section closes that section and selects its header.
 A `Goals:` line above the list reports per-status counts across the whole roadmap and says how many match whenever the current filter admits only some of them, counting the goals a collapsed section holds.
 Below the list, Project Goals keep a row for the selected goal's description whenever any listed goal has one, so walking past a described goal never resizes the list, and a roadmap that describes nothing spends no row on it.
 The current filter and open sections survive actions while the dashboard remains open, but a new `/tasks` invocation starts again on the compact, collapsed roadmap shape.
@@ -57,7 +57,8 @@ The detail window wraps complete descriptions and the metadata it displays inste
 Use Up and Down or `j` and `k` to scroll long details, with Page Up and Page Down for larger jumps, then Enter or Escape to return to the dashboard.
 For a Project Goal it also spells out the goal's group, branch, dependencies with each target's own status marker and whether it is satisfied, the goals it blocks, its links, and when it was completed, omitting every row the goal has nothing to fill.
 For a Session Task associated with a Project Goal, the detail window also shows the goal title, its group, and its full description.
-The dashboard keeps the current list and the selected task across each action, so a moved task stays selected at its new position.
+The dashboard keeps the current list, the selected row, and how far the list is scrolled across each action, so a moved row stays selected at its new position and the rows around it hold their place on screen.
+When an action leaves the selected row unlisted, by deleting it or by advancing it out of the current filter, the row that took its place is selected, including for a goal inside a section.
 
 The full-screen [terminal goal board](board.md) is a separate, roadmap-only view that runs outside any session; the dashboard is the one that shows both lists.
 
