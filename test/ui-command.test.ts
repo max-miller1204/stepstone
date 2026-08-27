@@ -210,13 +210,13 @@ describe("dashboard ordering controls", () => {
 		const archived: ProjectGoal = { ...goals[0], id: "gone-one", title: "Gone one", status: "archived" };
 
 		const withArchived = render([live, archived]);
-		expect(withArchived).toContain("Goals: ○ 1 · ◌ 1 · 1 of 2 listed");
+		expect(withArchived).toContain("Goals: ○ 1 · ◌ 1 · 1 of 2 match");
 		expect(withArchived).not.toContain("Gone one");
 
 		// Every counted goal is on screen, so there is nothing to reconcile.
 		const listedOnly = render([live]);
 		expect(listedOnly).toContain("Goals: ○ 1");
-		expect(listedOnly).not.toContain("listed");
+		expect(listedOnly).not.toContain("match");
 	});
 
 	it("stops grouped Project Goal moves at section boundaries", () => {
@@ -382,7 +382,7 @@ describe("dashboard navigation and project rendering", () => {
 		const collapsed = dashboard.render(100).join("\n");
 
 		expect(collapsed).toContain("Filter: Open (f to change)");
-		expect(collapsed).toContain("Goals: ◆ 1 · ○ 1 · ✓ 1 · ◌ 1 · 2 of 4 listed");
+		expect(collapsed).toContain("Goals: ◆ 1 · ○ 1 · ✓ 1 · ◌ 1 · 2 of 4 match");
 		expect(collapsed).toContain("> ▸ Foundation (1)");
 		expect(collapsed).toContain("  ▸ Ungrouped (1)");
 		expect(collapsed).not.toContain("Active goal active");
@@ -506,6 +506,56 @@ describe("dashboard navigation and project rendering", () => {
 		expect(expanded).toContain("Grouped goal 1");
 		expect(expanded).toContain("▸ Group 0 (1)");
 		expect(expanded).toContain("0 above · 3 below");
+	});
+
+	it("keeps the Project Goal list the same height across described and plain goals", () => {
+		const roadmap: ProjectGoal[] = Array.from(
+			{ length: 12 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `goal-${String(index).padStart(2, "0")}`,
+				title: `Goal ${String(index).padStart(2, "0")}`,
+				status: "open",
+				description: index === 0 ? "Only this goal carries a description" : undefined,
+			}),
+		);
+		const dashboard = new Dashboard(
+			[],
+			roadmap,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 20,
+		);
+		const described = dashboard.render(72);
+		expect(described.join("\n")).toContain("Description: Only this goal carries a description");
+		expect(described.join("\n")).toContain("0 above · 4 below");
+		expect(described.join("\n")).toContain("Goal 07");
+		expect(described.join("\n")).not.toContain("Goal 08");
+
+		// Moving onto a goal with nothing to describe must not hand the list the row
+		// the description gave up, or the rows below the cursor shift under it.
+		dashboard.handleInput("\u001b[B");
+		const plain = dashboard.render(72);
+		expect(plain).toHaveLength(described.length);
+		expect(plain.join("\n")).not.toContain("Description:");
+		expect(plain.join("\n")).toContain("0 above · 4 below");
+		expect(plain.join("\n")).toContain("Goal 07");
+		expect(plain.join("\n")).not.toContain("Goal 08");
+
+		// The reserved row is still the first chrome a short terminal gives up.
+		const short = new Dashboard(
+			[],
+			roadmap,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 6,
+		).render(72);
+		expect(short.length).toBeLessThanOrEqual(6);
+		expect(short.join("\n")).not.toContain("Description:");
 	});
 
 	it("never renders beyond a short terminal, even with Project Goal details", () => {

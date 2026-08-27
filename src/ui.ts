@@ -277,11 +277,17 @@ export class Dashboard {
 		return this.goals.filter((goal) => goalMatchesFilter(goal, this.projectFilter));
 	}
 
-	/** The roadmap's shape plus how much of it the current filter lists. */
+	/**
+	 * The roadmap's shape plus how much of it the current filter admits.
+	 *
+	 * Counted against the filter rather than against the rows on screen, because a
+	 * collapsed section holds goals the filter keeps: "match" is the claim this
+	 * number can make, and the per-section counts say where those goals are.
+	 */
 	private goalCountSummary(): string {
-		const listed = this.visibleGoals().length;
+		const matching = this.visibleGoals().length;
 		const counts = goalCountLine(this.goals);
-		return listed === this.goals.length ? counts : `${counts} · ${listed} of ${this.goals.length} listed`;
+		return matching === this.goals.length ? counts : `${counts} · ${matching} of ${this.goals.length} match`;
 	}
 
 	private rows(): DashboardRow[] {
@@ -516,9 +522,16 @@ export class Dashboard {
 			this.scope === "project" && this.goals.length > 0
 				? th.fg("muted", `Goals: ${this.goalCountSummary()}`)
 				: undefined;
+		const selectedDescription =
+			selectedItem && "description" in selectedItem ? selectedItem.description : undefined;
+		// Reserved for the whole pane rather than filled per row: a row that appears
+		// only for a described goal would resize the list as the cursor walks past
+		// one, which moves the list under a cursor that did not move.
 		const description =
-			this.scope === "project" && selectedItem && "description" in selectedItem && selectedItem.description
-				? th.fg("muted", `Description: ${compactDescription(selectedItem.description)}`)
+			this.scope === "project" && rows.length > 0
+				? selectedDescription
+					? th.fg("muted", `Description: ${compactDescription(selectedDescription)}`)
+					: ""
 				: undefined;
 		const help =
 			this.scope === "session"
