@@ -734,6 +734,99 @@ describe("dashboard navigation and project rendering", () => {
 		expect(after).toBe(before);
 	});
 
+	it("pages by the rows the terminal is showing, not a fixed step", () => {
+		const paged: SessionTask[] = Array.from({ length: 40 }, (_, index) => ({
+			id: `page-${String(index).padStart(2, "0")}`,
+			title: `Paged task ${String(index).padStart(2, "0")}`,
+			status: "todo",
+		}));
+		let shortResult: DashboardResult | undefined;
+		const shortTerminal = new Dashboard(
+			paged,
+			[],
+			identityTheme,
+			(value) => {
+				shortResult = value;
+			},
+			{ scope: "session" },
+			Date.now,
+			() => 12,
+		);
+		const shortFirst = shortTerminal.render(72);
+		expect(shortFirst.join("\n")).toContain("0 above · 37 below");
+
+		shortTerminal.handleInput("\u001b[6~");
+		const shortPaged = shortTerminal.render(72).join("\n");
+		expect(shortPaged).toContain("Paged task 02");
+		expect(shortPaged).not.toContain("Paged task 03");
+
+		// A second page must not leap over rows the first page never drew.
+		shortTerminal.handleInput("\u001b[6~");
+		const shortSecond = shortTerminal.render(72).join("\n");
+		expect(shortSecond).toContain("Paged task 03");
+		expect(shortSecond).toContain("Paged task 04");
+		shortTerminal.handleInput("\r");
+		expect(shortResult?.action).toEqual({ kind: "view", scope: "session", id: "page-04" });
+
+		shortTerminal.handleInput("\u001b[5~");
+		shortTerminal.render(72);
+		shortTerminal.handleInput("\r");
+		expect(shortResult?.action).toEqual({ kind: "view", scope: "session", id: "page-02" });
+
+		let tallResult: DashboardResult | undefined;
+		const tallTerminal = new Dashboard(
+			paged,
+			[],
+			identityTheme,
+			(value) => {
+				tallResult = value;
+			},
+			{ scope: "session" },
+			Date.now,
+			() => 40,
+		);
+		const drawn = tallTerminal.render(72).filter((line) => line.includes("Paged task ")).length;
+		// A taller terminal has to page further, or the keys stop paging at all.
+		expect(drawn).toBeGreaterThan(9);
+		tallTerminal.handleInput("\u001b[6~");
+		tallTerminal.handleInput("\r");
+		expect(tallResult?.action).toEqual({
+			kind: "view",
+			scope: "session",
+			id: `page-${String(drawn - 1).padStart(2, "0")}`,
+		});
+	});
+
+	it("keeps the selected row on its screen line when a filter drops rows above it", () => {
+		const mixed: SessionTask[] = Array.from({ length: 25 }, (_, index) => ({
+			id: `mix-${String(index).padStart(2, "0")}`,
+			title: `Mixed task ${String(index).padStart(2, "0")}`,
+			status: index < 5 ? "done" : "todo",
+		}));
+		const dashboard = new Dashboard(
+			mixed,
+			[],
+			identityTheme,
+			() => {},
+			{ scope: "session", sessionFilter: "all", selectedId: "mix-10", listScroll: 8 },
+			Date.now,
+			() => 12,
+		);
+		const before = dashboard.render(72);
+		expect(before.join("\n")).toContain("8 above · 14 below");
+		expect(before.find((line) => line.startsWith(">"))).toContain("mix-10");
+		expect(before.filter((line) => line.includes("Mixed task ")).at(-1)).toContain("mix-10");
+
+		// Dropping the five done tasks moves the row five places up the list, but not
+		// one place across the screen: it is still the bottom row of the viewport.
+		dashboard.handleInput("f");
+		const cycled = dashboard.render(72);
+		expect(cycled.join("\n")).toContain("Filter: Open (f to change)");
+		expect(cycled.join("\n")).toContain("3 above · 14 below");
+		expect(cycled.find((line) => line.startsWith(">"))).toContain("mix-10");
+		expect(cycled.filter((line) => line.includes("Mixed task ")).at(-1)).toContain("mix-10");
+	});
+
 	it("keeps a long list within the terminal viewport and scrolls the selection", () => {
 		const longTasks: SessionTask[] = Array.from({ length: 20 }, (_, index) => ({
 			id: `long-${index}`,
@@ -762,12 +855,12 @@ describe("dashboard navigation and project rendering", () => {
 		const scrolled = dashboard.render(72);
 		expect(scrolled).toHaveLength(9);
 		expect(scrolled.join("\n")).toContain("above");
-		expect(scrolled.join("\n")).toContain("Long task 9");
+		expect(scrolled.join("\n")).toContain("Long task 3");
 		expect(scrolled.join("\n")).not.toContain("Long task 0");
 		expect(scrolled.every((line) => visibleWidth(line) <= 72)).toBe(true);
 
 		dashboard.handleInput("\r");
-		expect(result?.action).toEqual({ kind: "view", scope: "session", id: "long-9" });
+		expect(result?.action).toEqual({ kind: "view", scope: "session", id: "long-3" });
 
 		const tiny = new Dashboard(
 			longTasks,

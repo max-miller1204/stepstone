@@ -34,7 +34,7 @@ How a release reaches npm and the gallery is in [docs/releasing.md](https://gith
 ## The dashboard
 
 Run `/tasks` with no arguments to open the dashboard, a two-section view over Session Tasks and Project Goals.
-Use Tab to switch lists, Up and Down or `j` and `k` to navigate, and Page Up and Page Down to move through a long list.
+Use Tab to switch lists, Up and Down or `j` and `k` to navigate, and Page Up and Page Down to move through a long list a screenful at a time, keeping one row of the previous screen for context.
 The dashboard keeps the selected row in a terminal-height viewport, with counts for the rows above and below whenever the list continues off screen.
 Press `f` to cycle the status filter: Session Tasks offer open, done, and all, while Project Goals offer open, done, archived, and all.
 
