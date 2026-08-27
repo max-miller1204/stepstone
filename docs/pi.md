@@ -49,7 +49,7 @@ Goals are filed into headed sections by the rule the board's [sections](board.md
 Grouped roadmaps open with every section collapsed, just like the board.
 Select a section header and press Space to toggle it, Right or Enter to open it, or Left to close it; Enter on an open section steps into its first goal.
 A `Goals:` line above the list reports per-status counts across the whole roadmap and says how many match whenever the current filter admits only some of them, counting the goals a collapsed section holds.
-Below the list, Project Goals keep a row for the selected goal's description, so walking past a goal that has one never resizes the list.
+Below the list, Project Goals keep a row for the selected goal's description whenever any listed goal has one, so walking past a described goal never resizes the list, and a roadmap that describes nothing spends no row on it.
 The current filter and open sections survive actions while the dashboard remains open, but a new `/tasks` invocation starts again on the compact, collapsed roadmap shape.
 Adding an item is the one action that may change them: when the active filter would hide what was just created, the filter relaxes to All, and the section holding a new goal opens, so the new row comes back on screen and selected rather than as a count that moved.
 

@@ -639,24 +639,26 @@ export class Dashboard {
 			topSpacer = true;
 			bottomSpacer = true;
 		} else {
-			// Rows the list does not need are spent on the key map and on a row of its
-			// own for the overflow count, which would otherwise push the map's first
-			// row off screen; whatever is left over keeps the view breathable.
-			let spare =
-				targetHeight - fixedRows() - Number(showCompactOverflow) - Math.max(1, Math.min(3, rows.length || 1));
-			if (showHelp && rows.length > 1 && spare > 0) {
-				overflowRow = true;
-				spare -= 1;
-			}
-			while (showHelp && spare > 0 && helpRows < Math.min(HELP_ROW_LIMIT, helpLines.length)) {
-				helpRows += 1;
-				spare -= 1;
-			}
-			if (spare > 0) {
-				topSpacer = true;
-				spare -= 1;
-			}
-			if (spare > 0) bottomSpacer = true;
+			// Every row below is one the list could have had. The key map is spent
+			// first, then a row of its own for the overflow count, which would
+			// otherwise push the map's first row off screen; the blank spacers come
+			// last, out of rows the list has no use for, so a list that wants the
+			// whole viewport is never traded for breathing room.
+			const capacity = targetHeight - fixedRows() - Number(showCompactOverflow);
+			let optional = Math.max(0, capacity - Math.max(1, Math.min(3, rows.length || 1)));
+			let unused = Math.max(0, capacity - Math.max(1, rows.length));
+			const spend = (want: number): number => {
+				const taken = Math.max(0, Math.min(want, optional));
+				optional -= taken;
+				unused = Math.max(0, unused - taken);
+				return taken;
+			};
+			if (showHelp) helpRows += spend(Math.min(HELP_ROW_LIMIT, helpLines.length) - 1);
+			// Reserved only for a list that already overflows, so the count can never
+			// be the reason the list it counts stopped fitting.
+			if (showHelp && rows.length > capacity - (helpRows - 1)) overflowRow = spend(1) > 0;
+			if (unused > 0 && spend(1) > 0) topSpacer = true;
+			if (unused > 0 && spend(1) > 0) bottomSpacer = true;
 		}
 
 		const top = [

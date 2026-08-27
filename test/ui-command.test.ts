@@ -508,6 +508,67 @@ describe("dashboard navigation and project rendering", () => {
 		expect(expanded).toContain("0 above · 3 below");
 	});
 
+	it("spends no row on a count when every row of the list is on screen", () => {
+		const render = (count: number) =>
+			new Dashboard(
+				Array.from({ length: count }, (_, index) => ({
+					id: `fits-${index}`,
+					title: `Fits task ${index}`,
+					status: "todo" as const,
+				})),
+				[],
+				identityTheme,
+				() => {},
+				{ scope: "session" },
+				Date.now,
+				() => 24,
+			).render(80);
+
+		const shortList = render(10);
+		expect(shortList.filter((line) => line.includes("Fits task "))).toHaveLength(10);
+		expect(shortList.some((line) => line.includes("above ·"))).toBe(false);
+		// A row reserved for a count that can never be written is a blank row, and
+		// two blanks in a row is the shape that reads as a rendering fault.
+		expect(shortList.some((line, index) => line === "" && shortList[index + 1] === "")).toBe(false);
+
+		// At the tipping point the reservation used to create the overflow it then
+		// reported: every task still fits, so nothing is hidden and nothing says so.
+		const tipping = render(12);
+		expect(tipping.filter((line) => line.includes("Fits task "))).toHaveLength(12);
+		expect(tipping.some((line) => line.includes("above ·"))).toBe(false);
+	});
+
+	it("spends the blank spacers on the key map before the list gives up a row", () => {
+		const roadmap: ProjectGoal[] = Array.from(
+			{ length: 30 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `dense-${String(index).padStart(2, "0")}`,
+				title: `Dense goal ${String(index).padStart(2, "0")}`,
+				status: "open",
+				description: undefined,
+			}),
+		);
+		const lines = new Dashboard(
+			[],
+			roadmap,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 16,
+		).render(80);
+
+		expect(lines.length).toBeLessThanOrEqual(12);
+		// Nothing the list wants is spent on breathing room, so the rows the wrapped
+		// key map needs come out of the spacers first.
+		expect(lines.some((line) => line === "")).toBe(false);
+		expect(lines.filter((line) => line.includes("Dense goal "))).toHaveLength(4);
+		expect(lines).toContain("0 above · 26 below");
+		expect(lines.join(" ")).toContain("space advance/toggle section");
+		expect(lines.join(" ")).toContain("esc close");
+	});
+
 	it("keeps every key hint on screen at an ordinary terminal width", () => {
 		const many: SessionTask[] = Array.from({ length: 30 }, (_, index) => ({
 			id: `key-${String(index).padStart(2, "0")}`,
@@ -613,13 +674,13 @@ describe("dashboard navigation and project rendering", () => {
 
 		const withDescriptions = render(build(true)).join("\n");
 		expect(withDescriptions).toContain("Description: The only description on this roadmap");
-		expect(withDescriptions).toContain("0 above · 7 below");
+		expect(withDescriptions).toContain("0 above · 5 below");
 
 		// Nothing to describe, so the row goes back to the list rather than sitting
 		// blank above the key map for the life of the roadmap.
 		const withoutDescriptions = render(build(false)).join("\n");
 		expect(withoutDescriptions).not.toContain("Description:");
-		expect(withoutDescriptions).toContain("0 above · 6 below");
+		expect(withoutDescriptions).toContain("0 above · 4 below");
 	});
 
 	it("keeps the Project Goal list the same height across described and plain goals", () => {
@@ -644,9 +705,9 @@ describe("dashboard navigation and project rendering", () => {
 		);
 		const described = dashboard.render(72);
 		expect(described.join("\n")).toContain("Description: Only this goal carries a description");
-		expect(described.join("\n")).toContain("0 above · 7 below");
-		expect(described.join("\n")).toContain("Goal 04");
-		expect(described.join("\n")).not.toContain("Goal 05");
+		expect(described.join("\n")).toContain("0 above · 5 below");
+		expect(described.join("\n")).toContain("Goal 06");
+		expect(described.join("\n")).not.toContain("Goal 07");
 
 		// Moving onto a goal with nothing to describe must not hand the list the row
 		// the description gave up, or the rows below the cursor shift under it.
@@ -654,9 +715,9 @@ describe("dashboard navigation and project rendering", () => {
 		const plain = dashboard.render(72);
 		expect(plain).toHaveLength(described.length);
 		expect(plain.join("\n")).not.toContain("Description:");
-		expect(plain.join("\n")).toContain("0 above · 7 below");
-		expect(plain.join("\n")).toContain("Goal 04");
-		expect(plain.join("\n")).not.toContain("Goal 05");
+		expect(plain.join("\n")).toContain("0 above · 5 below");
+		expect(plain.join("\n")).toContain("Goal 06");
+		expect(plain.join("\n")).not.toContain("Goal 07");
 
 		// The reserved row is still the first chrome a short terminal gives up.
 		const short = new Dashboard(
