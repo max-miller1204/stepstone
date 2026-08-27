@@ -276,9 +276,16 @@ export class Dashboard {
 		const selectedItemIndex = rows.findIndex(
 			(row) => initialState?.selectedId !== undefined && this.rowItem(row)?.id === initialState.selectedId,
 		);
-		const selectedGroupIndex = rows.findIndex(
-			(row) => row.kind === "group" && row.key === `group:${initialState?.selectedGroup}`,
-		);
+		// The section a goal is filed under says where that goal is, so it is only an
+		// answer while the goal is still listed - inside a section the cursor closed,
+		// or under the cursor itself when it sat on the header. Once an action has
+		// taken the goal off the list, the row that replaced it is the nearer one.
+		const selectionRemoved =
+			initialState?.selectedId !== undefined &&
+			!this.items().some((item) => item.id === initialState.selectedId);
+		const selectedGroupIndex = selectionRemoved
+			? -1
+			: rows.findIndex((row) => row.kind === "group" && row.key === `group:${initialState?.selectedGroup}`);
 		const nearestIndex = Math.min(
 			Math.max(0, initialState?.selectedIndex ?? 0),
 			Math.max(0, rows.length - 1),

@@ -911,6 +911,84 @@ describe("dashboard navigation and project rendering", () => {
 		expect(viewed).toBe("sel-16");
 	});
 
+	it("lands the cursor on the goal that replaced a removed one inside its section", () => {
+		const roadmap: ProjectGoal[] = ["Alpha one", "Alpha two", "Alpha three", "Beta one"].map(
+			(title, index) => ({
+				...goals[0],
+				id: `grp-${index}`,
+				title,
+				description: undefined,
+				status: "open" as const,
+				group: index === 3 ? "Beta" : "Alpha",
+			}),
+		);
+		const openAt = (state: DashboardState, goalItems: ProjectGoal[]) => {
+			let result: DashboardResult | undefined;
+			const dashboard = new Dashboard(
+				[],
+				goalItems,
+				identityTheme,
+				(value) => {
+					result = value;
+				},
+				state,
+			);
+			return { dashboard, result: () => result };
+		};
+		const selected: DashboardState = {
+			scope: "project",
+			selectedId: "grp-1",
+			selectedGroup: "Alpha",
+			selectedIndex: 2,
+			expandedGroups: ["Alpha"],
+		};
+
+		// Deleting the middle goal of an expanded section leaves the cursor on the
+		// goal that took its row, not back up on the section header.
+		const deleting = openAt(selected, roadmap);
+		deleting.dashboard.handleInput("d");
+		expect(deleting.result()?.action).toEqual({ kind: "delete", scope: "project", id: "grp-1" });
+		const afterDelete = openAt(
+			deleting.result()!.state,
+			roadmap.filter((goal) => goal.id !== "grp-1"),
+		);
+		expect(afterDelete.dashboard.render(60).find((line) => line.startsWith(">"))).toContain(
+			"Alpha three",
+		);
+		afterDelete.dashboard.handleInput("\r");
+		expect(afterDelete.result()?.action).toEqual({ kind: "view", scope: "project", id: "grp-2" });
+
+		// Completing it out of the Open filter is the same removal.
+		const advancing = openAt(selected, roadmap);
+		advancing.dashboard.handleInput(" ");
+		expect(advancing.result()?.action).toEqual({ kind: "advance", scope: "project", id: "grp-1" });
+		const afterAdvance = openAt(
+			advancing.result()!.state,
+			roadmap.map((goal) => (goal.id === "grp-1" ? { ...goal, status: "done" as const } : goal)),
+		);
+		afterAdvance.dashboard.handleInput("\r");
+		expect(afterAdvance.result()?.action).toEqual({ kind: "view", scope: "project", id: "grp-2" });
+
+		// A cursor that genuinely sat on the header still restores onto the header.
+		const onHeader = openAt(
+			{ scope: "project", selectedGroup: "Beta", selectedIndex: 4, expandedGroups: ["Alpha"] },
+			roadmap,
+		);
+		expect(onHeader.dashboard.render(60).find((line) => line.startsWith(">"))).toContain(
+			"▸ Beta (1)",
+		);
+
+		// A goal the cursor is on that is still listed but sits inside a closed
+		// section restores onto that section rather than an unrelated row.
+		const collapsed = openAt(
+			{ scope: "project", selectedId: "grp-1", selectedGroup: "Alpha", selectedIndex: 2, expandedGroups: [] },
+			roadmap,
+		);
+		expect(collapsed.dashboard.render(60).find((line) => line.startsWith(">"))).toContain(
+			"▸ Alpha (3)",
+		);
+	});
+
 	it("filters Session Tasks between open, done, and all", () => {
 		const dashboard = new Dashboard(tasks, [], identityTheme, () => {}, { scope: "session" });
 		const open = dashboard.render(80).join("\n");
