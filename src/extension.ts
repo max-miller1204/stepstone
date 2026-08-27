@@ -22,12 +22,23 @@ import {
 	DashboardDetail,
 	type DashboardDetailItem,
 	type DashboardResult,
+	type DashboardReveal,
 	type DashboardState,
+	revealDashboardState,
 } from "./ui.ts";
 
 /** Widget slot this extension owns in Pi's session UI, named after the package. */
 const WIDGET_ID = CLI_COMMAND_CONTRACT.binary;
 const CAPTURE_WORKFLOW = captureWorkflowAction(CLI_COMMAND_CONTRACT.actions).captureWorkflow;
+
+/** What the dashboard loop does next, and anything the action created for it to show. */
+interface DashboardActionOutcome {
+	again: boolean;
+	reveal?: DashboardReveal;
+}
+
+const DASHBOARD_CONTINUE: DashboardActionOutcome = { again: true };
+const DASHBOARD_CLOSE: DashboardActionOutcome = { again: false };
 
 export interface ParsedCommand {
 	scope: "session" | "project";
@@ -296,20 +307,23 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 		);
 	}
 
-	async function handleDashboardAction(action: DashboardAction, ctx: ExtensionContext): Promise<boolean> {
-		if (action.kind === "close") return false;
+	async function handleDashboardAction(
+		action: DashboardAction,
+		ctx: ExtensionContext,
+	): Promise<DashboardActionOutcome> {
+		if (action.kind === "close") return DASHBOARD_CLOSE;
 		if (action.kind === "view") {
 			const item = findDashboardDetailItem(action);
 			if (item) await showDashboardDetail(item, ctx);
-			return true;
+			return DASHBOARD_CONTINUE;
 		}
 		if (action.kind === "add" || action.kind === "insert") {
 			let inputLabel = action.scope === "session" ? "Add session task" : "Add project goal";
 			if (action.kind === "insert") inputLabel = "Insert session task";
 			const title = await ctx.ui.input(inputLabel, "Title");
-			if (!title?.trim()) return true;
+			if (!title?.trim()) return DASHBOARD_CONTINUE;
 			if (action.scope === "session") {
-				await execute(
+				const added = await execute(
 					{
 						scope: "session",
 						action: "add",
@@ -319,10 +333,11 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 					ctx,
 					"dashboard",
 				);
-				return true;
+				const task = added.details.task;
+				return task ? { again: true, reveal: { scope: "session", id: task.id } } : DASHBOARD_CONTINUE;
 			}
 			const description = await ctx.ui.editor("Add description (optional)", "");
-			await execute(
+			const added = await execute(
 				{
 					scope: "project",
 					action: "add",
@@ -332,7 +347,8 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 				ctx,
 				"dashboard",
 			);
-			return true;
+			const goal = added.details.goal;
+			return goal ? { again: true, reveal: { scope: "project", id: goal.id } } : DASHBOARD_CONTINUE;
 		}
 		if (action.kind === "move") {
 			await execute(
@@ -346,36 +362,36 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 				ctx,
 				"dashboard",
 			);
-			return true;
+			return DASHBOARD_CONTINUE;
 		}
 		if (action.kind === "edit") {
 			if (action.scope === "session") {
 				const task = applicationService.getSessionTasks().find((candidate) => candidate.id === action.id);
-				if (!task) return true;
+				if (!task) return DASHBOARD_CONTINUE;
 				const title = await ctx.ui.input("Edit title (leave blank to keep)", task.title);
-				if (title === undefined) return true;
+				if (title === undefined) return DASHBOARD_CONTINUE;
 				const nextTitle = title.trim() || undefined;
-				if (nextTitle === undefined || nextTitle === task.title) return true;
+				if (nextTitle === undefined || nextTitle === task.title) return DASHBOARD_CONTINUE;
 				await execute(
 					{ scope: "session", action: "update", id: action.id, title: nextTitle },
 					ctx,
 					"dashboard",
 				);
-				return true;
+				return DASHBOARD_CONTINUE;
 			}
 			const goal = projectGoals.find((candidate) => candidate.id === action.id);
-			if (!goal) return true;
+			if (!goal) return DASHBOARD_CONTINUE;
 			const title = await ctx.ui.input("Edit title (leave blank to keep)", goal.title);
-			if (title === undefined) return true;
+			if (title === undefined) return DASHBOARD_CONTINUE;
 			const nextTitle = title.trim() || undefined;
 			const description = await ctx.ui.editor("Edit description", goal.description ?? "");
-			if (description === undefined) return true;
+			if (description === undefined) return DASHBOARD_CONTINUE;
 			const nextDescription = description.trim();
 			if (
 				(nextTitle === undefined || nextTitle === goal.title) &&
 				nextDescription === (goal.description ?? "")
 			) {
-				return true;
+				return DASHBOARD_CONTINUE;
 			}
 			await execute(
 				{
@@ -388,7 +404,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 				ctx,
 				"dashboard",
 			);
-			return true;
+			return DASHBOARD_CONTINUE;
 		}
 		if (action.kind === "delete") {
 			const confirmed = await ctx.ui.confirm("Delete item?", "This cannot be undone.");
@@ -398,7 +414,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 					ctx,
 					"dashboard",
 				);
-			return true;
+			return DASHBOARD_CONTINUE;
 		}
 		if (action.scope === "session") {
 			const task = applicationService.getSessionTasks().find((item) => item.id === action.id);
@@ -408,10 +424,10 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 				else if (task.status === "doing") status = "done";
 				await execute({ scope: "session", action: "set_status", id: task.id, status }, ctx, "dashboard");
 			}
-			return true;
+			return DASHBOARD_CONTINUE;
 		}
 		const goal = projectGoals.find((item) => item.id === action.id);
-		if (!goal) return true;
+		if (!goal) return DASHBOARD_CONTINUE;
 		if (goal.status === "open") {
 			const result = await execute({ scope: "project", action: "set_active", id: goal.id }, ctx, "dashboard");
 			if (result.details.blockedBy?.length) ctx.ui.notify(result.content, "warning");
@@ -422,7 +438,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 				await execute({ scope: "project", action: actionName, id: goal.id, confirm: true }, ctx, "dashboard");
 			}
 		}
-		return true;
+		return DASHBOARD_CONTINUE;
 	}
 
 	pi.registerCommand("tasks", {
@@ -456,6 +472,7 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 			}
 			let again = true;
 			let dashboardState: DashboardState | undefined;
+			let pendingReveal: DashboardReveal | undefined;
 			while (again) {
 				// Each dashboard action depends on the previous interaction and must run sequentially.
 				// pi-lens-ignore: await-in-loop
@@ -464,6 +481,17 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 				} catch (error) {
 					ctx.ui.notify(String(error), "error");
 				}
+				if (pendingReveal) {
+					// Resolved here rather than where the item was created, so the state
+					// is built from the lists the next dashboard is actually given.
+					dashboardState = revealDashboardState(
+						dashboardState,
+						pendingReveal,
+						applicationService.getSessionTasks(),
+						projectGoals,
+					);
+					pendingReveal = undefined;
+				}
 				const result = await ctx.ui.custom<DashboardResult>((tui, theme, _keys, done) => {
 					const dashboard = new Dashboard(
 						applicationService.getSessionTasks(),
@@ -471,6 +499,8 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 						theme,
 						done,
 						dashboardState,
+						Date.now,
+						() => tui.terminal.rows,
 					);
 					return {
 						render: (width) => dashboard.render(width),
@@ -487,7 +517,9 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 					continue;
 				}
 				try {
-					again = await handleDashboardAction(result.action, ctx);
+					const outcome = await handleDashboardAction(result.action, ctx);
+					again = outcome.again;
+					pendingReveal = outcome.reveal;
 				} catch (error) {
 					ctx.ui.notify(String(error), "error");
 					again = true;

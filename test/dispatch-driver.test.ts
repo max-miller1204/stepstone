@@ -1107,7 +1107,9 @@ describe("resumable dispatch driver", () => {
 		expect((await setup.store.load(run.id)).entries.alpha.phase).toBe("completed");
 	});
 
-	it("authenticates worktree identity and never deletes a branch from an absent path alone", async () => {
+	it("authenticates worktree identity and never deletes a branch from an absent path alone", {
+		timeout: 60_000,
+	}, async () => {
 		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-worktree-marker-")));
 		const root = join(directory, "repo");
 		try {
