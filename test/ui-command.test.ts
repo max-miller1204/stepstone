@@ -947,23 +947,25 @@ describe("dashboard navigation and project rendering", () => {
 		// goal that took its row, not back up on the section header.
 		const deleting = openAt(selected, roadmap);
 		deleting.dashboard.handleInput("d");
-		expect(deleting.result()?.action).toEqual({ kind: "delete", scope: "project", id: "grp-1" });
+		const deleteResult = deleting.result();
+		expect(deleteResult?.action).toEqual({ kind: "delete", scope: "project", id: "grp-1" });
+		if (!deleteResult) throw new Error("delete did not close the dashboard");
 		const afterDelete = openAt(
-			deleting.result()!.state,
+			deleteResult.state,
 			roadmap.filter((goal) => goal.id !== "grp-1"),
 		);
-		expect(afterDelete.dashboard.render(60).find((line) => line.startsWith(">"))).toContain(
-			"Alpha three",
-		);
+		expect(afterDelete.dashboard.render(60).find((line) => line.startsWith(">"))).toContain("Alpha three");
 		afterDelete.dashboard.handleInput("\r");
 		expect(afterDelete.result()?.action).toEqual({ kind: "view", scope: "project", id: "grp-2" });
 
 		// Completing it out of the Open filter is the same removal.
 		const advancing = openAt(selected, roadmap);
 		advancing.dashboard.handleInput(" ");
-		expect(advancing.result()?.action).toEqual({ kind: "advance", scope: "project", id: "grp-1" });
+		const advanceResult = advancing.result();
+		expect(advanceResult?.action).toEqual({ kind: "advance", scope: "project", id: "grp-1" });
+		if (!advanceResult) throw new Error("advance did not close the dashboard");
 		const afterAdvance = openAt(
-			advancing.result()!.state,
+			advanceResult.state,
 			roadmap.map((goal) => (goal.id === "grp-1" ? { ...goal, status: "done" as const } : goal)),
 		);
 		afterAdvance.dashboard.handleInput("\r");
@@ -974,9 +976,7 @@ describe("dashboard navigation and project rendering", () => {
 			{ scope: "project", selectedGroup: "Beta", selectedIndex: 4, expandedGroups: ["Alpha"] },
 			roadmap,
 		);
-		expect(onHeader.dashboard.render(60).find((line) => line.startsWith(">"))).toContain(
-			"▸ Beta (1)",
-		);
+		expect(onHeader.dashboard.render(60).find((line) => line.startsWith(">"))).toContain("▸ Beta (1)");
 
 		// A goal the cursor is on that is still listed but sits inside a closed
 		// section restores onto that section rather than an unrelated row.
@@ -984,9 +984,7 @@ describe("dashboard navigation and project rendering", () => {
 			{ scope: "project", selectedId: "grp-1", selectedGroup: "Alpha", selectedIndex: 2, expandedGroups: [] },
 			roadmap,
 		);
-		expect(collapsed.dashboard.render(60).find((line) => line.startsWith(">"))).toContain(
-			"▸ Alpha (3)",
-		);
+		expect(collapsed.dashboard.render(60).find((line) => line.startsWith(">"))).toContain("▸ Alpha (3)");
 	});
 
 	it("filters Session Tasks between open, done, and all", () => {
