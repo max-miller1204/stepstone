@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
 import { WorklistApplicationService } from "../src/application-service.ts";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
@@ -13,6 +13,11 @@ import { SESSION_SNAPSHOT_TYPE, SessionStore } from "../src/session-store.ts";
 import { createProjectLocator, executeWorklist } from "../src/tool.ts";
 import type { ProjectGoal, ProjectWorklist } from "../src/types.ts";
 import type { DashboardResult } from "../src/ui.ts";
+
+const identityTheme = {
+	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+} as unknown as Theme;
 
 function fakePi(entries: unknown[] = []) {
 	return {
@@ -725,6 +730,84 @@ describe("session state and tool", () => {
 		});
 		const listed = await executeWorklist({ scope: "project", action: "list" }, ctx, { projectPath });
 		expect(listed.details.goals?.find((goal) => goal.id === "dependency-graph")?.status).toBe("active");
+	});
+
+	it("reveals a dashboard add that the active filter or a collapsed section would hide", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-dashboard-reveal-"));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const projectPath = join(root, ".worklist", "worklist.json");
+		await executeWorklist({ scope: "project", action: "add", title: "Grouped goal", group: "Alpha" }, ctx, {
+			projectPath,
+		});
+
+		let tasksHandler: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
+		let sessionStart: ((event: unknown, ctx: ExtensionContext) => Promise<void>) | undefined;
+		const api = {
+			appendEntry: () => {},
+			registerTool: () => {},
+			registerCommand: (
+				name: string,
+				config: { handler: (args: string, ctx: ExtensionContext) => Promise<void> },
+			) => {
+				if (name === "tasks") tasksHandler = config.handler;
+			},
+			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void>) => {
+				if (event === "session_start") sessionStart = handler;
+			},
+			events: { emit: () => {}, on: () => () => {} },
+		} as unknown as ExtensionAPI;
+		worklistExtension(api);
+		if (!tasksHandler || !sessionStart) throw new Error("Dashboard handlers were not registered");
+
+		// A grouped roadmap opens every section collapsed, and the Done filter lists
+		// nothing a fresh task can match: both would swallow the add without a trace.
+		const dashboardResults: DashboardResult[] = [
+			{ action: { kind: "add", scope: "project" }, state: { scope: "project", expandedGroups: [] } },
+			{ action: { kind: "add", scope: "session" }, state: { scope: "session", sessionFilter: "done" } },
+			{ action: { kind: "close" }, state: { scope: "session" } },
+		];
+		const titles = ["Fresh goal", "Fresh task"];
+		const renders: string[] = [];
+		const dashboardContext = {
+			cwd: root,
+			mode: "tui",
+			sessionManager: { getBranch: () => [] },
+			ui: {
+				setWidget: () => {},
+				notify: () => {},
+				input: async () => titles.shift(),
+				editor: async () => "",
+				custom: async (
+					factory: (
+						tui: { terminal: { rows: number }; requestRender: () => void },
+						theme: Theme,
+						keys: unknown,
+						done: (result: DashboardResult) => void,
+					) => { render: (width: number) => string[] },
+				) => {
+					const view = factory(
+						{ terminal: { rows: 40 }, requestRender: () => {} },
+						identityTheme,
+						{},
+						() => {},
+					);
+					renders.push(view.render(80).join("\n"));
+					return dashboardResults.shift();
+				},
+			},
+		} as unknown as ExtensionContext;
+		await sessionStart({}, dashboardContext);
+		await tasksHandler("", dashboardContext);
+
+		expect(renders).toHaveLength(3);
+		expect(renders[0]).not.toContain("Fresh goal");
+		// An open goal needs no filter change, only its own section opened.
+		expect(renders[1]).toContain("Fresh goal");
+		expect(renders[1]).toContain("Filter: Open");
+		// A todo task under Done needs the filter relaxed rather than replaced, so
+		// everything the Done view listed before the add is still listed after it.
+		expect(renders[2]).toContain("Fresh task");
+		expect(renders[2]).toContain("Filter: All");
 	});
 
 	it("previews and applies an atomic project plan through the model tool", async () => {

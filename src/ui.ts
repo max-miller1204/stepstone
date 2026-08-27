@@ -75,6 +75,14 @@ export interface DashboardState {
 	sessionFilter?: Exclude<DashboardFilter, "archived">;
 	projectFilter?: DashboardFilter;
 	expandedGroups?: string[];
+	/**
+	 * Index of the first list row the viewport showed.
+	 *
+	 * Carried with the selection because the dashboard is rebuilt after every
+	 * action: without it the restored list re-derives its offset from the cursor
+	 * alone and jumps under a cursor that never moved.
+	 */
+	listScroll?: number;
 }
 
 export interface DashboardResult {
@@ -151,6 +159,56 @@ function groupedProjectRows(
 	return rows;
 }
 
+/** An item a dashboard action just created, which the next dashboard must show. */
+export interface DashboardReveal {
+	scope: "session" | "project";
+	id: string;
+}
+
+/**
+ * The dashboard state that puts a freshly created item on screen.
+ *
+ * An add is the one action whose result the acting view can hide: the created
+ * item carries its own status and group rather than the ones the open filter and
+ * collapsed sections were chosen for, so leaving the previous state untouched
+ * can return the identical screen with no sign anything was written. Relaxing
+ * the filter to All rather than to the item's own status keeps everything that
+ * was listed before the add listed after it.
+ */
+export function revealDashboardState(
+	state: DashboardState | undefined,
+	reveal: DashboardReveal,
+	tasks: readonly SessionTask[],
+	goals: readonly ProjectGoal[],
+): DashboardState | undefined {
+	const base: DashboardState = { ...state, scope: reveal.scope };
+	if (reveal.scope === "session") {
+		const task = tasks.find((candidate) => candidate.id === reveal.id);
+		if (!task) return state;
+		const filter = base.sessionFilter ?? "open";
+		return {
+			...base,
+			selectedId: task.id,
+			sessionFilter: taskMatchesFilter(task, filter) ? filter : "all",
+		};
+	}
+	const goal = goals.find((candidate) => candidate.id === reveal.id);
+	if (!goal) return state;
+	const filter = base.projectFilter ?? "open";
+	const projectFilter = goalMatchesFilter(goal, filter) ? filter : "all";
+	const sections = goalSections(goals.filter((candidate) => goalMatchesFilter(candidate, projectFilter)));
+	const section = isUngroupedList(sections) ? undefined : sectionHolding(sections, goal.id);
+	const expandedGroups = base.expandedGroups ?? [];
+	return {
+		...base,
+		selectedId: goal.id,
+		projectFilter,
+		...(section ? { selectedGroup: section.key } : {}),
+		expandedGroups:
+			section && !expandedGroups.includes(section.key) ? [...expandedGroups, section.key] : expandedGroups,
+	};
+}
+
 export class Dashboard {
 	private scope: "session" | "project";
 	private selected = 0;
@@ -172,6 +230,7 @@ export class Dashboard {
 		this.sessionFilter = initialState?.sessionFilter ?? "open";
 		this.projectFilter = initialState?.projectFilter ?? "open";
 		this.expandedGroups = new Set(initialState?.expandedGroups ?? []);
+		this.listScroll = Math.max(0, Math.floor(initialState?.listScroll ?? 0));
 
 		// A state from the pre-collapse dashboard names only a goal. Keep that goal
 		// reachable when possible rather than replacing its restored selection with
@@ -256,6 +315,7 @@ export class Dashboard {
 			sessionFilter: this.sessionFilter,
 			projectFilter: this.projectFilter,
 			expandedGroups: [...this.expandedGroups],
+			listScroll: this.listScroll,
 		};
 	}
 

@@ -122,6 +122,7 @@ function restoredDashboardState(
 		sessionFilter: "open",
 		projectFilter: "open",
 		expandedGroups,
+		listScroll: 0,
 	};
 }
 
@@ -523,8 +524,6 @@ describe("dashboard navigation and project rendering", () => {
 		const completed = longTasks.map((task) =>
 			task.id === "sel-15" ? { ...task, status: "done" as const } : task,
 		);
-		const reopened = new Dashboard(completed, [], identityTheme, () => {}, result?.state);
-		reopened.handleInput("\r");
 		let viewed: string | undefined;
 		const viewer = new Dashboard(
 			completed,
@@ -536,8 +535,7 @@ describe("dashboard navigation and project rendering", () => {
 			result?.state,
 		);
 		viewer.handleInput("\r");
-		expect(viewed).not.toBe("sel-0");
-		expect(viewed === "sel-14" || viewed === "sel-16").toBe(true);
+		expect(viewed).toBe("sel-16");
 	});
 
 	it("filters Session Tasks between open, done, and all", () => {
@@ -558,6 +556,53 @@ describe("dashboard navigation and project rendering", () => {
 		expect(all).toContain("Filter: All (f to change)");
 		expect(all).toContain("Task 0");
 		expect(all).toContain("Task 1");
+	});
+
+	it("returns from an action to the same viewport the action was taken from", () => {
+		const longTasks: SessionTask[] = Array.from({ length: 20 }, (_, index) => ({
+			id: `long-${index}`,
+			title: `Long task ${index}`,
+			status: "todo",
+		}));
+		let result: DashboardResult | undefined;
+		const dashboard = new Dashboard(
+			longTasks,
+			[],
+			identityTheme,
+			(value) => {
+				result = value;
+			},
+			{ scope: "session" },
+			Date.now,
+			() => 12,
+		);
+		dashboard.handleInput("\u001b[6~");
+		dashboard.handleInput("\u001b[B");
+		dashboard.render(72);
+		dashboard.handleInput("\u001b[A");
+		dashboard.handleInput("\u001b[A");
+		const before = dashboard.render(72).join("\n");
+		expect(before).toContain("Long task 7");
+		expect(before).toContain("Long task 9");
+		expect(before).not.toContain("Long task 6");
+
+		dashboard.handleInput("\r");
+		expect(result?.action).toEqual({ kind: "view", scope: "session", id: "long-7" });
+
+		// Reopening after the detail view must not slide the list under a cursor
+		// that never moved: the restored viewport is the one that was acted from.
+		const after = new Dashboard(
+			longTasks,
+			[],
+			identityTheme,
+			() => {},
+			result?.state,
+			Date.now,
+			() => 12,
+		)
+			.render(72)
+			.join("\n");
+		expect(after).toBe(before);
 	});
 
 	it("keeps a long list within the terminal viewport and scrolls the selection", () => {
