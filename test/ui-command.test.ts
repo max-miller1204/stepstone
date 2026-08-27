@@ -469,6 +469,43 @@ describe("dashboard navigation and project rendering", () => {
 
 		expect(expanded).toContain("> ▾ Group 2 (1)");
 		expect(expanded).toContain("Grouped goal 2");
+		// The child had nowhere to land inside the old viewport, so the header leads it.
+		expect(expanded).toContain("2 above · 1 below");
+		expect(expanded).not.toContain("Group 0");
+	});
+
+	it("keeps the viewport where it was when an expanded section already fits", () => {
+		const grouped = Array.from(
+			{ length: 5 },
+			(_, index): ProjectGoal => ({
+				...goals[0],
+				id: `group-goal-${index}`,
+				title: `Grouped goal ${index}`,
+				group: `Group ${index}`,
+				status: "open",
+			}),
+		);
+		const dashboard = new Dashboard(
+			[],
+			grouped,
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			Date.now,
+			() => 12,
+		);
+		dashboard.render(72);
+		dashboard.handleInput("\u001b[B");
+		dashboard.render(72);
+		dashboard.handleInput(" ");
+		const expanded = dashboard.render(72).join("\n");
+
+		// The one child lands on a row the viewport already showed, so nothing above
+		// the opened section has to scroll away to reveal it.
+		expect(expanded).toContain("> ▾ Group 1 (1)");
+		expect(expanded).toContain("Grouped goal 1");
+		expect(expanded).toContain("▸ Group 0 (1)");
+		expect(expanded).toContain("0 above · 3 below");
 	});
 
 	it("never renders beyond a short terminal, even with Project Goal details", () => {

@@ -213,6 +213,8 @@ export class Dashboard {
 	private scope: "session" | "project";
 	private selected = 0;
 	private listScroll = 0;
+	/** Rows the last render fitted in the list viewport, 0 until it has drawn once. */
+	private listHeight = 0;
 	private sessionFilter: Exclude<DashboardFilter, "archived">;
 	private projectFilter: DashboardFilter;
 	private readonly expandedGroups: Set<string>;
@@ -388,7 +390,10 @@ export class Dashboard {
 			this.expandedGroups.add(key);
 			// Lead the viewport with the header so expanding the last visible row
 			// reveals its children instead of leaving every new row below the fold.
-			this.listScroll = this.selected;
+			// A section whose children already fit keeps the view it was opened from.
+			if (this.selected + row.goals.length >= this.listScroll + this.listHeight) {
+				this.listScroll = this.selected;
+			}
 		}
 		return true;
 	}
@@ -605,6 +610,7 @@ export class Dashboard {
 		const listHeight = Number.isFinite(targetHeight)
 			? Math.max(1, targetHeight - top.length - bottom.length)
 			: Math.max(1, rows.length);
+		this.listHeight = listHeight;
 		this.listScroll = Math.min(this.listScroll, Math.max(0, rows.length - listHeight));
 		if (this.selected < this.listScroll) this.listScroll = this.selected;
 		if (this.selected >= this.listScroll + listHeight) this.listScroll = this.selected - listHeight + 1;
