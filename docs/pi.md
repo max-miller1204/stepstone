@@ -50,15 +50,16 @@ Grouped roadmaps open with every section collapsed, just like the board.
 Select a section header and press Space to toggle it, Right or Enter to open it, or Left to close it; Enter on an open section steps into its first goal, and Left on a goal inside a section closes that section and selects its header.
 A `Goals:` line above the list reports per-status counts across the whole roadmap and says how many match whenever the current filter admits only some of them, counting the goals a collapsed section holds.
 Below the list, Project Goals keep a row for the selected goal's description whenever any listed goal has one, so walking past a described goal never resizes the list, and a roadmap that describes nothing spends no row on it.
-The current filter and open sections survive actions while the dashboard remains open, but a new `/tasks` invocation starts again on the compact, collapsed roadmap shape.
-Adding an item is the one action that may change them: when the active filter would hide what was just created, the filter relaxes to All, and the section holding a new goal opens, so the new row comes back on screen and selected rather than as a count that moved.
+
+While the dashboard remains open, every action keeps the interaction state around it: the current list, the active filter, which sections are open, the selected row, and how far the list is scrolled, so a moved row stays selected at its new position and the rows around it hold their place on screen.
+When an action leaves the selected row unlisted, by deleting it or by advancing it out of the current filter, the row that took its place is selected, including for a goal inside a section.
+Adding an item is the one action that may change the filter or the open sections: when the active filter would hide what was just created, the filter relaxes to All, and the section holding a new goal opens, so the new row comes back on screen and selected rather than as a count that moved.
+A new `/tasks` invocation starts again on the compact, collapsed roadmap shape.
 
 The detail window wraps complete descriptions and the metadata it displays instead of truncating them.
 Use Up and Down or `j` and `k` to scroll long details, with Page Up and Page Down for larger jumps, then Enter or Escape to return to the dashboard.
 For a Project Goal it also spells out the goal's group, branch, dependencies with each target's own status marker and whether it is satisfied, the goals it blocks, its links, and when it was completed, omitting every row the goal has nothing to fill.
 For a Session Task associated with a Project Goal, the detail window also shows the goal title, its group, and its full description.
-The dashboard keeps the current list, the selected row, and how far the list is scrolled across each action, so a moved row stays selected at its new position and the rows around it hold their place on screen.
-When an action leaves the selected row unlisted, by deleting it or by advancing it out of the current filter, the row that took its place is selected, including for a goal inside a section.
 
 The full-screen [terminal goal board](board.md) is a separate, roadmap-only view that runs outside any session; the dashboard is the one that shows both lists.
 
