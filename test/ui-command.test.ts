@@ -558,6 +558,48 @@ describe("dashboard navigation and project rendering", () => {
 		expect(all).toContain("Task 1");
 	});
 
+	it("holds the viewport steady when a filter cycle keeps the selected row", () => {
+		const mixed: SessionTask[] = [
+			...Array.from({ length: 20 }, (_, index) => ({
+				id: `open-${index}`,
+				title: `Open task ${index}`,
+				status: "todo" as const,
+			})),
+			...Array.from({ length: 5 }, (_, index) => ({
+				id: `done-${index}`,
+				title: `Done task ${index}`,
+				status: "done" as const,
+			})),
+		];
+		let result: DashboardResult | undefined;
+		const dashboard = new Dashboard(
+			mixed,
+			[],
+			identityTheme,
+			(value) => {
+				result = value;
+			},
+			{ scope: "session", sessionFilter: "all" },
+			Date.now,
+			() => 12,
+		);
+		dashboard.handleInput("\u001b[6~");
+		dashboard.handleInput("\u001b[B");
+		dashboard.render(72);
+		dashboard.handleInput("\u001b[A");
+		dashboard.handleInput("\u001b[A");
+		expect(dashboard.render(72).join("\n")).toContain("7 above · 15 below");
+
+		// Dropping the done tasks leaves the cursor on the row it was already on, so
+		// the rows around it stay where they were instead of sliding under it.
+		dashboard.handleInput("f");
+		const cycled = dashboard.render(72).join("\n");
+		expect(cycled).toContain("Filter: Open (f to change)");
+		expect(cycled).toContain("7 above · 10 below");
+		dashboard.handleInput("\r");
+		expect(result?.action).toEqual({ kind: "view", scope: "session", id: "open-7" });
+	});
+
 	it("returns from an action to the same viewport the action was taken from", () => {
 		const longTasks: SessionTask[] = Array.from({ length: 20 }, (_, index) => ({
 			id: `long-${index}`,

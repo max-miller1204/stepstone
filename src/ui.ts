@@ -367,7 +367,13 @@ export class Dashboard {
 		}
 		const nextRows = this.rows();
 		const nextIndex = nextRows.findIndex((row) => row.key === selectedKey);
-		this.selected = nextIndex >= 0 ? nextIndex : 0;
+		if (nextIndex >= 0) {
+			// The row the cursor is on survived the new filter, so the view it sits in
+			// survives too; render clamps the offset to whatever the shorter list allows.
+			this.selected = nextIndex;
+			return;
+		}
+		this.selected = 0;
 		this.listScroll = 0;
 	}
 

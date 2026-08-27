@@ -50,6 +50,7 @@ Grouped roadmaps open with every section collapsed, just like the board.
 Select a section header and press Space to toggle it, Right or Enter to open it, or Left to close it; Enter on an open section steps into its first goal.
 A `Goals:` line above the list reports per-status counts across the whole roadmap and says how many are listed whenever the current filter hides some of them.
 The current filter and open sections survive actions while the dashboard remains open, but a new `/tasks` invocation starts again on the compact, collapsed roadmap shape.
+Adding an item is the one action that may change them: when the active filter would hide what was just created, the filter relaxes to All, and the section holding a new goal opens, so the new row comes back on screen and selected rather than as a count that moved.
 
 The detail window wraps complete descriptions and the metadata it displays instead of truncating them.
 Use Up and Down or `j` and `k` to scroll long details, with Page Up and Page Down for larger jumps, then Enter or Escape to return to the dashboard.
