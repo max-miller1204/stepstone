@@ -569,7 +569,7 @@ export class DispatchDriver {
 			await this.persist(run, entry);
 		}
 		try {
-			if (!entry.goalFile.backing && (!entry.goalFile.ownershipId || entry.goalFile.state === "written")) {
+			if (!entry.goalFile.backing) {
 				const adopted = await this.dependencies.workspace.adoptLegacyGoalFile(
 					entry.workspace,
 					entry.goalFile,

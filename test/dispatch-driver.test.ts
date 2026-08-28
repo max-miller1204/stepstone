@@ -1,6 +1,17 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+	link,
+	mkdir,
+	mkdtemp,
+	readFile,
+	realpath,
+	rename,
+	rm,
+	stat,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -118,6 +129,7 @@ class FakeWorkspace implements WorkspaceBinding {
 	readonly goalFiles = new Map<string, string>();
 	readonly goalOwners = new Map<string, string>();
 	readonly backings = new Map<string, string>();
+	readonly backingIdentities = new Map<string, DispatchGoalBacking>();
 	readonly bases: Array<{ id: string; revision: string }> = [];
 	private backingCounter = 0;
 
@@ -140,8 +152,10 @@ class FakeWorkspace implements WorkspaceBinding {
 		const suffix = this.backingCounter.toString().padStart(12, "0");
 		const name = `.stepstone-goal-00000000-0000-4000-8000-${suffix}.owned`;
 		this.backings.set(name, content);
+		const backing = { name, device: "1", inode: this.backingCounter.toString() };
+		this.backingIdentities.set(name, backing);
 		if (this.backingResponseFailure) throw this.backingResponseFailure;
-		return { name, device: "1", inode: this.backingCounter.toString() };
+		return backing;
 	}
 	async adoptLegacyGoalFile(
 		workspace: DispatchWorkspace,
@@ -152,6 +166,15 @@ class FakeWorkspace implements WorkspaceBinding {
 		const existing = this.goalFiles.get(target);
 		if (existing === undefined) return undefined;
 		if (existing !== content) throw new Error("legacy goal file content changed");
+		if (receipt.ownershipId) {
+			const oldName = `.stepstone-goal-${receipt.ownershipId}.owned`;
+			const oldIdentity = this.backingIdentities.get(oldName);
+			if (oldIdentity) {
+				if (this.goalOwners.get(target) !== oldName) throw new Error("legacy goal ownership changed");
+				return oldIdentity;
+			}
+			if (receipt.state === "pending") throw new Error("legacy pending backing is missing");
+		}
 		const backing = await this.createGoalFileBacking(workspace, receipt, content);
 		this.goalOwners.set(target, backing.name);
 		return backing;
@@ -381,6 +404,38 @@ describe("workspace preparation driver", () => {
 		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
 			"Complete alpha thoroughly",
 		);
+		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("migrates a pending receipt through its ownership-derived backing", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		const run = await setup.create();
+		const prepared = await setup.makeDriver().advance(run.id);
+		const receipt = prepared.entries.alpha.goalFile;
+		if (!receipt?.ownershipId) throw new Error("fixture lost goal-file ownership");
+		const oldName = `.stepstone-goal-${receipt.ownershipId}.owned`;
+		const content = setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md");
+		if (!content) throw new Error("fixture lost goal-file content");
+		prepared.entries.alpha.goalFile = {
+			path: receipt.path,
+			sha256: receipt.sha256,
+			ownershipId: receipt.ownershipId,
+			state: "pending",
+		};
+		setup.workspace.backings.clear();
+		setup.workspace.backingIdentities.clear();
+		const oldIdentity = { name: oldName, device: "1", inode: "99" };
+		setup.workspace.backings.set(oldName, content);
+		setup.workspace.backingIdentities.set(oldName, oldIdentity);
+		setup.workspace.goalOwners.set("/work/alpha/STEPSTONE_GOAL.md", oldName);
+		await setup.store.save(prepared);
+
+		const upgraded = await setup.makeDriver().advance(run.id);
+		expect(upgraded.entries.alpha).toMatchObject({
+			phase: "prepared",
+			goalFile: { backing: oldIdentity, state: "written" },
+		});
+		expect(setup.workspace.backings.size).toBe(1);
 		expect(setup.roadmap.claims).toHaveLength(1);
 	});
 
@@ -684,6 +739,14 @@ describe("Git workspace preparation", () => {
 				dev: backingDetails.dev,
 				ino: backingDetails.ino,
 			});
+			const savedBacking = `${backing}.saved`;
+			const matchingBackingTarget = join(directory, "matching-backing.md");
+			await writeFile(matchingBackingTarget, content);
+			await rename(backing, savedBacking);
+			await symlink(matchingBackingTarget, backing);
+			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow("owned backing");
+			await rm(backing);
+			await rename(savedBacking, backing);
 
 			await execFileAsync("git", ["add", "-f", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
 			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
@@ -726,6 +789,23 @@ describe("Git workspace preparation", () => {
 				ino: legacyBackingDetails.ino,
 			});
 
+			await rm(goalFile);
+			const pendingOwnershipId = "00000000-0000-4000-8000-000000000044";
+			const pendingBacking = join(workspace.path, `.stepstone-goal-${pendingOwnershipId}.owned`);
+			await writeFile(pendingBacking, content);
+			await link(pendingBacking, goalFile);
+			const pendingReceipt: DispatchGoalFile = {
+				path: DISPATCH_GOAL_FILE,
+				sha256: receipt.sha256,
+				ownershipId: pendingOwnershipId,
+				state: "pending",
+			};
+			const pendingAdoption = await binding.adoptLegacyGoalFile(workspace, pendingReceipt, content);
+			if (!pendingAdoption) throw new Error("pending legacy handoff was not adopted");
+			expect(pendingAdoption.name).toBe(`.stepstone-goal-${pendingOwnershipId}.owned`);
+			pendingReceipt.backing = pendingAdoption;
+			await binding.writeGoalFile(workspace, pendingReceipt, content);
+
 			expect(await readFile(goalFile, "utf8")).toBe(content);
 			expect(
 				(
@@ -749,6 +829,7 @@ describe("Git workspace preparation", () => {
 			await expect(readFile(goalFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(backing, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(legacyBacking, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			await expect(readFile(pendingBacking, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(foreignBacking, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			expect(
 				(await execFileAsync("git", ["branch", "--list", "stepstone/alpha"], { cwd: root })).stdout,

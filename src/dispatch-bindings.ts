@@ -855,11 +855,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
 		const backingPath = join(workspace.path, receipt.backing.name);
 		const backingDetails = await lstat(backingPath, { bigint: true });
-		if (
-			!backingDetails.isFile() ||
-			!matchesBacking(backingDetails, receipt.backing) ||
-			(await readFile(backingPath, "utf8")) !== content
-		) {
+		if (!backingDetails.isFile() || !matchesBacking(backingDetails, receipt.backing)) {
 			throw new Error(`Refusing goal handoff because owned backing ${backingPath} is invalid`);
 		}
 		try {
@@ -921,6 +917,33 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		validateGoalFileReceipt(receipt, content);
 		await ensureGoalFileIsIgnored(this.repositoryRoot);
 		const target = join(workspace.path, receipt.path);
+		if (receipt.ownershipId) {
+			const oldName = `.stepstone-goal-${receipt.ownershipId}.owned`;
+			const oldPath = join(workspace.path, oldName);
+			let oldDetails: BigIntStats | undefined;
+			try {
+				oldDetails = await lstat(oldPath, { bigint: true });
+			} catch (error) {
+				if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+			}
+			if (oldDetails) {
+				await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, oldName]);
+				const finalDetails = await lstat(target, { bigint: true });
+				if (!oldDetails.isFile() || !finalDetails.isFile() || !isSameFile(oldDetails, finalDetails)) {
+					throw new Error(`Refusing legacy goal handoff because ${target} is not owned by ${oldName}`);
+				}
+				return backingIdentity(oldName, oldDetails);
+			}
+			if (receipt.state === "pending") {
+				try {
+					await lstat(target, { bigint: true });
+				} catch (error) {
+					if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+					throw error;
+				}
+				throw new Error(`Refusing legacy pending handoff because ${oldName} is missing`);
+			}
+		}
 		let finalDetails: BigIntStats;
 		try {
 			finalDetails = await lstat(target, { bigint: true });
@@ -944,8 +967,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 				!currentFinal.isFile() ||
 				!backingDetails.isFile() ||
 				!isSameFile(finalDetails, currentFinal) ||
-				!isSameFile(currentFinal, backingDetails) ||
-				(await readFile(backingPath, "utf8")) !== content
+				!isSameFile(currentFinal, backingDetails)
 			) {
 				throw new Error(`Refusing legacy goal handoff because ${target} could not be verified exactly`);
 			}
