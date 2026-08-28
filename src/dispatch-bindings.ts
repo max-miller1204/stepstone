@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { BigIntStats } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import {
 	link,
 	lstat,
@@ -776,6 +777,34 @@ function matchesBacking(details: BigIntStats, backing: DispatchGoalBacking): boo
 	return details.dev.toString() === backing.device && details.ino.toString() === backing.inode;
 }
 
+async function hashGoalFileHandle(handle: FileHandle): Promise<string> {
+	const hash = createHash("sha256");
+	const buffer = Buffer.allocUnsafe(64 * 1024);
+	let position = 0;
+	for (;;) {
+		const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+		if (bytesRead === 0) return hash.digest("hex");
+		hash.update(buffer.subarray(0, bytesRead));
+		position += bytesRead;
+	}
+}
+
+async function authenticateGoalBackingHandle(
+	handle: FileHandle,
+	path: string,
+	backing: DispatchGoalBacking,
+	expectedSha256: string,
+): Promise<BigIntStats> {
+	const details = await handle.stat({ bigint: true });
+	if (!details.isFile() || !matchesBacking(details, backing)) {
+		throw new Error(`Refusing goal handoff because owned backing ${path} is invalid`);
+	}
+	if ((await hashGoalFileHandle(handle)) !== expectedSha256) {
+		throw new Error(`Refusing goal handoff because owned backing ${path} has conflicting content`);
+	}
+	return details;
+}
+
 async function authenticateGoalBacking(
 	path: string,
 	backing: DispatchGoalBacking,
@@ -783,15 +812,7 @@ async function authenticateGoalBacking(
 ): Promise<BigIntStats> {
 	const handle = await open(path, "r");
 	try {
-		const details = await handle.stat({ bigint: true });
-		if (!details.isFile() || !matchesBacking(details, backing)) {
-			throw new Error(`Refusing goal handoff because owned backing ${path} is invalid`);
-		}
-		const digest = createHash("sha256").update(await handle.readFile()).digest("hex");
-		if (digest !== expectedSha256) {
-			throw new Error(`Refusing goal handoff because owned backing ${path} has conflicting content`);
-		}
-		return details;
+		return await authenticateGoalBackingHandle(handle, path, backing, expectedSha256);
 	} finally {
 		await handle.close();
 	}
@@ -823,6 +844,10 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 	constructor(repositoryRoot: string, workspaceParent = dirname(repositoryRoot)) {
 		this.repositoryRoot = repositoryRoot;
 		this.workspaceParent = workspaceParent;
+	}
+
+	protected afterGoalFilePublication(_target: string): Promise<void> {
+		return Promise.resolve();
 	}
 
 	async acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace> {
@@ -876,15 +901,32 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		const target = join(workspace.path, receipt.path);
 		await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
 		const backingPath = join(workspace.path, receipt.backing.name);
-		await authenticateGoalBacking(backingPath, receipt.backing, receipt.sha256);
+		const backingHandle = await open(backingPath, "r");
 		try {
-			await link(backingPath, target);
-		} catch (error) {
-			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-		}
-		const finalDetails = await lstat(target, { bigint: true });
-		if (!finalDetails.isFile() || !matchesBacking(finalDetails, receipt.backing)) {
-			throw new Error(`Refusing goal handoff because ${target} is not owned by this dispatch receipt`);
+			await authenticateGoalBackingHandle(
+				backingHandle,
+				backingPath,
+				receipt.backing,
+				receipt.sha256,
+			);
+			try {
+				await link(backingPath, target);
+			} catch (error) {
+				if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+			}
+			const finalDetails = await lstat(target, { bigint: true });
+			if (!finalDetails.isFile() || !matchesBacking(finalDetails, receipt.backing)) {
+				throw new Error(`Refusing goal handoff because ${target} is not owned by this dispatch receipt`);
+			}
+			await this.afterGoalFilePublication(target);
+			await authenticateGoalBackingHandle(
+				backingHandle,
+				backingPath,
+				receipt.backing,
+				receipt.sha256,
+			);
+		} finally {
+			await backingHandle.close();
 		}
 	}
 

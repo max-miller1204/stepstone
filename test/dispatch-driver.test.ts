@@ -741,6 +741,17 @@ describe("Git workspace preparation", () => {
 			expect(await readFile(goalFile, "utf8")).toBe("edited handoff\n");
 			await writeFile(goalFile, content);
 			await binding.writeGoalFile(workspace, receipt, content);
+			const boundaryMutationBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFilePublication(target: string): Promise<void> {
+					await writeFile(target, "boundary mutation\n");
+				}
+			})(root, directory);
+			await expect(boundaryMutationBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"conflicting content",
+			);
+			expect(await readFile(goalFile, "utf8")).toBe("boundary mutation\n");
+			await writeFile(goalFile, content);
+			await binding.writeGoalFile(workspace, receipt, content);
 			const [backingDetails, goalDetails] = await Promise.all([
 				stat(backing, { bigint: true }),
 				stat(goalFile, { bigint: true }),
