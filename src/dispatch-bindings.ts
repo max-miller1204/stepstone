@@ -939,6 +939,32 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		}
 	}
 
+	async verifyGoalFile(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<void> {
+		if (workspace.binding !== this.name || !receipt.ownershipId || !receipt.backing) {
+			throw new Error("Refusing to verify a goal handoff outside this binding's fixed workspace path");
+		}
+		validateGoalFileReceipt(receipt, content);
+		const target = join(workspace.path, receipt.path);
+		const backingPath = join(workspace.path, receipt.backing.name);
+		const backingHandle = await open(backingPath, "r");
+		try {
+			await verifyPublishedGoalFileIdentity(target, receipt.backing);
+			await authenticateGoalBackingHandle(
+				backingHandle,
+				backingPath,
+				receipt.backing,
+				receipt.sha256,
+			);
+			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
+		} finally {
+			await backingHandle.close();
+		}
+	}
+
 	async createGoalFileBacking(
 		workspace: DispatchWorkspace,
 		receipt: DispatchGoalFile,
@@ -995,18 +1021,16 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 				workspace.path,
 				oldName ? [receipt.path, oldName] : [receipt.path],
 			);
-			for (const path of oldName ? [target, join(workspace.path, oldName)] : [target]) {
+			if (oldName) {
 				try {
-					await lstat(path, { bigint: true });
+					await lstat(join(workspace.path, oldName), { bigint: true });
 					throw new Error(
 						"Refusing legacy pending handoff without persisted backing creation evidence",
 					);
 				} catch (error) {
-					if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
-					throw error;
+					if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
 				}
 			}
-			return undefined;
 		}
 		let finalDetails: BigIntStats;
 		try {

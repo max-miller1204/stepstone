@@ -49,6 +49,7 @@ function goal(id: string, options: Partial<ProjectGoal> = {}): ProjectGoal {
 
 class MemoryStore implements DispatchStateStore {
 	readonly runs = new Map<string, DispatchRun>();
+	afterSave?: (run: DispatchRun) => Promise<void> | void;
 
 	async create(run: DispatchRun): Promise<void> {
 		if (this.runs.has(run.id)) throw new Error("duplicate run");
@@ -61,6 +62,7 @@ class MemoryStore implements DispatchStateStore {
 	}
 	async save(run: DispatchRun): Promise<void> {
 		this.runs.set(run.id, structuredClone(run));
+		await this.afterSave?.(run);
 	}
 	async list(): Promise<DispatchRun[]> {
 		return [...this.runs.values()].map((run) => structuredClone(run));
@@ -124,6 +126,7 @@ class FakeWorkspace implements WorkspaceBinding {
 	goalFileResponseFailure?: Error;
 	backingFailure?: Error;
 	backingResponseFailure?: Error;
+	lastGoalContent?: string;
 	readonly acquired: string[] = [];
 	readonly cleaned: string[] = [];
 	readonly goalFiles = new Map<string, string>();
@@ -147,6 +150,7 @@ class FakeWorkspace implements WorkspaceBinding {
 		_receipt: DispatchGoalFile,
 		content: string,
 	): Promise<DispatchGoalBacking> {
+		this.lastGoalContent = content;
 		if (this.backingFailure) throw this.backingFailure;
 		this.backingCounter += 1;
 		const suffix = this.backingCounter.toString().padStart(12, "0");
@@ -168,10 +172,9 @@ class FakeWorkspace implements WorkspaceBinding {
 			const oldName = receipt.ownershipId
 				? `.stepstone-goal-${receipt.ownershipId}.owned`
 				: undefined;
-			if (existing !== undefined || (oldName && this.backingIdentities.has(oldName))) {
+			if (oldName && this.backingIdentities.has(oldName)) {
 				throw new Error("legacy pending backing lacks creation evidence");
 			}
-			return undefined;
 		}
 		if (existing === undefined) return undefined;
 		if (existing !== content) throw new Error("legacy goal file content changed");
@@ -197,6 +200,21 @@ class FakeWorkspace implements WorkspaceBinding {
 		this.goalFiles.set(target, content);
 		this.goalOwners.set(target, receipt.backing.name);
 		if (this.goalFileResponseFailure) throw this.goalFileResponseFailure;
+	}
+	async verifyGoalFile(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<void> {
+		const target = join(workspace.path, receipt.path);
+		if (
+			!receipt.backing ||
+			this.backings.get(receipt.backing.name) !== content ||
+			this.goalFiles.get(target) !== content ||
+			this.goalOwners.get(target) !== receipt.backing.name
+		) {
+			throw new Error("goal file changed before canonical claim");
+		}
 	}
 	async cleanup(_workspace: DispatchWorkspace, branch: string): Promise<void> {
 		this.cleaned.push(branch);
@@ -321,6 +339,24 @@ describe("workspace preparation driver", () => {
 		expect(setup.roadmap.claims).toHaveLength(1);
 	});
 
+	it("revalidates the handoff after persisting claim intent", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.store.afterSave = (saved) => {
+			if (saved.entries.alpha?.phase !== "claiming") return;
+			const target = "/work/alpha/STEPSTONE_GOAL.md";
+			const owner = setup.workspace.goalOwners.get(target);
+			setup.workspace.goalFiles.set(target, "changed during claim intent");
+			if (owner) setup.workspace.backings.set(owner, "changed during claim intent");
+		};
+		const run = await setup.create();
+
+		const advanced = await setup.makeDriver().advance(run.id);
+
+		expect(advanced.entries.alpha.phase).toBe("ambiguous");
+		expect(advanced.entries.alpha.message).toContain("Final goal-file verification failed");
+		expect(setup.roadmap.claims).toHaveLength(0);
+	});
+
 	it("resumes before backing creation without accepting an unjournaled backing", async () => {
 		const setup = fixture([goal("alpha")], 1);
 		setup.workspace.backingFailure = new Error("interrupted before backing creation");
@@ -341,6 +377,27 @@ describe("workspace preparation driver", () => {
 			phase: "prepared",
 			goalFile: { backing: expect.any(Object), state: "written" },
 		});
+		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("adopts an exact existing file before claiming", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.workspace.backingFailure = new Error("interrupted before backing creation");
+		const run = await setup.create();
+		const interrupted = await setup.makeDriver().advance(run.id);
+		const content = setup.workspace.lastGoalContent;
+		if (!content) throw new Error("fixture lost rendered goal content");
+		setup.workspace.goalFiles.set("/work/alpha/STEPSTONE_GOAL.md", content);
+		setup.workspace.backingFailure = undefined;
+
+		const resumed = await setup.makeDriver().advance(run.id);
+
+		expect(interrupted.entries.alpha.goalFile).toMatchObject({ state: "pending" });
+		expect(resumed.entries.alpha).toMatchObject({
+			phase: "prepared",
+			goalFile: { backing: expect.any(Object), state: "written" },
+		});
+		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toBe(content);
 		expect(setup.roadmap.claims).toHaveLength(1);
 	});
 
@@ -813,6 +870,25 @@ describe("Git workspace preparation", () => {
 
 			await binding.writeGoalFile(workspace, receipt, content);
 			await binding.writeGoalFile(workspace, receipt, content);
+
+			await rm(goalFile);
+			await writeFile(goalFile, content);
+			const exactExistingReceipt: DispatchGoalFile = {
+				path: DISPATCH_GOAL_FILE,
+				sha256: receipt.sha256,
+				ownershipId: "00000000-0000-4000-8000-000000000045",
+				state: "pending",
+			};
+			const exactExistingBacking = await binding.adoptLegacyGoalFile(
+				workspace,
+				exactExistingReceipt,
+				content,
+			);
+			if (!exactExistingBacking) throw new Error("exact existing handoff was not adopted");
+			exactExistingReceipt.backing = exactExistingBacking;
+			await binding.writeGoalFile(workspace, exactExistingReceipt, content);
+			await binding.verifyGoalFile(workspace, exactExistingReceipt, content);
+			expect(await readFile(goalFile, "utf8")).toBe(content);
 
 			await rm(goalFile);
 			await writeFile(goalFile, content);

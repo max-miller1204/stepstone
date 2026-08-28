@@ -98,6 +98,7 @@ export interface WorkspaceBinding {
 		content: string,
 	): Promise<DispatchGoalBacking | undefined>;
 	writeGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
+	verifyGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
 	cleanup(workspace: DispatchWorkspace, branch: string): Promise<void>;
 }
 
@@ -516,9 +517,23 @@ export class DispatchDriver {
 		if (!entry.workspace) throw new Error("Claim intent has no workspace");
 		if (!(await this.verifyPersistedWorkspace(run, entry))) return;
 		if (!(await this.ensureGoalFile(run, entry))) return;
+		if (!entry.goalFile) throw new Error("Prepared handoff has no goal-file receipt");
+		const goalFile = entry.goalFile;
 		entry.phase = "claiming";
 		entry.message = "Canonical claim mutation is in progress.";
 		await this.persist(run, entry);
+		try {
+			await this.dependencies.workspace.verifyGoalFile(
+				entry.workspace,
+				goalFile,
+				renderGoalFile(entry.goal, entry.branch),
+			);
+		} catch (error) {
+			entry.phase = "ambiguous";
+			entry.message = `Final goal-file verification failed before canonical claim; workspace preserved: ${errorMessage(error)}`;
+			await this.persist(run, entry);
+			return;
+		}
 		let claimed: ProjectGoal;
 		try {
 			claimed = await this.dependencies.roadmap.claim(entry.goal.id, entry.branch, entry.goal.updatedAt);
