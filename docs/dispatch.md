@@ -2,7 +2,7 @@
 
 `stepstone-dispatch` prepares isolated workspaces for an explicitly approved set of Project Goals. It claims each goal on the canonical roadmap, persists enough workspace custody to resume after interruption, and can complete a goal only after finding a matching merged pull request.
 
-It does **not** run an agent harness. It never starts a process or pane, submits a prompt, chooses an agent kind, or supervises a session. After preparation, a human or a root agent opens the reported workspace using whichever terminal and coding harness they prefer.
+It does **not** run an agent harness. It never starts a process or pane, submits a prompt, chooses an agent kind, or supervises a session. After preparation, a human or a root agent opens the reported workspace using whichever terminal and coding harness they prefer. The workspace already contains its goal in `STEPSTONE_GOAL.md`; no prompt transport is needed.
 
 ## Start a preparation run
 
@@ -26,9 +26,23 @@ A successful entry reports:
 - the deterministic `stepstone/<goal-id>` branch
 - the exact claim token in `claimUpdatedAt`
 - the absolute workspace path
-- a message confirming that no agent was launched or prompted
+- `goalFile`, the absolute path to the workspace's `STEPSTONE_GOAL.md` handoff
+- a message confirming where the goal was written and that no agent was launched or prompted
 
 The run must start in the main worktree because it is the sole roadmap writer. Work performed in a prepared checkout must not edit `.worklist/worklist.json` or run roadmap mutations from that checkout.
+
+## Goal handoff file
+
+Every newly prepared workspace has `STEPSTONE_GOAL.md` at its root. Read it before starting work. It records:
+
+- the goal ID, title, description, group, and snapshot timestamp;
+- the exact prepared branch;
+- dependencies and informational links; and
+- the rule that canonical roadmap mutations belong in the main worktree.
+
+The handoff is local preparation state, not repository content. Stepstone adds the root path to the repository's local Git exclude file, creates the handoff without overwriting an existing path, verifies that Git ignores it, and reports its absolute path. It therefore remains visible to a person or agent opening the workspace without making `git status` dirty or leaking into a commit. Cleanup removes it with the workspace.
+
+The goal snapshot is written before the canonical claim. If writing or ignoring the handoff cannot be proven, preparation does not claim the goal and preserves the workspace as an ambiguous acquisition for inspection rather than handing out context it cannot verify.
 
 ## Git workspaces
 
@@ -45,13 +59,14 @@ Without `--workspace-parent`, the checkout is created beside the repository as `
 
 ## Open the workspace yourself
 
-Read the path from the JSON result, then enter or open it through your normal environment. For example:
+Read the workspace and `goalFile` paths from the JSON result, then enter or open the checkout through your normal environment. For example:
 
 ```sh
 cd /path/reported/in/result
+cat STEPSTONE_GOAL.md
 ```
 
-What happens next is outside Stepstone. A terminal, editor, multiplexer, or coding harness may use the checkout, but no harness command or prompt is part of the dispatch configuration or persisted run state.
+What happens next is outside Stepstone. A terminal, editor, multiplexer, or coding harness may use the checkout and read the handoff, but no harness command or prompt is part of the dispatch configuration or persisted run state.
 
 ## Resume and completion
 
@@ -128,4 +143,6 @@ Workspace cleanup is identity guarded:
 
 ## State compatibility
 
-Preparation-only runs use dispatch state version 2. Version 1 belonged to the removed session-hosting driver and may contain live process or pane custody. Current Stepstone refuses that state rather than silently dropping launch metadata or attempting to control somebody else's session. Inspect or recover a version 1 run with the Stepstone release that created it before upgrading.
+Preparation-only runs use dispatch state version 2. The goal-file receipt is an additive optional field so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before it next reconciles that prepared workspace.
+
+Version 1 belonged to the removed session-hosting driver and may contain live process or pane custody. Current Stepstone refuses that state rather than silently dropping launch metadata or attempting to control somebody else's session. Inspect or recover a version 1 run with the Stepstone release that created it before upgrading.

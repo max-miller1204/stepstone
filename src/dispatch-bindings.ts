@@ -1,7 +1,18 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+	link,
+	lstat,
+	mkdir,
+	readdir,
+	readFile,
+	realpath,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { z } from "zod";
@@ -17,6 +28,7 @@ import type {
 	RoadmapSnapshot,
 	WorkspaceBinding,
 } from "./dispatch-driver.ts";
+import { DISPATCH_GOAL_FILE } from "./dispatch-driver.ts";
 import { createWorklistLocator } from "./git.ts";
 import type { ProjectGoal } from "./types.ts";
 
@@ -171,6 +183,14 @@ const entrySchema = z
 				createdAt: timestampSchema,
 				mergedAt: timestampSchema,
 				mergeCommit: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/),
+			})
+			.strict()
+			.optional(),
+		goalFile: z
+			.object({
+				path: z.literal(DISPATCH_GOAL_FILE),
+				sha256: z.string().regex(/^[0-9a-f]{64}$/),
+				state: z.enum(["pending", "written"]),
 			})
 			.strict()
 			.optional(),
@@ -688,6 +708,66 @@ export async function currentDispatchTarget(
 	return { branch, revision };
 }
 
+const goalFileExcludePattern = `/${DISPATCH_GOAL_FILE}`;
+
+async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
+	const commonDirectory = await realpath(
+		resolve(
+			repositoryRoot,
+			(await runCommand("git", ["rev-parse", "--git-common-dir"], repositoryRoot)).stdout.trim(),
+		),
+	);
+	const excludePath = join(commonDirectory, "info", "exclude");
+	await mkdir(dirname(excludePath), { recursive: true, mode: 0o700 });
+	await writeFile(excludePath, "", { flag: "a" });
+	const release = await lockfile.lock(excludePath, {
+		realpath: false,
+		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
+		stale: 10000,
+	});
+	try {
+		const contents = await readFile(excludePath, "utf8");
+		if (contents.split(/\r?\n/u).includes(goalFileExcludePattern)) return;
+		const separator = contents.length === 0 || contents.endsWith("\n") ? "" : "\n";
+		await writeFile(
+			excludePath,
+			`${separator}# Stepstone prepared-workspace goal handoff\n${goalFileExcludePattern}\n`,
+			{ flag: "a" },
+		);
+	} finally {
+		await release();
+	}
+}
+
+async function verifyExactGoalFile(path: string, content: string): Promise<void> {
+	const details = await lstat(path);
+	if (!details.isFile()) throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
+	if ((await readFile(path, "utf8")) !== content) {
+		throw new Error(`Refusing goal handoff because ${path} contains different content`);
+	}
+}
+
+async function writeGoalFileWithoutOverwrite(path: string, content: string): Promise<void> {
+	try {
+		await verifyExactGoalFile(path, content);
+		return;
+	} catch (error) {
+		if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+	}
+	const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+	await writeFile(temporary, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
+	try {
+		try {
+			await link(temporary, path);
+		} catch (error) {
+			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+		}
+		await verifyExactGoalFile(path, content);
+	} finally {
+		await rm(temporary, { force: true });
+	}
+}
+
 export class GitWorktreeBinding implements WorkspaceBinding {
 	readonly name = "worktree";
 	private readonly repositoryRoot: string;
@@ -734,6 +814,20 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			record.gitdir,
 			record.marker,
 		);
+	}
+
+	async writeGoalFile(
+		workspace: DispatchWorkspace,
+		path: typeof DISPATCH_GOAL_FILE,
+		content: string,
+	): Promise<void> {
+		if (workspace.binding !== this.name || path !== DISPATCH_GOAL_FILE) {
+			throw new Error("Refusing a goal handoff outside this binding's fixed workspace path");
+		}
+		await ensureGoalFileIsIgnored(this.repositoryRoot);
+		const target = join(workspace.path, path);
+		await writeGoalFileWithoutOverwrite(target, content);
+		await runCommand("git", ["check-ignore", "--quiet", "--no-index", path], workspace.path);
 	}
 
 	async cleanup(workspace: DispatchWorkspace, branch: string): Promise<void> {

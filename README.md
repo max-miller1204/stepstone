@@ -86,6 +86,7 @@ Every interface writes through one application service, one cross-process lock, 
 Optional preconditions, a file-wide revision and a single goal's `updatedAt`, turn a stale read into a reported conflict instead of a silent overwrite.
 
 Nothing the CLI or workspace-preparation driver loads imports a Pi package, so the published executables run with no Pi installation.
+A prepared checkout carries its goal in an ignored root `STEPSTONE_GOAL.md`, letting any person or harness pick up the work without Stepstone launching it or transporting a prompt.
 That is enforced by source-level import scans and by a CI job that packs the tarball and drives every installed bin with no Pi present.
 
 ## Documentation

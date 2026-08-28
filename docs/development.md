@@ -52,7 +52,7 @@ AI review remains an explicit targeted command rather than part of either defaul
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
 
-`test/dispatch-driver.test.ts` exercises the resumable runtime through injected roadmap, workspace, merge-evidence, and state-store bindings, then drives the real preparation CLI and Git worktree boundary from temporary repositories.
+`test/dispatch-driver.test.ts` exercises the resumable runtime through injected roadmap, workspace, merge-evidence, and state-store bindings, including journaled goal-file recovery, then drives the real preparation CLI and Git worktree boundary from temporary repositories.
 It verifies that a run reaches `prepared` without any harness configuration, that the preparation limit counts claimed workspaces, and that persisted version 1 session-hosting state is refused rather than silently downgraded.
 
 `npm run imports:check` reads the merged module graph behind every entry in `executableEntryPoints` in `scripts/cli-import-graph.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
@@ -64,7 +64,7 @@ That is why a Pi type belongs in an `import type` statement rather than an inlin
 It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and drives every published executable through the behavior-specific function named in `BIN_EXERCISES`.
 The manifest's `bin` map is compared against that exercise map before packing, so a new executable cannot ship without being started from the isolated install.
 The project CLI exercise asserts exit codes and `--json` envelopes across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
-The dispatch exercise starts the installed driver's help and persisted status surfaces, whose preparation-only contract needs no agent executable.
+The dispatch exercise starts the installed driver, prepares a real worktree, and reads its ignored `STEPSTONE_GOAL.md` handoff before checking persisted status; the preparation-only contract needs no agent executable.
 The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 ## Generated files

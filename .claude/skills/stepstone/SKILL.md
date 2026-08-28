@@ -185,6 +185,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 
 - Start an approved preparation run with `npx -y -p stepstone@latest stepstone-dispatch start --goal <id>...`; repeated goal IDs are the immutable authorization allow-list.
 - The published driver selects only allow-listed goals returned by a fresh ready frontier, prepares an isolated workspace, claims each exact `updatedAt`, and limits how many prepared claims it may hold at once.
+- Each newly prepared workspace contains an ignored `STEPSTONE_GOAL.md` at its root with the goal ID, title, description, snapshot time, prepared branch, dependencies, links, and linked-worktree boundary; read that file before starting work.
 - Stepstone never starts, prompts, or supervises an agent; after preparation, open the reported workspace with whichever harness or terminal you choose.
 - The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; work inside an isolated workspace must not mutate the worklist.
 - Only a merged PR whose head exactly matches the stored claimed branch is completion evidence; a closed terminal, silence, or an unmerged green PR never proves the goal landed.

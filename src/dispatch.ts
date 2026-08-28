@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
 	ApplicationRoadmapBinding,
 	currentDispatchTarget,
@@ -9,7 +9,12 @@ import {
 	GitHubMergeEvidenceBinding,
 	GitWorktreeBinding,
 } from "./dispatch-bindings.ts";
-import { DispatchDriver, type DispatchRun, type DispatchWorkspaceConfig } from "./dispatch-driver.ts";
+import {
+	DISPATCH_GOAL_FILE,
+	DispatchDriver,
+	type DispatchRun,
+	type DispatchWorkspaceConfig,
+} from "./dispatch-driver.ts";
 import { resolveGitRoot, resolveWorktreePlacement } from "./git.ts";
 
 interface Invocation {
@@ -38,6 +43,7 @@ Common flags:
   --json
   --help
 
+Each prepared workspace contains an ignored ${DISPATCH_GOAL_FILE} handoff at its root.
 Stepstone prepares and claims workspaces. It never starts, prompts, or supervises an agent.
 `;
 
@@ -114,6 +120,8 @@ function summarize(run: DispatchRun): object {
 					branch: entry.branch,
 					claimUpdatedAt: entry.claimUpdatedAt,
 					workspace: entry.workspace?.path,
+					goalFile:
+						entry.workspace && entry.goalFile ? join(entry.workspace.path, entry.goalFile.path) : undefined,
 					mergedPr: entry.mergedPr,
 					message: entry.message,
 					updatedAt: entry.updatedAt,

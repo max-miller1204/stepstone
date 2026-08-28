@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { FileDispatchStateStore, GitWorktreeBinding } from "../src/dispatch-bindings.ts";
 import {
+	DISPATCH_GOAL_FILE,
 	DispatchDriver,
 	type DispatchRun,
 	type DispatchStateStore,
@@ -105,8 +106,11 @@ class FakeWorkspace implements WorkspaceBinding {
 	readonly name = "fake-workspace";
 	verificationFailure?: Error;
 	acquisitionFailure?: Error;
+	goalFileFailure?: Error;
+	goalFileResponseFailure?: Error;
 	readonly acquired: string[] = [];
 	readonly cleaned: string[] = [];
+	readonly goalFiles = new Map<string, string>();
 	readonly bases: Array<{ id: string; revision: string }> = [];
 
 	async verify(): Promise<void> {
@@ -117,6 +121,18 @@ class FakeWorkspace implements WorkspaceBinding {
 		this.acquired.push(projectGoal.id);
 		this.bases.push({ id: projectGoal.id, revision: baseRevision });
 		return { binding: this.name, path: `/work/${projectGoal.id}`, metadata: {} };
+	}
+	async writeGoalFile(
+		workspace: DispatchWorkspace,
+		path: typeof DISPATCH_GOAL_FILE,
+		content: string,
+	): Promise<void> {
+		if (this.goalFileFailure) throw this.goalFileFailure;
+		const target = join(workspace.path, path);
+		const existing = this.goalFiles.get(target);
+		if (existing !== undefined && existing !== content) throw new Error("goal file content changed");
+		this.goalFiles.set(target, content);
+		if (this.goalFileResponseFailure) throw this.goalFileResponseFailure;
 	}
 	async cleanup(_workspace: DispatchWorkspace, branch: string): Promise<void> {
 		this.cleaned.push(branch);
@@ -195,8 +211,74 @@ describe("workspace preparation driver", () => {
 		]);
 		expect(Object.values(advanced.entries).map((entry) => entry.phase)).toEqual(["prepared", "prepared"]);
 		expect(advanced.entries.alpha.message).toContain("did not launch or prompt an agent");
+		expect(advanced.entries.alpha.goalFile).toMatchObject({
+			path: DISPATCH_GOAL_FILE,
+			state: "written",
+		});
+		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
+			"Complete alpha thoroughly",
+		);
 		expect(advanced).not.toHaveProperty("sessionBinding");
 		expect(advanced.workspaceConfig).toEqual({});
+	});
+
+	it("journals the exact handoff before claiming and resumes after a lost write response", async () => {
+		const setup = fixture(
+			[
+				goal("alpha", {
+					title: "Ship the café workflow",
+					description: "First line.\n\nSecond line.",
+					group: "Automation",
+					links: ["https://example.test/goals/alpha"],
+				}),
+			],
+			1,
+		);
+		setup.workspace.goalFileResponseFailure = new Error("response lost after exact write");
+		const run = await setup.create();
+
+		const interrupted = await setup.makeDriver().advance(run.id);
+		expect(interrupted.entries.alpha.phase).toBe("ambiguous");
+		expect(interrupted.entries.alpha.goalFile).toMatchObject({ state: "pending" });
+		expect(setup.roadmap.claims).toHaveLength(0);
+		const content = setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md");
+		expect(content).toContain("Ship the café workflow");
+		expect(content).toContain("First line.\n\nSecond line.");
+		expect(content).toContain("https://example.test/goals/alpha");
+
+		setup.workspace.goalFileResponseFailure = undefined;
+		const resumed = await setup.makeDriver().advance(run.id);
+		expect(resumed.entries.alpha.phase).toBe("prepared");
+		expect(resumed.entries.alpha.goalFile).toMatchObject({ state: "written" });
+		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("upgrades an existing version 2 prepared entry that predates goal handoffs", async () => {
+		const setup = fixture([goal("alpha", { description: undefined })], 1);
+		const run = await setup.create();
+		const prepared = await setup.makeDriver().advance(run.id);
+		prepared.entries.alpha.goalFile = undefined;
+		setup.workspace.goalFiles.clear();
+		await setup.store.save(prepared);
+
+		const upgraded = await setup.makeDriver().advance(run.id);
+		expect(upgraded.entries.alpha.phase).toBe("prepared");
+		expect(upgraded.entries.alpha.goalFile).toMatchObject({ state: "written" });
+		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
+			"_No description was provided._",
+		);
+		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("preserves an unclaimed workspace when its handoff conflicts", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.workspace.goalFileFailure = new Error("goal path is a symlink");
+		const run = await setup.create();
+		const refused = await setup.makeDriver().advance(run.id);
+
+		expect(refused.entries.alpha.phase).toBe("ambiguous");
+		expect(refused.entries.alpha.message).toContain("goal path is a symlink");
+		expect(setup.roadmap.claims).toHaveLength(0);
 	});
 
 	it("counts prepared claims, then completes exact merged work and refills the available slot", async () => {
@@ -375,6 +457,15 @@ describe("persisted preparation state", () => {
 			tampered.entries.alpha.workspace.path = "/unrelated-checkout";
 			await writeFile(path, JSON.stringify(tampered));
 			await expect(store.load(run.id)).rejects.toThrow("invalid worktree custody");
+
+			tampered.entries.alpha.workspace.path = "/workspaces/stepstone-alpha";
+			tampered.entries.alpha.goalFile = {
+				path: DISPATCH_GOAL_FILE,
+				sha256: "not-a-sha256",
+				state: "written",
+			};
+			await writeFile(path, JSON.stringify(tampered));
+			await expect(store.load(run.id)).rejects.toThrow("Invalid string");
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}
@@ -434,7 +525,25 @@ describe("Git workspace preparation", () => {
 			const base = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
 			const binding = new GitWorktreeBinding(root, directory);
 			const workspace = await binding.acquire(goal("alpha"), "stepstone/alpha", base);
+			const goalFile = join(workspace.path, DISPATCH_GOAL_FILE);
+			const content = "# Stepstone Project Goal\n\nExact handoff\n";
+			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
+			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
+			await expect(binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, "different content")).rejects.toThrow(
+				"contains different content",
+			);
 
+			expect(await readFile(goalFile, "utf8")).toBe(content);
+			expect(
+				(
+					await execFileAsync("git", ["check-ignore", "--no-index", DISPATCH_GOAL_FILE], {
+						cwd: workspace.path,
+					})
+				).stdout,
+			).toContain(DISPATCH_GOAL_FILE);
+			expect((await execFileAsync("git", ["status", "--porcelain"], { cwd: workspace.path })).stdout).toBe(
+				"",
+			);
 			await expect(binding.verify(workspace, "stepstone/alpha")).resolves.toBeUndefined();
 			const tampered = structuredClone(workspace);
 			tampered.metadata.marker = "00000000-0000-4000-8000-000000000099";
@@ -444,6 +553,7 @@ describe("Git workspace preparation", () => {
 			).toContain("stepstone/alpha");
 
 			await binding.cleanup(workspace, "stepstone/alpha");
+			await expect(readFile(goalFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			expect(
 				(await execFileAsync("git", ["branch", "--list", "stepstone/alpha"], { cwd: root })).stdout,
 			).toBe("");
@@ -476,6 +586,7 @@ describe("published preparation CLI", () => {
 				cwd: join(import.meta.dirname, ".."),
 			});
 			expect(help.stdout).toContain("never starts, prompts, or supervises an agent");
+			expect(help.stdout).toContain(DISPATCH_GOAL_FILE);
 			for (const removed of ["--session", "--agent-command", "--agent-arg", "--agent-kind"]) {
 				expect(help.stdout).not.toContain(removed);
 			}
@@ -486,12 +597,19 @@ describe("published preparation CLI", () => {
 				{ cwd: join(import.meta.dirname, "..") },
 			);
 			const envelope = JSON.parse(started.stdout) as {
-				result: { id: string; entries: Record<string, { phase: string; workspace: string }> };
+				result: {
+					id: string;
+					entries: Record<string, { phase: string; workspace: string; goalFile: string }>;
+				};
 			};
+			const workspacePath = join(workspaceParent, "stepstone-alpha");
+			const goalFile = join(workspacePath, DISPATCH_GOAL_FILE);
 			expect(envelope.result.entries.alpha).toMatchObject({
 				phase: "prepared",
-				workspace: join(workspaceParent, "stepstone-alpha"),
+				workspace: workspacePath,
+				goalFile,
 			});
+			expect(await readFile(goalFile, "utf8")).toContain("Complete alpha thoroughly");
 
 			const status = await execFileAsync(
 				process.execPath,
@@ -500,7 +618,7 @@ describe("published preparation CLI", () => {
 			);
 			expect(JSON.parse(status.stdout)).toMatchObject({
 				ok: true,
-				result: [{ entries: { alpha: { phase: "prepared" } } }],
+				result: [{ entries: { alpha: { phase: "prepared", goalFile } } }],
 			});
 
 			for (const removed of [

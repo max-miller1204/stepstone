@@ -4,7 +4,7 @@
 
 A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
 It carries the action and flag surface, the description-input rules, the sequencing reads, the exit-code meanings, the brainstorm-to-approved-plan capture workflow, the rules for dispatching an approved plan, and the rule that a lifecycle action needs an explicit request from the user.
-Its dispatch section sends an agent to the published `stepstone-dispatch` driver to prepare and claim workspaces for an approved run, makes clear that Stepstone never launches or prompts a harness, states the standing consent that run carries to complete its own goals once their PRs merge, and names [docs/dispatch.md](dispatch.md) for workspace and recovery details.
+Its dispatch section sends an agent to the published `stepstone-dispatch` driver to prepare and claim workspaces for an approved run, tells the agent to read the ignored root `STEPSTONE_GOAL.md` handoff, makes clear that Stepstone never launches or prompts a harness, states the standing consent that run carries to complete its own goals once their PRs merge, and names [docs/dispatch.md](dispatch.md) for workspace and recovery details.
 
 ## Install
 
