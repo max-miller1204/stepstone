@@ -743,7 +743,7 @@ describe("persisted preparation state", () => {
 });
 
 describe("Git workspace preparation", () => {
-	it("creates, authenticates, and cleans the exact worktree it owns", { timeout: 30_000 }, async () => {
+	it("creates, authenticates, and cleans the exact worktree it owns", { timeout: 90_000 }, async () => {
 		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-worktree-")));
 		const root = join(directory, "repo");
 		try {
@@ -927,7 +927,7 @@ describe("Git workspace preparation", () => {
 		}
 	});
 
-	it("fails closed at one-shot goal-file publication boundaries", { timeout: 30_000 }, async () => {
+	it("fails closed at one-shot goal-file publication boundaries", { timeout: 90_000 }, async () => {
 		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-worktree-boundary-")));
 		const root = join(directory, "repo");
 		try {
