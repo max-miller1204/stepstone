@@ -4,23 +4,12 @@ import { resolve } from "node:path";
 import {
 	ApplicationRoadmapBinding,
 	currentDispatchTarget,
-	DetachedProcessSessionBinding,
 	defaultDispatchStateDirectory,
-	executableFingerprint,
 	FileDispatchStateStore,
 	GitHubMergeEvidenceBinding,
 	GitWorktreeBinding,
-	HerdrSessionBinding,
-	resolveExecutablePath,
-	TreehouseWorkspaceBinding,
 } from "./dispatch-bindings.ts";
-import {
-	type DispatchBindingConfig,
-	DispatchDriver,
-	type DispatchRun,
-	type SessionBinding,
-	type WorkspaceBinding,
-} from "./dispatch-driver.ts";
+import { DispatchDriver, type DispatchRun, type DispatchWorkspaceConfig } from "./dispatch-driver.ts";
 import { resolveGitRoot, resolveWorktreePlacement } from "./git.ts";
 
 interface Invocation {
@@ -33,47 +22,29 @@ interface Invocation {
 const HELP = `Usage: stepstone-dispatch <action> [arguments] [flags]
 
 Actions:
-  start --goal <id>... --agent-command <executable> [binding flags]
+  start --goal <id>... [preparation flags]
   resume <run-id>
   status [run-id]
   inspect <run-id> <goal-id>
-  recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>] [--confirm-launch-closed]
-  cleanup <run-id> [goal-id] [--confirm-launch-closed]
+  recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]
+  cleanup <run-id> [goal-id]
 
-Binding flags for start:
-  --workspace worktree|treehouse       Default: worktree
-  --session process|herdr              Default: process; process requires Linux
+Preparation flags for start:
   --workspace-parent <path>            Worktree parent directory
-  --agent-command <executable>         Required by process sessions
-  --agent-arg <argument>               Repeatable verbatim executable argument
-  --agent-kind <kind>                  Required by Herdr sessions
-  --startup-grace-ms <milliseconds>    Default: 1000
-  --prompt-timeout-ms <milliseconds>   Default: 300000
-  --max-parallel <count>               Default: 1
+  --max-parallel <count>               Maximum prepared claims; default: 1
 
 Common flags:
   --cwd <repository>                   Default: current directory
   --json
   --help
+
+Stepstone prepares and claims workspaces. It never starts, prompts, or supervises an agent.
 `;
 
 function parseArguments(argv: string[]): Invocation {
 	const options = new Map<string, string[]>();
 	const positionals: string[] = [];
-	const valueOptions = new Set([
-		"cwd",
-		"goal",
-		"workspace",
-		"session",
-		"workspace-parent",
-		"agent-command",
-		"agent-arg",
-		"agent-kind",
-		"startup-grace-ms",
-		"prompt-timeout-ms",
-		"max-parallel",
-		"claim-updated-at",
-	]);
+	const valueOptions = new Set(["cwd", "goal", "workspace-parent", "max-parallel", "claim-updated-at"]);
 	let json = false;
 	for (let index = 0; index < argv.length; index += 1) {
 		const token = argv[index];
@@ -85,17 +56,15 @@ function parseArguments(argv: string[]): Invocation {
 			options.set("help", []);
 			continue;
 		}
-		if (token === "--release" || token === "--confirm-launch-closed") {
-			options.set(token.slice(2), []);
+		if (token === "--release") {
+			options.set("release", []);
 			continue;
 		}
 		if (token.startsWith("--")) {
 			const name = token.slice(2);
 			if (!valueOptions.has(name)) throw new Error(`Unknown flag ${token}`);
 			const value = argv[index + 1];
-			if (value === undefined || (name !== "agent-arg" && value.startsWith("--"))) {
-				throw new Error(`${token} requires a value`);
-			}
+			if (value === undefined || value.startsWith("--")) throw new Error(`${token} requires a value`);
 			options.set(name, [...(options.get(name) ?? []), value]);
 			index += 1;
 			continue;
@@ -135,8 +104,6 @@ function summarize(run: DispatchRun): object {
 		repositoryRoot: run.repositoryRoot,
 		approvedGoalIds: run.approvedGoalIds,
 		maxParallel: run.maxParallel,
-		workspaceBinding: run.workspaceBinding,
-		sessionBinding: run.sessionBinding,
 		createdAt: run.createdAt,
 		updatedAt: run.updatedAt,
 		entries: Object.fromEntries(
@@ -147,8 +114,6 @@ function summarize(run: DispatchRun): object {
 					branch: entry.branch,
 					claimUpdatedAt: entry.claimUpdatedAt,
 					workspace: entry.workspace?.path,
-					session: entry.session?.metadata,
-					custodyOperatorAsserted: entry.custodyOperatorAsserted,
 					mergedPr: entry.mergedPr,
 					message: entry.message,
 					updatedAt: entry.updatedAt,
@@ -171,43 +136,10 @@ function print(value: unknown, json: boolean): void {
 	process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function createBindings(
-	run: DispatchRun,
-	stateDirectory: string,
-): {
-	workspace: WorkspaceBinding;
-	session: SessionBinding;
-} {
-	const config = run.bindingConfig;
-	const workspace =
-		run.workspaceBinding === "worktree"
-			? new GitWorktreeBinding(run.repositoryRoot, config.workspaceParent)
-			: run.workspaceBinding === "treehouse"
-				? new TreehouseWorkspaceBinding(run.repositoryRoot)
-				: undefined;
-	if (!workspace) throw new Error(`Unknown persisted workspace binding ${run.workspaceBinding}`);
-	const session =
-		run.sessionBinding === "process" && config.agentCommand && config.agentCommandFingerprint
-			? new DetachedProcessSessionBinding(
-					config.agentCommand,
-					config.agentArgs,
-					stateDirectory,
-					config.startupGraceMs,
-					config.agentCommandFingerprint,
-				)
-			: run.sessionBinding === "herdr" && config.agentKind
-				? new HerdrSessionBinding(config.agentKind, stateDirectory, config.promptTimeoutMs)
-				: undefined;
-	if (!session) throw new Error(`Persisted ${run.sessionBinding} session configuration is incomplete`);
-	return { workspace, session };
-}
-
 function createDriver(run: DispatchRun, store: FileDispatchStateStore): DispatchDriver {
-	const bindings = createBindings(run, store.directory);
 	return new DispatchDriver({
 		roadmap: new ApplicationRoadmapBinding(run.repositoryRoot),
-		workspace: bindings.workspace,
-		session: bindings.session,
+		workspace: new GitWorktreeBinding(run.repositoryRoot, run.workspaceConfig.workspaceParent),
 		merges: new GitHubMergeEvidenceBinding(run.repositoryRoot),
 		store,
 	});
@@ -236,57 +168,20 @@ async function main(): Promise<void> {
 		case "start": {
 			if (invocation.positionals.length > 0)
 				throw new Error("start accepts goal IDs through repeated --goal flags");
-			const workspaceBinding = one(invocation, "workspace") ?? "worktree";
-			const sessionBinding = one(invocation, "session") ?? "process";
-			if (!new Set(["worktree", "treehouse"]).has(workspaceBinding))
-				throw new Error("--workspace must be worktree or treehouse");
-			if (!new Set(["process", "herdr"]).has(sessionBinding))
-				throw new Error("--session must be process or herdr");
 			const workspaceParent = one(invocation, "workspace-parent");
-			const agentCommand = one(invocation, "agent-command");
-			const agentKind = one(invocation, "agent-kind");
-			const resolvedAgentCommand =
-				sessionBinding === "process" && agentCommand
-					? await resolveExecutablePath(agentCommand, process.cwd())
-					: undefined;
-			const config: DispatchBindingConfig = {
-				agentArgs: sessionBinding === "process" ? (invocation.options.get("agent-arg") ?? []) : [],
-				...(workspaceBinding === "worktree" && workspaceParent
-					? { workspaceParent: await realpath(resolve(workspaceParent)) }
-					: {}),
-				...(resolvedAgentCommand
-					? {
-							agentCommand: resolvedAgentCommand,
-							agentCommandFingerprint: await executableFingerprint(resolvedAgentCommand),
-						}
-					: {}),
-				...(sessionBinding === "herdr" && agentKind ? { agentKind } : {}),
-				...(sessionBinding === "process"
-					? { startupGraceMs: positiveInteger(one(invocation, "startup-grace-ms"), 1000, "startup-grace-ms") }
-					: {
-							promptTimeoutMs: positiveInteger(
-								one(invocation, "prompt-timeout-ms"),
-								300000,
-								"prompt-timeout-ms",
-							),
-						}),
+			const config: DispatchWorkspaceConfig = {
+				...(workspaceParent ? { workspaceParent: await realpath(resolve(workspaceParent)) } : {}),
 			};
-			if (sessionBinding === "process" && !config.agentCommand)
-				throw new Error("--agent-command is required for process sessions");
-			if (sessionBinding === "herdr" && !config.agentKind)
-				throw new Error("--agent-kind is required for Herdr sessions");
 			const target = await currentDispatchTarget(repositoryRoot);
 			const placeholder: DispatchRun = {
-				version: 1,
+				version: 2,
 				id: "pending",
 				repositoryRoot,
 				approvedGoalIds: [],
 				maxParallel: 1,
 				targetBranch: target.branch,
 				targetRevision: target.revision,
-				workspaceBinding,
-				sessionBinding,
-				bindingConfig: config,
+				workspaceConfig: config,
 				createdAt: "",
 				updatedAt: "",
 				entries: {},
@@ -298,7 +193,7 @@ async function main(): Promise<void> {
 				maxParallel: positiveInteger(one(invocation, "max-parallel"), 1, "max-parallel"),
 				targetBranch: target.branch,
 				targetRevision: target.revision,
-				bindingConfig: config,
+				workspaceConfig: config,
 			});
 			const advanced = await store.withRunLock(run.id, () => driver.advance(run.id));
 			print(summarize(advanced), invocation.json);
@@ -345,7 +240,6 @@ async function main(): Promise<void> {
 					run.id,
 					invocation.positionals[1],
 					one(invocation, "claim-updated-at"),
-					invocation.options.has("confirm-launch-closed"),
 				);
 			});
 			print(summarize(recovered), invocation.json);
@@ -359,11 +253,7 @@ async function main(): Promise<void> {
 			const result = await store.withRunLock(runId, async () => {
 				const run = await store.load(runId);
 				assertRunRepository(run, repositoryRoot);
-				return createDriver(run, store).cleanup(
-					run.id,
-					invocation.positionals[1],
-					invocation.options.has("confirm-launch-closed"),
-				);
+				return createDriver(run, store).cleanup(run.id, invocation.positionals[1]);
 			});
 			print(result ? summarize(result) : { removedRunId: runId }, invocation.json);
 			return;

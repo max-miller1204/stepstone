@@ -85,7 +85,7 @@ Dependency edges say which goals must land first, and blocked is derived from th
 Every interface writes through one application service, one cross-process lock, and one atomic file replacement, so a CLI call, an open board, and a live Pi session can share a repository without corrupting the file or losing an edit.
 Optional preconditions, a file-wide revision and a single goal's `updatedAt`, turn a stale read into a reported conflict instead of a silent overwrite.
 
-Nothing the CLI or dispatch driver loads imports a Pi package, so the published executables run with no Pi installation.
+Nothing the CLI or workspace-preparation driver loads imports a Pi package, so the published executables run with no Pi installation.
 That is enforced by source-level import scans and by a CI job that packs the tarball and drives every installed bin with no Pi present.
 
 ## Documentation
@@ -96,7 +96,7 @@ That is enforced by source-level import scans and by a CI job that packs the tar
 | [docs/cli.md](docs/cli.md) | Generated `project` command reference: every action, flag, and rule |
 | [docs/goals.md](docs/goals.md) | The goal model: fields, statuses, IDs, order, groups, JSON plans |
 | [docs/dependencies.md](docs/dependencies.md) | Dependency edges and the sequencing reads behind `next`, `ready`, and `waves` |
-| [docs/dispatch.md](docs/dispatch.md) | Published resumable dispatch driver, custody recovery, and executable worktree/process and Treehouse/Herdr binding contracts |
+| [docs/dispatch.md](docs/dispatch.md) | Preparing and claiming approved goal workspaces without starting an agent harness |
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
 | [docs/skill.md](docs/skill.md) | The standalone generated Agent Skill and how to install it |

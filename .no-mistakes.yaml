@@ -3,8 +3,10 @@ commands:
   # own hooks cannot disagree about what validation means. Gate commands run
   # under a non-interactive /bin/sh that never sources a shell profile, so the
   # mise-managed npm on this machine is invisible unless PATH is repaired inline.
-  test: export PATH="$HOME/.local/share/mise/shims:$PATH"; npm run quality:push:worktree
-  lint: export PATH="$HOME/.local/share/mise/shims:$PATH"; npm run quality:static
+  # Gate worktrees start without node_modules, so materialize the shrinkwrap-pinned
+  # development toolchain once before invoking each repository quality gate.
+  test: export PATH="$HOME/.local/share/mise/shims:$PATH"; npm ci --ignore-scripts && npm run quality:push:worktree
+  lint: export PATH="$HOME/.local/share/mise/shims:$PATH"; npm ci --ignore-scripts && npm run quality:static
 
 ignore_patterns:
   - ".claude/skills/stepstone/SKILL.md"

@@ -775,9 +775,9 @@
       "title": "Prepare goal workspaces without executing a harness",
       "description": "The driver hosts agent sessions: it spawns detached process groups, starts and prompts Herdr panes, tracks PIDs and pane IDs, and carries a hardcoded list of other people's agent kinds. That session layer is most of the dispatch surface, it is the only reason four of the twelve phases exist, and every defect found so far has been in it. Stepstone should prepare and claim, never execute: no session hosting, no prompt submission, no launch custody, and no flag naming a harness. The parallel limit stops meaning concurrent workers and starts meaning how many goals may be claimed and prepared at once.",
       "group": "Automation",
-      "status": "open",
+      "status": "active",
       "createdAt": "2026-08-18T21:42:28.061Z",
-      "updatedAt": "2026-08-18T21:42:28.061Z"
+      "updatedAt": "2026-08-28T06:04:05.345Z"
     },
     {
       "id": "hand-a-prepared-workspace-its-goal-as-a",
@@ -885,5 +885,5 @@
       "updatedAt": "2026-08-18T22:17:01.718Z"
     }
   ],
-  "revision": 299
+  "revision": 300
 }

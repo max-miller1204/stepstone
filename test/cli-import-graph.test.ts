@@ -193,8 +193,8 @@ describe("the module graph behind compiled executables", () => {
 		// that every entry point is in the graph would pass for any list, an empty
 		// one included. These four modules are reached only by following imports:
 		// two behind the CLI, where the terminal board is the most tempting place to
-		// reach for Pi, and two behind the dispatch driver, whose bindings drive Git,
-		// child processes, and GitHub.
+		// reach for Pi, and two behind the preparation driver, which drives only Git
+		// and GitHub without loading a harness.
 		const graph = await collectExecutableModuleGraph();
 		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
 		expect(files).toEqual(

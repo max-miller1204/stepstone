@@ -88,7 +88,7 @@ npx -y stepstone@latest project apply-plan plan.json --json
 `--json` keeps the two reasons a claim has no branch apart: a detached HEAD is a `VALIDATION_FAILED` envelope naming the `branch` field, while a Git that could not answer the lookup at all is an `UNAVAILABLE` envelope carrying Git's own diagnostic, marked retryable only when the command was killed rather than refused.
 A claimed goal drops out of `ready` and `next`, which is the point - see [docs/dependencies.md](dependencies.md#sequencing-reads) - so every claim needs a release: `start <id> --clear` un-claims an abandoned dispatch and `complete` clears the branch on its way to done.
 A settled goal refuses a new claim, though `--clear` still releases one it is already holding; see [docs/goals.md](goals.md#statuses).
-The published `stepstone-dispatch` executable runs that root-session loop, persists custody for restart, and exposes resume, status, inspection, recovery, and cleanup operations; see [docs/dispatch.md](dispatch.md).
+The published `stepstone-dispatch` executable prepares and claims approved goal workspaces, persists workspace custody for restart, and exposes resume, status, inspection, recovery, and cleanup operations without starting or prompting an agent; see [docs/dispatch.md](dispatch.md).
 `apply-plan` adds an approved batch of goals through one locked mutation; the plan schema is in [docs/goals.md](goals.md#json-goal-plans).
 A `--dry-run` is a preview rather than the user's approval, and the brainstorm-to-approved-plan workflow an agent runs before that single mutating call is in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
 
