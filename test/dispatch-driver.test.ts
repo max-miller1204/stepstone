@@ -835,6 +835,20 @@ describe("Git workspace preparation", () => {
 			);
 			await execFileAsync("git", ["reset", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
 			await binding.writeGoalFile(workspace, receipt, content);
+			const finalVerificationTarget = join(directory, "final-verification-replacement.md");
+			await writeFile(finalVerificationTarget, content);
+			const finalVerificationBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFileGitVerification(target: string): Promise<void> {
+					await rm(target);
+					await symlink(finalVerificationTarget, target);
+				}
+			})(root, directory);
+			await expect(
+				finalVerificationBinding.verifyGoalFile(workspace, receipt, content),
+			).rejects.toThrow("is not owned by this dispatch receipt");
+			expect(await readFile(finalVerificationTarget, "utf8")).toBe(content);
+			await rm(goalFile);
+			await binding.writeGoalFile(workspace, receipt, content);
 			const [backingDetails, goalDetails] = await Promise.all([
 				stat(backing, { bigint: true }),
 				stat(goalFile, { bigint: true }),

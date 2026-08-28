@@ -860,6 +860,10 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		return Promise.resolve();
 	}
 
+	protected afterGoalFileGitVerification(_target: string): Promise<void> {
+		return Promise.resolve();
+	}
+
 	async acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace> {
 		if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(baseRevision)) {
 			throw new Error("Dispatch base revision is invalid");
@@ -952,7 +956,6 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		const backingPath = join(workspace.path, receipt.backing.name);
 		const backingHandle = await open(backingPath, "r");
 		try {
-			await verifyPublishedGoalFileIdentity(target, receipt.backing);
 			await authenticateGoalBackingHandle(
 				backingHandle,
 				backingPath,
@@ -960,6 +963,14 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 				receipt.sha256,
 			);
 			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
+			await this.afterGoalFileGitVerification(target);
+			await verifyPublishedGoalFileIdentity(target, receipt.backing);
+			await authenticateGoalBackingHandle(
+				backingHandle,
+				backingPath,
+				receipt.backing,
+				receipt.sha256,
+			);
 		} finally {
 			await backingHandle.close();
 		}
