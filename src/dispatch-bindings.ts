@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { constants } from "node:fs";
 import {
 	link,
-	lstat,
 	mkdir,
+	open,
 	readdir,
 	readFile,
 	realpath,
@@ -708,7 +709,7 @@ export async function currentDispatchTarget(
 	return { branch, revision };
 }
 
-const goalFileExcludePattern = `/${DISPATCH_GOAL_FILE}`;
+const goalFileExcludePatterns = [`/${DISPATCH_GOAL_FILE}`, `/${DISPATCH_GOAL_FILE}.*.tmp`];
 
 async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
 	const commonDirectory = await realpath(
@@ -727,11 +728,13 @@ async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
 	});
 	try {
 		const contents = await readFile(excludePath, "utf8");
-		if (contents.split(/\r?\n/u).includes(goalFileExcludePattern)) return;
+		const existing = new Set(contents.split(/\r?\n/u));
+		const missing = goalFileExcludePatterns.filter((pattern) => !existing.has(pattern));
+		if (missing.length === 0) return;
 		const separator = contents.length === 0 || contents.endsWith("\n") ? "" : "\n";
 		await writeFile(
 			excludePath,
-			`${separator}# Stepstone prepared-workspace goal handoff\n${goalFileExcludePattern}\n`,
+			`${separator}# Stepstone prepared-workspace goal handoff\n${missing.join("\n")}\n`,
 			{ flag: "a" },
 		);
 	} finally {
@@ -740,10 +743,23 @@ async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
 }
 
 async function verifyExactGoalFile(path: string, content: string): Promise<void> {
-	const details = await lstat(path);
-	if (!details.isFile()) throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
-	if ((await readFile(path, "utf8")) !== content) {
-		throw new Error(`Refusing goal handoff because ${path} contains different content`);
+	let handle: Awaited<ReturnType<typeof open>>;
+	try {
+		handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ELOOP") {
+			throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
+		}
+		throw error;
+	}
+	try {
+		const details = await handle.stat();
+		if (!details.isFile()) throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
+		if ((await handle.readFile("utf8")) !== content) {
+			throw new Error(`Refusing goal handoff because ${path} contains different content`);
+		}
+	} finally {
+		await handle.close();
 	}
 }
 
@@ -826,8 +842,11 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		}
 		await ensureGoalFileIsIgnored(this.repositoryRoot);
 		const target = join(workspace.path, path);
+		if ((await runCommand("git", ["ls-files", "--stage", "--", path], workspace.path)).stdout.trim()) {
+			throw new Error(`Refusing goal handoff because ${target} is tracked by Git`);
+		}
 		await writeGoalFileWithoutOverwrite(target, content);
-		await runCommand("git", ["check-ignore", "--quiet", "--no-index", path], workspace.path);
+		await runCommand("git", ["check-ignore", "--quiet", "--", path], workspace.path);
 	}
 
 	async cleanup(workspace: DispatchWorkspace, branch: string): Promise<void> {

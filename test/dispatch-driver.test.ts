@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -527,6 +527,29 @@ describe("Git workspace preparation", () => {
 			const workspace = await binding.acquire(goal("alpha"), "stepstone/alpha", base);
 			const goalFile = join(workspace.path, DISPATCH_GOAL_FILE);
 			const content = "# Stepstone Project Goal\n\nExact handoff\n";
+			const staleTemporary = `${goalFile}.123.00000000-0000-4000-8000-000000000000.tmp`;
+			await writeFile(staleTemporary, content);
+			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
+			expect((await execFileAsync("git", ["status", "--porcelain"], { cwd: workspace.path })).stdout).toBe(
+				"",
+			);
+			await rm(staleTemporary);
+
+			await execFileAsync("git", ["add", "-f", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
+			await expect(binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content)).rejects.toThrow(
+				"is tracked by Git",
+			);
+			await execFileAsync("git", ["reset", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
+
+			await rm(goalFile);
+			const symlinkTarget = join(directory, "matching-goal.md");
+			await writeFile(symlinkTarget, content);
+			await symlink(symlinkTarget, goalFile);
+			await expect(binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content)).rejects.toThrow(
+				"is not a regular file",
+			);
+			await rm(goalFile);
+
 			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
 			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
 			await expect(binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, "different content")).rejects.toThrow(
@@ -536,7 +559,7 @@ describe("Git workspace preparation", () => {
 			expect(await readFile(goalFile, "utf8")).toBe(content);
 			expect(
 				(
-					await execFileAsync("git", ["check-ignore", "--no-index", DISPATCH_GOAL_FILE], {
+					await execFileAsync("git", ["check-ignore", DISPATCH_GOAL_FILE], {
 						cwd: workspace.path,
 					})
 				).stdout,
