@@ -1,0 +1,89 @@
+COMMAND: stepstone-dispatch start --goal ship-handoff --json
+{
+  "ok": true,
+  "result": {
+    "id": "9e7392db-c977-4cad-a7f8-7a58dd33cf62",
+    "repositoryRoot": "/private/tmp/stepstone-e2e.1UFzij/repo",
+    "approvedGoalIds": [
+      "ship-handoff"
+    ],
+    "maxParallel": 1,
+    "createdAt": "2026-08-28T16:02:59.743Z",
+    "updatedAt": "2026-08-28T16:03:00.065Z",
+    "entries": {
+      "ship-handoff": {
+        "phase": "prepared",
+        "branch": "stepstone/ship-handoff",
+        "claimUpdatedAt": "2026-08-28T16:03:00.064Z",
+        "workspace": "/private/tmp/stepstone-e2e.1UFzij/workspaces/stepstone-ship-handoff",
+        "goalFile": "/private/tmp/stepstone-e2e.1UFzij/workspaces/stepstone-ship-handoff/STEPSTONE_GOAL.md",
+        "message": "Workspace prepared and claimed; goal written to STEPSTONE_GOAL.md; Stepstone did not launch or prompt an agent.",
+        "updatedAt": "2026-08-28T16:03:00.065Z"
+      }
+    }
+  }
+}
+
+COMMAND: cat <reported goalFile>
+# Stepstone Project Goal
+
+This ignored, workspace-local file is the goal handoff for this prepared checkout.
+Stepstone created the workspace for this goal, but did not start or prompt an agent.
+
+- Goal ID: `ship-handoff`
+- Branch: `stepstone/ship-handoff`
+- Status when prepared: `open`
+- Goal snapshot updated at: `2026-08-28T00:00:00.000Z`
+
+## Title
+
+Ship the harness-neutral handoff
+
+## Description
+
+Give every prepared workspace an immutable goal snapshot.
+
+## Dependencies
+
+- None
+
+## Links
+
+- https://example.test/spec
+
+## Workspace boundary
+
+Work on `stepstone/ship-handoff` in this checkout. Do not mutate the Project Goal roadmap from this linked worktree; roadmap mutations belong in the main worktree.
+
+COMMAND: git status --porcelain (prepared workspace)
+(clean: no tracked or untracked changes reported)
+
+COMMAND: git check-ignore -v STEPSTONE_GOAL.md
+/private/tmp/stepstone-e2e.1UFzij/repo/.git/info/exclude:8:/STEPSTONE_GOAL.md	STEPSTONE_GOAL.md
+
+COMMAND: git ls-files --error-unmatch STEPSTONE_GOAL.md
+untracked (expected)
+
+CHECK: canonical roadmap claim
+{
+  "id": "ship-handoff",
+  "status": "open",
+  "branch": "stepstone/ship-handoff"
+}
+
+CHECK: persisted dispatch receipt and SHA-256
+{
+  "phase": "prepared",
+  "receipt": {
+    "path": "STEPSTONE_GOAL.md",
+    "state": "written",
+    "sha256": "49da71173aa1e13174dcad12b4c6c7ef6ac07d1ce12a274a042dddfe6cf1d35a",
+    "backing": {
+      "name": ".stepstone-goal-3c32c315-bb68-4172-b2ff-c55fcb0cdf20.owned",
+      "device": "16777230",
+      "inode": "3868322"
+    }
+  },
+  "actualSha256": "49da71173aa1e13174dcad12b4c6c7ef6ac07d1ce12a274a042dddfe6cf1d35a",
+  "shaMatches": true
+}
