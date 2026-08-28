@@ -847,6 +847,8 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 	readonly name = "worktree";
 	private readonly repositoryRoot: string;
 	private readonly workspaceParent: string;
+	private goalFilePublicationHookPending = true;
+	private goalFileGitVerificationHookPending = true;
 
 	constructor(repositoryRoot: string, workspaceParent = dirname(repositoryRoot)) {
 		this.repositoryRoot = repositoryRoot;
@@ -859,6 +861,18 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 
 	protected afterGoalFileGitVerification(_target: string): Promise<void> {
 		return Promise.resolve();
+	}
+
+	private async runGoalFilePublicationHook(target: string): Promise<void> {
+		if (!this.goalFilePublicationHookPending) return;
+		this.goalFilePublicationHookPending = false;
+		await this.afterGoalFilePublication(target);
+	}
+
+	private async runGoalFileGitVerificationHook(target: string): Promise<void> {
+		if (!this.goalFileGitVerificationHookPending) return;
+		this.goalFileGitVerificationHookPending = false;
+		await this.afterGoalFileGitVerification(target);
 	}
 
 	async acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace> {
@@ -921,7 +935,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 				if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
 			}
 			await verifyPublishedGoalFileIdentity(target, receipt.backing);
-			await this.afterGoalFilePublication(target);
+			await this.runGoalFilePublicationHook(target);
 			await verifyPublishedGoalFileIdentity(target, receipt.backing);
 			await authenticateGoalBackingHandle(backingHandle, backingPath, receipt.backing, receipt.sha256);
 			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
@@ -945,7 +959,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		try {
 			await authenticateGoalBackingHandle(backingHandle, backingPath, receipt.backing, receipt.sha256);
 			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
-			await this.afterGoalFileGitVerification(target);
+			await this.runGoalFileGitVerificationHook(target);
 			await verifyPublishedGoalFileIdentity(target, receipt.backing);
 			await authenticateGoalBackingHandle(backingHandle, backingPath, receipt.backing, receipt.sha256);
 		} finally {

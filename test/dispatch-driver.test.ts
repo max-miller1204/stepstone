@@ -794,57 +794,6 @@ describe("Git workspace preparation", () => {
 			expect(await readFile(goalFile, "utf8")).toBe("edited handoff\n");
 			await writeFile(goalFile, content);
 			await binding.writeGoalFile(workspace, receipt, content);
-			const boundaryMutationBinding = new (class extends GitWorktreeBinding {
-				protected override async afterGoalFilePublication(target: string): Promise<void> {
-					await writeFile(target, "boundary mutation\n");
-				}
-			})(root, directory);
-			await expect(boundaryMutationBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
-				"conflicting content",
-			);
-			expect(await readFile(goalFile, "utf8")).toBe("boundary mutation\n");
-			await writeFile(goalFile, content);
-			await binding.writeGoalFile(workspace, receipt, content);
-			const replacementTarget = join(directory, "publication-replacement.md");
-			await writeFile(replacementTarget, content);
-			const replacementBinding = new (class extends GitWorktreeBinding {
-				protected override async afterGoalFilePublication(target: string): Promise<void> {
-					await rm(target);
-					await symlink(replacementTarget, target);
-				}
-			})(root, directory);
-			await expect(replacementBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
-				"is not owned by this dispatch receipt",
-			);
-			expect(await readFile(replacementTarget, "utf8")).toBe(content);
-			await rm(goalFile);
-			await binding.writeGoalFile(workspace, receipt, content);
-			const stagingBinding = new (class extends GitWorktreeBinding {
-				protected override async afterGoalFilePublication(): Promise<void> {
-					await execFileAsync("git", ["add", "-f", "--", DISPATCH_GOAL_FILE], {
-						cwd: workspace.path,
-					});
-				}
-			})(root, directory);
-			await expect(stagingBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
-				"final or backing path is tracked by Git",
-			);
-			await execFileAsync("git", ["reset", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
-			await binding.writeGoalFile(workspace, receipt, content);
-			const finalVerificationTarget = join(directory, "final-verification-replacement.md");
-			await writeFile(finalVerificationTarget, content);
-			const finalVerificationBinding = new (class extends GitWorktreeBinding {
-				protected override async afterGoalFileGitVerification(target: string): Promise<void> {
-					await rm(target);
-					await symlink(finalVerificationTarget, target);
-				}
-			})(root, directory);
-			await expect(finalVerificationBinding.verifyGoalFile(workspace, receipt, content)).rejects.toThrow(
-				"is not owned by this dispatch receipt",
-			);
-			expect(await readFile(finalVerificationTarget, "utf8")).toBe(content);
-			await rm(goalFile);
-			await binding.writeGoalFile(workspace, receipt, content);
 			const [backingDetails, goalDetails] = await Promise.all([
 				stat(backing, { bigint: true }),
 				stat(goalFile, { bigint: true }),
@@ -977,6 +926,86 @@ describe("Git workspace preparation", () => {
 			await rm(directory, { recursive: true, force: true });
 		}
 	});
+
+	it("fails closed at one-shot goal-file publication boundaries", { timeout: 30_000 }, async () => {
+		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-worktree-boundary-")));
+		const root = join(directory, "repo");
+		try {
+			await mkdir(root);
+			await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+			await execFileAsync("git", ["config", "user.name", "Stepstone Test"], { cwd: root });
+			await execFileAsync("git", ["config", "user.email", "stepstone@example.test"], { cwd: root });
+			await writeFile(join(root, "seed"), "seed");
+			await execFileAsync("git", ["add", "seed"], { cwd: root });
+			await execFileAsync("git", ["commit", "-q", "-m", "seed"], { cwd: root });
+			const base = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+			const binding = new GitWorktreeBinding(root, directory);
+			const workspace = await binding.acquire(goal("alpha"), "stepstone/alpha", base);
+			const goalFile = join(workspace.path, DISPATCH_GOAL_FILE);
+			const content = "# Stepstone Project Goal\n\nExact handoff\n";
+			const receipt: DispatchGoalFile = {
+				path: DISPATCH_GOAL_FILE,
+				sha256: createHash("sha256").update(content, "utf8").digest("hex"),
+				ownershipId: "00000000-0000-4000-8000-000000000042",
+				state: "pending",
+			};
+			receipt.backing = await binding.createGoalFileBacking(workspace, receipt, content);
+			await binding.writeGoalFile(workspace, receipt, content);
+
+			const boundaryMutationBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFilePublication(target: string): Promise<void> {
+					await writeFile(target, "boundary mutation\n");
+				}
+			})(root, directory);
+			await expect(boundaryMutationBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"conflicting content",
+			);
+			expect(await readFile(goalFile, "utf8")).toBe("boundary mutation\n");
+			await writeFile(goalFile, content);
+
+			const replacementTarget = join(directory, "publication-replacement.md");
+			await writeFile(replacementTarget, content);
+			const replacementBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFilePublication(target: string): Promise<void> {
+					await rm(target);
+					await symlink(replacementTarget, target);
+				}
+			})(root, directory);
+			await expect(replacementBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"is not owned by this dispatch receipt",
+			);
+			expect(await readFile(replacementTarget, "utf8")).toBe(content);
+			await rm(goalFile);
+			await binding.writeGoalFile(workspace, receipt, content);
+
+			const stagingBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFilePublication(): Promise<void> {
+					await execFileAsync("git", ["add", "-f", "--", DISPATCH_GOAL_FILE], {
+						cwd: workspace.path,
+					});
+				}
+			})(root, directory);
+			await expect(stagingBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"final or backing path is tracked by Git",
+			);
+			await execFileAsync("git", ["reset", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
+
+			const finalVerificationTarget = join(directory, "final-verification-replacement.md");
+			await writeFile(finalVerificationTarget, content);
+			const finalVerificationBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFileGitVerification(target: string): Promise<void> {
+					await rm(target);
+					await symlink(finalVerificationTarget, target);
+				}
+			})(root, directory);
+			await expect(finalVerificationBinding.verifyGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"is not owned by this dispatch receipt",
+			);
+			expect(await readFile(finalVerificationTarget, "utf8")).toBe(content);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("published preparation CLI", () => {
@@ -1035,20 +1064,23 @@ describe("published preparation CLI", () => {
 				ok: true,
 				result: [{ entries: { alpha: { phase: "prepared", goalFile } } }],
 			});
-
-			for (const removed of [
-				["--agent-command", "claude"],
-				["--session", "process"],
-				["--workspace", "treehouse"],
-			]) {
-				await expect(
-					execFileAsync(process.execPath, [cli, "start", "--cwd", root, "--goal", "alpha", ...removed], {
-						cwd: join(import.meta.dirname, ".."),
-					}),
-				).rejects.toMatchObject({ stderr: expect.stringContaining(`Unknown flag ${removed[0]}`) });
-			}
 		} finally {
 			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects removed harness and workspace flags", async () => {
+		const cli = join(import.meta.dirname, "..", "src", "dispatch.ts");
+		for (const removed of [
+			["--agent-command", "claude"],
+			["--session", "process"],
+			["--workspace", "treehouse"],
+		]) {
+			await expect(
+				execFileAsync(process.execPath, [cli, "start", "--goal", "alpha", ...removed], {
+					cwd: join(import.meta.dirname, ".."),
+				}),
+			).rejects.toMatchObject({ stderr: expect.stringContaining(`Unknown flag ${removed[0]}`) });
 		}
 	});
 });
