@@ -40,7 +40,7 @@ Every newly prepared workspace has `STEPSTONE_GOAL.md` at its root. Read it befo
 - dependencies and informational links; and
 - the rule that canonical roadmap mutations belong in the main worktree.
 
-The handoff is local preparation state, not repository content. Stepstone adds the root path to the repository's local Git exclude file, creates the handoff without overwriting an existing path, verifies that Git ignores it, and reports its absolute path. It therefore remains visible to a person or agent opening the workspace without making `git status` dirty or leaking into a commit. Cleanup removes it with the workspace.
+The handoff is local preparation state, not repository content. Stepstone journals a unique ownership receipt, retains an ignored private backing entry, and creates the public path as an exclusive hard link to that backing. Resume accepts only the entry owned by that receipt; it leaves any foreign file or symlink untouched and refuses to claim the goal. Stepstone verifies that Git ignores all handoff state and reports the public file's absolute path, so it remains visible without making `git status` dirty or leaking into a commit. Cleanup removes it with the workspace.
 
 The goal snapshot is written before the canonical claim. If writing or ignoring the handoff cannot be proven, preparation does not claim the goal and preserves the workspace as an ambiguous acquisition for inspection rather than handing out context it cannot verify.
 

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -8,6 +9,7 @@ import { FileDispatchStateStore, GitWorktreeBinding } from "../src/dispatch-bind
 import {
 	DISPATCH_GOAL_FILE,
 	DispatchDriver,
+	type DispatchGoalFile,
 	type DispatchRun,
 	type DispatchStateStore,
 	type DispatchWorkspace,
@@ -124,11 +126,11 @@ class FakeWorkspace implements WorkspaceBinding {
 	}
 	async writeGoalFile(
 		workspace: DispatchWorkspace,
-		path: typeof DISPATCH_GOAL_FILE,
+		receipt: DispatchGoalFile,
 		content: string,
 	): Promise<void> {
 		if (this.goalFileFailure) throw this.goalFileFailure;
-		const target = join(workspace.path, path);
+		const target = join(workspace.path, receipt.path);
 		const existing = this.goalFiles.get(target);
 		if (existing !== undefined && existing !== content) throw new Error("goal file content changed");
 		this.goalFiles.set(target, content);
@@ -213,6 +215,7 @@ describe("workspace preparation driver", () => {
 		expect(advanced.entries.alpha.message).toContain("did not launch or prompt an agent");
 		expect(advanced.entries.alpha.goalFile).toMatchObject({
 			path: DISPATCH_GOAL_FILE,
+			ownershipId: expect.any(String),
 			state: "written",
 		});
 		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
@@ -240,6 +243,7 @@ describe("workspace preparation driver", () => {
 		const interrupted = await setup.makeDriver().advance(run.id);
 		expect(interrupted.entries.alpha.phase).toBe("ambiguous");
 		expect(interrupted.entries.alpha.goalFile).toMatchObject({ state: "pending" });
+		expect(interrupted.entries.alpha.goalFile?.ownershipId).toEqual(expect.any(String));
 		expect(setup.roadmap.claims).toHaveLength(0);
 		const content = setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md");
 		expect(content).toContain("Ship the café workflow");
@@ -527,17 +531,43 @@ describe("Git workspace preparation", () => {
 			const workspace = await binding.acquire(goal("alpha"), "stepstone/alpha", base);
 			const goalFile = join(workspace.path, DISPATCH_GOAL_FILE);
 			const content = "# Stepstone Project Goal\n\nExact handoff\n";
+			const receipt: DispatchGoalFile = {
+				path: DISPATCH_GOAL_FILE,
+				sha256: createHash("sha256").update(content, "utf8").digest("hex"),
+				ownershipId: "00000000-0000-4000-8000-000000000042",
+				state: "pending",
+			};
+			const backing = join(workspace.path, `.stepstone-goal-${receipt.ownershipId}.owned`);
 			const staleTemporary = `${goalFile}.123.00000000-0000-4000-8000-000000000000.tmp`;
+			const staleBackingTemporary = `${backing}.123.00000000-0000-4000-8000-000000000000.tmp`;
 			await writeFile(staleTemporary, content);
-			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
+			await writeFile(staleBackingTemporary, content);
+			await writeFile(goalFile, content);
+			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"is not owned by this dispatch receipt",
+			);
+			expect(await readFile(goalFile, "utf8")).toBe(content);
 			expect((await execFileAsync("git", ["status", "--porcelain"], { cwd: workspace.path })).stdout).toBe(
 				"",
 			);
 			await rm(staleTemporary);
+			await rm(staleBackingTemporary);
+			await rm(goalFile);
+
+			await binding.writeGoalFile(workspace, receipt, content);
+			await binding.writeGoalFile(workspace, receipt, content);
+			const [backingDetails, goalDetails] = await Promise.all([
+				stat(backing, { bigint: true }),
+				stat(goalFile, { bigint: true }),
+			]);
+			expect({ dev: goalDetails.dev, ino: goalDetails.ino }).toEqual({
+				dev: backingDetails.dev,
+				ino: backingDetails.ino,
+			});
 
 			await execFileAsync("git", ["add", "-f", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
-			await expect(binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content)).rejects.toThrow(
-				"is tracked by Git",
+			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"final or backing path is tracked by Git",
 			);
 			await execFileAsync("git", ["reset", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
 
@@ -545,17 +575,14 @@ describe("Git workspace preparation", () => {
 			const symlinkTarget = join(directory, "matching-goal.md");
 			await writeFile(symlinkTarget, content);
 			await symlink(symlinkTarget, goalFile);
-			const portableBinding = new GitWorktreeBinding(root, directory, 0);
-			await expect(portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content)).rejects.toThrow(
-				"is not a regular file",
+			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"is not owned by this dispatch receipt",
 			);
+			expect(await readFile(symlinkTarget, "utf8")).toBe(content);
 			await rm(goalFile);
 
-			await portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
-			await portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
-			await expect(
-				portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, "different content"),
-			).rejects.toThrow("contains different content");
+			await binding.writeGoalFile(workspace, receipt, content);
+			await binding.writeGoalFile(workspace, receipt, content);
 
 			expect(await readFile(goalFile, "utf8")).toBe(content);
 			expect(
@@ -578,6 +605,7 @@ describe("Git workspace preparation", () => {
 
 			await binding.cleanup(workspace, "stepstone/alpha");
 			await expect(readFile(goalFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			await expect(readFile(backing, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			expect(
 				(await execFileAsync("git", ["branch", "--list", "stepstone/alpha"], { cwd: root })).stdout,
 			).toBe("");

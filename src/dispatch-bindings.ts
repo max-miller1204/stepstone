@@ -1,12 +1,11 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { constants } from "node:fs";
+import type { BigIntStats } from "node:fs";
 import {
 	link,
 	lstat,
 	mkdir,
-	open,
 	readdir,
 	readFile,
 	realpath,
@@ -21,6 +20,7 @@ import { z } from "zod";
 import { WorklistApplicationService } from "./application-service.ts";
 import type {
 	DispatchPhase,
+	DispatchGoalFile,
 	DispatchRun,
 	DispatchStateStore,
 	DispatchWorkspace,
@@ -192,6 +192,7 @@ const entrySchema = z
 			.object({
 				path: z.literal(DISPATCH_GOAL_FILE),
 				sha256: z.string().regex(/^[0-9a-f]{64}$/),
+				ownershipId: z.string().uuid().optional(),
 				state: z.enum(["pending", "written"]),
 			})
 			.strict()
@@ -710,7 +711,12 @@ export async function currentDispatchTarget(
 	return { branch, revision };
 }
 
-const goalFileExcludePatterns = [`/${DISPATCH_GOAL_FILE}`, `/${DISPATCH_GOAL_FILE}.*.tmp`];
+const goalFileExcludePatterns = [
+	`/${DISPATCH_GOAL_FILE}`,
+	`/${DISPATCH_GOAL_FILE}.*.tmp`,
+	"/.stepstone-goal-*.owned",
+	"/.stepstone-goal-*.tmp",
+];
 
 async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
 	const commonDirectory = await realpath(
@@ -743,53 +749,11 @@ async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
 	}
 }
 
-function isSameFile(
-	left: Awaited<ReturnType<typeof lstat>>,
-	right: Awaited<ReturnType<typeof lstat>>,
-): boolean {
+function isSameFile(left: BigIntStats, right: BigIntStats): boolean {
 	return left.dev === right.dev && left.ino === right.ino;
 }
 
-async function verifyExactGoalFile(path: string, content: string, noFollowFlag: number): Promise<void> {
-	const before = await lstat(path);
-	if (!before.isFile()) throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
-	let handle: Awaited<ReturnType<typeof open>>;
-	try {
-		handle = await open(path, constants.O_RDONLY | noFollowFlag);
-	} catch (error) {
-		if (error instanceof Error && "code" in error && error.code === "ELOOP") {
-			throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
-		}
-		throw error;
-	}
-	try {
-		const details = await handle.stat();
-		if (!details.isFile() || !isSameFile(before, details)) {
-			throw new Error(`Refusing goal handoff because ${path} changed during verification`);
-		}
-		if ((await handle.readFile("utf8")) !== content) {
-			throw new Error(`Refusing goal handoff because ${path} contains different content`);
-		}
-		const after = await lstat(path);
-		if (!after.isFile() || !isSameFile(details, after)) {
-			throw new Error(`Refusing goal handoff because ${path} changed during verification`);
-		}
-	} finally {
-		await handle.close();
-	}
-}
-
-async function writeGoalFileWithoutOverwrite(
-	path: string,
-	content: string,
-	noFollowFlag: number,
-): Promise<void> {
-	try {
-		await verifyExactGoalFile(path, content, noFollowFlag);
-		return;
-	} catch (error) {
-		if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-	}
+async function ensureOwnedGoalBacking(path: string, content: string): Promise<void> {
 	const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
 	await writeFile(temporary, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
 	try {
@@ -798,9 +762,27 @@ async function writeGoalFileWithoutOverwrite(
 		} catch (error) {
 			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
 		}
-		await verifyExactGoalFile(path, content, noFollowFlag);
 	} finally {
 		await rm(temporary, { force: true });
+	}
+	const details = await lstat(path, { bigint: true });
+	if (!details.isFile() || (await readFile(path, "utf8")) !== content) {
+		throw new Error(`Refusing goal handoff because owned backing ${path} is invalid`);
+	}
+}
+
+async function linkOwnedGoalFile(backing: string, path: string): Promise<void> {
+	try {
+		await link(backing, path);
+	} catch (error) {
+		if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+	}
+	const [backingDetails, finalDetails] = await Promise.all([
+		lstat(backing, { bigint: true }),
+		lstat(path, { bigint: true }),
+	]);
+	if (!backingDetails.isFile() || !finalDetails.isFile() || !isSameFile(backingDetails, finalDetails)) {
+		throw new Error(`Refusing goal handoff because ${path} is not owned by this dispatch receipt`);
 	}
 }
 
@@ -808,16 +790,10 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 	readonly name = "worktree";
 	private readonly repositoryRoot: string;
 	private readonly workspaceParent: string;
-	private readonly noFollowFlag: number;
 
-	constructor(
-		repositoryRoot: string,
-		workspaceParent = dirname(repositoryRoot),
-		noFollowFlag = constants.O_NOFOLLOW ?? 0,
-	) {
+	constructor(repositoryRoot: string, workspaceParent = dirname(repositoryRoot)) {
 		this.repositoryRoot = repositoryRoot;
 		this.workspaceParent = workspaceParent;
-		this.noFollowFlag = noFollowFlag;
 	}
 
 	async acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace> {
@@ -860,19 +836,33 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 
 	async writeGoalFile(
 		workspace: DispatchWorkspace,
-		path: typeof DISPATCH_GOAL_FILE,
+		receipt: DispatchGoalFile,
 		content: string,
 	): Promise<void> {
-		if (workspace.binding !== this.name || path !== DISPATCH_GOAL_FILE) {
+		if (
+			workspace.binding !== this.name ||
+			receipt.path !== DISPATCH_GOAL_FILE ||
+			!receipt.ownershipId ||
+			!z.string().uuid().safeParse(receipt.ownershipId).success ||
+			createHash("sha256").update(content, "utf8").digest("hex") !== receipt.sha256
+		) {
 			throw new Error("Refusing a goal handoff outside this binding's fixed workspace path");
 		}
 		await ensureGoalFileIsIgnored(this.repositoryRoot);
-		const target = join(workspace.path, path);
-		if ((await runCommand("git", ["ls-files", "--stage", "--", path], workspace.path)).stdout.trim()) {
-			throw new Error(`Refusing goal handoff because ${target} is tracked by Git`);
+		const target = join(workspace.path, receipt.path);
+		const backingName = `.stepstone-goal-${receipt.ownershipId}.owned`;
+		if (
+			(
+				await runCommand("git", ["ls-files", "--stage", "--", receipt.path, backingName], workspace.path)
+			).stdout.trim()
+		) {
+			throw new Error("Refusing goal handoff because its final or backing path is tracked by Git");
 		}
-		await writeGoalFileWithoutOverwrite(target, content, this.noFollowFlag);
-		await runCommand("git", ["check-ignore", "--quiet", "--", path], workspace.path);
+		await runCommand("git", ["check-ignore", "--quiet", "--", receipt.path], workspace.path);
+		await runCommand("git", ["check-ignore", "--quiet", "--", backingName], workspace.path);
+		const backing = join(workspace.path, backingName);
+		await ensureOwnedGoalBacking(backing, content);
+		await linkOwnedGoalFile(backing, target);
 	}
 
 	async cleanup(workspace: DispatchWorkspace, branch: string): Promise<void> {

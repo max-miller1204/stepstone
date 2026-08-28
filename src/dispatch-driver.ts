@@ -26,6 +26,7 @@ export interface DispatchWorkspace {
 export interface DispatchGoalFile {
 	path: typeof DISPATCH_GOAL_FILE;
 	sha256: string;
+	ownershipId?: string;
 	state: "pending" | "written";
 }
 
@@ -79,11 +80,7 @@ export interface WorkspaceBinding {
 	readonly name: string;
 	verify(workspace: DispatchWorkspace, branch: string): Promise<void>;
 	acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace>;
-	writeGoalFile(
-		workspace: DispatchWorkspace,
-		path: typeof DISPATCH_GOAL_FILE,
-		content: string,
-	): Promise<void>;
+	writeGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
 	cleanup(workspace: DispatchWorkspace, branch: string): Promise<void>;
 }
 
@@ -537,6 +534,7 @@ export class DispatchDriver {
 		const expected: DispatchGoalFile = {
 			path: DISPATCH_GOAL_FILE,
 			sha256: sha256(content),
+			ownershipId: entry.goalFile?.ownershipId ?? randomUUID(),
 			state: entry.goalFile?.state ?? "pending",
 		};
 		if (
@@ -552,9 +550,13 @@ export class DispatchDriver {
 			entry.goalFile = expected;
 			entry.message = `Goal-file intent journaled for ${DISPATCH_GOAL_FILE}.`;
 			await this.persist(run, entry);
+		} else if (!entry.goalFile.ownershipId) {
+			entry.goalFile.ownershipId = expected.ownershipId;
+			entry.message = `Goal-file ownership journaled for ${DISPATCH_GOAL_FILE}.`;
+			await this.persist(run, entry);
 		}
 		try {
-			await this.dependencies.workspace.writeGoalFile(entry.workspace, DISPATCH_GOAL_FILE, content);
+			await this.dependencies.workspace.writeGoalFile(entry.workspace, entry.goalFile, content);
 		} catch (error) {
 			entry.phase = "ambiguous";
 			entry.message = `Goal-file handoff could not be verified; workspace preserved: ${errorMessage(error)}`;
