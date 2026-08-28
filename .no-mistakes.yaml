@@ -1,8 +1,10 @@
 commands:
   # Keep gate definitions in package.json so these commands and the repository's
-  # own hooks cannot disagree about what validation means.
-  test: npm run quality:push:worktree
-  lint: npm run quality:static
+  # own hooks cannot disagree about what validation means. Gate commands run
+  # under a non-interactive /bin/sh that never sources a shell profile, so the
+  # mise-managed npm on this machine is invisible unless PATH is repaired inline.
+  test: export PATH="$HOME/.local/share/mise/shims:$PATH"; npm run quality:push:worktree
+  lint: export PATH="$HOME/.local/share/mise/shims:$PATH"; npm run quality:static
 
 ignore_patterns:
   - ".claude/skills/stepstone/SKILL.md"
