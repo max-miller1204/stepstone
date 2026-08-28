@@ -836,6 +836,16 @@ async function ensureGoalPathsAreLocalState(workspacePath: string, names: string
 	}
 }
 
+async function verifyPublishedGoalFileIdentity(
+	target: string,
+	backing: DispatchGoalBacking,
+): Promise<void> {
+	const finalDetails = await lstat(target, { bigint: true });
+	if (!finalDetails.isFile() || !matchesBacking(finalDetails, backing)) {
+		throw new Error(`Refusing goal handoff because ${target} is not owned by this dispatch receipt`);
+	}
+}
+
 export class GitWorktreeBinding implements WorkspaceBinding {
 	readonly name = "worktree";
 	private readonly repositoryRoot: string;
@@ -914,17 +924,16 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			} catch (error) {
 				if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
 			}
-			const finalDetails = await lstat(target, { bigint: true });
-			if (!finalDetails.isFile() || !matchesBacking(finalDetails, receipt.backing)) {
-				throw new Error(`Refusing goal handoff because ${target} is not owned by this dispatch receipt`);
-			}
+			await verifyPublishedGoalFileIdentity(target, receipt.backing);
 			await this.afterGoalFilePublication(target);
+			await verifyPublishedGoalFileIdentity(target, receipt.backing);
 			await authenticateGoalBackingHandle(
 				backingHandle,
 				backingPath,
 				receipt.backing,
 				receipt.sha256,
 			);
+			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
 		} finally {
 			await backingHandle.close();
 		}

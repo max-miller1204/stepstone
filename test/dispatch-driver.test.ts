@@ -752,6 +752,32 @@ describe("Git workspace preparation", () => {
 			expect(await readFile(goalFile, "utf8")).toBe("boundary mutation\n");
 			await writeFile(goalFile, content);
 			await binding.writeGoalFile(workspace, receipt, content);
+			const replacementTarget = join(directory, "publication-replacement.md");
+			await writeFile(replacementTarget, content);
+			const replacementBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFilePublication(target: string): Promise<void> {
+					await rm(target);
+					await symlink(replacementTarget, target);
+				}
+			})(root, directory);
+			await expect(replacementBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"is not owned by this dispatch receipt",
+			);
+			expect(await readFile(replacementTarget, "utf8")).toBe(content);
+			await rm(goalFile);
+			await binding.writeGoalFile(workspace, receipt, content);
+			const stagingBinding = new (class extends GitWorktreeBinding {
+				protected override async afterGoalFilePublication(): Promise<void> {
+					await execFileAsync("git", ["add", "-f", "--", DISPATCH_GOAL_FILE], {
+						cwd: workspace.path,
+					});
+				}
+			})(root, directory);
+			await expect(stagingBinding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"final or backing path is tracked by Git",
+			);
+			await execFileAsync("git", ["reset", "--", DISPATCH_GOAL_FILE], { cwd: workspace.path });
+			await binding.writeGoalFile(workspace, receipt, content);
 			const [backingDetails, goalDetails] = await Promise.all([
 				stat(backing, { bigint: true }),
 				stat(goalFile, { bigint: true }),
