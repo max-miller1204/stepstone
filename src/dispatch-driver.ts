@@ -2,15 +2,13 @@ import { randomUUID } from "node:crypto";
 import { readyGoals } from "./dependencies.ts";
 import type { ProjectGoal } from "./types.ts";
 
-export const DISPATCH_STATE_VERSION = 1 as const;
+export const DISPATCH_STATE_VERSION = 2 as const;
 
 export type DispatchPhase =
 	| "preparing"
 	| "acquiring"
 	| "claiming"
-	| "claimed"
-	| "launching"
-	| "running"
+	| "prepared"
 	| "ambiguous"
 	| "releasing"
 	| "released"
@@ -24,11 +22,6 @@ export interface DispatchWorkspace {
 	metadata: Record<string, string>;
 }
 
-export interface DispatchSession {
-	binding: string;
-	metadata: Record<string, string>;
-}
-
 export interface DispatchEntry {
 	goal: ProjectGoal;
 	branch: string;
@@ -38,10 +31,7 @@ export interface DispatchEntry {
 	completionIntentAt?: string;
 	releaseUpdatedAt?: string;
 	cleanupMarker?: string;
-	session?: DispatchSession;
 	claimUpdatedAt?: string;
-	launchToken?: string;
-	custodyOperatorAsserted?: boolean;
 	mergedPr?: MergeEvidence;
 	message?: string;
 	updatedAt: string;
@@ -55,22 +45,14 @@ export interface DispatchRun {
 	maxParallel: number;
 	targetBranch: string;
 	targetRevision: string;
-	workspaceBinding: string;
-	sessionBinding: string;
-	bindingConfig: DispatchBindingConfig;
+	workspaceConfig: DispatchWorkspaceConfig;
 	createdAt: string;
 	updatedAt: string;
 	entries: Record<string, DispatchEntry>;
 }
 
-export interface DispatchBindingConfig {
+export interface DispatchWorkspaceConfig {
 	workspaceParent?: string;
-	agentCommand?: string;
-	agentCommandFingerprint?: string;
-	agentArgs: string[];
-	agentKind?: string;
-	startupGraceMs?: number;
-	promptTimeoutMs?: number;
 }
 
 export interface RoadmapSnapshot {
@@ -90,31 +72,6 @@ export interface WorkspaceBinding {
 	verify(workspace: DispatchWorkspace, branch: string): Promise<void>;
 	acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace>;
 	cleanup(workspace: DispatchWorkspace, branch: string): Promise<void>;
-}
-
-export interface SessionLaunchFailure extends Error {
-	readonly ambiguous: boolean;
-	session?: DispatchSession;
-}
-
-export type LaunchClosureOutcome = "proven" | "operator-asserted";
-
-export interface SessionBinding {
-	readonly name: string;
-	verifyLaunchIdentity?(): Promise<void>;
-	launch(
-		workspace: DispatchWorkspace,
-		goal: ProjectGoal,
-		prompt: string,
-		launchToken: string,
-	): Promise<DispatchSession>;
-	verifyInterruptedLaunchClosed(
-		workspace: DispatchWorkspace,
-		goal: ProjectGoal,
-		launchToken: string,
-		operatorConfirmed?: boolean,
-	): Promise<LaunchClosureOutcome>;
-	cleanup(session: DispatchSession, operatorConfirmed?: boolean): Promise<LaunchClosureOutcome>;
 }
 
 export interface MergeEvidence {
@@ -142,7 +99,6 @@ export interface DispatchStateStore {
 export interface DispatchDependencies {
 	roadmap: RoadmapBinding;
 	workspace: WorkspaceBinding;
-	session: SessionBinding;
 	merges: MergeEvidenceBinding;
 	store: DispatchStateStore;
 	now?: () => Date;
@@ -153,44 +109,18 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-function isAmbiguousLaunchFailure(error: unknown): error is SessionLaunchFailure {
-	return error instanceof Error && "ambiguous" in error && (error as SessionLaunchFailure).ambiguous === true;
-}
-
 function hasCanonicalCustody(entry: DispatchEntry): boolean {
-	return [
-		"preparing",
-		"acquiring",
-		"claiming",
-		"claimed",
-		"launching",
-		"running",
-		"ambiguous",
-		"releasing",
-	].includes(entry.phase);
-}
-
-function consumesCapacity(entry: DispatchEntry): boolean {
-	return (
-		hasCanonicalCustody(entry) ||
-		(entry.phase === "cleanup-pending" && (entry.session !== undefined || entry.launchToken !== undefined))
-	);
+	return ["preparing", "acquiring", "claiming", "prepared", "ambiguous", "releasing"].includes(entry.phase);
 }
 
 function needsCleanup(entry: DispatchEntry): boolean {
 	return entry.phase === "released" || entry.phase === "completed" || entry.phase === "cleanup-pending";
 }
 
-export function renderGoalPrompt(goal: ProjectGoal): string {
-	return [
-		"Implement this claimed Stepstone Project Goal in the provided isolated checkout.",
-		"The root dispatch driver is the sole roadmap writer. Do not edit .worklist/worklist.json or run mutating Stepstone project commands.",
-		"Complete the entire goal, commit the implementation branch, and open a pull request whose head is the claimed branch.",
-		"Project Goal context:",
-		JSON.stringify(goal, null, 2),
-	].join("\n\n");
-}
-
+/**
+ * Claims and prepares approved goals without launching or prompting any agent.
+ * A caller can open each reported workspace with whichever harness it chooses.
+ */
 export class DispatchDriver {
 	private readonly now: () => Date;
 	private readonly newId: () => string;
@@ -208,7 +138,7 @@ export class DispatchDriver {
 		maxParallel: number;
 		targetBranch: string;
 		targetRevision: string;
-		bindingConfig: DispatchBindingConfig;
+		workspaceConfig: DispatchWorkspaceConfig;
 	}): Promise<DispatchRun> {
 		if (!Number.isSafeInteger(options.maxParallel) || options.maxParallel < 1) {
 			throw new Error("maxParallel must be a positive integer");
@@ -228,9 +158,7 @@ export class DispatchDriver {
 			maxParallel: options.maxParallel,
 			targetBranch: options.targetBranch,
 			targetRevision: options.targetRevision,
-			workspaceBinding: this.dependencies.workspace.name,
-			sessionBinding: this.dependencies.session.name,
-			bindingConfig: structuredClone(options.bindingConfig),
+			workspaceConfig: structuredClone(options.workspaceConfig),
 			createdAt: timestamp,
 			updatedAt: timestamp,
 			entries: {},
@@ -241,35 +169,22 @@ export class DispatchDriver {
 
 	async advance(runId: string): Promise<DispatchRun> {
 		const run = await this.dependencies.store.load(runId);
-		this.assertBindings(run);
 		await this.reconcile(run);
-		let slots = run.maxParallel - Object.values(run.entries).filter(consumesCapacity).length;
+		const slots = run.maxParallel - Object.values(run.entries).filter(hasCanonicalCustody).length;
 		if (slots <= 0) return run;
 		const snapshot = await this.dependencies.roadmap.read();
 		const approved = new Set(run.approvedGoalIds);
 		const ready = readyGoals(snapshot.goals, snapshot.retiredIds).filter(
 			(goal) => approved.has(goal.id) && !run.entries[goal.id],
 		);
-		if (ready.length === 0) return run;
-		await this.dependencies.session.verifyLaunchIdentity?.();
-		for (const goal of ready.slice(0, slots)) {
-			await this.launch(run, goal);
-			slots = run.maxParallel - Object.values(run.entries).filter(consumesCapacity).length;
-			if (slots <= 0) break;
-		}
+		for (const goal of ready.slice(0, slots)) await this.prepare(run, goal);
 		return run;
 	}
 
-	async recoverRelease(
-		runId: string,
-		goalId: string,
-		explicitClaimUpdatedAt?: string,
-		confirmLaunchClosed = false,
-	): Promise<DispatchRun> {
+	async recoverRelease(runId: string, goalId: string, explicitClaimUpdatedAt?: string): Promise<DispatchRun> {
 		const run = await this.dependencies.store.load(runId);
-		this.assertBindings(run);
 		const entry = this.requireEntry(run, goalId);
-		if (!["claiming", "claimed", "launching", "running", "ambiguous", "releasing"].includes(entry.phase)) {
+		if (!["claiming", "prepared", "ambiguous", "releasing"].includes(entry.phase)) {
 			throw new Error(
 				`Goal ${goalId} is in terminal or non-claim phase ${entry.phase}; recovery is not allowed`,
 			);
@@ -278,48 +193,6 @@ export class DispatchDriver {
 			throw new Error(
 				`Goal ${goalId} has a journaled completion outcome; resume must reconcile it before release recovery`,
 			);
-		}
-		if (entry.session) {
-			try {
-				const outcome = await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
-				entry.launchToken = undefined;
-				entry.session = undefined;
-				entry.phase = "ambiguous";
-				this.journalCustodyRelease(
-					entry,
-					outcome,
-					"Worker session closed and verified before claim recovery.",
-					"Worker session released on the operator's inspected verdict, not on binding proof, before claim recovery.",
-				);
-				await this.persist(run, entry);
-			} catch (error) {
-				entry.phase = "ambiguous";
-				entry.message = `Worker session could not be proven closed; claim and workspace preserved: ${errorMessage(error)}`;
-				await this.persist(run, entry);
-				throw error;
-			}
-		}
-		if (entry.launchToken && !entry.session) {
-			if (!confirmLaunchClosed || !entry.workspace) {
-				throw new Error(
-					`Goal ${goalId} has an interrupted worker launch identity but no verified session handle; manual process inspection and --confirm-launch-closed are required`,
-				);
-			}
-			const outcome = await this.dependencies.session.verifyInterruptedLaunchClosed(
-				entry.workspace,
-				entry.goal,
-				entry.launchToken,
-				true,
-			);
-			entry.launchToken = undefined;
-			entry.phase = "ambiguous";
-			this.journalCustodyRelease(
-				entry,
-				outcome,
-				"Explicit recovery verified that the interrupted launch has no live worker.",
-				"Explicit recovery released the interrupted launch on the operator's inspected verdict, not on binding proof.",
-			);
-			await this.persist(run, entry);
 		}
 		if (!entry.claimUpdatedAt && explicitClaimUpdatedAt) {
 			const snapshot = await this.dependencies.roadmap.read();
@@ -342,27 +215,17 @@ export class DispatchDriver {
 				`Goal ${goalId} has no exact claim token; interrupted acquisition requires manual inspection`,
 			);
 		}
-		await this.releaseKnownSafe(run, entry, "Exact claim released by explicit recovery.");
+		await this.releaseKnownSafe(run, entry, "Exact prepared claim released by explicit recovery.");
 		return run;
 	}
 
-	async cleanup(
-		runId: string,
-		goalId?: string,
-		confirmLaunchClosed = false,
-	): Promise<DispatchRun | undefined> {
-		if (confirmLaunchClosed && !goalId) {
-			throw new Error(
-				"--confirm-launch-closed carries one inspected goal's verdict; name that goal to use it",
-			);
-		}
+	async cleanup(runId: string, goalId?: string): Promise<DispatchRun | undefined> {
 		const run = await this.dependencies.store.load(runId);
-		this.assertBindings(run);
 		const entries = goalId ? [this.requireEntry(run, goalId)] : Object.values(run.entries);
 		for (const entry of entries) {
 			if (hasCanonicalCustody(entry))
 				throw new Error(`Goal ${entry.goal.id} still has custody; recover its claim first`);
-			if (needsCleanup(entry)) await this.cleanupEntry(run, entry, confirmLaunchClosed);
+			if (needsCleanup(entry)) await this.cleanupEntry(run, entry);
 		}
 		if (!goalId && Object.values(run.entries).every((entry) => entry.phase === "cleaned")) {
 			await this.dependencies.store.remove(run.id);
@@ -376,25 +239,15 @@ export class DispatchDriver {
 			if (["preparing", "acquiring", "claiming", "releasing"].includes(entry.phase)) {
 				await this.reconcileInterrupted(run, entry);
 			}
-			if (entry.phase === "launching") {
-				entry.phase = "ambiguous";
-				entry.message =
-					"Worker launch was interrupted before a session handle was persisted; launch identity is preserved for manual inspection.";
-				await this.persist(run, entry);
-			}
 			if (
 				entry.workspace &&
 				entry.claimUpdatedAt &&
-				(entry.phase === "claimed" || entry.phase === "running" || entry.phase === "ambiguous") &&
+				(entry.phase === "prepared" || entry.phase === "ambiguous") &&
 				!(await this.verifyPersistedWorkspace(run, entry))
 			) {
 				continue;
 			}
-			if (entry.phase === "claimed") {
-				await this.launchWorker(run, entry);
-				continue;
-			}
-			if (entry.claimUpdatedAt && (entry.phase === "running" || entry.phase === "ambiguous")) {
+			if (entry.claimUpdatedAt && (entry.phase === "prepared" || entry.phase === "ambiguous")) {
 				let evidence: MergeEvidence | undefined;
 				try {
 					evidence = await this.dependencies.merges.findMerged(
@@ -403,7 +256,8 @@ export class DispatchDriver {
 						entry.claimUpdatedAt,
 					);
 				} catch (error) {
-					entry.message = `Merge inspection failed; custody preserved: ${errorMessage(error)}`;
+					entry.phase = "ambiguous";
+					entry.message = `Merge inspection failed; prepared claim preserved: ${errorMessage(error)}`;
 					await this.persist(run, entry);
 					continue;
 				}
@@ -536,7 +390,7 @@ export class DispatchDriver {
 					current.updatedAt !== entry.claimUpdatedAt ||
 					(current.status !== "open" && current.status !== "active")
 				) {
-					throw new Error(`Canonical goal no longer carries this run's exact claim`);
+					throw new Error("Canonical goal no longer carries this run's exact claim");
 				}
 				const completed = await this.dependencies.roadmap.complete(current.id, entry.claimUpdatedAt);
 				entry.completionUpdatedAt = completed.updatedAt;
@@ -547,12 +401,12 @@ export class DispatchDriver {
 			await this.persist(run, entry);
 		} catch (error) {
 			entry.phase = "ambiguous";
-			entry.message = `Completion failed; custody preserved: ${errorMessage(error)}`;
+			entry.message = `Completion failed; prepared claim preserved: ${errorMessage(error)}`;
 			await this.persist(run, entry);
 		}
 	}
 
-	private async launch(run: DispatchRun, goal: ProjectGoal): Promise<void> {
+	private async prepare(run: DispatchRun, goal: ProjectGoal): Promise<void> {
 		const entry: DispatchEntry = {
 			goal: structuredClone(goal),
 			branch: `stepstone/${goal.id}`,
@@ -610,51 +464,9 @@ export class DispatchDriver {
 			return;
 		}
 		entry.claimUpdatedAt = claimed.updatedAt;
-		entry.phase = "claimed";
+		entry.phase = "prepared";
+		entry.message = "Workspace prepared and claimed; Stepstone did not launch or prompt an agent.";
 		await this.persist(run, entry);
-		await this.launchWorker(run, entry);
-	}
-
-	private async launchWorker(run: DispatchRun, entry: DispatchEntry): Promise<void> {
-		if (!entry.workspace) throw new Error("Claimed entry has no workspace");
-		try {
-			await this.dependencies.session.verifyLaunchIdentity?.();
-		} catch (error) {
-			entry.phase = "claimed";
-			entry.message = `Worker launch is deferred with its claim and workspace held: ${errorMessage(error)}`;
-			await this.persist(run, entry);
-			return;
-		}
-		entry.launchToken = randomUUID();
-		entry.phase = "launching";
-		entry.message = "Worker launch intent and identity are journaled; no session handle is proven yet.";
-		await this.persist(run, entry);
-		try {
-			await this.dependencies.workspace.verify(entry.workspace, entry.branch);
-			entry.session = await this.dependencies.session.launch(
-				entry.workspace,
-				entry.goal,
-				renderGoalPrompt(entry.goal),
-				entry.launchToken,
-			);
-			entry.phase = "running";
-			entry.message = "Worker launched; matching merged PR is the only completion evidence.";
-			await this.persist(run, entry);
-		} catch (error) {
-			if (isAmbiguousLaunchFailure(error)) {
-				entry.session = error.session ?? entry.session;
-				entry.phase = "ambiguous";
-				entry.message = `Launch outcome is ambiguous; custody preserved: ${errorMessage(error)}`;
-				await this.persist(run, entry);
-				return;
-			}
-			entry.launchToken = undefined;
-			await this.releaseKnownSafe(
-				run,
-				entry,
-				`Known-safe launch failure released the exact claim: ${errorMessage(error)}`,
-			);
-		}
 	}
 
 	private async releaseKnownSafe(run: DispatchRun, entry: DispatchEntry, message: string): Promise<void> {
@@ -679,56 +491,8 @@ export class DispatchDriver {
 		}
 	}
 
-	private async cleanupEntry(
-		run: DispatchRun,
-		entry: DispatchEntry,
-		confirmLaunchClosed = false,
-	): Promise<void> {
+	private async cleanupEntry(run: DispatchRun, entry: DispatchEntry): Promise<void> {
 		if (!needsCleanup(entry)) return;
-		if (entry.session) {
-			try {
-				const outcome = await this.dependencies.session.cleanup(entry.session, confirmLaunchClosed);
-				entry.session = undefined;
-				entry.launchToken = undefined;
-				entry.phase = "cleanup-pending";
-				this.journalCustodyRelease(
-					entry,
-					outcome,
-					"Worker session closed and verified; workspace cleanup is pending.",
-					"Worker session released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending.",
-				);
-				await this.persist(run, entry);
-			} catch (error) {
-				entry.phase = "cleanup-pending";
-				entry.message = `Cleanup is pending because the worker session could not be verified closed: ${errorMessage(error)}`;
-				await this.persist(run, entry);
-				return;
-			}
-		}
-		if (entry.launchToken && entry.workspace) {
-			try {
-				const outcome = await this.dependencies.session.verifyInterruptedLaunchClosed(
-					entry.workspace,
-					entry.goal,
-					entry.launchToken,
-					confirmLaunchClosed,
-				);
-				entry.launchToken = undefined;
-				entry.phase = "cleanup-pending";
-				this.journalCustodyRelease(
-					entry,
-					outcome,
-					"Interrupted worker launch proven closed; workspace cleanup is pending.",
-					"Interrupted worker launch released on the operator's inspected verdict, not on binding proof; workspace cleanup is pending.",
-				);
-				await this.persist(run, entry);
-			} catch (error) {
-				entry.phase = "cleanup-pending";
-				entry.message = `Cleanup is pending because the interrupted worker launch could not be proven closed: ${errorMessage(error)}`;
-				await this.persist(run, entry);
-				return;
-			}
-		}
 		try {
 			if (entry.workspace) {
 				const workspace = entry.workspace;
@@ -742,22 +506,11 @@ export class DispatchDriver {
 			return;
 		}
 		entry.workspace = undefined;
-		entry.launchToken = undefined;
 		entry.phase = "cleaned";
 		entry.message = entry.mergedPr
 			? `Completed and cleaned after ${entry.mergedPr.url}.`
 			: "Released and cleaned.";
 		await this.persist(run, entry);
-	}
-
-	private journalCustodyRelease(
-		entry: DispatchEntry,
-		outcome: LaunchClosureOutcome,
-		proven: string,
-		asserted: string,
-	): void {
-		if (outcome === "operator-asserted") entry.custodyOperatorAsserted = true;
-		entry.message = outcome === "operator-asserted" ? asserted : proven;
 	}
 
 	private async verifyPersistedWorkspace(run: DispatchRun, entry: DispatchEntry): Promise<boolean> {
@@ -777,17 +530,6 @@ export class DispatchDriver {
 		const entry = run.entries[goalId];
 		if (!entry) throw new Error(`Run ${run.id} has no entry for goal ${goalId}`);
 		return entry;
-	}
-
-	private assertBindings(run: DispatchRun): void {
-		if (
-			run.workspaceBinding !== this.dependencies.workspace.name ||
-			run.sessionBinding !== this.dependencies.session.name
-		) {
-			throw new Error(
-				`Run ${run.id} requires workspace=${run.workspaceBinding} session=${run.sessionBinding}; received workspace=${this.dependencies.workspace.name} session=${this.dependencies.session.name}`,
-			);
-		}
 	}
 
 	private async persist(run: DispatchRun, entry?: DispatchEntry): Promise<void> {

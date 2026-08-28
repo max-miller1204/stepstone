@@ -1,6 +1,6 @@
 ---
 name: stepstone
-description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; dispatch or fan out an approved plan, running its ready goals as parallel agent sessions in isolated worktrees; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
+description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; prepare and claim isolated workspaces for an approved plan; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
 ---
 
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
@@ -183,17 +183,17 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 
 ## Dispatching approved plans
 
-- Start an approved run with `npx -y -p stepstone@latest stepstone-dispatch start --goal <id>... --agent-command <executable>`; repeated goal IDs are the immutable authorization allow-list.
-- The published driver selects only allow-listed goals returned by a fresh ready frontier, claims each exact `updatedAt` before launch, and enforces its persisted parallel limit.
-- The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; workers receive the complete goal context but never mutate the worklist from isolated workspaces.
-- Session hosting and workspace isolation are independent CLI bindings: detached processes or Herdr can compose with Git worktrees or Treehouse leases without importing any of those tools or an agent harness.
-- Only a merged PR whose head exactly matches the stored claimed branch is completion evidence; worker exit, silence, or an unmerged green PR never proves the goal landed.
-- Launching a driver run for an explicitly approved plan grants standing consent to complete only an allow-listed goal after its matching PR merged.
-- Local runtime state under the Git common directory preserves claim tokens, workspace and session custody, binding configuration, and outcomes across `resume`, while canonical roadmap state remains harness-neutral.
-- Known-safe pre-launch failures release the exact claim token; ambiguous outcomes preserve custody until inspection and explicit `recover <run-id> <goal-id> --release`.
-- Use `status` and `inspect` without mutation, `resume` to reconcile merges and refill capacity, and `cleanup` only after completion or exact release.
+- Start an approved preparation run with `npx -y -p stepstone@latest stepstone-dispatch start --goal <id>...`; repeated goal IDs are the immutable authorization allow-list.
+- The published driver selects only allow-listed goals returned by a fresh ready frontier, prepares an isolated workspace, claims each exact `updatedAt`, and limits how many prepared claims it may hold at once.
+- Stepstone never starts, prompts, or supervises an agent; after preparation, open the reported workspace with whichever harness or terminal you choose.
+- The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; work inside an isolated workspace must not mutate the worklist.
+- Only a merged PR whose head exactly matches the stored claimed branch is completion evidence; a closed terminal, silence, or an unmerged green PR never proves the goal landed.
+- Starting a preparation run for an explicitly approved plan grants standing consent to complete only an allow-listed goal after its matching PR merged.
+- Local runtime state under the Git common directory preserves claim tokens, workspace custody, configuration, and outcomes across `resume`, while canonical roadmap state remains harness-neutral.
+- Ambiguous workspace or claim outcomes preserve custody until inspection and explicit `recover <run-id> <goal-id> --release`.
+- Use `status` and `inspect` without mutation, `resume` to reconcile merges and refill preparation capacity, and `cleanup` only after completion or exact release.
 
-The zero-dependency and Herdr plus Treehouse bindings, including copy-paste command sequences and cleanup rules, are documented in the package's `docs/dispatch.md`.
+Git workspace preparation, recovery, and cleanup rules are documented in the package's `docs/dispatch.md`.
 
 ## Guardrails
 
