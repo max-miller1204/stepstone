@@ -20,11 +20,12 @@
  */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { CLI_COMMAND_CONTRACT, DISPATCH_BINARY } from "../src/cli-contract.ts";
+import { DISPATCH_GOAL_FILE } from "../src/dispatch-driver.ts";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -342,11 +343,64 @@ async function exerciseDispatch(binPath: string, workspace: string): Promise<voi
 	const help = await runDispatch(["--help"]);
 	assert.equal(help.code, 0, "installed dispatch executable --help must succeed");
 	assert.match(help.stdout, /resume <run-id>/, "dispatch help must expose resumable operation");
-	const status = await runDispatch(["status", "--json"]);
-	assert.equal(status.code, 0, "installed dispatch executable status must succeed");
-	const envelope = JSON.parse(status.stdout) as { ok?: unknown; result?: unknown };
+	assert.match(help.stdout, new RegExp(DISPATCH_GOAL_FILE), "dispatch help must name the goal handoff");
+
+	await run("git", ["config", "user.name", "Stepstone Check"], workspace);
+	await run("git", ["config", "user.email", "stepstone@example.test"], workspace);
+	await mkdir(join(workspace, ".worklist"));
+	await writeFile(
+		join(workspace, ".worklist", "worklist.json"),
+		`${JSON.stringify(
+			{
+				version: 1,
+				revision: 0,
+				goals: [
+					{
+						id: "prepared-goal",
+						title: "Prepared goal",
+						description: "Prove the installed handoff.",
+						status: "open",
+						createdAt: "2026-01-01T00:00:00.000Z",
+						updatedAt: "2026-01-01T00:00:00.000Z",
+					},
+				],
+				retiredIds: [],
+			},
+			null,
+			2,
+		)}\n`,
+		"utf8",
+	);
+	await run("git", ["add", ".worklist/worklist.json"], workspace);
+	await run("git", ["commit", "-q", "-m", "seed dispatch fixture"], workspace);
+	const workspaceParent = join(dirname(workspace), `${basename(workspace)}-prepared`);
+	await mkdir(workspaceParent);
+	const canonicalWorkspaceParent = await realpath(workspaceParent);
+	const started = await runDispatch([
+		"start",
+		"--goal",
+		"prepared-goal",
+		"--workspace-parent",
+		canonicalWorkspaceParent,
+		"--json",
+	]);
+	assert.equal(started.code, 0, "installed dispatch executable must prepare a workspace");
+	const envelope = JSON.parse(started.stdout) as {
+		ok?: unknown;
+		result?: { id?: string; entries?: Record<string, { phase?: string; goalFile?: string }> };
+	};
 	assert.equal(envelope.ok, true);
-	assert.deepEqual(envelope.result, []);
+	const entry = envelope.result?.entries?.["prepared-goal"];
+	assert.equal(entry?.phase, "prepared");
+	assert.equal(
+		entry?.goalFile,
+		join(canonicalWorkspaceParent, "stepstone-prepared-goal", DISPATCH_GOAL_FILE),
+	);
+	assert.match(await readFile(entry?.goalFile ?? "", "utf8"), /Prove the installed handoff\./);
+
+	const status = await runDispatch(["status", envelope.result?.id ?? "", "--json"]);
+	assert.equal(status.code, 0, "installed dispatch executable status must succeed");
+	assert.equal((JSON.parse(status.stdout) as { ok?: unknown }).ok, true);
 }
 /**
  * How each published executable is driven once it is installed, keyed by the

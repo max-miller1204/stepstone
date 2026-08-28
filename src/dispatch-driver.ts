@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readyGoals } from "./dependencies.ts";
 import type { ProjectGoal } from "./types.ts";
 
 export const DISPATCH_STATE_VERSION = 2 as const;
+export const DISPATCH_GOAL_FILE = "STEPSTONE_GOAL.md" as const;
 
 export type DispatchPhase =
 	| "preparing"
@@ -22,6 +23,20 @@ export interface DispatchWorkspace {
 	metadata: Record<string, string>;
 }
 
+export interface DispatchGoalFile {
+	path: typeof DISPATCH_GOAL_FILE;
+	sha256: string;
+	ownershipId?: string;
+	backing?: DispatchGoalBacking;
+	state: "pending" | "written";
+}
+
+export interface DispatchGoalBacking {
+	name: string;
+	device: string;
+	inode: string;
+}
+
 export interface DispatchEntry {
 	goal: ProjectGoal;
 	branch: string;
@@ -33,6 +48,7 @@ export interface DispatchEntry {
 	cleanupMarker?: string;
 	claimUpdatedAt?: string;
 	mergedPr?: MergeEvidence;
+	goalFile?: DispatchGoalFile;
 	message?: string;
 	updatedAt: string;
 }
@@ -71,6 +87,18 @@ export interface WorkspaceBinding {
 	readonly name: string;
 	verify(workspace: DispatchWorkspace, branch: string): Promise<void>;
 	acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace>;
+	createGoalFileBacking(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking>;
+	adoptLegacyGoalFile(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking | undefined>;
+	writeGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
+	verifyGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
 	cleanup(workspace: DispatchWorkspace, branch: string): Promise<void>;
 }
 
@@ -115,6 +143,50 @@ function hasCanonicalCustody(entry: DispatchEntry): boolean {
 
 function needsCleanup(entry: DispatchEntry): boolean {
 	return entry.phase === "released" || entry.phase === "completed" || entry.phase === "cleanup-pending";
+}
+
+function renderGoalFile(goal: ProjectGoal, branch: string): string {
+	const dependencies = goal.dependsOn?.length
+		? goal.dependsOn.map((dependency) => `- \`${dependency}\``)
+		: ["- None"];
+	const links = goal.links?.length ? goal.links.map((link) => `- ${link}`) : ["- None"];
+	return [
+		"# Stepstone Project Goal",
+		"",
+		"This ignored, workspace-local file is the goal handoff for this prepared checkout.",
+		"Stepstone created the workspace for this goal, but did not start or prompt an agent.",
+		"",
+		`- Goal ID: \`${goal.id}\``,
+		`- Branch: \`${branch}\``,
+		`- Status when prepared: \`${goal.status}\``,
+		`- Goal snapshot updated at: \`${goal.updatedAt}\``,
+		...(goal.group ? [`- Group: ${goal.group}`] : []),
+		"",
+		"## Title",
+		"",
+		goal.title,
+		"",
+		"## Description",
+		"",
+		goal.description?.trim() ? goal.description : "_No description was provided._",
+		"",
+		"## Dependencies",
+		"",
+		...dependencies,
+		"",
+		"## Links",
+		"",
+		...links,
+		"",
+		"## Workspace boundary",
+		"",
+		`Work on \`${branch}\` in this checkout. Do not mutate the Project Goal roadmap from this linked worktree; roadmap mutations belong in the main worktree.`,
+		"",
+	].join("\n");
+}
+
+function sha256(content: string): string {
+	return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
 /**
@@ -239,13 +311,15 @@ export class DispatchDriver {
 			if (["preparing", "acquiring", "claiming", "releasing"].includes(entry.phase)) {
 				await this.reconcileInterrupted(run, entry);
 			}
-			if (
-				entry.workspace &&
-				entry.claimUpdatedAt &&
-				(entry.phase === "prepared" || entry.phase === "ambiguous") &&
-				!(await this.verifyPersistedWorkspace(run, entry))
-			) {
-				continue;
+			if (entry.workspace && (entry.phase === "prepared" || entry.phase === "ambiguous")) {
+				const canRetryUnclaimedHandoff =
+					entry.phase === "ambiguous" && !entry.claimUpdatedAt && entry.goalFile?.state === "pending";
+				if (!(await this.verifyPersistedWorkspace(run, entry))) continue;
+				if (!(await this.ensureGoalFile(run, entry))) continue;
+				if (!entry.claimUpdatedAt && canRetryUnclaimedHandoff) {
+					await this.claimGoal(run, entry);
+					if (!entry.claimUpdatedAt) continue;
+				}
 			}
 			if (entry.claimUpdatedAt && (entry.phase === "prepared" || entry.phase === "ambiguous")) {
 				let evidence: MergeEvidence | undefined;
@@ -280,10 +354,11 @@ export class DispatchDriver {
 				await this.persist(run, entry);
 				return;
 			}
-			if (await this.verifyPersistedWorkspace(run, entry)) await this.claimGoal(run, entry);
+			await this.claimGoal(run, entry);
 			return;
 		}
 		if (!(await this.verifyPersistedWorkspace(run, entry))) return;
+		if (!(await this.ensureGoalFile(run, entry))) return;
 		const snapshot = await this.dependencies.roadmap.read();
 		const current = snapshot.goals.find((goal) => goal.id === entry.goal.id);
 		if (!current) {
@@ -429,20 +504,36 @@ export class DispatchDriver {
 				run.targetRevision,
 			);
 			await this.persist(run, entry);
-			await this.claimGoal(run, entry);
 		} catch (error) {
 			entry.phase = "ambiguous";
 			entry.message = `Workspace acquisition outcome is ambiguous; inspect before recovery: ${errorMessage(error)}`;
 			await this.persist(run, entry);
+			return;
 		}
+		await this.claimGoal(run, entry);
 	}
 
 	private async claimGoal(run: DispatchRun, entry: DispatchEntry): Promise<void> {
+		if (!entry.workspace) throw new Error("Claim intent has no workspace");
+		if (!(await this.verifyPersistedWorkspace(run, entry))) return;
+		if (!(await this.ensureGoalFile(run, entry))) return;
+		if (!entry.goalFile) throw new Error("Prepared handoff has no goal-file receipt");
+		const goalFile = entry.goalFile;
 		entry.phase = "claiming";
 		entry.message = "Canonical claim mutation is in progress.";
 		await this.persist(run, entry);
-		if (!entry.workspace) throw new Error("Claim intent has no workspace");
-		await this.dependencies.workspace.verify(entry.workspace, entry.branch);
+		try {
+			await this.dependencies.workspace.verifyGoalFile(
+				entry.workspace,
+				goalFile,
+				renderGoalFile(entry.goal, entry.branch),
+			);
+		} catch (error) {
+			entry.phase = "ambiguous";
+			entry.message = `Final goal-file verification failed before canonical claim; workspace preserved: ${errorMessage(error)}`;
+			await this.persist(run, entry);
+			return;
+		}
 		let claimed: ProjectGoal;
 		try {
 			claimed = await this.dependencies.roadmap.claim(entry.goal.id, entry.branch, entry.goal.updatedAt);
@@ -465,8 +556,74 @@ export class DispatchDriver {
 		}
 		entry.claimUpdatedAt = claimed.updatedAt;
 		entry.phase = "prepared";
-		entry.message = "Workspace prepared and claimed; Stepstone did not launch or prompt an agent.";
+		entry.message = `Workspace prepared and claimed; goal written to ${DISPATCH_GOAL_FILE}; Stepstone did not launch or prompt an agent.`;
 		await this.persist(run, entry);
+	}
+
+	private async ensureGoalFile(run: DispatchRun, entry: DispatchEntry): Promise<boolean> {
+		if (!entry.workspace) return false;
+		const content = renderGoalFile(entry.goal, entry.branch);
+		const expected: DispatchGoalFile = {
+			path: DISPATCH_GOAL_FILE,
+			sha256: sha256(content),
+			ownershipId: entry.goalFile?.ownershipId ?? randomUUID(),
+			state: entry.goalFile?.state ?? "pending",
+		};
+		if (
+			entry.goalFile &&
+			(entry.goalFile.path !== expected.path || entry.goalFile.sha256 !== expected.sha256)
+		) {
+			entry.phase = "ambiguous";
+			entry.message = "Persisted goal-file identity does not match this entry's immutable goal snapshot.";
+			await this.persist(run, entry);
+			return false;
+		}
+		if (!entry.goalFile) {
+			entry.goalFile = expected;
+			entry.message = `Goal-file intent journaled for ${DISPATCH_GOAL_FILE}.`;
+			await this.persist(run, entry);
+		}
+		try {
+			if (!entry.goalFile.backing) {
+				const adopted = await this.dependencies.workspace.adoptLegacyGoalFile(
+					entry.workspace,
+					entry.goalFile,
+					content,
+				);
+				if (adopted) {
+					entry.goalFile.ownershipId ??= expected.ownershipId;
+					entry.goalFile.backing = adopted;
+					entry.message = `Legacy goal-file handoff adopted at ${DISPATCH_GOAL_FILE}.`;
+					await this.persist(run, entry);
+				}
+			}
+			if (!entry.goalFile.ownershipId) {
+				entry.goalFile.ownershipId = expected.ownershipId;
+				entry.message = `Goal-file ownership journaled for ${DISPATCH_GOAL_FILE}.`;
+				await this.persist(run, entry);
+			}
+			if (!entry.goalFile.backing) {
+				entry.goalFile.backing = await this.dependencies.workspace.createGoalFileBacking(
+					entry.workspace,
+					entry.goalFile,
+					content,
+				);
+				entry.message = `Goal-file backing identity journaled for ${DISPATCH_GOAL_FILE}.`;
+				await this.persist(run, entry);
+			}
+			await this.dependencies.workspace.writeGoalFile(entry.workspace, entry.goalFile, content);
+		} catch (error) {
+			entry.phase = "ambiguous";
+			entry.message = `Goal-file handoff could not be verified; workspace preserved: ${errorMessage(error)}`;
+			await this.persist(run, entry);
+			return false;
+		}
+		if (entry.goalFile.state !== "written") {
+			entry.goalFile.state = "written";
+			entry.message = `Goal-file handoff verified at ${DISPATCH_GOAL_FILE}.`;
+			await this.persist(run, entry);
+		}
+		return true;
 	}
 
 	private async releaseKnownSafe(run: DispatchRun, entry: DispatchEntry, message: string): Promise<void> {
