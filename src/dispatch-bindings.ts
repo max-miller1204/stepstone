@@ -6,6 +6,7 @@ import {
 	link,
 	lstat,
 	mkdir,
+	open,
 	readdir,
 	readFile,
 	realpath,
@@ -775,6 +776,27 @@ function matchesBacking(details: BigIntStats, backing: DispatchGoalBacking): boo
 	return details.dev.toString() === backing.device && details.ino.toString() === backing.inode;
 }
 
+async function authenticateGoalBacking(
+	path: string,
+	backing: DispatchGoalBacking,
+	expectedSha256: string,
+): Promise<BigIntStats> {
+	const handle = await open(path, "r");
+	try {
+		const details = await handle.stat({ bigint: true });
+		if (!details.isFile() || !matchesBacking(details, backing)) {
+			throw new Error(`Refusing goal handoff because owned backing ${path} is invalid`);
+		}
+		const digest = createHash("sha256").update(await handle.readFile()).digest("hex");
+		if (digest !== expectedSha256) {
+			throw new Error(`Refusing goal handoff because owned backing ${path} has conflicting content`);
+		}
+		return details;
+	} finally {
+		await handle.close();
+	}
+}
+
 function validateGoalFileReceipt(receipt: DispatchGoalFile, content: string): void {
 	if (
 		receipt.path !== DISPATCH_GOAL_FILE ||
@@ -854,10 +876,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		const target = join(workspace.path, receipt.path);
 		await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
 		const backingPath = join(workspace.path, receipt.backing.name);
-		const backingDetails = await lstat(backingPath, { bigint: true });
-		if (!backingDetails.isFile() || !matchesBacking(backingDetails, receipt.backing)) {
-			throw new Error(`Refusing goal handoff because owned backing ${backingPath} is invalid`);
-		}
+		await authenticateGoalBacking(backingPath, receipt.backing, receipt.sha256);
 		try {
 			await link(backingPath, target);
 		} catch (error) {
@@ -917,32 +936,26 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		validateGoalFileReceipt(receipt, content);
 		await ensureGoalFileIsIgnored(this.repositoryRoot);
 		const target = join(workspace.path, receipt.path);
-		if (receipt.ownershipId) {
-			const oldName = `.stepstone-goal-${receipt.ownershipId}.owned`;
-			const oldPath = join(workspace.path, oldName);
-			let oldDetails: BigIntStats | undefined;
-			try {
-				oldDetails = await lstat(oldPath, { bigint: true });
-			} catch (error) {
-				if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-			}
-			if (oldDetails) {
-				await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, oldName]);
-				const finalDetails = await lstat(target, { bigint: true });
-				if (!oldDetails.isFile() || !finalDetails.isFile() || !isSameFile(oldDetails, finalDetails)) {
-					throw new Error(`Refusing legacy goal handoff because ${target} is not owned by ${oldName}`);
-				}
-				return backingIdentity(oldName, oldDetails);
-			}
-			if (receipt.state === "pending") {
+		if (receipt.state === "pending") {
+			const oldName = receipt.ownershipId
+				? `.stepstone-goal-${receipt.ownershipId}.owned`
+				: undefined;
+			await ensureGoalPathsAreLocalState(
+				workspace.path,
+				oldName ? [receipt.path, oldName] : [receipt.path],
+			);
+			for (const path of oldName ? [target, join(workspace.path, oldName)] : [target]) {
 				try {
-					await lstat(target, { bigint: true });
+					await lstat(path, { bigint: true });
+					throw new Error(
+						"Refusing legacy pending handoff without persisted backing creation evidence",
+					);
 				} catch (error) {
-					if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+					if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
 					throw error;
 				}
-				throw new Error(`Refusing legacy pending handoff because ${oldName} is missing`);
 			}
+			return undefined;
 		}
 		let finalDetails: BigIntStats;
 		try {
@@ -971,7 +984,9 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			) {
 				throw new Error(`Refusing legacy goal handoff because ${target} could not be verified exactly`);
 			}
-			return backingIdentity(name, backingDetails);
+			const adopted = backingIdentity(name, backingDetails);
+			await authenticateGoalBacking(backingPath, adopted, receipt.sha256);
+			return adopted;
 		} catch (error) {
 			await rm(backingPath, { force: true });
 			throw error;

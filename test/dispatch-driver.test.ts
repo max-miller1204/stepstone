@@ -164,17 +164,17 @@ class FakeWorkspace implements WorkspaceBinding {
 	): Promise<DispatchGoalBacking | undefined> {
 		const target = join(workspace.path, receipt.path);
 		const existing = this.goalFiles.get(target);
+		if (receipt.state === "pending") {
+			const oldName = receipt.ownershipId
+				? `.stepstone-goal-${receipt.ownershipId}.owned`
+				: undefined;
+			if (existing !== undefined || (oldName && this.backingIdentities.has(oldName))) {
+				throw new Error("legacy pending backing lacks creation evidence");
+			}
+			return undefined;
+		}
 		if (existing === undefined) return undefined;
 		if (existing !== content) throw new Error("legacy goal file content changed");
-		if (receipt.ownershipId) {
-			const oldName = `.stepstone-goal-${receipt.ownershipId}.owned`;
-			const oldIdentity = this.backingIdentities.get(oldName);
-			if (oldIdentity) {
-				if (this.goalOwners.get(target) !== oldName) throw new Error("legacy goal ownership changed");
-				return oldIdentity;
-			}
-			if (receipt.state === "pending") throw new Error("legacy pending backing is missing");
-		}
 		const backing = await this.createGoalFileBacking(workspace, receipt, content);
 		this.goalOwners.set(target, backing.name);
 		return backing;
@@ -407,7 +407,7 @@ describe("workspace preparation driver", () => {
 		expect(setup.roadmap.claims).toHaveLength(1);
 	});
 
-	it("migrates a pending receipt through its ownership-derived backing", async () => {
+	it("preserves custody for a pending legacy receipt without creation evidence", async () => {
 		const setup = fixture([goal("alpha")], 1);
 		const run = await setup.create();
 		const prepared = await setup.makeDriver().advance(run.id);
@@ -432,10 +432,13 @@ describe("workspace preparation driver", () => {
 
 		const upgraded = await setup.makeDriver().advance(run.id);
 		expect(upgraded.entries.alpha).toMatchObject({
-			phase: "prepared",
-			goalFile: { backing: oldIdentity, state: "written" },
+			phase: "ambiguous",
+			goalFile: { ownershipId: receipt.ownershipId, state: "pending" },
 		});
+		expect(upgraded.entries.alpha.goalFile?.backing).toBeUndefined();
 		expect(setup.workspace.backings.size).toBe(1);
+		expect(setup.workspace.backingIdentities.get(oldName)).toEqual(oldIdentity);
+		expect(setup.workspace.goalOwners.get("/work/alpha/STEPSTONE_GOAL.md")).toBe(oldName);
 		expect(setup.roadmap.claims).toHaveLength(1);
 	});
 
@@ -731,6 +734,13 @@ describe("Git workspace preparation", () => {
 
 			await binding.writeGoalFile(workspace, receipt, content);
 			await binding.writeGoalFile(workspace, receipt, content);
+			await writeFile(goalFile, "edited handoff\n");
+			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"conflicting content",
+			);
+			expect(await readFile(goalFile, "utf8")).toBe("edited handoff\n");
+			await writeFile(goalFile, content);
+			await binding.writeGoalFile(workspace, receipt, content);
 			const [backingDetails, goalDetails] = await Promise.all([
 				stat(backing, { bigint: true }),
 				stat(goalFile, { bigint: true }),
@@ -794,17 +804,22 @@ describe("Git workspace preparation", () => {
 			const pendingBacking = join(workspace.path, `.stepstone-goal-${pendingOwnershipId}.owned`);
 			await writeFile(pendingBacking, content);
 			await link(pendingBacking, goalFile);
+			const pendingBackingBefore = await stat(pendingBacking, { bigint: true });
 			const pendingReceipt: DispatchGoalFile = {
 				path: DISPATCH_GOAL_FILE,
 				sha256: receipt.sha256,
 				ownershipId: pendingOwnershipId,
 				state: "pending",
 			};
-			const pendingAdoption = await binding.adoptLegacyGoalFile(workspace, pendingReceipt, content);
-			if (!pendingAdoption) throw new Error("pending legacy handoff was not adopted");
-			expect(pendingAdoption.name).toBe(`.stepstone-goal-${pendingOwnershipId}.owned`);
-			pendingReceipt.backing = pendingAdoption;
-			await binding.writeGoalFile(workspace, pendingReceipt, content);
+			await expect(binding.adoptLegacyGoalFile(workspace, pendingReceipt, content)).rejects.toThrow(
+				"without persisted backing creation evidence",
+			);
+			expect(await readFile(pendingBacking, "utf8")).toBe(content);
+			const pendingBackingAfter = await stat(pendingBacking, { bigint: true });
+			expect({ dev: pendingBackingAfter.dev, ino: pendingBackingAfter.ino }).toEqual({
+				dev: pendingBackingBefore.dev,
+				ino: pendingBackingBefore.ino,
+			});
 
 			expect(await readFile(goalFile, "utf8")).toBe(content);
 			expect(
