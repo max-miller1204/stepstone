@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { constants } from "node:fs";
 import {
 	link,
+	lstat,
 	mkdir,
 	open,
 	readdir,
@@ -742,10 +743,19 @@ async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
 	}
 }
 
-async function verifyExactGoalFile(path: string, content: string): Promise<void> {
+function isSameFile(
+	left: Awaited<ReturnType<typeof lstat>>,
+	right: Awaited<ReturnType<typeof lstat>>,
+): boolean {
+	return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function verifyExactGoalFile(path: string, content: string, noFollowFlag: number): Promise<void> {
+	const before = await lstat(path);
+	if (!before.isFile()) throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
 	let handle: Awaited<ReturnType<typeof open>>;
 	try {
-		handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+		handle = await open(path, constants.O_RDONLY | noFollowFlag);
 	} catch (error) {
 		if (error instanceof Error && "code" in error && error.code === "ELOOP") {
 			throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
@@ -754,18 +764,28 @@ async function verifyExactGoalFile(path: string, content: string): Promise<void>
 	}
 	try {
 		const details = await handle.stat();
-		if (!details.isFile()) throw new Error(`Refusing goal handoff because ${path} is not a regular file`);
+		if (!details.isFile() || !isSameFile(before, details)) {
+			throw new Error(`Refusing goal handoff because ${path} changed during verification`);
+		}
 		if ((await handle.readFile("utf8")) !== content) {
 			throw new Error(`Refusing goal handoff because ${path} contains different content`);
+		}
+		const after = await lstat(path);
+		if (!after.isFile() || !isSameFile(details, after)) {
+			throw new Error(`Refusing goal handoff because ${path} changed during verification`);
 		}
 	} finally {
 		await handle.close();
 	}
 }
 
-async function writeGoalFileWithoutOverwrite(path: string, content: string): Promise<void> {
+async function writeGoalFileWithoutOverwrite(
+	path: string,
+	content: string,
+	noFollowFlag: number,
+): Promise<void> {
 	try {
-		await verifyExactGoalFile(path, content);
+		await verifyExactGoalFile(path, content, noFollowFlag);
 		return;
 	} catch (error) {
 		if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
@@ -778,7 +798,7 @@ async function writeGoalFileWithoutOverwrite(path: string, content: string): Pro
 		} catch (error) {
 			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
 		}
-		await verifyExactGoalFile(path, content);
+		await verifyExactGoalFile(path, content, noFollowFlag);
 	} finally {
 		await rm(temporary, { force: true });
 	}
@@ -788,10 +808,16 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 	readonly name = "worktree";
 	private readonly repositoryRoot: string;
 	private readonly workspaceParent: string;
+	private readonly noFollowFlag: number;
 
-	constructor(repositoryRoot: string, workspaceParent = dirname(repositoryRoot)) {
+	constructor(
+		repositoryRoot: string,
+		workspaceParent = dirname(repositoryRoot),
+		noFollowFlag = constants.O_NOFOLLOW ?? 0,
+	) {
 		this.repositoryRoot = repositoryRoot;
 		this.workspaceParent = workspaceParent;
+		this.noFollowFlag = noFollowFlag;
 	}
 
 	async acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace> {
@@ -845,7 +871,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		if ((await runCommand("git", ["ls-files", "--stage", "--", path], workspace.path)).stdout.trim()) {
 			throw new Error(`Refusing goal handoff because ${target} is tracked by Git`);
 		}
-		await writeGoalFileWithoutOverwrite(target, content);
+		await writeGoalFileWithoutOverwrite(target, content, this.noFollowFlag);
 		await runCommand("git", ["check-ignore", "--quiet", "--", path], workspace.path);
 	}
 

@@ -545,16 +545,17 @@ describe("Git workspace preparation", () => {
 			const symlinkTarget = join(directory, "matching-goal.md");
 			await writeFile(symlinkTarget, content);
 			await symlink(symlinkTarget, goalFile);
-			await expect(binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content)).rejects.toThrow(
+			const portableBinding = new GitWorktreeBinding(root, directory, 0);
+			await expect(portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content)).rejects.toThrow(
 				"is not a regular file",
 			);
 			await rm(goalFile);
 
-			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
-			await binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
-			await expect(binding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, "different content")).rejects.toThrow(
-				"contains different content",
-			);
+			await portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
+			await portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, content);
+			await expect(
+				portableBinding.writeGoalFile(workspace, DISPATCH_GOAL_FILE, "different content"),
+			).rejects.toThrow("contains different content");
 
 			expect(await readFile(goalFile, "utf8")).toBe(content);
 			expect(
