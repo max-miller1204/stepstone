@@ -60,7 +60,7 @@ Runtime state is stored under the repository's Git common directory at `stepston
 Resume after a restart or after prepared work lands:
 
 ```sh
-stepstone-dispatch resume <run-id> --json
+npx -y -p stepstone@latest stepstone-dispatch resume <run-id> --json
 ```
 
 A resume pass:
@@ -80,9 +80,9 @@ A closed terminal, an exited agent, silence, or an unmerged pull request is neve
 These actions only read persisted state:
 
 ```sh
-stepstone-dispatch status --json
-stepstone-dispatch status <run-id> --json
-stepstone-dispatch inspect <run-id> <goal-id> --json
+npx -y -p stepstone@latest stepstone-dispatch status --json
+npx -y -p stepstone@latest stepstone-dispatch status <run-id> --json
+npx -y -p stepstone@latest stepstone-dispatch inspect <run-id> <goal-id> --json
 ```
 
 `status` summarizes paths and phases. `inspect` includes the complete persisted goal and workspace custody record.
@@ -94,13 +94,13 @@ An interrupted workspace acquisition, claim mutation, merge inspection, completi
 After inspection, explicitly release an abandoned prepared claim:
 
 ```sh
-stepstone-dispatch recover <run-id> <goal-id> --release --json
+npx -y -p stepstone@latest stepstone-dispatch recover <run-id> <goal-id> --release --json
 ```
 
 If a claim reached the roadmap but its response was lost before the exact token was journaled, supply the `updatedAt` verified from the current claimed goal:
 
 ```sh
-stepstone-dispatch recover <run-id> <goal-id> \
+npx -y -p stepstone@latest stepstone-dispatch recover <run-id> <goal-id> \
   --release \
   --claim-updated-at <timestamp> \
   --json
@@ -115,7 +115,7 @@ A journaled completion outcome cannot be released through recovery. Use `resume`
 Completed or exactly released entries are cleaned automatically. Retry a pending cleanup with:
 
 ```sh
-stepstone-dispatch cleanup <run-id> [goal-id] --json
+npx -y -p stepstone@latest stepstone-dispatch cleanup <run-id> [goal-id] --json
 ```
 
 Without a goal ID, cleanup processes all eligible entries and removes the run record after every entry is `cleaned`. It refuses while an entry still owns a prepared claim.
