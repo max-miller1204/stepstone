@@ -19,8 +19,9 @@ import lockfile from "proper-lockfile";
 import { z } from "zod";
 import { WorklistApplicationService } from "./application-service.ts";
 import type {
-	DispatchPhase,
+	DispatchGoalBacking,
 	DispatchGoalFile,
+	DispatchPhase,
 	DispatchRun,
 	DispatchStateStore,
 	DispatchWorkspace,
@@ -193,9 +194,22 @@ const entrySchema = z
 				path: z.literal(DISPATCH_GOAL_FILE),
 				sha256: z.string().regex(/^[0-9a-f]{64}$/),
 				ownershipId: z.string().uuid().optional(),
+				backing: z
+					.object({
+						name: z.string().regex(/^\.stepstone-goal-[0-9a-f-]{36}\.owned$/),
+						device: z.string().regex(/^\d+$/),
+						inode: z.string().regex(/^\d+$/),
+					})
+					.strict()
+					.optional(),
 				state: z.enum(["pending", "written"]),
 			})
 			.strict()
+			.superRefine((receipt, context) => {
+				if (receipt.backing && !receipt.ownershipId) {
+					context.addIssue({ code: "custom", message: "backing identity requires ownership" });
+				}
+			})
 			.optional(),
 		message: z.string().optional(),
 		updatedAt: timestampSchema,
@@ -753,36 +767,29 @@ function isSameFile(left: BigIntStats, right: BigIntStats): boolean {
 	return left.dev === right.dev && left.ino === right.ino;
 }
 
-async function ensureOwnedGoalBacking(path: string, content: string): Promise<void> {
-	const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-	await writeFile(temporary, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
-	try {
-		try {
-			await link(temporary, path);
-		} catch (error) {
-			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-		}
-	} finally {
-		await rm(temporary, { force: true });
-	}
-	const details = await lstat(path, { bigint: true });
-	if (!details.isFile() || (await readFile(path, "utf8")) !== content) {
-		throw new Error(`Refusing goal handoff because owned backing ${path} is invalid`);
+function backingIdentity(name: string, details: BigIntStats): DispatchGoalBacking {
+	return { name, device: details.dev.toString(), inode: details.ino.toString() };
+}
+
+function matchesBacking(details: BigIntStats, backing: DispatchGoalBacking): boolean {
+	return details.dev.toString() === backing.device && details.ino.toString() === backing.inode;
+}
+
+function validateGoalFileReceipt(receipt: DispatchGoalFile, content: string): void {
+	if (
+		receipt.path !== DISPATCH_GOAL_FILE ||
+		createHash("sha256").update(content, "utf8").digest("hex") !== receipt.sha256
+	) {
+		throw new Error("Refusing a goal handoff whose receipt does not match its content");
 	}
 }
 
-async function linkOwnedGoalFile(backing: string, path: string): Promise<void> {
-	try {
-		await link(backing, path);
-	} catch (error) {
-		if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+async function ensureGoalPathsAreLocalState(workspacePath: string, names: string[]): Promise<void> {
+	if ((await runCommand("git", ["ls-files", "--stage", "--", ...names], workspacePath)).stdout.trim()) {
+		throw new Error("Refusing goal handoff because its final or backing path is tracked by Git");
 	}
-	const [backingDetails, finalDetails] = await Promise.all([
-		lstat(backing, { bigint: true }),
-		lstat(path, { bigint: true }),
-	]);
-	if (!backingDetails.isFile() || !finalDetails.isFile() || !isSameFile(backingDetails, finalDetails)) {
-		throw new Error(`Refusing goal handoff because ${path} is not owned by this dispatch receipt`);
+	for (const name of names) {
+		await runCommand("git", ["check-ignore", "--quiet", "--", name], workspacePath);
 	}
 }
 
@@ -839,30 +846,114 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		receipt: DispatchGoalFile,
 		content: string,
 	): Promise<void> {
-		if (
-			workspace.binding !== this.name ||
-			receipt.path !== DISPATCH_GOAL_FILE ||
-			!receipt.ownershipId ||
-			!z.string().uuid().safeParse(receipt.ownershipId).success ||
-			createHash("sha256").update(content, "utf8").digest("hex") !== receipt.sha256
-		) {
+		if (workspace.binding !== this.name || !receipt.ownershipId || !receipt.backing) {
 			throw new Error("Refusing a goal handoff outside this binding's fixed workspace path");
 		}
+		validateGoalFileReceipt(receipt, content);
 		await ensureGoalFileIsIgnored(this.repositoryRoot);
 		const target = join(workspace.path, receipt.path);
-		const backingName = `.stepstone-goal-${receipt.ownershipId}.owned`;
+		await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
+		const backingPath = join(workspace.path, receipt.backing.name);
+		const backingDetails = await lstat(backingPath, { bigint: true });
 		if (
-			(
-				await runCommand("git", ["ls-files", "--stage", "--", receipt.path, backingName], workspace.path)
-			).stdout.trim()
+			!backingDetails.isFile() ||
+			!matchesBacking(backingDetails, receipt.backing) ||
+			(await readFile(backingPath, "utf8")) !== content
 		) {
-			throw new Error("Refusing goal handoff because its final or backing path is tracked by Git");
+			throw new Error(`Refusing goal handoff because owned backing ${backingPath} is invalid`);
 		}
-		await runCommand("git", ["check-ignore", "--quiet", "--", receipt.path], workspace.path);
-		await runCommand("git", ["check-ignore", "--quiet", "--", backingName], workspace.path);
-		const backing = join(workspace.path, backingName);
-		await ensureOwnedGoalBacking(backing, content);
-		await linkOwnedGoalFile(backing, target);
+		try {
+			await link(backingPath, target);
+		} catch (error) {
+			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+		}
+		const finalDetails = await lstat(target, { bigint: true });
+		if (!finalDetails.isFile() || !matchesBacking(finalDetails, receipt.backing)) {
+			throw new Error(`Refusing goal handoff because ${target} is not owned by this dispatch receipt`);
+		}
+	}
+
+	async createGoalFileBacking(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking> {
+		if (workspace.binding !== this.name || !receipt.ownershipId || receipt.backing) {
+			throw new Error("Refusing to create goal backing outside a pending ownership transition");
+		}
+		validateGoalFileReceipt(receipt, content);
+		await ensureGoalFileIsIgnored(this.repositoryRoot);
+		for (;;) {
+			const id = randomUUID();
+			const name = `.stepstone-goal-${id}.owned`;
+			const temporaryName = `.stepstone-goal-${id}.tmp`;
+			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, name, temporaryName]);
+			const temporaryPath = join(workspace.path, temporaryName);
+			const backingPath = join(workspace.path, name);
+			await writeFile(temporaryPath, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
+			try {
+				const temporaryDetails = await lstat(temporaryPath, { bigint: true });
+				try {
+					await link(temporaryPath, backingPath);
+				} catch (error) {
+					if (error instanceof Error && "code" in error && error.code === "EEXIST") continue;
+					throw error;
+				}
+				const backingDetails = await lstat(backingPath, { bigint: true });
+				if (!backingDetails.isFile() || !isSameFile(temporaryDetails, backingDetails)) {
+					throw new Error("Goal backing identity changed during exclusive creation");
+				}
+				return backingIdentity(name, backingDetails);
+			} finally {
+				await rm(temporaryPath, { force: true });
+			}
+		}
+	}
+
+	async adoptLegacyGoalFile(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking | undefined> {
+		if (workspace.binding !== this.name || receipt.backing) {
+			throw new Error("Refusing legacy goal handoff adoption outside an unowned receipt");
+		}
+		validateGoalFileReceipt(receipt, content);
+		await ensureGoalFileIsIgnored(this.repositoryRoot);
+		const target = join(workspace.path, receipt.path);
+		let finalDetails: BigIntStats;
+		try {
+			finalDetails = await lstat(target, { bigint: true });
+		} catch (error) {
+			if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+			throw error;
+		}
+		if (!finalDetails.isFile()) {
+			throw new Error(`Refusing legacy goal handoff because ${target} is not a regular file`);
+		}
+		const name = `.stepstone-goal-${randomUUID()}.owned`;
+		await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, name]);
+		const backingPath = join(workspace.path, name);
+		await link(target, backingPath);
+		try {
+			const [currentFinal, backingDetails] = await Promise.all([
+				lstat(target, { bigint: true }),
+				lstat(backingPath, { bigint: true }),
+			]);
+			if (
+				!currentFinal.isFile() ||
+				!backingDetails.isFile() ||
+				!isSameFile(finalDetails, currentFinal) ||
+				!isSameFile(currentFinal, backingDetails) ||
+				(await readFile(backingPath, "utf8")) !== content
+			) {
+				throw new Error(`Refusing legacy goal handoff because ${target} could not be verified exactly`);
+			}
+			return backingIdentity(name, backingDetails);
+		} catch (error) {
+			await rm(backingPath, { force: true });
+			throw error;
+		}
 	}
 
 	async cleanup(workspace: DispatchWorkspace, branch: string): Promise<void> {

@@ -9,6 +9,7 @@ import { FileDispatchStateStore, GitWorktreeBinding } from "../src/dispatch-bind
 import {
 	DISPATCH_GOAL_FILE,
 	DispatchDriver,
+	type DispatchGoalBacking,
 	type DispatchGoalFile,
 	type DispatchRun,
 	type DispatchStateStore,
@@ -110,10 +111,15 @@ class FakeWorkspace implements WorkspaceBinding {
 	acquisitionFailure?: Error;
 	goalFileFailure?: Error;
 	goalFileResponseFailure?: Error;
+	backingFailure?: Error;
+	backingResponseFailure?: Error;
 	readonly acquired: string[] = [];
 	readonly cleaned: string[] = [];
 	readonly goalFiles = new Map<string, string>();
+	readonly goalOwners = new Map<string, string>();
+	readonly backings = new Map<string, string>();
 	readonly bases: Array<{ id: string; revision: string }> = [];
+	private backingCounter = 0;
 
 	async verify(): Promise<void> {
 		if (this.verificationFailure) throw this.verificationFailure;
@@ -124,6 +130,32 @@ class FakeWorkspace implements WorkspaceBinding {
 		this.bases.push({ id: projectGoal.id, revision: baseRevision });
 		return { binding: this.name, path: `/work/${projectGoal.id}`, metadata: {} };
 	}
+	async createGoalFileBacking(
+		_workspace: DispatchWorkspace,
+		_receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking> {
+		if (this.backingFailure) throw this.backingFailure;
+		this.backingCounter += 1;
+		const suffix = this.backingCounter.toString().padStart(12, "0");
+		const name = `.stepstone-goal-00000000-0000-4000-8000-${suffix}.owned`;
+		this.backings.set(name, content);
+		if (this.backingResponseFailure) throw this.backingResponseFailure;
+		return { name, device: "1", inode: this.backingCounter.toString() };
+	}
+	async adoptLegacyGoalFile(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking | undefined> {
+		const target = join(workspace.path, receipt.path);
+		const existing = this.goalFiles.get(target);
+		if (existing === undefined) return undefined;
+		if (existing !== content) throw new Error("legacy goal file content changed");
+		const backing = await this.createGoalFileBacking(workspace, receipt, content);
+		this.goalOwners.set(target, backing.name);
+		return backing;
+	}
 	async writeGoalFile(
 		workspace: DispatchWorkspace,
 		receipt: DispatchGoalFile,
@@ -132,8 +164,15 @@ class FakeWorkspace implements WorkspaceBinding {
 		if (this.goalFileFailure) throw this.goalFileFailure;
 		const target = join(workspace.path, receipt.path);
 		const existing = this.goalFiles.get(target);
-		if (existing !== undefined && existing !== content) throw new Error("goal file content changed");
+		if (
+			!receipt.backing ||
+			this.backings.get(receipt.backing.name) !== content ||
+			(existing !== undefined && this.goalOwners.get(target) !== receipt.backing.name)
+		) {
+			throw new Error("goal file ownership changed");
+		}
 		this.goalFiles.set(target, content);
+		this.goalOwners.set(target, receipt.backing.name);
 		if (this.goalFileResponseFailure) throw this.goalFileResponseFailure;
 	}
 	async cleanup(_workspace: DispatchWorkspace, branch: string): Promise<void> {
@@ -216,6 +255,7 @@ describe("workspace preparation driver", () => {
 		expect(advanced.entries.alpha.goalFile).toMatchObject({
 			path: DISPATCH_GOAL_FILE,
 			ownershipId: expect.any(String),
+			backing: { name: expect.any(String), device: expect.any(String), inode: expect.any(String) },
 			state: "written",
 		});
 		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
@@ -244,6 +284,7 @@ describe("workspace preparation driver", () => {
 		expect(interrupted.entries.alpha.phase).toBe("ambiguous");
 		expect(interrupted.entries.alpha.goalFile).toMatchObject({ state: "pending" });
 		expect(interrupted.entries.alpha.goalFile?.ownershipId).toEqual(expect.any(String));
+		expect(interrupted.entries.alpha.goalFile?.backing).toEqual(expect.any(Object));
 		expect(setup.roadmap.claims).toHaveLength(0);
 		const content = setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md");
 		expect(content).toContain("Ship the café workflow");
@@ -255,6 +296,45 @@ describe("workspace preparation driver", () => {
 		expect(resumed.entries.alpha.phase).toBe("prepared");
 		expect(resumed.entries.alpha.goalFile).toMatchObject({ state: "written" });
 		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("resumes before backing creation without accepting an unjournaled backing", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.workspace.backingFailure = new Error("interrupted before backing creation");
+		const run = await setup.create();
+
+		const interrupted = await setup.makeDriver().advance(run.id);
+		expect(interrupted.entries.alpha).toMatchObject({
+			phase: "ambiguous",
+			goalFile: { ownershipId: expect.any(String), state: "pending" },
+		});
+		expect(interrupted.entries.alpha.goalFile?.backing).toBeUndefined();
+		expect(setup.workspace.backings.size).toBe(0);
+		expect(setup.roadmap.claims).toHaveLength(0);
+
+		setup.workspace.backingFailure = undefined;
+		const resumed = await setup.makeDriver().advance(run.id);
+		expect(resumed.entries.alpha).toMatchObject({
+			phase: "prepared",
+			goalFile: { backing: expect.any(Object), state: "written" },
+		});
+		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("abandons an unjournaled backing after a lost creation response", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.workspace.backingResponseFailure = new Error("backing response lost");
+		const run = await setup.create();
+
+		const interrupted = await setup.makeDriver().advance(run.id);
+		expect(interrupted.entries.alpha.goalFile?.backing).toBeUndefined();
+		expect(setup.workspace.backings.size).toBe(1);
+
+		setup.workspace.backingResponseFailure = undefined;
+		const resumed = await setup.makeDriver().advance(run.id);
+		expect(resumed.entries.alpha.goalFile?.backing?.name).toContain("000000000002");
+		expect(setup.workspace.backings.size).toBe(2);
+		expect(resumed.entries.alpha.phase).toBe("prepared");
 	});
 
 	it("upgrades an existing version 2 prepared entry that predates goal handoffs", async () => {
@@ -270,6 +350,36 @@ describe("workspace preparation driver", () => {
 		expect(upgraded.entries.alpha.goalFile).toMatchObject({ state: "written" });
 		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
 			"_No description was provided._",
+		);
+		expect(setup.roadmap.claims).toHaveLength(1);
+	});
+
+	it("adopts an exact legacy written receipt before resuming its prepared claim", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		const run = await setup.create();
+		const prepared = await setup.makeDriver().advance(run.id);
+		const current = prepared.entries.alpha.goalFile;
+		if (!current) throw new Error("fixture lost goal-file receipt");
+		prepared.entries.alpha.goalFile = {
+			path: current.path,
+			sha256: current.sha256,
+			state: "written",
+		};
+		setup.workspace.goalOwners.clear();
+		setup.workspace.backings.clear();
+		await setup.store.save(prepared);
+
+		const upgraded = await setup.makeDriver().advance(run.id);
+		expect(upgraded.entries.alpha).toMatchObject({
+			phase: "prepared",
+			goalFile: {
+				ownershipId: expect.any(String),
+				backing: expect.any(Object),
+				state: "written",
+			},
+		});
+		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
+			"Complete alpha thoroughly",
 		);
 		expect(setup.roadmap.claims).toHaveLength(1);
 	});
@@ -432,6 +542,11 @@ describe("persisted preparation state", () => {
 					branch: "stepstone/alpha",
 					phase: "prepared",
 					claimUpdatedAt: "2026-02-01T00:00:01.000Z",
+					goalFile: {
+						path: DISPATCH_GOAL_FILE,
+						sha256: "a".repeat(64),
+						state: "written",
+					},
 					workspace: {
 						binding: "worktree",
 						path: "/workspaces/stepstone-alpha",
@@ -537,11 +652,16 @@ describe("Git workspace preparation", () => {
 				ownershipId: "00000000-0000-4000-8000-000000000042",
 				state: "pending",
 			};
-			const backing = join(workspace.path, `.stepstone-goal-${receipt.ownershipId}.owned`);
+			const foreignBacking = join(workspace.path, `.stepstone-goal-${receipt.ownershipId}.owned`);
 			const staleTemporary = `${goalFile}.123.00000000-0000-4000-8000-000000000000.tmp`;
-			const staleBackingTemporary = `${backing}.123.00000000-0000-4000-8000-000000000000.tmp`;
+			const staleBackingTemporary = `${foreignBacking}.123.00000000-0000-4000-8000-000000000000.tmp`;
 			await writeFile(staleTemporary, content);
 			await writeFile(staleBackingTemporary, content);
+			await writeFile(foreignBacking, content);
+			receipt.backing = await binding.createGoalFileBacking(workspace, receipt, content);
+			const backing = join(workspace.path, receipt.backing.name);
+			expect(backing).not.toBe(foreignBacking);
+			expect(await readFile(foreignBacking, "utf8")).toBe(content);
 			await writeFile(goalFile, content);
 			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
 				"is not owned by this dispatch receipt",
@@ -584,6 +704,28 @@ describe("Git workspace preparation", () => {
 			await binding.writeGoalFile(workspace, receipt, content);
 			await binding.writeGoalFile(workspace, receipt, content);
 
+			await rm(goalFile);
+			await writeFile(goalFile, content);
+			const legacyReceipt: DispatchGoalFile = {
+				path: DISPATCH_GOAL_FILE,
+				sha256: receipt.sha256,
+				state: "written",
+			};
+			const adopted = await binding.adoptLegacyGoalFile(workspace, legacyReceipt, content);
+			if (!adopted) throw new Error("legacy handoff was not adopted");
+			legacyReceipt.ownershipId = "00000000-0000-4000-8000-000000000043";
+			legacyReceipt.backing = adopted;
+			await binding.writeGoalFile(workspace, legacyReceipt, content);
+			const legacyBacking = join(workspace.path, adopted.name);
+			const [legacyBackingDetails, legacyGoalDetails] = await Promise.all([
+				stat(legacyBacking, { bigint: true }),
+				stat(goalFile, { bigint: true }),
+			]);
+			expect({ dev: legacyGoalDetails.dev, ino: legacyGoalDetails.ino }).toEqual({
+				dev: legacyBackingDetails.dev,
+				ino: legacyBackingDetails.ino,
+			});
+
 			expect(await readFile(goalFile, "utf8")).toBe(content);
 			expect(
 				(
@@ -606,6 +748,8 @@ describe("Git workspace preparation", () => {
 			await binding.cleanup(workspace, "stepstone/alpha");
 			await expect(readFile(goalFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(backing, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			await expect(readFile(legacyBacking, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+			await expect(readFile(foreignBacking, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			expect(
 				(await execFileAsync("git", ["branch", "--list", "stepstone/alpha"], { cwd: root })).stdout,
 			).toBe("");

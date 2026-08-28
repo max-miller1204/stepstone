@@ -27,7 +27,14 @@ export interface DispatchGoalFile {
 	path: typeof DISPATCH_GOAL_FILE;
 	sha256: string;
 	ownershipId?: string;
+	backing?: DispatchGoalBacking;
 	state: "pending" | "written";
+}
+
+export interface DispatchGoalBacking {
+	name: string;
+	device: string;
+	inode: string;
 }
 
 export interface DispatchEntry {
@@ -80,6 +87,16 @@ export interface WorkspaceBinding {
 	readonly name: string;
 	verify(workspace: DispatchWorkspace, branch: string): Promise<void>;
 	acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace>;
+	createGoalFileBacking(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking>;
+	adoptLegacyGoalFile(
+		workspace: DispatchWorkspace,
+		receipt: DispatchGoalFile,
+		content: string,
+	): Promise<DispatchGoalBacking | undefined>;
 	writeGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
 	cleanup(workspace: DispatchWorkspace, branch: string): Promise<void>;
 }
@@ -550,12 +567,35 @@ export class DispatchDriver {
 			entry.goalFile = expected;
 			entry.message = `Goal-file intent journaled for ${DISPATCH_GOAL_FILE}.`;
 			await this.persist(run, entry);
-		} else if (!entry.goalFile.ownershipId) {
-			entry.goalFile.ownershipId = expected.ownershipId;
-			entry.message = `Goal-file ownership journaled for ${DISPATCH_GOAL_FILE}.`;
-			await this.persist(run, entry);
 		}
 		try {
+			if (!entry.goalFile.backing && (!entry.goalFile.ownershipId || entry.goalFile.state === "written")) {
+				const adopted = await this.dependencies.workspace.adoptLegacyGoalFile(
+					entry.workspace,
+					entry.goalFile,
+					content,
+				);
+				if (adopted) {
+					entry.goalFile.ownershipId ??= expected.ownershipId;
+					entry.goalFile.backing = adopted;
+					entry.message = `Legacy goal-file handoff adopted at ${DISPATCH_GOAL_FILE}.`;
+					await this.persist(run, entry);
+				}
+			}
+			if (!entry.goalFile.ownershipId) {
+				entry.goalFile.ownershipId = expected.ownershipId;
+				entry.message = `Goal-file ownership journaled for ${DISPATCH_GOAL_FILE}.`;
+				await this.persist(run, entry);
+			}
+			if (!entry.goalFile.backing) {
+				entry.goalFile.backing = await this.dependencies.workspace.createGoalFileBacking(
+					entry.workspace,
+					entry.goalFile,
+					content,
+				);
+				entry.message = `Goal-file backing identity journaled for ${DISPATCH_GOAL_FILE}.`;
+				await this.persist(run, entry);
+			}
 			await this.dependencies.workspace.writeGoalFile(entry.workspace, entry.goalFile, content);
 		} catch (error) {
 			entry.phase = "ambiguous";
