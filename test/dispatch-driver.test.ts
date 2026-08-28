@@ -169,9 +169,7 @@ class FakeWorkspace implements WorkspaceBinding {
 		const target = join(workspace.path, receipt.path);
 		const existing = this.goalFiles.get(target);
 		if (receipt.state === "pending") {
-			const oldName = receipt.ownershipId
-				? `.stepstone-goal-${receipt.ownershipId}.owned`
-				: undefined;
+			const oldName = receipt.ownershipId ? `.stepstone-goal-${receipt.ownershipId}.owned` : undefined;
 			if (oldName && this.backingIdentities.has(oldName)) {
 				throw new Error("legacy pending backing lacks creation evidence");
 			}
@@ -792,9 +790,7 @@ describe("Git workspace preparation", () => {
 			await binding.writeGoalFile(workspace, receipt, content);
 			await binding.writeGoalFile(workspace, receipt, content);
 			await writeFile(goalFile, "edited handoff\n");
-			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow(
-				"conflicting content",
-			);
+			await expect(binding.writeGoalFile(workspace, receipt, content)).rejects.toThrow("conflicting content");
 			expect(await readFile(goalFile, "utf8")).toBe("edited handoff\n");
 			await writeFile(goalFile, content);
 			await binding.writeGoalFile(workspace, receipt, content);
@@ -843,9 +839,9 @@ describe("Git workspace preparation", () => {
 					await symlink(finalVerificationTarget, target);
 				}
 			})(root, directory);
-			await expect(
-				finalVerificationBinding.verifyGoalFile(workspace, receipt, content),
-			).rejects.toThrow("is not owned by this dispatch receipt");
+			await expect(finalVerificationBinding.verifyGoalFile(workspace, receipt, content)).rejects.toThrow(
+				"is not owned by this dispatch receipt",
+			);
 			expect(await readFile(finalVerificationTarget, "utf8")).toBe(content);
 			await rm(goalFile);
 			await binding.writeGoalFile(workspace, receipt, content);

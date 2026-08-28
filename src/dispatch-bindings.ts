@@ -836,10 +836,7 @@ async function ensureGoalPathsAreLocalState(workspacePath: string, names: string
 	}
 }
 
-async function verifyPublishedGoalFileIdentity(
-	target: string,
-	backing: DispatchGoalBacking,
-): Promise<void> {
+async function verifyPublishedGoalFileIdentity(target: string, backing: DispatchGoalBacking): Promise<void> {
 	const finalDetails = await lstat(target, { bigint: true });
 	if (!finalDetails.isFile() || !matchesBacking(finalDetails, backing)) {
 		throw new Error(`Refusing goal handoff because ${target} is not owned by this dispatch receipt`);
@@ -917,12 +914,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		const backingPath = join(workspace.path, receipt.backing.name);
 		const backingHandle = await open(backingPath, "r");
 		try {
-			await authenticateGoalBackingHandle(
-				backingHandle,
-				backingPath,
-				receipt.backing,
-				receipt.sha256,
-			);
+			await authenticateGoalBackingHandle(backingHandle, backingPath, receipt.backing, receipt.sha256);
 			try {
 				await link(backingPath, target);
 			} catch (error) {
@@ -931,12 +923,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			await verifyPublishedGoalFileIdentity(target, receipt.backing);
 			await this.afterGoalFilePublication(target);
 			await verifyPublishedGoalFileIdentity(target, receipt.backing);
-			await authenticateGoalBackingHandle(
-				backingHandle,
-				backingPath,
-				receipt.backing,
-				receipt.sha256,
-			);
+			await authenticateGoalBackingHandle(backingHandle, backingPath, receipt.backing, receipt.sha256);
 			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
 		} finally {
 			await backingHandle.close();
@@ -956,21 +943,11 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		const backingPath = join(workspace.path, receipt.backing.name);
 		const backingHandle = await open(backingPath, "r");
 		try {
-			await authenticateGoalBackingHandle(
-				backingHandle,
-				backingPath,
-				receipt.backing,
-				receipt.sha256,
-			);
+			await authenticateGoalBackingHandle(backingHandle, backingPath, receipt.backing, receipt.sha256);
 			await ensureGoalPathsAreLocalState(workspace.path, [receipt.path, receipt.backing.name]);
 			await this.afterGoalFileGitVerification(target);
 			await verifyPublishedGoalFileIdentity(target, receipt.backing);
-			await authenticateGoalBackingHandle(
-				backingHandle,
-				backingPath,
-				receipt.backing,
-				receipt.sha256,
-			);
+			await authenticateGoalBackingHandle(backingHandle, backingPath, receipt.backing, receipt.sha256);
 		} finally {
 			await backingHandle.close();
 		}
@@ -1025,19 +1002,12 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		await ensureGoalFileIsIgnored(this.repositoryRoot);
 		const target = join(workspace.path, receipt.path);
 		if (receipt.state === "pending") {
-			const oldName = receipt.ownershipId
-				? `.stepstone-goal-${receipt.ownershipId}.owned`
-				: undefined;
-			await ensureGoalPathsAreLocalState(
-				workspace.path,
-				oldName ? [receipt.path, oldName] : [receipt.path],
-			);
+			const oldName = receipt.ownershipId ? `.stepstone-goal-${receipt.ownershipId}.owned` : undefined;
+			await ensureGoalPathsAreLocalState(workspace.path, oldName ? [receipt.path, oldName] : [receipt.path]);
 			if (oldName) {
 				try {
 					await lstat(join(workspace.path, oldName), { bigint: true });
-					throw new Error(
-						"Refusing legacy pending handoff without persisted backing creation evidence",
-					);
+					throw new Error("Refusing legacy pending handoff without persisted backing creation evidence");
 				} catch (error) {
 					if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
 				}
