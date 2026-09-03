@@ -407,6 +407,13 @@ export const CLI_COMMAND_CONTRACT = {
 		"The legacy `--append -- <text>` interactive form remains supported, while agents and scripts use `--append-description <text>`.",
 		"Programmatic callers clear a description with `--description ''`; the interactive `update <id> --` form remains supported.",
 	],
+	/** Bounded machine output rules for reads and mutation receipts. */
+	resultRules: [
+		"Collection reads return the collection they explicitly request: `list`, `find`, and `ready` use `result.goals`, while `waves` uses `result.waves`.",
+		"Project mutations return bounded receipts instead of the complete post-mutation roadmap. Single-goal mutations use `result.goal`, `delete` uses `result.deletedGoalId`, and `apply-plan` uses `result.addedGoals`.",
+		"Mutation receipts keep change status, changed entity IDs, and the resulting revision in `meta`; run an explicit read only when later work needs current roadmap state.",
+		"Do not run `list` only to verify a successful mutation. The mutation receipt is the confirmation and returns the exact created, updated, moved, or deleted goal ID.",
+	],
 	/**
 	 * How an ID comes to exist and how a caller names one.
 	 *
@@ -506,7 +513,8 @@ export const CLI_COMMAND_CONTRACT = {
 		{ code: 4, meaning: "conflict" },
 	] satisfies CliExitCodeContract[],
 	agentGuidelines: [
-		"Prefer --json and read the deterministic result envelope instead of parsing human output.",
+		"Prefer --json and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap.",
+		"Do not run list only to verify a successful mutation; use the exact goal ID and revision in its receipt.",
 		"Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill setup guidance but never installs it.",
 		"Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
@@ -565,6 +573,7 @@ export function renderAgentsMarkdownBlock(): string {
 				return `\`${flag.usage}\`${scope ? ` (${scope})` : ""}`;
 			})
 			.join(", ")}.`,
+		"JSON result rule: Project mutations return bounded receipts, not the full roadmap. Use the returned goal ID and revision; run `list` only when later work needs current roadmap state.",
 		"",
 		`Confirmation guardrail: ${actionNameList(lifecycleActions)} and the mutating forms of ${actionNameList(migrationActions)} require \`--confirm\`; migration \`--dry-run\` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.`,
 		`Capture workflow: ${captureWorkflow.steps.join(" ")}`,
@@ -767,6 +776,10 @@ export function renderSkillMarkdown(): string {
 		"",
 		`The full generated command reference lives in the package's \`${DOCS_PATH}\`, rendered from the same contract as this skill.`,
 		"",
+		"## Result envelopes",
+		"",
+		...contract.resultRules.map((rule) => `- ${rule}`),
+		"",
 		"## Where the goal file lives",
 		"",
 		...contract.pathRules.map((rule) => `- ${rule}`),
@@ -882,6 +895,10 @@ export function renderCliGuide(): string {
 		"## Description input",
 		"",
 		...contract.descriptionRules,
+		"",
+		"## Result envelopes",
+		"",
+		...contract.resultRules.map((rule) => `- ${rule}`),
 		"",
 		"## JSON plans",
 		"",

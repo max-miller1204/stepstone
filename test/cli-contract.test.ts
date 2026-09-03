@@ -332,6 +332,14 @@ describe("single CLI command contract", () => {
 		}
 	});
 
+	it("propagates bounded mutation receipt guidance to agent-facing renderers", () => {
+		for (const rule of CLI_COMMAND_CONTRACT.resultRules) {
+			for (const surface of [renderSkillMarkdown(), renderCliGuide()]) expect(surface).toContain(rule);
+		}
+		expect(renderAgentsMarkdownBlock()).toContain("mutations return bounded receipts");
+		expect(renderAgentsMarkdownBlock()).toContain("run `list` only when later work needs");
+	});
+
 	it("propagates the single capture workflow to every agent-facing renderer", () => {
 		const workflowActions = CLI_COMMAND_CONTRACT.actions.filter(
 			(action) => action.captureWorkflow !== undefined,

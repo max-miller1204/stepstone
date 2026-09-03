@@ -1252,7 +1252,7 @@ export class WorklistApplicationService {
 						resolution: "provide-json-goal-array",
 					});
 				}
-				const { addedGoals, goals, warnings, revision, changed } = await applyProjectPlan(
+				const { addedGoals, warnings, revision, changed } = await applyProjectPlan(
 					projectPath,
 					operation.plan as ProjectGoalPlanEntry[],
 					{ ...options, dryRun: operation.dryRun },
@@ -1263,7 +1263,6 @@ export class WorklistApplicationService {
 						action: "apply-plan",
 						dryRun: operation.dryRun === true,
 						addedGoals,
-						goals,
 						warnings,
 					},
 					revision,
@@ -1278,7 +1277,7 @@ export class WorklistApplicationService {
 						resolution: "provide-title",
 					});
 				}
-				const { goal, goals, revision, changed } = await addProjectGoal(
+				const { goal, revision, changed } = await addProjectGoal(
 					projectPath,
 					operation.title,
 					{
@@ -1290,7 +1289,7 @@ export class WorklistApplicationService {
 					options,
 				);
 				return {
-					result: { scope: "project", action: "add", goal, goals },
+					result: { scope: "project", action: "add", goal },
 					revision,
 					changed,
 					changedGoalIds: [goal.id],
@@ -1305,7 +1304,7 @@ export class WorklistApplicationService {
 						resolution: "provide-project-goal-id",
 					});
 				}
-				const { goal, goals, revision, changed } = await updateProjectGoal(
+				const { goal, revision, changed } = await updateProjectGoal(
 					projectPath,
 					operation.id,
 					{
@@ -1318,7 +1317,7 @@ export class WorklistApplicationService {
 					options,
 				);
 				return {
-					result: { scope: "project", action: "update", goal, goals },
+					result: { scope: "project", action: "update", goal },
 					revision,
 					changed,
 					changedGoalIds: [goal.id],
@@ -1441,9 +1440,9 @@ export class WorklistApplicationService {
 				resolution: "provide-one-placement",
 			});
 		}
-		const { goal, goals, revision, changed } = await moveProjectGoal(projectPath, id, placement, options);
+		const { goal, revision, changed } = await moveProjectGoal(projectPath, id, placement, options);
 		return {
-			result: { scope: "project", action: "move", goal, goals },
+			result: { scope: "project", action: "move", goal },
 			revision,
 			changed,
 			changedGoalIds: [goal.id],
@@ -1456,12 +1455,12 @@ export class WorklistApplicationService {
 		options: ProjectMutationOptions,
 	): Promise<ProjectExecutionResult> {
 		requireConfirmation(operation);
-		const { goals, migrations, revision, changed, changedGoalIds } = await migrateProjectGoalIds(
+		const { migrations, revision, changed, changedGoalIds } = await migrateProjectGoalIds(
 			projectPath,
 			options,
 		);
 		return {
-			result: { scope: "project", action: "migrate_ids", goals, migrations },
+			result: { scope: "project", action: "migrate_ids", migrations },
 			revision,
 			changed,
 			changedGoalIds,
@@ -1489,21 +1488,19 @@ export class WorklistApplicationService {
 			});
 		}
 		if (targetPath === projectPath) {
-			const { goals, revision } = await readProjectGoals(projectPath);
+			const { revision } = await readProjectGoals(projectPath);
 			return {
-				result: { scope: "project", action: "migrate_path", goals, worklistPath: projectPath },
+				result: { scope: "project", action: "migrate_path", worklistPath: projectPath },
 				revision,
 				changed: false,
 				changedGoalIds: [],
 			};
 		}
 		const { fromPath, toPath, revision } = await migrateProjectWorklistPath(projectPath, targetPath);
-		const { goals } = await readProjectGoals(toPath);
 		return {
 			result: {
 				scope: "project",
 				action: "migrate_path",
-				goals,
 				worklistPath: toPath,
 				previousWorklistPath: fromPath,
 			},
@@ -1545,14 +1542,14 @@ export class WorklistApplicationService {
 				resolution: "provide-valid-branch",
 			});
 		}
-		const { goal, goals, revision, changed } = await setProjectGoalBranch(
+		const { goal, revision, changed } = await setProjectGoalBranch(
 			projectPath,
 			operation.id,
 			branch,
 			options,
 		);
 		return {
-			result: { scope: "project", action: "start", goal, goals },
+			result: { scope: "project", action: "start", goal },
 			revision,
 			changed,
 			changedGoalIds: changed ? [goal.id] : [],
@@ -1584,7 +1581,6 @@ export class WorklistApplicationService {
 				scope: "project",
 				action: "set_active",
 				goal,
-				goals,
 				...(blockedBy.length > 0 ? { blockedBy } : {}),
 			},
 			revision,
@@ -1606,13 +1602,13 @@ export class WorklistApplicationService {
 		}
 		requireConfirmation(operation);
 		if (operation.action === "delete") {
-			const { goalId, goals, strippedGoalIds, revision, changed } = await deleteProjectGoal(
+			const { goalId, strippedGoalIds, revision, changed } = await deleteProjectGoal(
 				projectPath,
 				operation.id,
 				options,
 			);
 			return {
-				result: { scope: "project", action: "delete", goals },
+				result: { scope: "project", action: "delete", deletedGoalId: goalId },
 				revision,
 				changed,
 				// The goals that lost an edge changed as surely as the one that went, so
@@ -1628,14 +1624,14 @@ export class WorklistApplicationService {
 			);
 		}
 		const action = operation.action;
-		const { goal, goals, revision, changed } = await transitionProjectGoal(
+		const { goal, revision, changed } = await transitionProjectGoal(
 			projectPath,
 			operation.id,
 			PROJECT_LIFECYCLE_TARGET_STATUS[action],
 			options,
 		);
 		return {
-			result: { scope: "project", action, goal, goals },
+			result: { scope: "project", action, goal },
 			revision,
 			changed,
 			changedGoalIds: [goal.id],

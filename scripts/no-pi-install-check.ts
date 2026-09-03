@@ -252,13 +252,15 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 		status: "open",
 	});
 	for (const stamp of [createdAt, updatedAt]) assert.match(String(stamp), /^\d{4}-\d{2}-\d{2}T.*Z$/);
+	assert.equal("goals" in added.result, false, "add must return a bounded receipt");
 	assert.equal(added.meta.changed, true);
 
-	okEnvelope(
+	const secondAdded = okEnvelope(
 		await runCli(["project", "add", "Beta goal", "--depends-on", "alpha-goal", "--json"]),
 		"add",
 		version,
 	);
+	assert.equal("goals" in secondAdded.result, false, "add must stay bounded as the roadmap grows");
 	assert.deepEqual(goalIds(okEnvelope(await runCli(["project", "list", "--json"]), "list", version)), [
 		"alpha-goal",
 		"beta-goal",
@@ -299,6 +301,7 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 		(previewed.result.addedGoals as Array<{ id: string }>).map((goal) => goal.id),
 		["gamma-goal"],
 	);
+	assert.equal("goals" in previewed.result, false, "apply-plan must return only its proposed goals");
 	assert.equal(previewed.meta.changed, false);
 	assert.equal(await readFile(worklistPath, "utf8"), beforePlan, "a dry run must not touch the worklist");
 
@@ -321,6 +324,7 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 		version,
 	);
 	assert.equal((completed.result.goal as { status: string }).status, "done");
+	assert.equal("goals" in completed.result, false, "lifecycle mutations must return bounded receipts");
 	assert.equal(completed.meta.changed, true);
 	assert.deepEqual(
 		goalIds(okEnvelope(await runCli(["project", "ready", "--json"]), "ready", version)),

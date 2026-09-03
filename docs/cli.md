@@ -82,6 +82,13 @@ Reserve `-- <description...>` for a human typing unquoted prose interactively. A
 The legacy `--append -- <text>` interactive form remains supported, while agents and scripts use `--append-description <text>`.
 Programmatic callers clear a description with `--description ''`; the interactive `update <id> --` form remains supported.
 
+## Result envelopes
+
+- Collection reads return the collection they explicitly request: `list`, `find`, and `ready` use `result.goals`, while `waves` uses `result.waves`.
+- Project mutations return bounded receipts instead of the complete post-mutation roadmap. Single-goal mutations use `result.goal`, `delete` uses `result.deletedGoalId`, and `apply-plan` uses `result.addedGoals`.
+- Mutation receipts keep change status, changed entity IDs, and the resulting revision in `meta`; run an explicit read only when later work needs current roadmap state.
+- Do not run `list` only to verify a successful mutation. The mutation receipt is the confirmation and returns the exact created, updated, moved, or deleted goal ID.
+
 ## JSON plans
 
 - `apply-plan <plan.json>` reads a plain JSON array whose entries allow exactly `title`, `description`, `group`, and `dependsOn`; `title` is a required non-empty string, `description` and `group` are optional strings, and `dependsOn` is an optional array of non-empty strings.
@@ -158,7 +165,8 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 
 ## Agent guidance
 
-- Prefer --json and read the deterministic result envelope instead of parsing human output.
+- Prefer --json and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap.
+- Do not run list only to verify a successful mutation; use the exact goal ID and revision in its receipt.
 - Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill setup guidance but never installs it.
 - Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.

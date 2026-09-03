@@ -144,8 +144,12 @@ export interface WorklistOperationResult {
 	action: string;
 	task?: SessionTask;
 	tasks?: SessionTask[];
+	/** The one goal a single-goal read or mutation returns. */
 	goal?: ProjectGoal;
+	/** Goal collections returned only by operations that explicitly read a collection. */
 	goals?: ProjectGoal[];
+	/** The exact stored ID removed by a delete mutation. */
+	deletedGoalId?: string;
 	/** Whether the shown goal is blocked, derived from its current dependency edges. */
 	blocked?: boolean;
 	/** Goal IDs the shown goal blocks, derived from other goals' forward edges. */

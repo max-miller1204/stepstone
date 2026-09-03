@@ -840,7 +840,7 @@ describe("session state and tool", () => {
 		});
 		expect(applied.content).toContain("Applied 2 project goal(s).");
 		expect(applied.details.addedGoals?.map((goal) => goal.id)).toEqual(["shared-goal-2", "batch-dependent"]);
-		expect(applied.details.goals).toHaveLength(3);
+		expect(applied.details).not.toHaveProperty("goals");
 	});
 
 	it("guards every destructive project lifecycle path", async () => {
@@ -851,7 +851,8 @@ describe("session state and tool", () => {
 			sessionStore: store,
 			projectPath: path,
 		});
-		const id = added.details.goals?.[0]?.id;
+		const id = added.details.goal?.id;
+		expect(added.details).not.toHaveProperty("goals");
 		for (const action of ["complete", "reopen", "archive", "delete"]) {
 			await expect(
 				executeWorklist({ scope: "project", action, id }, ctx, {
@@ -874,7 +875,8 @@ describe("session state and tool", () => {
 			ctx,
 			{ sessionStore: store, projectPath: path },
 		);
-		expect(completed.details.goals?.[0]?.status).toBe("done");
+		expect(completed.details.goal?.status).toBe("done");
+		expect(completed.details).not.toHaveProperty("goals");
 		await expect(
 			executeWorklist({ scope: "project", action: "set_active", id }, ctx, {
 				sessionStore: store,

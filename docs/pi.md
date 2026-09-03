@@ -108,6 +108,7 @@ Project Goal `move` takes the same anchors and reorders the roadmap; `add` and `
 Empty arrays clear dependencies or links.
 Project Goal `start` is the dispatch claim: it takes exactly one of a `branch` naming what is working on the goal or `clear=true` releasing an abandoned claim, leaves the goal's status alone, and keeps a claimed goal out of the ready frontier until `start` with `clear` or `complete` releases it.
 `update`, `start`, `set_active`, `complete`, `reopen`, `archive`, and `delete` also accept `expectedUpdatedAt`, the target goal's exact `updatedAt` from the caller's last read, so a claim or a lifecycle change sent from a stale read returns a typed conflict instead of overwriting a newer one; it is a concurrency precondition and never stands in for `confirm`.
+Project Goal mutations return bounded details instead of the complete roadmap: single-goal mutations return `goal`, `delete` returns `deletedGoalId`, and `apply-plan` returns `addedGoals`. The `list` action remains the explicit full collection read.
 
 Moves preserve the task ID, title, status, and Project Goal association.
 Self-placement, already-satisfied placement, identical Session Task updates, and repeated status changes succeed without writing another session snapshot.
