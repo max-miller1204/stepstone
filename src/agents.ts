@@ -2,8 +2,8 @@ import { isUtf8 } from "node:buffer";
 import { randomBytes } from "node:crypto";
 import { chmod, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import lockfile from "proper-lockfile";
 import { AGENTS_BLOCK_END, AGENTS_BLOCK_START, renderAgentsMarkdownBlock } from "./cli-contract.ts";
+import { acquireFileLock } from "./file-lock.ts";
 
 /** Repository-root file carrying harness-neutral instructions for coding agents. */
 export const AGENTS_PATH = "AGENTS.md";
@@ -146,7 +146,7 @@ export async function agentsFileNeedsRefresh(root: string): Promise<boolean> {
  * atomically rename the complete file over its prior version.
  */
 export async function refreshAgentsFile(root: string): Promise<AgentsRefreshResult> {
-	const release = await lockfile.lock(root, {
+	const release = await acquireFileLock(root, {
 		lockfilePath: resolve(root, AGENTS_LOCK_PATH),
 		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
 		stale: 10000,
