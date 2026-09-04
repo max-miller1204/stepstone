@@ -2,13 +2,13 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
-import lockfile from "proper-lockfile";
 import {
 	LEGACY_WORKLIST_DIRECTORY,
 	WORKLIST_DIRECTORY,
 	WORKLIST_FILENAME,
 	WORKLIST_PATH_ENV,
 } from "./cli-contract.ts";
+import { acquireFileLock } from "./file-lock.ts";
 import {
 	canonicalPath,
 	GIT_MARKER,
@@ -413,7 +413,7 @@ const LOCK_FILENAME = ".worklist.lock";
  */
 async function lockWorklistDirectory(dir: string): Promise<() => Promise<void>> {
 	await mkdir(dir, { recursive: true });
-	return lockfile.lock(dir, {
+	return acquireFileLock(dir, {
 		lockfilePath: resolve(dir, LOCK_FILENAME),
 		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
 		stale: 10000,

@@ -17,7 +17,6 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
-import lockfile from "proper-lockfile";
 import { z } from "zod";
 import { WorklistApplicationService } from "./application-service.ts";
 import type {
@@ -34,6 +33,7 @@ import type {
 	WorkspaceBinding,
 } from "./dispatch-driver.ts";
 import { DISPATCH_GOAL_FILE } from "./dispatch-driver.ts";
+import { acquireFileLock } from "./file-lock.ts";
 import { createWorklistLocator } from "./git.ts";
 import type { ProjectGoal } from "./types.ts";
 
@@ -426,7 +426,7 @@ export class FileDispatchStateStore implements DispatchStateStore {
 		await mkdir(this.directory, { recursive: true, mode: 0o700 });
 		const target = join(this.directory, `.run-${runId}`);
 		await writeFile(target, "", { flag: "a", mode: 0o600 });
-		const release = await lockfile.lock(target, {
+		const release = await acquireFileLock(target, {
 			retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
 			stale: 10000,
 		});
@@ -457,7 +457,7 @@ export class FileDispatchStateStore implements DispatchStateStore {
 
 	private async withLock<T>(operation: () => Promise<T>): Promise<T> {
 		await mkdir(this.directory, { recursive: true, mode: 0o700 });
-		const release = await lockfile.lock(this.directory, {
+		const release = await acquireFileLock(this.directory, {
 			lockfilePath: join(this.directory, ".lock"),
 			retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
 			stale: 10000,
@@ -744,7 +744,7 @@ async function ensureGoalFileIsIgnored(repositoryRoot: string): Promise<void> {
 	const excludePath = join(commonDirectory, "info", "exclude");
 	await mkdir(dirname(excludePath), { recursive: true, mode: 0o700 });
 	await writeFile(excludePath, "", { flag: "a" });
-	const release = await lockfile.lock(excludePath, {
+	const release = await acquireFileLock(excludePath, {
 		realpath: false,
 		retries: { retries: 20, factor: 1.5, minTimeout: 10, maxTimeout: 250 },
 		stale: 10000,

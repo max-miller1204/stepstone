@@ -197,6 +197,23 @@ describe("real Pi load", () => {
 			expect.objectContaining({ title: "RPC goal", description: "Repository-wide outcome" }),
 		);
 
+		// proper-lockfile caches timestamp precision after the first lock. Pi runs as
+		// a Bun executable, whose CommonJS proxy used to crash when that cache was
+		// read on the second project mutation.
+		expect(
+			(
+				await rpc(child, {
+					type: "prompt",
+					message: "/tasks project add Second RPC goal",
+				})
+			).success,
+		).toBe(true);
+		expect(
+			parseJson<{ goals: Array<{ title: string }> }>(
+				await readFile(join(cwd, ".worklist", "worklist.json"), "utf8"),
+			).goals.map((goal) => goal.title),
+		).toEqual(["RPC goal", "Second RPC goal"]);
+
 		expect((await rpc(child, { type: "new_session" })).success).toBe(true);
 		const freshEntries = (await rpc(child, { type: "get_entries" })).data as {
 			entries: Array<{ customType?: string }>;
@@ -206,6 +223,6 @@ describe("real Pi load", () => {
 		);
 		expect(
 			parseJson<{ goals: unknown[] }>(await readFile(join(cwd, ".worklist", "worklist.json"), "utf8")).goals,
-		).toHaveLength(1);
+		).toHaveLength(2);
 	});
 });
