@@ -117,8 +117,10 @@ An omitted flag exits with code 3 and changes nothing, which an agent should tre
 
 ## Result envelopes and exit codes
 
-`--json` prints a deterministic result envelope, preserving the full application result and adding the running package version in `meta.cliVersion`: on stdout for success, on stderr for failure.
-`meta` also reports whether anything changed, whether the mutation was a semantic no-op, which fields moved, and the resulting revision, so a caller never has to diff the file to find out.
+`--json` prints a deterministic, operation-shaped result envelope and adds the running package version in `meta.cliVersion`: on stdout for success, on stderr for failure.
+Collection reads return the collection they request: `list`, `find`, and `ready` use `result.goals`, while `waves` uses `result.waves`. Project mutations return bounded receipts instead of the complete post-mutation roadmap: single-goal mutations return `result.goal`, `delete` returns `result.deletedGoalId`, and `apply-plan` returns `result.addedGoals`. Migration receipts retain their operation data: `migrate_ids` returns `result.migrations`, while `migrate_path` returns `result.worklistPath` and, when it moves the file, `result.previousWorklistPath`.
+`meta` also reports whether anything changed, whether the mutation was a semantic no-op, which fields moved, the changed entity IDs, and the resulting revision, so a caller never has to diff the file to find out.
+Do not run `list` only to verify a successful mutation. Run an explicit read only when later work needs current roadmap state.
 
 The exit codes are tabulated in [docs/cli.md](cli.md#exit-codes) and printed by `project help`, both rendered from the contract itself rather than restated here.
 Two of them are decisions rather than failures: code 3 means the command needs `--confirm`, which is a question for the user, and code 4 means a concurrent change conflicted with yours.

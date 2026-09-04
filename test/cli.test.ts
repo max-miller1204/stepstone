@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { CLI_COMMAND_CONTRACT, WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
@@ -406,7 +406,7 @@ describe("project goal CLI", () => {
 			ok: boolean;
 			scope: string;
 			action: string;
-			result: { goal: ProjectGoal; goals: ProjectGoal[] };
+			result: { goal: ProjectGoal };
 			meta: {
 				changed: boolean;
 				semanticNoOp: boolean;
@@ -418,7 +418,7 @@ describe("project goal CLI", () => {
 		expect(payload.scope).toBe("project");
 		expect(payload.action).toBe("add");
 		expect(payload.result.goal.title).toBe("Automate");
-		expect(payload.result.goals).toHaveLength(1);
+		expect(payload.result).not.toHaveProperty("goals");
 		expect(payload.meta).toMatchObject({
 			changed: true,
 			semanticNoOp: false,
@@ -449,6 +449,36 @@ describe("project goal CLI", () => {
 				cliVersion: manifest.version,
 			},
 		});
+	});
+
+	it("keeps mutation JSON bounded when the roadmap is large", async () => {
+		const root = await tempGitRepo();
+		const worklistPath = join(root, ".worklist", "worklist.json");
+		await mkdir(dirname(worklistPath), { recursive: true });
+		const timestamp = "2026-05-04T09:12:31.004Z";
+		await writeFile(
+			worklistPath,
+			`${JSON.stringify({
+				version: 1,
+				revision: 40,
+				goals: Array.from({ length: 40 }, (_, index) => ({
+					id: `existing-goal-${index}`,
+					title: `Existing goal ${index}`,
+					description: "Long roadmap context ".repeat(100),
+					status: "open",
+					createdAt: timestamp,
+					updatedAt: timestamp,
+				})),
+			})}\n`,
+			"utf8",
+		);
+
+		const added = await runCli(root, ["project", "add", "Bounded receipt", "--json"]);
+		expect(added.code).toBe(0);
+		expect(Buffer.byteLength(added.stdout, "utf8")).toBeLessThan(4096);
+		const payload = parseJson(added.stdout);
+		expect(payload.result.goal).toMatchObject({ id: "bounded-receipt", title: "Bounded receipt" });
+		expect(payload.result).not.toHaveProperty("goals");
 	});
 
 	it("refuses lifecycle actions without --confirm and leaves the file untouched", async () => {
@@ -792,6 +822,7 @@ describe("project goal CLI", () => {
 		]);
 		expect(preview.result.addedGoals[1].dependsOn).toEqual(["batch-foundation"]);
 		expect(preview.result.addedGoals[2].dependsOn).toEqual(["add-focus-mode-2", "shared-runtime"]);
+		expect(preview.result).not.toHaveProperty("goals");
 		expect(preview.result.warnings).toEqual([
 			{
 				code: "BATCH_REFERENCE_SHADOWS_EXISTING",
@@ -810,12 +841,13 @@ describe("project goal CLI", () => {
 		const applied = await runCli(root, ["project", "apply-plan", planPath, "--json"]);
 		expect(applied.code).toBe(0);
 		const result = parseJson(applied.stdout) as {
-			result: { addedGoals: ProjectGoal[]; goals: ProjectGoal[] };
+			result: { addedGoals: ProjectGoal[] };
 			meta: { changed: boolean; revisions: { project: string } };
 		};
 		expect(result.result.addedGoals.map((goal) => goal.id)).toEqual(
 			preview.result.addedGoals.map((goal) => goal.id),
 		);
+		expect(result.result).not.toHaveProperty("goals");
 		expect(result.meta).toMatchObject({
 			changed: true,
 			revisions: { project: String(Number(beforeRevision) + 1) },
@@ -942,6 +974,16 @@ describe("project goal CLI", () => {
 			"goal-ms6gwxrg-56c1bde6",
 			"future-start-goal",
 		]);
+		const plannedJson = parseJson(
+			(await runCli(root, ["project", "migrate_ids", "--dry-run", "--json"])).stdout,
+		);
+		expect(plannedJson.result.migrations).toEqual([
+			expect.objectContaining({
+				from: "goal-ms6gwxrg-56c1bde6",
+				to: "support-goal-templates-2",
+			}),
+		]);
+		expect(plannedJson.result).not.toHaveProperty("goals");
 
 		const refused = await runCli(root, ["project", "migrate_ids"]);
 		expect(refused.code).toBe(3);
@@ -1319,11 +1361,13 @@ describe("project goal CLI", () => {
 
 		const settled = await runCli(root, ["project", "move", "second", "down", "--json"]);
 		expect(settled.code).toBe(0);
-		expect(parseJson(settled.stdout)).toMatchObject({
+		const settledResult = parseJson(settled.stdout);
+		expect(settledResult).toMatchObject({
 			ok: true,
 			action: "move",
 			meta: { changed: false, semanticNoOp: true },
 		});
+		expect(settledResult.result).not.toHaveProperty("goals");
 		expect(await ids()).toEqual(["third", "first", "second"]);
 	});
 
@@ -1604,10 +1648,12 @@ describe("project goal CLI", () => {
 		// The JSON envelope carries the same fact, so nothing depends on stderr prose.
 		const activatedJson = await runCli(root, ["project", "set_active", "dependency-graph", "--json"]);
 		expect(activatedJson.stderr).toBe("");
-		expect(parseJson(activatedJson.stdout)).toMatchObject({
+		const activationResult = parseJson(activatedJson.stdout);
+		expect(activationResult).toMatchObject({
 			ok: true,
 			result: { blockedBy: ["slug-ids"] },
 		});
+		expect(activationResult.result).not.toHaveProperty("goals");
 	});
 
 	it("drops the edges naming a deleted goal in the same change", async () => {
@@ -1617,9 +1663,12 @@ describe("project goal CLI", () => {
 
 		const deleted = await runCli(root, ["project", "delete", "slug-ids", "--confirm", "--json"]);
 		expect(deleted.code).toBe(0);
-		expect(parseJson(deleted.stdout)).toMatchObject({
+		const deleteResult = parseJson(deleted.stdout);
+		expect(deleteResult).toMatchObject({
+			result: { deletedGoalId: "slug-ids" },
 			meta: { changedEntities: { projectGoalIds: ["dependency-graph", "slug-ids"] } },
 		});
+		expect(deleteResult.result).not.toHaveProperty("goals");
 		// A dangling edge would read as an unsatisfied dependency and block the goal
 		// on work nobody can ever finish, so it never reaches the file.
 		expect((await readGoals(root))[0]).not.toHaveProperty("dependsOn");
@@ -2618,7 +2667,8 @@ describe("project goal file migration", () => {
 
 		const migrated = await runCli(root, ["project", "migrate_path", "--confirm", "--json"]);
 		expect(migrated.code).toBe(0);
-		expect(parseJson(migrated.stdout)).toMatchObject({
+		const migrationResult = parseJson(migrated.stdout);
+		expect(migrationResult).toMatchObject({
 			ok: true,
 			action: "migrate_path",
 			result: { worklistPath: current, previousWorklistPath: legacy },
@@ -2629,6 +2679,7 @@ describe("project goal file migration", () => {
 				revisions: { project: "2" },
 			},
 		});
+		expect(migrationResult.result).not.toHaveProperty("goals");
 		expect((await readGoals(root)).map((goal) => goal.id)).toEqual(["carried-across"]);
 		await expect(readFile(legacy, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 

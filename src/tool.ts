@@ -124,7 +124,7 @@ function formatProjectResult(operation: WorklistOperation, result: WorklistOpera
 		case "archive":
 			return `Project goal ${result.goal?.id} is now ${result.goal?.status}`;
 		case "delete":
-			return `Deleted project goal ${operation.id}`;
+			return `Deleted project goal ${result.deletedGoalId}`;
 		default:
 			throw new Error(`Unknown project action: ${operation.action}`);
 	}

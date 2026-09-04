@@ -917,7 +917,9 @@ async function runLifecycle(
 		expectedUpdatedAt: invocation.expectedUpdatedAt,
 	});
 	if (action === "delete") {
-		report(invocation, envelope, `Deleted project goal ${id}`);
+		const deletedGoalId = envelope.ok ? envelope.result.deletedGoalId : undefined;
+		if (!deletedGoalId) throw new Error(`Deleted Project Goal ${id} was not returned`);
+		report(invocation, envelope, `Deleted project goal ${deletedGoalId}`);
 		return;
 	}
 	const goal = envelope.ok ? envelope.result.goal : undefined;
@@ -970,7 +972,7 @@ async function runGoalIdMigration(
 		}
 		const { goals, retiredIds, meta } = await readProjectSnapshot(service, "migrate_ids");
 		const migrations = planGoalIdMigration({ version: 1, goals, retiredIds });
-		const result = { scope: "project", action: "migrate_ids", goals, migrations } as const;
+		const result = { scope: "project", action: "migrate_ids", migrations } as const;
 		report(
 			invocation,
 			readEnvelope("migrate_ids", result, meta),

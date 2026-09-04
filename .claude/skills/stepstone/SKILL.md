@@ -103,6 +103,13 @@ npx -y stepstone@latest project set_active support-goal-templates
 
 The full generated command reference lives in the package's `docs/cli.md`, rendered from the same contract as this skill.
 
+## Result envelopes
+
+- Collection reads return the collection they explicitly request: `list`, `find`, and `ready` use `result.goals`, while `waves` uses `result.waves`.
+- Project mutations return bounded receipts instead of the complete post-mutation roadmap. Single-goal mutations use `result.goal`, `delete` uses `result.deletedGoalId`, and `apply-plan` uses `result.addedGoals`.
+- Mutation receipts keep change status, changed entity IDs, and the resulting revision in `meta`; run an explicit read only when later work needs current roadmap state.
+- Do not run `list` only to verify a successful mutation. The mutation receipt is the confirmation and returns the exact created, updated, moved, or deleted goal ID.
+
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.

@@ -47,6 +47,8 @@ describe("worklist application service", () => {
 				revisions: { project: "0" },
 			},
 		});
+		if (!preview.ok) throw new Error("Plan preview failed");
+		expect(preview.result).not.toHaveProperty("goals");
 		expect(await service.getProjectGoals()).toEqual([]);
 
 		const applied = await service.execute(
@@ -67,6 +69,8 @@ describe("worklist application service", () => {
 				revisions: { project: "1" },
 			},
 		});
+		if (!applied.ok) throw new Error("Plan application failed");
+		expect(applied.result).not.toHaveProperty("goals");
 
 		const invalid = await service.execute(
 			{
@@ -107,6 +111,47 @@ describe("worklist application service", () => {
 			meta: { changed: false, semanticNoOp: true, revisions: { project: "1" } },
 		});
 		expect(await service.getProjectGoals()).toHaveLength(2);
+	});
+
+	it("returns bounded receipts instead of full snapshots for project mutations", async () => {
+		const projectPath = join(
+			await mkdtemp(join(tmpdir(), "stepstone-application-receipts-")),
+			".worklist",
+			"worklist.json",
+		);
+		const service = new WorklistApplicationService({ projectPath });
+		const executeReceipt = async (operation: Parameters<WorklistApplicationService["execute"]>[0]) => {
+			const envelope = await service.execute(operation, { source: "cli" });
+			if (!envelope.ok) throw new Error(envelope.error.message);
+			expect(envelope.result).not.toHaveProperty("goals");
+			return envelope.result;
+		};
+
+		const first = await executeReceipt({ scope: "project", action: "add", title: "First" });
+		const second = await executeReceipt({ scope: "project", action: "add", title: "Second" });
+		if (!first.goal || !second.goal) throw new Error("Project add did not return its goal");
+		await executeReceipt({ scope: "project", action: "update", id: first.goal.id, title: "First renamed" });
+		await executeReceipt({ scope: "project", action: "move", id: first.goal.id, afterId: second.goal.id });
+		await executeReceipt({ scope: "project", action: "start", id: first.goal.id, branch: "feat/first" });
+		await executeReceipt({ scope: "project", action: "set_active", id: first.goal.id });
+		await executeReceipt({ scope: "project", action: "set_status", id: first.goal.id, status: "active" });
+		await executeReceipt({ scope: "project", action: "complete", id: first.goal.id, confirm: true });
+		await executeReceipt({ scope: "project", action: "reopen", id: first.goal.id, confirm: true });
+		await executeReceipt({ scope: "project", action: "archive", id: first.goal.id, confirm: true });
+		const deleted = await executeReceipt({
+			scope: "project",
+			action: "delete",
+			id: first.goal.id,
+			confirm: true,
+		});
+		expect(deleted.deletedGoalId).toBe(first.goal.id);
+		await executeReceipt({ scope: "project", action: "migrate_ids", confirm: true });
+		await executeReceipt({
+			scope: "project",
+			action: "migrate_path",
+			targetPath: projectPath,
+			confirm: true,
+		});
 	});
 
 	it("rejects stale Project Goal mutations with the current persisted revision", async () => {
@@ -997,10 +1042,6 @@ describe("worklist application service", () => {
 			ok: true,
 			result: {
 				migrations: [{ from: "goal-ms6gwxrg-56c1bde6", to: "support-goal-templates" }],
-				goals: [
-					{ id: "support-goal-templates" },
-					{ id: "dependency-graph", dependsOn: ["support-goal-templates"] },
-				],
 			},
 			meta: {
 				changed: true,
@@ -1011,6 +1052,12 @@ describe("worklist application service", () => {
 				revisions: { project: "2" },
 			},
 		});
+		if (!migrated.ok) throw new Error("Goal ID migration failed");
+		expect(migrated.result).not.toHaveProperty("goals");
+		expect((await service.getProjectGoals()).map((goal) => goal.id)).toEqual([
+			"support-goal-templates",
+			"dependency-graph",
+		]);
 
 		// Whatever still refers to the goal by its old ID keeps resolving to it.
 		await expect(
@@ -1073,7 +1120,6 @@ describe("worklist application service", () => {
 			ok: true,
 			action: "migrate_path",
 			result: {
-				goals: [{ id: "carried-across" }],
 				worklistPath: currentPath,
 				previousWorklistPath: legacyPath,
 			},
@@ -1086,21 +1132,24 @@ describe("worklist application service", () => {
 				revisions: { project: "7" },
 			},
 		});
+		if (!migrated.ok) throw new Error("Worklist path migration failed");
+		expect(migrated.result).not.toHaveProperty("goals");
 		expect(await readFile(currentPath, "utf8")).toContain("carried-across");
 
 		// The service now answers from the file it moved, and asking again is the
 		// no-op an ID migration reports when no ID needs rewriting.
 		service.setProjectPathResolver(() => currentPath);
-		await expect(
-			service.execute(
-				{ scope: "project", action: "migrate_path", targetPath: currentPath, confirm: true },
-				{ source: "cli" },
-			),
-		).resolves.toMatchObject({
+		const repeated = await service.execute(
+			{ scope: "project", action: "migrate_path", targetPath: currentPath, confirm: true },
+			{ source: "cli" },
+		);
+		expect(repeated).toMatchObject({
 			ok: true,
-			result: { worklistPath: currentPath, goals: [{ id: "carried-across" }] },
+			result: { worklistPath: currentPath },
 			meta: { changed: false, semanticNoOp: true, changedFields: [] },
 		});
+		if (!repeated.ok) throw new Error("Repeated path migration failed");
+		expect(repeated.result).not.toHaveProperty("goals");
 	});
 
 	it("refuses to move a goal file onto one that already exists", async () => {
@@ -1178,11 +1227,8 @@ describe("worklist application service", () => {
 				revisions: { project: "4" },
 			},
 		});
-		expect(unwrapWorklistApplicationResult(moved).goals?.map((goal) => goal.id)).toEqual([
-			"first",
-			"third",
-			"second",
-		]);
+		expect(unwrapWorklistApplicationResult(moved)).not.toHaveProperty("goals");
+		expect((await service.getProjectGoals()).map((goal) => goal.id)).toEqual(["first", "third", "second"]);
 
 		// A move names only a position, so it is never gated behind confirmation and
 		// never leaves the moved goal looking edited.

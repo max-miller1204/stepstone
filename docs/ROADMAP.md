@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 1 active, 21 open, 44 done, 4 archived.
+70 goals: 22 open, 44 done, 4 archived.
 
 ## Orchestrator
 
@@ -287,7 +287,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   The driver hosts agent sessions: it spawns detached process groups, starts and prompts Herdr panes, tracks PIDs and pane IDs, and carries a hardcoded list of other people's agent kinds. That session layer is most of the dispatch surface, it is the only reason four of the twelve phases exist, and every defect found so far has been in it. Stepstone should prepare and claim, never execute: no session hosting, no prompt submission, no launch custody, and no flag naming a harness. The parallel limit stops meaning concurrent workers and starts meaning how many goals may be claimed and prepared at once.
 
-- **[active]** Hand a prepared workspace its goal as a file - `hand-a-prepared-workspace-its-goal-as-a`
+- **[open]** Hand a prepared workspace its goal as a file - `hand-a-prepared-workspace-its-goal-as-a`
 
   Submitting a prompt over standard input or a pane is what forces Stepstone to know how each harness accepts input. Writing the goal into the prepared workspace instead needs nothing from the harness at all, which is the same reason the generated AGENTS.md block works everywhere it is dropped. A person who opens the workspace, and any agent that reads what is in it, both find the goal already there.
 
