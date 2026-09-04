@@ -788,9 +788,9 @@
       "dependsOn": [
         "prepare-goal-workspaces-without"
       ],
-      "status": "active",
+      "status": "open",
       "createdAt": "2026-08-18T21:42:28.061Z",
-      "updatedAt": "2026-08-28T07:15:08.657Z"
+      "updatedAt": "2026-09-03T23:19:23.518Z"
     },
     {
       "id": "start-a-goal-into-its-own-worktree-from",
@@ -886,5 +886,5 @@
       "updatedAt": "2026-08-18T22:17:01.718Z"
     }
   ],
-  "revision": 302
+  "revision": 303
 }
