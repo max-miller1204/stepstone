@@ -25,11 +25,16 @@ In a development checkout, `node src/cli.ts project <action>` runs the same CLI 
 Running the TypeScript entry point directly needs Node 22.18 or newer, which strips types natively.
 On older versions, including this package's own floor, that entry point fails with an `Unknown file extension ".ts"` error while the compiled bin has no such requirement.
 
-## Initializing agent guidance
+## `AGENTS.md` fallback
+
+The [Agent Skill](skill.md) is the preferred guidance surface.
+Use `project init` instead only when the harness does not support skills but reads `AGENTS.md`:
 
 ```sh
 npx -y stepstone@latest project init
 ```
+
+Choose one guidance surface for a repository; do not install the skill and generate the Stepstone `AGENTS.md` block together.
 
 `init` writes or refreshes only the generated Stepstone block between stable markers in `<git-root>/AGENTS.md`.
 If the file has no block, the command appends one; if exactly one marker pair exists, it replaces that pair while preserving every outside byte.
@@ -38,9 +43,7 @@ The read, marker validation, and atomic replacement run under a cross-process re
 
 Run `init` inside the target repository or pass `--cwd <dir>`.
 `--file <path>` and `$STEPSTONE_WORKLIST` affect goal-file resolution for other actions but never the `AGENTS.md` target.
-
-After refreshing the block, `init` prints the canonical optional skill installation command.
-It does not execute the skill installer because installation scope is a choice owned by each harness.
+The command reports only the fallback block it managed and does not install or recommend another guidance surface.
 
 ## Reading the roadmap
 

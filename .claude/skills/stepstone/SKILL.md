@@ -1,11 +1,17 @@
 ---
 name: stepstone
-description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; prepare and claim isolated workspaces for an approved plan; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
+description: "Manage stepstone Project Goals (the roadmap committed in a repo's .worklist/worklist.json) from any agent session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; prepare and claim isolated workspaces for an approved plan; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look."
 ---
 
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
 
 # Managing stepstone Project Goals
+
+## Guidance installation
+
+- Install the Agent Skill as the preferred guidance surface when the harness supports skills: `npx skills add max-miller1204/stepstone --skill stepstone -g`.
+- If the harness does not support skills but reads AGENTS.md, use `npx -y stepstone@latest project init` as the alternative fallback.
+- Use one guidance surface for a repository. Do not install the Agent Skill and the generated AGENTS.md block together.
 
 Project Goals are a repository-wide roadmap stored in `<git-root>/.worklist/worklist.json` and committed with the code, so every agent and every human working in that repository reads and edits one list.
 Never edit that file directly: another process may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.

@@ -126,19 +126,6 @@ export interface RevisionedProjectWorklist extends ProjectWorklist {
 	revision: number;
 }
 
-/**
- * Skill setup an initialization describes for the caller rather than performing.
- *
- * Installation scope belongs to the harness, so the canonical command is
- * reported and never run.
- */
-export interface AgentIntegrationGuidance {
-	skill: {
-		command: string;
-		guidance: string;
-	};
-}
-
 export interface WorklistOperationResult {
 	scope: "session" | "project";
 	action: string;
@@ -162,8 +149,6 @@ export interface WorklistOperationResult {
 	worklistPath?: string;
 	/** Absolute path of the AGENTS.md an initialization wrote or found already current. */
 	agentsPath?: string;
-	/** Optional integration an initialization offers but does not perform. */
-	integrations?: AgentIntegrationGuidance;
 	/**
 	 * Absolute path a path migration moved the goal file away from.
 	 *

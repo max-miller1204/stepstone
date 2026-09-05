@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 22 open, 44 done, 4 archived.
+70 goals: 20 open, 46 done, 4 archived.
 
 ## Orchestrator
 
@@ -238,7 +238,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Make the stepstone CLI the sole cross-harness capability transport. Remove the stepstone-mcp executable, MCP server and adapter, protocol metadata, tests, documentation, packaging exercises, and MCP-only runtime dependencies. Retire the Claude Code plugin and its generated skill copy, MCP declaration, and slash commands because the standalone Agent Skill and CLI provide the supported workflow without a client-specific adapter. Preserve the terminal board, Pi extension, shared application service, roadmap format, locking, and confirmation guardrails. No worklist data migration is required.
 
-- **[open]** Make skill-first onboarding explicit - `make-skill-first-onboarding-explicit`
+- **[done]** Make skill-first onboarding explicit - `make-skill-first-onboarding-explicit`
 
   Present the Agent Skill as the preferred guidance installation and project init as an alternative fallback for harnesses that read AGENTS.md but do not support skills. Reduce the generated AGENTS block to the canonical storage rule, CLI invocation, JSON-output preference, exact approval guardrails, capture workflow, and project help pointer instead of duplicating the full command and flag manual. Update the README and generated documentation so users are never told to install both surfaces, and reconcile open roadmap descriptions that still assume MCP resources or the Claude plugin. Keep every generated artifact sourced from the command contract.
 
@@ -287,7 +287,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   The driver hosts agent sessions: it spawns detached process groups, starts and prompts Herdr panes, tracks PIDs and pane IDs, and carries a hardcoded list of other people's agent kinds. That session layer is most of the dispatch surface, it is the only reason four of the twelve phases exist, and every defect found so far has been in it. Stepstone should prepare and claim, never execute: no session hosting, no prompt submission, no launch custody, and no flag naming a harness. The parallel limit stops meaning concurrent workers and starts meaning how many goals may be claimed and prepared at once.
 
-- **[open]** Hand a prepared workspace its goal as a file - `hand-a-prepared-workspace-its-goal-as-a`
+- **[done]** Hand a prepared workspace its goal as a file - `hand-a-prepared-workspace-its-goal-as-a`
 
   Submitting a prompt over standard input or a pane is what forces Stepstone to know how each harness accepts input. Writing the goal into the prepared workspace instead needs nothing from the harness at all, which is the same reason the generated AGENTS.md block works everywhere it is dropped. A person who opens the workspace, and any agent that reads what is in it, both find the goal already there.
 
@@ -341,7 +341,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged.
 
-  Survey what each harness actually offers before building anything: some have a statusline or session-start hook, some read a persistent context file, and several have no equivalent surface at all. The answer is no longer a served resource, because the MCP server this goal was deferred behind has since been retired. The generated skill and AGENTS block tell the agent to read the active goal at session start, the CLI answers it on demand, and anything richer is a per-harness adapter shipped as an optional extra rather than core.
+  Survey what each harness actually offers before building anything: some have a statusline or session-start hook, some read a persistent context file, and several have no equivalent surface at all. The preferred Agent Skill can tell an agent to read the active goal at session start; harnesses without skill support can use the compact generated AGENTS.md fallback instead. The CLI answers on demand, and anything richer is a per-harness adapter shipped as an optional extra rather than core.
 
   Depends on `mcp-server-expose-the-worklist-over-mcp` (done).
 

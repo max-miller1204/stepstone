@@ -10,43 +10,45 @@ stepstone keeps a repository's roadmap inside the repository.
 Project Goals are a list committed alongside the code, which any coding agent and any human at a terminal reads and changes through the same CLI.
 Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to start, what can run in parallel, and what each finished goal unblocks.
 
-## Install
+## Set up agent guidance
 
-**Any coding harness.**
-Initialize or refresh the repository's [harness-neutral `AGENTS.md` guidance](docs/usage.md#initializing-agent-guidance), then install the optional Agent Skill if your client supports it:
+Choose one guidance surface for each repository.
 
-```sh
-npx -y stepstone@latest project init
-```
-
-The command changes only the stable marker-delimited Stepstone block in `<git-root>/AGENTS.md` and preserves every byte of authored guidance around it.
-It prints the canonical skill installation command, but it does not run an installer because installation scope depends on the harness.
-Run it inside the target repository or select one with `--cwd`; `--file` and `$STEPSTONE_WORKLIST` select goal storage for other actions and never redirect the `AGENTS.md` target.
-
-**Any shell, script, or coding agent.**
-There is nothing to install: the CLI runs from npm on demand, in any Git repository, with nothing present but Node.
-
-```sh
-npx -y stepstone@latest project list
-```
-
-**Agent Skill.**
-Install the [standalone skill](docs/skill.md) when your coding agent supports the [`skills` CLI](https://github.com/vercel-labs/skills):
+**Agent Skill (preferred).**
+When your coding agent supports skills, install the [standalone Agent Skill](docs/skill.md):
 
 ```sh
 npx skills add max-miller1204/stepstone --skill stepstone -g
 ```
 
-**[Pi](https://pi.dev).**
-Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a model-facing tool, and Session Tasks:
+The skill teaches the agent the complete workflow and invokes the CLI from npm when needed.
+Drop `-g` to limit the installation to the current project.
+
+**`AGENTS.md` fallback.**
+If the harness does not support skills but reads `AGENTS.md`, use [`project init`](docs/usage.md#agentsmd-fallback) instead:
+
+```sh
+npx -y stepstone@latest project init
+```
+
+This command changes only the stable marker-delimited Stepstone block in `<git-root>/AGENTS.md` and preserves all authored guidance around it.
+Do not run it in a repository that already uses the Agent Skill.
+
+**CLI only.**
+A human, script, or agent can run the CLI without installing guidance or the package:
+
+```sh
+npx -y stepstone@latest project list
+```
+
+**[Pi](https://pi.dev) extension (optional).**
+Install the [extension](docs/pi.md) only when you want Pi Session Tasks, `/tasks`, the widget, and the model-facing tool:
 
 ```sh
 pi install npm:stepstone
 ```
 
-Installing the npm package and installing the Agent Skill are separate choices.
-`npx -y stepstone@latest` and `pi install npm:stepstone` deliver the CLI and the Pi extension; neither installs the skill, which is guidance a harness loads from its own skills directory.
-See [docs/skill.md](docs/skill.md) for the distinction.
+The Pi extension is a runtime integration, not a second Project Goal guidance surface.
 
 ## Try it
 

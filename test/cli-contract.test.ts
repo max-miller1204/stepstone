@@ -16,6 +16,7 @@ import {
 	renderCliGuide,
 	renderCliUsage,
 	renderSkillMarkdown,
+	SKILL_INSTALL_COMMAND,
 	SKILL_PATH,
 	WORKLIST_DIRECTORY,
 	WORKLIST_FILENAME,
@@ -357,6 +358,19 @@ describe("single CLI command contract", () => {
 		expect(renderCliGuide()).toContain(`## ${action.captureWorkflow.title}`);
 	});
 
+	it("renders skill-first guidance without telling readers to install both surfaces", () => {
+		const skill = renderSkillMarkdown();
+		const guide = renderCliGuide();
+		for (const surface of [skill, guide]) {
+			expect(surface).toContain(CLI_COMMAND_CONTRACT.onboarding.skill);
+			expect(surface).toContain(CLI_COMMAND_CONTRACT.onboarding.fallback);
+			expect(surface).toContain(CLI_COMMAND_CONTRACT.onboarding.exclusive);
+		}
+		expect(CLI_COMMAND_CONTRACT.onboarding.skill).toContain(SKILL_INSTALL_COMMAND);
+		expect(CLI_COMMAND_CONTRACT.onboarding.skill).toContain("preferred");
+		expect(CLI_COMMAND_CONTRACT.onboarding.fallback).toContain("alternative fallback");
+	});
+
 	it("keeps the mutating capture action out of the unconditionally safe actions", () => {
 		// The skill's guardrails tell an agent which actions need no user approval,
 		// so the action that only runs against a plan the user approved must not be
@@ -377,7 +391,7 @@ describe("single CLI command contract", () => {
 		}
 	});
 
-	it("derives the repository-neutral AGENTS.md block from the same contract", async () => {
+	it("derives the compact repository-neutral AGENTS.md fallback from the same contract", async () => {
 		expect(AGENTS_BLOCK_START).toBe("<!-- stepstone:project-goals:start -->");
 		expect(AGENTS_BLOCK_END).toBe("<!-- stepstone:project-goals:end -->");
 		const block = renderAgentsMarkdownBlock();
@@ -385,22 +399,23 @@ describe("single CLI command contract", () => {
 		expect(block.startsWith(AGENTS_BLOCK_START)).toBe(true);
 		expect(block.endsWith(AGENTS_BLOCK_END)).toBe(true);
 		expect(block).toContain(`<git-root>/${WORKLIST_DIRECTORY}/${WORKLIST_FILENAME}`);
-		expect(block).toContain("--file");
-		expect(block).toContain(`$${WORKLIST_PATH_ENV}`);
+		expect(block).toContain(CLI_COMMAND_CONTRACT.onboarding.agentsBlock);
+		expect(block).toContain(CLI_COMMAND_CONTRACT.onboarding.exclusive);
+		expect(block).not.toContain(SKILL_INSTALL_COMMAND);
+		expect(block).toContain(CLI_COMMAND_CONTRACT.jsonOutputGuidance);
+		expect(block).toContain(
+			`npx -y ${CLI_COMMAND_CONTRACT.binary}@latest project <action> [arguments] [flags]`,
+		);
+		expect(block).toContain(`npx -y ${CLI_COMMAND_CONTRACT.binary}@latest project help`);
+		expect(block).not.toContain("Command surface:");
+		expect(block).not.toContain("Flags:");
+		expect(block).not.toContain("Exit codes:");
+		expect(block).not.toContain("```text");
 		expect(absolutePathsIn(block)).toEqual([]);
-		for (const action of CLI_COMMAND_CONTRACT.actions) {
-			expect(block, `AGENTS.md is missing action usage \`${action.usage}\``).toContain(action.usage);
-		}
-		for (const flag of CLI_COMMAND_CONTRACT.flags) {
-			expect(block, `AGENTS.md is missing flag usage \`${flag.usage}\``).toContain(flag.usage);
-		}
 		for (const action of CLI_COMMAND_CONTRACT.actions.filter((entry) => entry.confirmRequired)) {
 			expect(block, `AGENTS.md is missing confirmation guardrail for ${action.name}`).toContain(
 				`\`${action.name}\``,
 			);
-		}
-		for (const { code, meaning } of CLI_COMMAND_CONTRACT.exitCodes) {
-			expect(block).toContain(`\`${code}\` ${meaning}`);
 		}
 
 		const committed = await readFile(resolve("AGENTS.md"), "utf8");
@@ -462,7 +477,6 @@ describe("single CLI command contract", () => {
 			"the help output": renderCliUsage(),
 			[DOCS_PATH]: renderCliGuide(),
 			[SKILL_PATH]: renderSkillMarkdown(),
-			"the AGENTS.md block": renderAgentsMarkdownBlock(),
 		};
 		for (const flag of scoped) {
 			const actions = flag.actions ?? [];

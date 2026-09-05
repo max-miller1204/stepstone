@@ -4,6 +4,12 @@
 
 Manage a repository's Project Goals in `<git-root>/.worklist/worklist.json` from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.
 
+## Agent guidance installation
+
+- Install the Agent Skill as the preferred guidance surface when the harness supports skills: `npx skills add max-miller1204/stepstone --skill stepstone -g`.
+- If the harness does not support skills but reads AGENTS.md, use `npx -y stepstone@latest project init` as the alternative fallback.
+- Use one guidance surface for a repository. Do not install the Agent Skill and the generated AGENTS.md block together.
+
 ## Invocation
 
 Use the explicit `@latest` package specifier so a stale local npx cache cannot select an older CLI build:
@@ -32,7 +38,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 
 | Command | Description |
 | --- | --- |
-| `npx -y stepstone@latest project init` | Write or refresh the generated stepstone block in the repository root's AGENTS.md |
+| `npx -y stepstone@latest project init` | Write or refresh the fallback stepstone block in the repository root's AGENTS.md |
 | `npx -y stepstone@latest project list` | Show a compact bounded list of project goals |
 | `npx -y stepstone@latest project show <id>` | Show one goal with its full description |
 | `npx -y stepstone@latest project find <text...>` | List the goals whose title or description contains the text |
@@ -165,9 +171,9 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 
 ## Agent guidance
 
-- Prefer --json and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap.
+- Prefer `--json` and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap. Use the returned goal ID and revision; run `list` only when later work needs current roadmap state.
 - Do not run list only to verify a successful mutation; use the exact goal ID and revision in its receipt.
-- Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill setup guidance but never installs it.
+- Use init only as the AGENTS.md fallback for a harness that does not support Agent Skills; it writes or refreshes only the marker-delimited Stepstone block and does not install or recommend another guidance surface.
 - Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.
 - Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.

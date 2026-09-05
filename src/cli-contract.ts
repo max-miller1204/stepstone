@@ -132,8 +132,11 @@ export const AGENTS_BLOCK_END = "<!-- stepstone:project-goals:end -->";
 /** Published companion executable that runs the resumable dispatch contract. */
 export const DISPATCH_BINARY = `${BINARY}-dispatch`;
 
-/** Canonical optional skill installation offered by `project init`, but never executed by it. */
+/** Canonical installation command for the preferred Agent Skill guidance. */
 export const SKILL_INSTALL_COMMAND = `npx skills add max-miller1204/${BINARY} --skill ${BINARY} -g`;
+
+const JSON_OUTPUT_GUIDANCE =
+	"Prefer `--json` and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap. Use the returned goal ID and revision; run `list` only when later work needs current roadmap state.";
 
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
@@ -145,7 +148,16 @@ export const CLI_COMMAND_CONTRACT = {
 	 * repository-neutral: one skill file serves every checkout, so it must never
 	 * assume it was installed alongside this source tree.
 	 */
-	skillDescription: `Manage ${BINARY} Project Goals (the roadmap committed in a repo's ${WORKLIST_RELATIVE_PATH}) from any agent session. Use when the user asks to initialize Stepstone guidance in AGENTS.md; add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; prepare and claim isolated workspaces for an approved plan; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
+	skillDescription: `Manage ${BINARY} Project Goals (the roadmap committed in a repo's ${WORKLIST_RELATIVE_PATH}) from any agent session. Use when the user asks to add, list, find, update, activate, complete, reopen, archive, or delete a project goal; apply a JSON goal plan; migrate goal IDs; capture brainstormed ideas or future goals on a project's worklist or roadmap; prepare and claim isolated workspaces for an approved plan; or ask what to work on next, what is ready or unblocked, what can run in parallel, or how the roadmap's dependency order or waves look.`,
+	onboarding: {
+		skill: `Install the Agent Skill as the preferred guidance surface when the harness supports skills: \`${SKILL_INSTALL_COMMAND}\`.`,
+		fallback: `If the harness does not support skills but reads AGENTS.md, use \`npx -y ${BINARY}@latest project init\` as the alternative fallback.`,
+		agentsBlock:
+			"This generated AGENTS.md block is fallback guidance for a harness that does not support Agent Skills.",
+		exclusive:
+			"Use one guidance surface for a repository. Do not install the Agent Skill and the generated AGENTS.md block together.",
+	},
+	jsonOutputGuidance: JSON_OUTPUT_GUIDANCE,
 	runtime: {
 		/** Node floor for the published compiled bin. Asserted against package.json engines.node. */
 		binaryNodeFloor: "20",
@@ -156,7 +168,7 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "init",
 			usage: "init",
-			summary: `Write or refresh the generated ${BINARY} block in the repository root's AGENTS.md`,
+			summary: `Write or refresh the fallback ${BINARY} block in the repository root's AGENTS.md`,
 		},
 		{
 			name: "list",
@@ -513,9 +525,9 @@ export const CLI_COMMAND_CONTRACT = {
 		{ code: 4, meaning: "conflict" },
 	] satisfies CliExitCodeContract[],
 	agentGuidelines: [
-		"Prefer --json and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap.",
+		JSON_OUTPUT_GUIDANCE,
 		"Do not run list only to verify a successful mutation; use the exact goal ID and revision in its receipt.",
-		"Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill setup guidance but never installs it.",
+		"Use init only as the AGENTS.md fallback for a harness that does not support Agent Skills; it writes or refreshes only the marker-delimited Stepstone block and does not install or recommend another guidance surface.",
 		"Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
 		"Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.",
@@ -549,7 +561,6 @@ export function renderAgentsMarkdownBlock(): string {
 	const contract = CLI_COMMAND_CONTRACT;
 	const publishedInvocation = `npx -y ${contract.binary}@latest ${contract.scope}`;
 	const confirmed = contract.actions.filter((action) => action.confirmRequired);
-	const interactive = contract.actions.filter((action) => action.interactive);
 	const migrationActions = confirmed.filter((action) => action.name.startsWith("migrate_"));
 	const lifecycleActions = confirmed.filter((action) => !action.name.startsWith("migrate_"));
 	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
@@ -558,27 +569,15 @@ export function renderAgentsMarkdownBlock(): string {
 		"",
 		`## ${contract.binary} Project Goals`,
 		"",
+		contract.onboarding.agentsBlock,
+		contract.onboarding.exclusive,
 		`Project Goals are the repository's shared roadmap for humans and coding agents. Store them in \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, commit them with the code, and use the CLI rather than editing the JSON by hand so validation, locking, and atomic writes remain intact.`,
-		`Capture plan entry shape: \`{"title":"required broad outcome","description":"optional context","group":"optional section","dependsOn":["optional goal reference"]}\`. No other fields are accepted.`,
-		`Run \`${publishedInvocation} <action> [arguments] [flags]\` inside the target Git repository, or pass \`--cwd <dir>\`. Goal-file overrides (\`--file\` and \`$${WORKLIST_PATH_ENV}\`) follow the documented location order; they never change the \`<git-root>/AGENTS.md\` target of \`project init\`.`,
-		"",
-		"Command surface:",
-		"",
-		"```text",
-		...contract.actions.map((action) => action.usage),
-		"```",
-		`Flags: ${contract.flags
-			.map((flag) => {
-				const scope = flagActionScope(flag);
-				return `\`${flag.usage}\`${scope ? ` (${scope})` : ""}`;
-			})
-			.join(", ")}.`,
-		"JSON result rule: Project mutations return bounded receipts, not the full roadmap. Use the returned goal ID and revision; run `list` only when later work needs current roadmap state.",
-		"",
+		`Run \`${publishedInvocation} <action> [arguments] [flags]\` inside the target Git repository, or pass \`--cwd <dir>\`.`,
+		contract.jsonOutputGuidance,
 		`Confirmation guardrail: ${actionNameList(lifecycleActions)} and the mutating forms of ${actionNameList(migrationActions)} require \`--confirm\`; migration \`--dry-run\` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.`,
+		`Capture plan entry shape: \`{"title":"required broad outcome","description":"optional context","group":"optional section","dependsOn":["optional goal reference"]}\`. No other fields are accepted.`,
 		`Capture workflow: ${captureWorkflow.steps.join(" ")}`,
-		`Human-only command: ${actionNameList(interactive)} requires an interactive terminal; agents must not run it.`,
-		`Exit codes: ${contract.exitCodes.map(({ code, meaning }) => `\`${code}\` ${meaning}`).join("; ")}.`,
+		`Run \`${publishedInvocation} help\` for the command and flag reference, action scopes, and exit codes.`,
 		"",
 		AGENTS_BLOCK_END,
 	].join("\n");
@@ -737,6 +736,12 @@ export function renderSkillMarkdown(): string {
 		"",
 		`# Managing ${contract.binary} Project Goals`,
 		"",
+		"## Guidance installation",
+		"",
+		`- ${contract.onboarding.skill}`,
+		`- ${contract.onboarding.fallback}`,
+		`- ${contract.onboarding.exclusive}`,
+		"",
 		`Project Goals are a repository-wide roadmap stored in \`<git-root>/${WORKLIST_RELATIVE_PATH}\` and committed with the code, so every agent and every human working in that repository reads and edits one list.`,
 		"Never edit that file directly: another process may hold the cross-process lock, and direct edits bypass validation, ID generation, and timestamps.",
 		`Always go through the ${contract.binary} CLI, which routes every mutation through the same application service, cross-process lock, and atomic replacement as every other interface onto that file.`,
@@ -869,6 +874,12 @@ export function renderCliGuide(): string {
 		`# ${contract.binary} CLI`,
 		"",
 		contract.intro,
+		"",
+		"## Agent guidance installation",
+		"",
+		`- ${contract.onboarding.skill}`,
+		`- ${contract.onboarding.fallback}`,
+		`- ${contract.onboarding.exclusive}`,
 		"",
 		"## Invocation",
 		"",
