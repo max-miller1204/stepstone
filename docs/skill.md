@@ -1,7 +1,8 @@
 <!-- markdownlint-disable MD013 -->
 
-# The agent skill
+# The Agent Skill
 
+The Agent Skill is the preferred Stepstone guidance surface for harnesses that support skills.
 A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
 It carries the action and flag surface, the description-input rules, the sequencing reads, the exit-code meanings, the brainstorm-to-approved-plan capture workflow, the rules for dispatching an approved plan, and the rule that a lifecycle action needs an explicit request from the user.
 Its dispatch section sends an agent to the published `stepstone-dispatch` driver to prepare and claim workspaces for an approved run, tells the agent to read the ignored root `STEPSTONE_GOAL.md` handoff, makes clear that Stepstone never launches or prompts a harness, states the standing consent that run carries to complete its own goals once their PRs merge, and names [docs/dispatch.md](dispatch.md) for workspace and recovery details.
@@ -14,6 +15,9 @@ npx skills add max-miller1204/stepstone --skill stepstone -g
 
 Drop `-g` to install it for the current project only, or add `-a claude-code` to target one agent instead of choosing interactively.
 The [`skills` CLI](https://github.com/vercel-labs/skills) reads `.claude/skills/` directly from this repository, symlinks it into each agent's skill directory, and refreshes it later with `npx skills update`.
+
+Do not also run `project init` in the same repository.
+That command installs a compact `AGENTS.md` fallback for harnesses that cannot load skills; it is an alternative, not a prerequisite.
 
 Installing the npm package does not install the skill.
 The tarball carries `.claude/skills/stepstone/SKILL.md` so the published package stays self-describing, but `node_modules` is not a directory agents scan for skills.

@@ -20,7 +20,6 @@ import {
 	AGENTS_BLOCK_END,
 	AGENTS_BLOCK_START,
 	renderAgentsMarkdownBlock,
-	SKILL_INSTALL_COMMAND,
 	WORKLIST_PATH_ENV,
 } from "../src/cli-contract.ts";
 
@@ -70,7 +69,7 @@ function markerCount(contents: string, marker: string): number {
 }
 
 describe("project init AGENTS.md generation", () => {
-	it("targets --cwd while ignoring --file and STEPSTONE_WORKLIST, then offers skill setup", async () => {
+	it("targets --cwd while ignoring --file and STEPSTONE_WORKLIST without offering another surface", async () => {
 		const root = await tempGitRepo();
 		const caller = await mkdtemp(join(tmpdir(), "stepstone-agents-caller-"));
 		const explicitWorklist = join(caller, "explicit.json");
@@ -88,17 +87,11 @@ describe("project init AGENTS.md generation", () => {
 		expect(await doesNotExist(environmentWorklist)).toBe(true);
 		expect(await doesNotExist(join(caller, "home", ".claude"))).toBe(true);
 		const envelope = parseEnvelope<{
-			result: {
-				agentsPath: string;
-				integrations: {
-					skill: { command: string };
-				};
-			};
+			result: { agentsPath: string; integrations?: unknown };
 			meta: { changed: boolean; semanticNoOp: boolean; cliVersion: string };
 		}>(result.stdout);
 		expect(envelope.result.agentsPath).toBe(join(root, "AGENTS.md"));
-		expect(envelope.result.integrations.skill.command).toBe(SKILL_INSTALL_COMMAND);
-		expect(Object.keys(envelope.result.integrations)).toEqual(["skill"]);
+		expect(envelope.result.integrations).toBeUndefined();
 		// init reports through the same envelope boundary as every other action, so
 		// the metadata the CLI stamps for all of them has to reach this one too.
 		const manifest = JSON.parse(await readFile(resolve("package.json"), "utf8")) as { version: string };
@@ -122,10 +115,9 @@ describe("project init AGENTS.md generation", () => {
 		expect(written).toBe(`${original}\n\n${renderAgentsMarkdownBlock()}\n`);
 		expect(markerCount(written, AGENTS_BLOCK_START)).toBe(1);
 		expect(markerCount(written, AGENTS_BLOCK_END)).toBe(1);
-		expect(result.stdout).toContain(SKILL_INSTALL_COMMAND);
-		expect(result.stdout).toContain("Optional integration was not installed:");
-		expect(result.stdout).toContain("Choose the skill installation scope for your harness.");
-		expect(result.stdout).not.toContain("--package");
+		expect(result.stdout).toContain("fallback guidance");
+		expect(result.stdout).toContain("Do not install the Agent Skill");
+		expect(result.stdout).not.toContain("npx skills add");
 		expect(result.stdout).not.toMatch(/MCP|Claude Code plugin/i);
 	});
 
