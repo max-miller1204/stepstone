@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 22 open, 44 done, 4 archived.
+70 goals: 21 open, 45 done, 4 archived.
 
 ## Orchestrator
 
@@ -238,7 +238,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Make the stepstone CLI the sole cross-harness capability transport. Remove the stepstone-mcp executable, MCP server and adapter, protocol metadata, tests, documentation, packaging exercises, and MCP-only runtime dependencies. Retire the Claude Code plugin and its generated skill copy, MCP declaration, and slash commands because the standalone Agent Skill and CLI provide the supported workflow without a client-specific adapter. Preserve the terminal board, Pi extension, shared application service, roadmap format, locking, and confirmation guardrails. No worklist data migration is required.
 
-- **[open]** Remove init and make Agent Skill onboarding explicit - `make-skill-first-onboarding-explicit`
+- **[done]** Remove init and make Agent Skill onboarding explicit - `make-skill-first-onboarding-explicit`
 
   Remove the `project init` command and its generated `AGENTS.md` fallback. Make the standalone Agent Skill the primary setup for harnesses that support skills. Remove the AGENTS writer, generated block renderer, init-specific result fields, command contract entries, tests, and documentation. Keep direct CLI use and the optional Pi extension clear. Continue to generate the CLI reference and Agent Skill from `src/cli-contract.ts`.
 

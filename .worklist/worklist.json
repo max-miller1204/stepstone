@@ -577,9 +577,10 @@
 			"description": "Remove the `project init` command and its generated `AGENTS.md` fallback. Make the standalone Agent Skill the primary setup for harnesses that support skills. Remove the AGENTS writer, generated block renderer, init-specific result fields, command contract entries, tests, and documentation. Keep direct CLI use and the optional Pi extension clear. Continue to generate the CLI reference and Agent Skill from `src/cli-contract.ts`.",
 			"group": "Harness",
 			"dependsOn": ["retire-mcp-and-claude-plugin-surfaces"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-14T19:52:07.371Z",
-			"updatedAt": "2026-09-06T23:12:19.535Z"
+			"updatedAt": "2026-09-06T23:20:41.105Z",
+			"completedAt": "2026-09-06T23:20:41.105Z"
 		},
 		{
 			"id": "deterministic-local-quality-gates",
@@ -740,5 +741,5 @@
 			"updatedAt": "2026-08-18T22:17:01.718Z"
 		}
 	],
-	"revision": 304
+	"revision": 305
 }
