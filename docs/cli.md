@@ -24,7 +24,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 - An explicit `--file` or `$STEPSTONE_WORKLIST` path outside those two committed roadmap locations remains writable from a linked worktree.
 - When both files exist the current path wins and every goal operation warns, because quietly ignoring a populated `.pi/worklist.json` would look exactly like data loss. Merge them by hand; no command picks a winner for you.
 - With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.
-- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`, for goal operations. `init` ignores both overrides and always writes `<git-root>/AGENTS.md` in the repository selected by `--cwd`.
+- `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`.
 - `migrate_path` moves a legacy file to `.worklist/worklist.json` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.
 - `migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.
 
@@ -32,7 +32,6 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 
 | Command | Description |
 | --- | --- |
-| `npx -y stepstone@latest project init` | Write or refresh the generated stepstone block in the repository root's AGENTS.md |
 | `npx -y stepstone@latest project list` | Show a compact bounded list of project goals |
 | `npx -y stepstone@latest project show <id>` | Show one goal with its full description |
 | `npx -y stepstone@latest project find <text...>` | List the goals whose title or description contains the text |
@@ -61,7 +60,7 @@ Every `--json` result envelope reports the running package version as `meta.cliV
 | `--json` | Print the deterministic result envelope as JSON (stdout on success, stderr on failure) |
 | `--confirm` | Acknowledge an action that requires confirmation; pass it only for an explicit user request |
 | `--cwd <dir>` | Resolve the git root from this directory instead of the working directory |
-| `--file <path>` | Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST; ignored by init, whose target is always the repository root's AGENTS.md |
+| `--file <path>` | Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST |
 | `--description <text>` | Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update |
 | `--append-description <text>` | Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update |
 | `--append` | Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update |
@@ -167,7 +166,6 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 
 - Prefer --json and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap.
 - Do not run list only to verify a successful mutation; use the exact goal ID and revision in its receipt.
-- Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill setup guidance but never installs it.
 - Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.
 - Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.

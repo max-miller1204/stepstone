@@ -1,10 +1,9 @@
 /**
  * The single command contract for the stepstone CLI.
  *
- * CLI usage text, the command reference in docs/cli.md, the installable agent
- * skill, and the marker-delimited block `project init` writes into a repository's
- * AGENTS.md are all rendered from this structure so they cannot drift from each
- * other or the implemented surface.
+ * CLI usage text, the command reference in docs/cli.md, and the installable
+ * Agent Skill are all rendered from this structure so they cannot drift from
+ * each other or the implemented surface.
  */
 
 export interface CliActionContract {
@@ -116,24 +115,8 @@ export const DISPATCH_DOCS_PATH = "docs/dispatch.md";
  */
 export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 
-/**
- * Stable delimiters around the only bytes Stepstone owns in a repository's AGENTS.md.
- *
- * These two strings spell the name as frozen literal text rather than reading it
- * from `BINARY`, and they are the one deliberate exception to naming the
- * published package from the contract: `init` has already written them into
- * other repositories' files, and a rename that moved them would leave a later
- * `init` unable to find the block it wrote, appending a second one beside a
- * stale copy nothing refreshes again. A rename leaves these two strings alone.
- */
-export const AGENTS_BLOCK_START = "<!-- stepstone:project-goals:start -->";
-export const AGENTS_BLOCK_END = "<!-- stepstone:project-goals:end -->";
-
 /** Published companion executable that runs the resumable dispatch contract. */
 export const DISPATCH_BINARY = `${BINARY}-dispatch`;
-
-/** Canonical optional skill installation offered by `project init`, but never executed by it. */
-export const SKILL_INSTALL_COMMAND = `npx skills add max-miller1204/${BINARY} --skill ${BINARY} -g`;
 
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
@@ -153,11 +136,6 @@ export const CLI_COMMAND_CONTRACT = {
 		sourceNodeFloor: "22.18",
 	},
 	actions: [
-		{
-			name: "init",
-			usage: "init",
-			summary: `Write or refresh the generated ${BINARY} block in the repository root's AGENTS.md`,
-		},
 		{
 			name: "list",
 			usage: "list",
@@ -307,7 +285,7 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "--file",
 			usage: "--file <path>",
-			summary: `Read and write this goal file instead of the one the repository resolves to, overriding $${WORKLIST_PATH_ENV}; ignored by init, whose target is always the repository root's AGENTS.md`,
+			summary: `Read and write this goal file instead of the one the repository resolves to, overriding $${WORKLIST_PATH_ENV}`,
 		},
 		{
 			name: "--description",
@@ -394,7 +372,7 @@ export const CLI_COMMAND_CONTRACT = {
 		`An explicit \`--file\` or \`$${WORKLIST_PATH_ENV}\` path outside those two committed roadmap locations remains writable from a linked worktree.`,
 		`When both files exist the current path wins and every goal operation warns, because quietly ignoring a populated \`${LEGACY_WORKLIST_RELATIVE_PATH}\` would look exactly like data loss. Merge them by hand; no command picks a winner for you.`,
 		"With `--json` that warning moves into the envelope as `meta.shadowedWorklistPath`, naming the file being passed over, because stderr carries the failure envelope and prose in front of it would leave nothing to parse.",
-		`\`--file\` and \`$${WORKLIST_PATH_ENV}\` are resolved from the process working directory, independently of \`--cwd\`, for goal operations. \`init\` ignores both overrides and always writes \`<git-root>/AGENTS.md\` in the repository selected by \`--cwd\`.`,
+		`\`--file\` and \`$${WORKLIST_PATH_ENV}\` are resolved from the process working directory, independently of \`--cwd\`.`,
 		`\`migrate_path\` moves a legacy file to \`${WORKLIST_RELATIVE_PATH}\` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.`,
 		"`migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.",
 	],
@@ -515,7 +493,6 @@ export const CLI_COMMAND_CONTRACT = {
 	agentGuidelines: [
 		"Prefer --json and read the deterministic result envelope instead of parsing human output; project mutations return bounded receipts rather than the complete roadmap.",
 		"Do not run list only to verify a successful mutation; use the exact goal ID and revision in its receipt.",
-		"Use init to write or refresh only the marker-delimited Stepstone block in the target repository's AGENTS.md; it prints optional skill setup guidance but never installs it.",
 		"Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
 		"Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.",
@@ -537,52 +514,6 @@ export const CLI_COMMAND_CONTRACT = {
 		"Pass --expect-updated-at with the updatedAt from your own read whenever you change a goal, so your mutation conflicts if the goal changed in the meantime.",
 	],
 } as const;
-
-/**
- * Compact repository-neutral instructions for harnesses that read AGENTS.md.
- *
- * This is intentionally shorter than the load-on-demand skill: AGENTS.md is
- * present in every turn's context, so it carries the contract rather than its
- * narrative and examples.
- */
-export function renderAgentsMarkdownBlock(): string {
-	const contract = CLI_COMMAND_CONTRACT;
-	const publishedInvocation = `npx -y ${contract.binary}@latest ${contract.scope}`;
-	const confirmed = contract.actions.filter((action) => action.confirmRequired);
-	const interactive = contract.actions.filter((action) => action.interactive);
-	const migrationActions = confirmed.filter((action) => action.name.startsWith("migrate_"));
-	const lifecycleActions = confirmed.filter((action) => !action.name.startsWith("migrate_"));
-	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
-	return [
-		AGENTS_BLOCK_START,
-		"",
-		`## ${contract.binary} Project Goals`,
-		"",
-		`Project Goals are the repository's shared roadmap for humans and coding agents. Store them in \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, commit them with the code, and use the CLI rather than editing the JSON by hand so validation, locking, and atomic writes remain intact.`,
-		`Capture plan entry shape: \`{"title":"required broad outcome","description":"optional context","group":"optional section","dependsOn":["optional goal reference"]}\`. No other fields are accepted.`,
-		`Run \`${publishedInvocation} <action> [arguments] [flags]\` inside the target Git repository, or pass \`--cwd <dir>\`. Goal-file overrides (\`--file\` and \`$${WORKLIST_PATH_ENV}\`) follow the documented location order; they never change the \`<git-root>/AGENTS.md\` target of \`project init\`.`,
-		"",
-		"Command surface:",
-		"",
-		"```text",
-		...contract.actions.map((action) => action.usage),
-		"```",
-		`Flags: ${contract.flags
-			.map((flag) => {
-				const scope = flagActionScope(flag);
-				return `\`${flag.usage}\`${scope ? ` (${scope})` : ""}`;
-			})
-			.join(", ")}.`,
-		"JSON result rule: Project mutations return bounded receipts, not the full roadmap. Use the returned goal ID and revision; run `list` only when later work needs current roadmap state.",
-		"",
-		`Confirmation guardrail: ${actionNameList(lifecycleActions)} and the mutating forms of ${actionNameList(migrationActions)} require \`--confirm\`; migration \`--dry-run\` previews do not. Pass confirmation only when the user explicitly requested that exact action and, for an action naming a goal, that exact goal. Exit code 3 means stop and ask rather than retrying with confirmation.`,
-		`Capture workflow: ${captureWorkflow.steps.join(" ")}`,
-		`Human-only command: ${actionNameList(interactive)} requires an interactive terminal; agents must not run it.`,
-		`Exit codes: ${contract.exitCodes.map(({ code, meaning }) => `\`${code}\` ${meaning}`).join("; ")}.`,
-		"",
-		AGENTS_BLOCK_END,
-	].join("\n");
-}
 
 function padUsage(usage: string): string {
 	return usage.length >= 41 ? `${usage}\n${" ".repeat(43)}` : usage.padEnd(41);

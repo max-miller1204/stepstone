@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename, resolve } from "node:path";
-import { AGENTS_PATH, AgentsBlockError, type AgentsRefreshResult, refreshAgentsFile } from "./agents.ts";
+import { basename } from "node:path";
 import {
 	projectGoalSelectionError,
 	projectRootUnavailableError,
@@ -16,7 +15,6 @@ import {
 	CLI_COMMAND_CONTRACT,
 	type CliFlagContract,
 	renderCliUsage,
-	SKILL_INSTALL_COMMAND,
 	WORKLIST_PATH_ENV,
 } from "./cli-contract.ts";
 import {
@@ -834,75 +832,6 @@ function withCliMetadata(envelope: WorklistApplicationResult): CliResultEnvelope
 	};
 }
 
-function isRetryableAgentsError(error: unknown): boolean {
-	if (!error || typeof error !== "object" || !("code" in error)) return false;
-	return ["ELOCKED", "EBUSY", "ETIMEDOUT"].includes(String(error.code));
-}
-async function runInit(invocation: CliInvocation): Promise<void> {
-	if (invocation.rest.length > 0 || invocation.description !== undefined) {
-		fail(`project init accepts no arguments\n\n${USAGE}`, 2);
-	}
-	const root = resolveRepositoryRoot(invocation);
-	const agentsPath = resolve(root, AGENTS_PATH);
-	let refreshed: AgentsRefreshResult;
-	try {
-		refreshed = await refreshAgentsFile(root);
-	} catch (error) {
-		const markerProblem = error instanceof AgentsBlockError ? error.problem : undefined;
-		throw new WorklistCliFailure({
-			ok: false,
-			scope: "project",
-			action: "init",
-			error: {
-				code: markerProblem
-					? WORKLIST_ERROR_CODES.VALIDATION_FAILED
-					: WORKLIST_ERROR_CODES.PERSISTENCE_FAILED,
-				message: error instanceof Error ? error.message : `Cannot refresh ${agentsPath}: ${String(error)}`,
-				retryable: isRetryableAgentsError(error),
-				details: { agentsPath, ...(markerProblem ? { markerProblem } : {}) },
-			},
-			meta: { changed: false, semanticNoOp: false, changedFields: [] },
-		});
-	}
-
-	const envelope: WorklistApplicationResult = {
-		ok: true,
-		scope: "project",
-		action: "init",
-		result: {
-			scope: "project",
-			action: "init",
-			agentsPath: refreshed.path,
-			integrations: {
-				skill: {
-					command: SKILL_INSTALL_COMMAND,
-					guidance:
-						"This command installs globally. Remove `-g` to choose project-local installation instead.",
-				},
-			},
-		},
-		meta: {
-			changed: refreshed.changed,
-			semanticNoOp: !refreshed.changed,
-			changedFields: [],
-		},
-	};
-	const status = refreshed.changed
-		? `Refreshed the Stepstone block in ${refreshed.path}.`
-		: `The Stepstone block in ${refreshed.path} is already up to date.`;
-	report(
-		invocation,
-		envelope,
-		[
-			status,
-			"",
-			"Optional integration was not installed:",
-			`Skill installation: ${SKILL_INSTALL_COMMAND}`,
-			"Choose the skill installation scope for your harness.",
-		].join("\n"),
-	);
-}
-
 async function runLifecycle(
 	invocation: CliInvocation,
 	service: WorklistApplicationService,
@@ -1152,10 +1081,6 @@ async function run(invocation: CliInvocation): Promise<void> {
 	validateFlagActions(invocation);
 	if (invocation.action === "help") {
 		process.stdout.write(`${USAGE}\n`);
-		return;
-	}
-	if (invocation.action === "init") {
-		await runInit(invocation);
 		return;
 	}
 	const location = resolveProjectLocation(invocation);
