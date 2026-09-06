@@ -1078,6 +1078,9 @@ async function run(invocation: CliInvocation): Promise<void> {
 		}
 		fail(`Unknown scope ${invocation.scope}\n\n${USAGE}`, 2);
 	}
+	if (!CLI_COMMAND_CONTRACT.actions.some((action) => action.name === invocation.action)) {
+		fail(`Unknown project action ${invocation.action}\n\n${USAGE}`, 2);
+	}
 	validateFlagActions(invocation);
 	if (invocation.action === "help") {
 		process.stdout.write(`${USAGE}\n`);

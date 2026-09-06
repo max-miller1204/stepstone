@@ -738,5 +738,12 @@ describe("single CLI command contract", () => {
 				execFileAsync(process.execPath, [resolve("src/cli.ts"), "project", action], { cwd: root }),
 			).rejects.toMatchObject({ code: 2 });
 		}
+
+		const outsideRepository = await mkdtemp(join(tmpdir(), "stepstone-cli-no-repository-"));
+		await expect(
+			execFileAsync(process.execPath, [resolve("src/cli.ts"), "project", "init"], {
+				cwd: outsideRepository,
+			}),
+		).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("Unknown project action init") });
 	});
 });
