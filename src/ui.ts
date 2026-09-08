@@ -35,26 +35,6 @@ export function buildWidgetLines(tasks: SessionTask[], goals: ProjectGoal[]): st
 	return lines;
 }
 
-export function buildPromptSummary(tasks: SessionTask[], goals: ProjectGoal[], maxItems = 8): string {
-	const active = goals.find((goal) => goal.status === "active");
-	const pending = tasks.filter((task) => task.status !== "done").slice(0, maxItems);
-	if (!active && pending.length === 0) return "";
-	const lines = ["[WORKLIST]"];
-	if (active) {
-		const description = active.description ? ` - ${compactDescription(active.description)}` : "";
-		lines.push(`Active project goal: ${compactDescription(active.title)}${description}`);
-	}
-	if (pending.length) {
-		lines.push("Incomplete session tasks:");
-		for (const task of pending) {
-			lines.push(`- [${task.status === "doing" ? "doing" : "todo"}] ${compactDescription(task.title)}`);
-		}
-	}
-	const remaining = tasks.filter((task) => task.status !== "done").length - pending.length;
-	if (remaining > 0) lines.push(`- ...and ${remaining} more`);
-	return lines.join("\n");
-}
-
 export type DashboardAction =
 	| { kind: "close" }
 	| { kind: "view"; scope: "session" | "project"; id: string }
