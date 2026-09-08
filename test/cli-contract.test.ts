@@ -5,14 +5,11 @@ import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
-	AGENTS_BLOCK_END,
-	AGENTS_BLOCK_START,
 	CLI_COMMAND_CONTRACT,
 	type CliFlagContract,
 	DOCS_PATH,
 	flagActionScope,
 	LEGACY_WORKLIST_DIRECTORY,
-	renderAgentsMarkdownBlock,
 	renderCliGuide,
 	renderCliUsage,
 	renderSkillMarkdown,
@@ -259,10 +256,8 @@ function tableCells(row: string): string[] {
  * end of that entry.
  *
  * An entry ends at the line break or at the next flag's usage, whichever comes
- * first, because the compact AGENTS.md block lists every flag on a single line
- * while the other surfaces give each one its own line. Anchoring this way is
- * what makes a per-flag assertion mean anything: several flags word their
- * action limit identically, so a check against the whole surface still passes
+ * first. Anchoring this way makes a per-flag assertion useful. Several flags
+ * word their action limit identically, so a check against the whole surface still passes
  * after one flag loses its annotation. A usage that merely prefixes a longer
  * flag name is not an entry for it, which keeps `--append` from matching inside
  * `--append-description`.
@@ -336,8 +331,6 @@ describe("single CLI command contract", () => {
 		for (const rule of CLI_COMMAND_CONTRACT.resultRules) {
 			for (const surface of [renderSkillMarkdown(), renderCliGuide()]) expect(surface).toContain(rule);
 		}
-		expect(renderAgentsMarkdownBlock()).toContain("mutations return bounded receipts");
-		expect(renderAgentsMarkdownBlock()).toContain("run `list` only when later work needs");
 	});
 
 	it("propagates the single capture workflow to every agent-facing renderer", () => {
@@ -349,7 +342,7 @@ describe("single CLI command contract", () => {
 		if (!action?.captureWorkflow) throw new Error("apply-plan capture workflow is missing");
 		expect(action.name).toBe("apply-plan");
 
-		const surfaces = [renderSkillMarkdown(), renderAgentsMarkdownBlock(), renderCliGuide()];
+		const surfaces = [renderSkillMarkdown(), renderCliGuide()];
 		for (const step of action.captureWorkflow.steps) {
 			for (const surface of surfaces) expect(surface).toContain(step);
 		}
@@ -375,42 +368,6 @@ describe("single CLI command contract", () => {
 				`\`${action.name}\` is ${unconditionallySafe.has(action.name) ? "" : "not "}listed as unconditionally safe`,
 			).toBe(!gated && !owned);
 		}
-	});
-
-	it("derives the repository-neutral AGENTS.md block from the same contract", async () => {
-		expect(AGENTS_BLOCK_START).toBe("<!-- stepstone:project-goals:start -->");
-		expect(AGENTS_BLOCK_END).toBe("<!-- stepstone:project-goals:end -->");
-		const block = renderAgentsMarkdownBlock();
-		expect(block).toContain("shared roadmap");
-		expect(block.startsWith(AGENTS_BLOCK_START)).toBe(true);
-		expect(block.endsWith(AGENTS_BLOCK_END)).toBe(true);
-		expect(block).toContain(`<git-root>/${WORKLIST_DIRECTORY}/${WORKLIST_FILENAME}`);
-		expect(block).toContain("--file");
-		expect(block).toContain(`$${WORKLIST_PATH_ENV}`);
-		expect(absolutePathsIn(block)).toEqual([]);
-		for (const action of CLI_COMMAND_CONTRACT.actions) {
-			expect(block, `AGENTS.md is missing action usage \`${action.usage}\``).toContain(action.usage);
-		}
-		for (const flag of CLI_COMMAND_CONTRACT.flags) {
-			expect(block, `AGENTS.md is missing flag usage \`${flag.usage}\``).toContain(flag.usage);
-		}
-		for (const action of CLI_COMMAND_CONTRACT.actions.filter((entry) => entry.confirmRequired)) {
-			expect(block, `AGENTS.md is missing confirmation guardrail for ${action.name}`).toContain(
-				`\`${action.name}\``,
-			);
-		}
-		for (const { code, meaning } of CLI_COMMAND_CONTRACT.exitCodes) {
-			expect(block).toContain(`\`${code}\` ${meaning}`);
-		}
-
-		const committed = await readFile(resolve("AGENTS.md"), "utf8");
-		const start = committed.indexOf(AGENTS_BLOCK_START);
-		const end = committed.indexOf(AGENTS_BLOCK_END);
-		expect(start, "AGENTS.md is missing the generated Stepstone block").toBeGreaterThanOrEqual(0);
-		expect(end, "AGENTS.md is missing the generated Stepstone block end").toBeGreaterThan(start);
-		expect(committed.slice(start, end + AGENTS_BLOCK_END.length)).toBe(block);
-		expect(committed.indexOf(AGENTS_BLOCK_START, start + AGENTS_BLOCK_START.length)).toBe(-1);
-		expect(committed.indexOf(AGENTS_BLOCK_END, end + AGENTS_BLOCK_END.length)).toBe(-1);
 	});
 
 	it("keeps every guide table two columns wide despite pipes in the contract's own wording", () => {
@@ -444,7 +401,6 @@ describe("single CLI command contract", () => {
 		const surfaces = {
 			[DOCS_PATH]: renderCliGuide(),
 			[SKILL_PATH]: renderSkillMarkdown(),
-			"the AGENTS.md block": renderAgentsMarkdownBlock(),
 		};
 		for (const [name, rendered] of Object.entries(surfaces)) {
 			expect(
@@ -462,7 +418,6 @@ describe("single CLI command contract", () => {
 			"the help output": renderCliUsage(),
 			[DOCS_PATH]: renderCliGuide(),
 			[SKILL_PATH]: renderSkillMarkdown(),
-			"the AGENTS.md block": renderAgentsMarkdownBlock(),
 		};
 		for (const flag of scoped) {
 			const actions = flag.actions ?? [];
@@ -743,7 +698,6 @@ describe("single CLI command contract", () => {
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
 		const documented = CLI_COMMAND_CONTRACT.actions.map((action) => action.name);
 		expect(documented).toEqual([
-			"init",
 			"list",
 			"show",
 			"find",
@@ -776,9 +730,20 @@ describe("single CLI command contract", () => {
 			expect(result.stdout.length).toBeGreaterThan(0);
 		}
 
-		// An undocumented action fails as a usage error, proving the switch and contract agree.
+		// Removed and undocumented actions fail as usage errors, proving the switch and contract agree.
+		for (const action of ["init", "undocumented"]) {
+			// Each invocation is independent; sequential execution keeps output readable.
+			// pi-lens-ignore: await-in-loop
+			await expect(
+				execFileAsync(process.execPath, [resolve("src/cli.ts"), "project", action], { cwd: root }),
+			).rejects.toMatchObject({ code: 2 });
+		}
+
+		const outsideRepository = await mkdtemp(join(tmpdir(), "stepstone-cli-no-repository-"));
 		await expect(
-			execFileAsync(process.execPath, [resolve("src/cli.ts"), "project", "undocumented"], { cwd: root }),
-		).rejects.toMatchObject({ code: 2 });
+			execFileAsync(process.execPath, [resolve("src/cli.ts"), "project", "init"], {
+				cwd: outsideRepository,
+			}),
+		).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining("Unknown project action init") });
 	});
 });

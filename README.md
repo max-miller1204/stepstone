@@ -12,41 +12,33 @@ Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to sta
 
 ## Install
 
-**Any coding harness.**
-Initialize or refresh the repository's [harness-neutral `AGENTS.md` guidance](docs/usage.md#initializing-agent-guidance), then install the optional Agent Skill if your client supports it:
-
-```sh
-npx -y stepstone@latest project init
-```
-
-The command changes only the stable marker-delimited Stepstone block in `<git-root>/AGENTS.md` and preserves every byte of authored guidance around it.
-It prints the canonical skill installation command, but it does not run an installer because installation scope depends on the harness.
-Run it inside the target repository or select one with `--cwd`; `--file` and `$STEPSTONE_WORKLIST` select goal storage for other actions and never redirect the `AGENTS.md` target.
-
-**Any shell, script, or coding agent.**
-There is nothing to install: the CLI runs from npm on demand, in any Git repository, with nothing present but Node.
-
-```sh
-npx -y stepstone@latest project list
-```
-
 **Agent Skill.**
-Install the [standalone skill](docs/skill.md) when your coding agent supports the [`skills` CLI](https://github.com/vercel-labs/skills):
+Install the [standalone Agent Skill](docs/skill.md) when your coding agent supports the [`skills` CLI](https://github.com/vercel-labs/skills):
 
 ```sh
 npx skills add max-miller1204/stepstone --skill stepstone -g
 ```
 
-**[Pi](https://pi.dev).**
-Install the [extension](docs/pi.md), which adds `/tasks`, a session widget, a model-facing tool, and Session Tasks:
+The skill teaches the agent the full workflow and invokes the CLI from npm when needed.
+Drop `-g` to install it only for the current project.
+
+**Any shell, script, or coding agent.**
+There is nothing to install. Run the CLI from npm on demand in any Git repository with Node:
+
+```sh
+npx -y stepstone@latest project list
+```
+
+**[Pi](https://pi.dev) extension.**
+Install the [extension](docs/pi.md) when you want `/tasks`, a session widget, a model-facing tool, and Session Tasks:
 
 ```sh
 pi install npm:stepstone
 ```
 
-Installing the npm package and installing the Agent Skill are separate choices.
-`npx -y stepstone@latest` and `pi install npm:stepstone` deliver the CLI and the Pi extension; neither installs the skill, which is guidance a harness loads from its own skills directory.
-See [docs/skill.md](docs/skill.md) for the distinction.
+The npm package and Agent Skill are separate installations.
+The package provides the CLI and Pi extension. The skill provides guidance that a harness loads from its skills directory.
+See [docs/skill.md](docs/skill.md) for details.
 
 ## Try it
 
