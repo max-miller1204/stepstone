@@ -10,7 +10,6 @@ import { readProjectWorklist } from "../src/project-store.ts";
 import { renderRoadmapMarkdown } from "../src/roadmap.ts";
 import type { ProjectGoal, SessionTask } from "../src/types.ts";
 import {
-	buildPromptSummary,
 	buildWidgetLines,
 	Dashboard,
 	type DashboardAction,
@@ -40,7 +39,7 @@ const identityTheme = {
 	bold: (text: string) => text,
 } as Theme;
 
-describe("widget and prompt summary", () => {
+describe("widget", () => {
 	it("caps the widget and hides completed tasks", () => {
 		const lines = buildWidgetLines(tasks, goals);
 		expect(lines).toHaveLength(6);
@@ -62,14 +61,6 @@ describe("widget and prompt summary", () => {
 		expect(lines).toEqual(["Goals: ○ 1 · ✓ 1 · ◌ 1"]);
 	});
 
-	it("caps prompt task detail", () => {
-		const summary = buildPromptSummary(tasks, goals, 2);
-		expect(summary).toContain("Ship v1 - Release the first stable version");
-		expect(summary).toContain("Task 1");
-		expect(summary).toContain("and 3 more");
-		expect(summary).not.toContain("Task 4");
-	});
-
 	it("preserves canonical relative order when completed tasks are filtered", () => {
 		const reordered = [tasks[4], tasks[0], tasks[2], tasks[1]];
 		expect(buildWidgetLines(reordered, []).map((line) => line.slice(2))).toEqual([
@@ -77,15 +68,10 @@ describe("widget and prompt summary", () => {
 			"Task 2",
 			"Task 1",
 		]);
-		const summary = buildPromptSummary(reordered, []);
-		expect(summary.indexOf("Task 4")).toBeLessThan(summary.indexOf("Task 2"));
-		expect(summary.indexOf("Task 2")).toBeLessThan(summary.indexOf("Task 1"));
-		expect(summary).not.toContain("Task 0");
 	});
 
 	it("hides an empty worklist", () => {
 		expect(buildWidgetLines([], [])).toEqual([]);
-		expect(buildPromptSummary([], [])).toBe("");
 	});
 });
 

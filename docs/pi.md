@@ -63,11 +63,25 @@ For a Session Task associated with a Project Goal, the detail window also shows 
 
 The full-screen [terminal goal board](board.md) is a separate, roadmap-only view that runs outside any session; the dashboard is the one that shows both lists.
 
-## The widget and the prompt
+## The widget and model context
 
 A compact widget marks the active Project Goal with the board's own active marker, reports the roadmap's per-status counts on a line of its own, and lists up to three unfinished Session Tasks, with a `+N more` line when the queue is longer.
 It appears whenever the repository has any Project Goals, so a roadmap with no active goal and an empty task queue still reports its shape.
-Only the active goal and an intentionally bounded list of incomplete task titles and statuses are added to the current turn's system prompt, preserving their relative queue order, so the session's state is present without the roadmap crowding the context.
+
+Stepstone does not put mutable Project Goal or Session Task text in the system prompt.
+It treats a committed roadmap as data that can come from another contributor, a checked-out branch, or automation.
+Before each model request, it resolves and reads the current roadmap again.
+It then adds one hidden custom message that Pi sends with user-message authority.
+The message is request-only, so it does not add stale copies to the session.
+It labels the content as untrusted data and encodes the active goal plus incomplete tasks as JSON.
+The model guidance tells the model to use these values only as work state and not as instructions.
+
+The projection keeps at most eight incomplete Session Tasks in their canonical order.
+It limits the active goal title to 256 JSON-encoded UTF-8 bytes, the active goal description to 1024 bytes, and each Session Task title to 192 bytes.
+The complete message, including its fixed warning and JSON structure, cannot exceed 4096 UTF-8 bytes.
+Truncation preserves Unicode grapheme boundaries, adds `… [truncated]` to a shortened value, lists each shortened field in `truncatedFields`, and reports tasks left out in `omittedIncompleteSessionTaskCount`.
+These limits apply only to model context.
+The stored roadmap, explicit detail reads, dashboard, and terminal board keep the complete values.
 
 ## Direct commands
 
