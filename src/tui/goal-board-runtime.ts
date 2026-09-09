@@ -198,7 +198,7 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 
 	const reload = async (): Promise<void> => {
 		relocate();
-		const envelope = await service.execute({ scope: "project", action: "list" }, { source: "cli" });
+		const envelope = await service.readProjectSnapshot("list");
 		if (!envelope.ok) {
 			board.setMessage(envelope.error.message, "error");
 			return;

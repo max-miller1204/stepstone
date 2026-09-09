@@ -480,6 +480,9 @@ describe("worklist application service", () => {
 			["clear", true, "use-project-start"],
 			["links", ["https://example.com/spec"], "remove-links"],
 			["group", "Foundation", "remove-group"],
+			["statuses", ["open"], "remove-statuses"],
+			["limit", 5, "remove-limit"],
+			["cursor", "opaque", "remove-cursor"],
 		] as const) {
 			// Each call shares the one session service, so they stay sequential.
 			// pi-lens-ignore: await-in-loop
@@ -890,7 +893,12 @@ describe("worklist application service", () => {
 		const listed = unwrapWorklistApplicationResult(
 			await service.execute({ scope: "project", action: "list" }, { source: "tool" }),
 		);
-		expect(listed.goals).toEqual([
+		expect(listed.projectGoalList?.goals).toEqual([
+			expect.objectContaining({ id: goalId, title: "Updated through dashboard" }),
+		]);
+		expect(listed).not.toHaveProperty("goals");
+		const snapshot = unwrapWorklistApplicationResult(await service.readProjectSnapshot("list"));
+		expect(snapshot.goals).toEqual([
 			expect.objectContaining({
 				id: goalId,
 				title: "Updated through dashboard",

@@ -1459,6 +1459,16 @@ describe("command parser", () => {
 		expect(parseTasksCommand("session update task-1 -- Replacement context")).toBeNull();
 	});
 
+	it("parses one Project Goal detail read", () => {
+		expect(parseTasksCommand("project show goal-1")).toEqual({
+			scope: "project",
+			action: "show",
+			id: "goal-1",
+		});
+		expect(parseTasksCommand("project show goal-1 extra")).toBeNull();
+		expect(parseTasksCommand("session show task-1")).toBeNull();
+	});
+
 	it("parses optional project goal descriptions", () => {
 		expect(parseTasksCommand("project add ship stable release -- Cover RPC and TUI usage")).toEqual({
 			scope: "project",

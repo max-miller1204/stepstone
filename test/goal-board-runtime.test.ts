@@ -116,7 +116,7 @@ async function openBoard(root: string, env: NodeJS.ProcessEnv = {}): Promise<Har
 	const output = new FakeOutput();
 	// From the service's own resolved list, the way `runInteractiveBoard` opens
 	// the board, rather than from a helper that names the current path itself.
-	const opening = await service.execute({ scope: "project", action: "list" }, { source: "cli" });
+	const opening = await service.readProjectSnapshot("list");
 	const initialGoals = (opening.ok ? opening.result.goals : undefined) ?? [];
 	const done = runGoalBoard({
 		service,

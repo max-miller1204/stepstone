@@ -6,8 +6,9 @@ import {
 	type WorklistOperation,
 	type WorklistOperationSource,
 } from "./application-service.ts";
-import { formatProjectGoals, formatSessionTasks } from "./format.ts";
+import { formatSessionTasks } from "./format.ts";
 import { createProjectRootLookup, type LocatedWorklist } from "./git.ts";
+import { formatProjectGoalListPage } from "./project-list-projection.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { WorklistOperationResult, WorklistToolDetails } from "./types.ts";
 
@@ -102,10 +103,26 @@ function formatSessionResult(operation: WorklistOperation, result: WorklistOpera
 	}
 }
 
+function formatProjectGoalDetail(result: WorklistOperationResult): string {
+	if (!result.goal) throw new Error("Project show did not return its goal.");
+	return JSON.stringify(
+		{
+			...result.goal,
+			blocked: result.blocked ?? false,
+			blocks: result.blocks ?? [],
+		},
+		null,
+		2,
+	);
+}
+
 function formatProjectResult(operation: WorklistOperation, result: WorklistOperationResult): string {
 	switch (operation.action) {
 		case "list":
-			return formatProjectGoals(result.goals ?? []);
+			if (!result.projectGoalList) throw new Error("Project list did not return a bounded page.");
+			return formatProjectGoalListPage(result.projectGoalList);
+		case "show":
+			return formatProjectGoalDetail(result);
 		case "add":
 			return `Added project goal ${result.goal?.id}: ${result.goal?.title}`;
 		case "apply-plan":
@@ -148,6 +165,17 @@ export async function executeWorklist(
 		content: formatResult(params, result),
 		details: result,
 	};
+}
+
+export function formatCollapsedProjectGoalList(result: WorklistOperationResult): string | undefined {
+	const page = result.projectGoalList;
+	if (!page) return undefined;
+	const counts = page.statusCounts.map(({ status, count }) => `${status} ${count}`).join(", ");
+	const lines = [`${page.total} project goal(s)${counts ? ` (${counts})` : ""}.`];
+	for (const goal of page.goals.slice(0, 3)) lines.push(`[${goal.status}] ${goal.id}: ${goal.title}`);
+	if (page.returned > 3) lines.push(`${page.returned - 3} more goal(s) in this page. Expand to view them.`);
+	if (page.omitted > 0) lines.push(`${page.omitted} matching goal(s) remain after this page.`);
+	return lines.join("\n");
 }
 
 export const WORKLIST_EXECUTION_MODE = "sequential" as ToolExecutionMode;

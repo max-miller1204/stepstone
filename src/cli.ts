@@ -763,8 +763,8 @@ async function readGoals(service: WorklistApplicationService): Promise<{
 	goals: ProjectGoal[];
 	meta: WorklistResultMeta;
 }> {
-	const envelope = await executeCliOperation(service, { scope: "project", action: "list" });
-	return { goals: (envelope.ok ? envelope.result.goals : undefined) ?? [], meta: envelope.meta };
+	const snapshot = await readProjectSnapshot(service, "list");
+	return { goals: snapshot.goals, meta: snapshot.meta };
 }
 
 async function readProjectSnapshot(
@@ -1048,7 +1048,8 @@ async function runInteractiveBoard(
 	}
 	// Surface a malformed or unreadable worklist through the normal failure path
 	// rather than opening an empty board over a file that could not be read.
-	const envelope = await executeCliOperation(service, { scope: "project", action: "list" });
+	const envelope = await service.readProjectSnapshot("list");
+	if (!envelope.ok) throw new WorklistCliFailure(envelope);
 	// Every other command resolves once and exits before the answer can go stale.
 	// The board holds the terminal until the user quits, so it is handed the
 	// resolution instead: a `migrate_path` in another terminal moves the goal

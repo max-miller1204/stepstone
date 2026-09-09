@@ -1,4 +1,9 @@
-import { formatDependencyCycle, unsatisfiedDependencies } from "./dependencies.ts";
+import {
+	dependentGoals,
+	formatDependencyCycle,
+	isGoalBlocked,
+	unsatisfiedDependencies,
+} from "./dependencies.ts";
 import {
 	type GitRootFailure,
 	gitFailureDetails,
@@ -12,6 +17,11 @@ import {
 	resolveGoalSelector,
 	type UnresolvedGoalSelector,
 } from "./goal-selection.ts";
+import {
+	ProjectGoalListCursorConflictError,
+	ProjectGoalListValidationError,
+	projectProjectGoalList,
+} from "./project-list-projection.ts";
 import {
 	activateProjectGoal,
 	addProjectGoal,
@@ -78,8 +88,14 @@ export interface WorklistOperation {
 	description?: string;
 	/** Project Goal only: append a paragraph instead of replacing the description. */
 	appendDescription?: string;
-	/** Project Goal only: the section it belongs to. The empty string clears it. */
+	/** Project Goal section. The empty string clears it on update or selects ungrouped goals on list. */
 	group?: string;
+	/** Project list only: statuses included in the bounded page. */
+	statuses?: ProjectGoalStatus[];
+	/** Project list only: requested maximum items in the bounded page. */
+	limit?: number;
+	/** Project list only: opaque continuation token from the preceding page. */
+	cursor?: string;
 	/** Project start only: branch claiming the goal. */
 	branch?: string;
 	/** Project start only: remove an existing branch claim instead of setting one. */
@@ -448,6 +464,9 @@ const PROJECT_ONLY_FIELDS = [
 	{ field: "description", resolution: "remove-description" },
 	{ field: "appendDescription", resolution: "remove-append-description" },
 	{ field: "group", resolution: "remove-group" },
+	{ field: "statuses", resolution: "remove-statuses" },
+	{ field: "limit", resolution: "remove-limit" },
+	{ field: "cursor", resolution: "remove-cursor" },
 	{ field: "dependsOn", resolution: "remove-depends-on" },
 	{ field: "links", resolution: "remove-links" },
 	{ field: "branch", resolution: "use-project-start" },
@@ -524,7 +543,7 @@ function normalizeDescriptionUpdate(operation: WorklistOperation): ProjectGoalUp
 	return { appendDescription };
 }
 
-const READ_ACTIONS = new Set(["list"]);
+const READ_ACTIONS = new Set(["list", "show"]);
 const EXPECTED_UPDATED_AT_ACTIONS = new Set([
 	"update",
 	"start",
@@ -536,11 +555,12 @@ const EXPECTED_UPDATED_AT_ACTIONS = new Set([
 ]);
 
 /** Project actions that accept a section name, or a set of dependency edges. */
-const GROUP_ACTIONS = new Set(["add", "update"]);
-const DEPENDS_ON_ACTIONS = GROUP_ACTIONS;
+const GROUP_ACTIONS = new Set(["add", "update", "list"]);
+const DEPENDS_ON_ACTIONS = new Set(["add", "update"]);
+const LIST_PROJECTION_FIELDS = ["statuses", "limit", "cursor"] as const;
 
 /** Project actions whose `id` is a caller-supplied selector rather than a stored ID. */
-const GOAL_SELECTOR_ACTIONS = new Set([...EXPECTED_UPDATED_AT_ACTIONS, "move", "set_status"]);
+const GOAL_SELECTOR_ACTIONS = new Set([...EXPECTED_UPDATED_AT_ACTIONS, "move", "set_status", "show"]);
 
 /**
  * Refuses Project Goal options an action would otherwise accept and ignore.
@@ -587,9 +607,18 @@ function rejectUnsupportedProjectOptions(operation: WorklistOperation): void {
 		});
 	}
 	if (operation.group !== undefined && !GROUP_ACTIONS.has(operation.action)) {
-		throw validationError("group is only supported for project add and update.", {
+		throw validationError("group is only supported for project add, update, and list.", {
 			fields: ["group"],
-			resolution: "use-project-add-or-update",
+			resolution: "use-project-add-update-or-list",
+		});
+	}
+	const unsupportedListField = LIST_PROJECTION_FIELDS.find(
+		(field) => operation[field] !== undefined && operation.action !== "list",
+	);
+	if (unsupportedListField) {
+		throw validationError(`${unsupportedListField} is only supported for project list.`, {
+			fields: [unsupportedListField],
+			resolution: "use-project-list",
 		});
 	}
 	if (operation.dependsOn !== undefined && !DEPENDS_ON_ACTIONS.has(operation.action)) {
@@ -1096,6 +1125,24 @@ export class WorklistApplicationService {
 					},
 				};
 				failureMeta = { ...failureMeta, revisions: { project: error.actualRevision } };
+			} else if (error instanceof ProjectGoalListCursorConflictError) {
+				typedError = {
+					code: WORKLIST_ERROR_CODES.CONFLICT,
+					message: error.message,
+					retryable: true,
+					conflict: {
+						type: "revision",
+						expectedRevision: error.expectedRevision,
+						actualRevision: error.actualRevision,
+						resolution: "refresh-and-retry",
+					},
+				};
+				failureMeta = { ...failureMeta, revisions: { project: error.actualRevision } };
+			} else if (error instanceof ProjectGoalListValidationError) {
+				typedError = validationError(error.message, {
+					fields: [error.field],
+					resolution: error.resolution,
+				}).toResultError();
 			} else if (error instanceof ProjectGoalConflictError) {
 				typedError = {
 					code: WORKLIST_ERROR_CODES.CONFLICT,
@@ -1243,7 +1290,39 @@ export class WorklistApplicationService {
 		switch (operation.action) {
 			case "list": {
 				const { goals, revision } = await readProjectGoals(projectPath);
-				return { result: { scope: "project", action: "list", goals }, revision, changed: false };
+				const projectGoalList = projectProjectGoalList(goals, revision, {
+					statuses: operation.statuses,
+					group: operation.group,
+					limit: operation.limit,
+					cursor: operation.cursor,
+				});
+				return {
+					result: { scope: "project", action: "list", projectGoalList },
+					revision,
+					changed: false,
+				};
+			}
+			case "show": {
+				if (!operation.id) {
+					throw validationError("id is required for project show.", {
+						fields: ["id"],
+						resolution: "provide-project-goal-id",
+					});
+				}
+				const { goals, retiredIds, revision } = await readProjectGoals(projectPath);
+				const goal = goals.find((candidate) => candidate.id === operation.id);
+				if (!goal) throw new ProjectGoalNotFoundError(operation.id);
+				return {
+					result: {
+						scope: "project",
+						action: "show",
+						goal,
+						blocked: isGoalBlocked(goals, goal, retiredIds),
+						blocks: dependentGoals(goals, goal, retiredIds).map((candidate) => candidate.id),
+					},
+					revision,
+					changed: false,
+				};
 			}
 			case "apply-plan": {
 				if (operation.plan === undefined) {
@@ -1366,6 +1445,7 @@ export class WorklistApplicationService {
 							"set_active",
 							"start",
 							"set_status",
+							"show",
 							"update",
 						],
 					},

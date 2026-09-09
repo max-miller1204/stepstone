@@ -44,6 +44,33 @@ export interface ProjectPlanWarning {
 	batchGoalId: string;
 }
 
+export interface ProjectGoalSummary {
+	id: string;
+	title: string;
+	status: ProjectGoalStatus;
+}
+
+export interface ProjectGoalListStatusCount {
+	status: ProjectGoalStatus;
+	count: number;
+}
+
+/** One bounded page returned by the Pi model tool and direct Pi command. */
+export interface ProjectGoalListPage {
+	goals: ProjectGoalSummary[];
+	statusCounts: ProjectGoalListStatusCount[];
+	statuses?: ProjectGoalStatus[];
+	group?: string;
+	total: number;
+	matched: number;
+	offset: number;
+	returned: number;
+	/** Matching goals after this page that need the continuation cursor. */
+	omitted: number;
+	truncatedTitleGoalIds?: string[];
+	nextCursor?: string;
+}
+
 export interface ProjectGoal {
 	id: string;
 	title: string;
@@ -133,8 +160,10 @@ export interface WorklistOperationResult {
 	tasks?: SessionTask[];
 	/** The one goal a single-goal read or mutation returns. */
 	goal?: ProjectGoal;
-	/** Goal collections returned only by operations that explicitly read a collection. */
+	/** Goal collections returned only by operations that explicitly read a complete collection. */
 	goals?: ProjectGoal[];
+	/** Bounded Project Goal page returned to a Pi model or direct Pi command. */
+	projectGoalList?: ProjectGoalListPage;
 	/** The exact stored ID removed by a delete mutation. */
 	deletedGoalId?: string;
 	/** Whether the shown goal is blocked, derived from its current dependency edges. */

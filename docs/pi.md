@@ -98,6 +98,7 @@ Direct commands are useful in RPC mode and scripts:
 /tasks session update <id> Replace the task title
 /tasks session status <id> doing
 /tasks project list
+/tasks project show <id>
 /tasks project add Replace legacy authentication -- Migrate every supported client
 /tasks project update <id> -- Replace the goal description
 /tasks project move <goal-id> --before <anchor-id>
@@ -116,13 +117,15 @@ The model-facing tool instead requires `confirm=true`, and its prompt rules proh
 
 ## The model tool
 
-The `worklist` tool accepts `scope=session|project` and actions including `list`, `add`, `apply-plan`, `move`, `update`, `start`, `set_status`, `set_active`, `complete`, `reopen`, `archive`, and `delete`.
+The `worklist` tool accepts `scope=session|project` and actions including `list`, `show`, `add`, `apply-plan`, `move`, `update`, `start`, `set_status`, `set_active`, `complete`, `reopen`, `archive`, and `delete`.
+Project Goal `list` returns a canonical-order page with only ID, title, and status. It defaults to 20 goals, accepts a maximum `limit` of 50, and never exceeds 4096 UTF-8 bytes. Use `statuses` or `group` to filter the first page. Use the returned `cursor` without `statuses` or `group` to continue from the same revision and filters. The next call can set a different `limit`. A roadmap change makes the cursor fail with a typed conflict instead of skipping or repeating goals. The interactive transcript shows at most three rows until the user expands the tool result.
+Project Goal `show` returns one complete goal plus its derived blocked state and dependent IDs.
 For Session Tasks, `add` optionally accepts exactly one of `beforeId` or `afterId`, while `move` requires exactly one.
 Project Goal `move` takes the same anchors and reorders the roadmap; `add` and `update` also accept a `group`, where an empty string clears it, a `dependsOn` array that replaces the goal's edges, and a `links` array of absolute HTTP or HTTPS URLs that replaces its informational links.
 Empty arrays clear dependencies or links.
 Project Goal `start` is the dispatch claim: it takes exactly one of a `branch` naming what is working on the goal or `clear=true` releasing an abandoned claim, leaves the goal's status alone, and keeps a claimed goal out of the ready frontier until `start` with `clear` or `complete` releases it.
 `update`, `start`, `set_active`, `complete`, `reopen`, `archive`, and `delete` also accept `expectedUpdatedAt`, the target goal's exact `updatedAt` from the caller's last read, so a claim or a lifecycle change sent from a stale read returns a typed conflict instead of overwriting a newer one; it is a concurrency precondition and never stands in for `confirm`.
-The tool's `details` for Project Goal mutations are bounded instead of carrying the complete roadmap: single-goal mutations return `goal`, and `apply-plan` returns `addedGoals`. The `delete` result returns `deletedGoalId`, while the `list` action remains the explicit full collection read and returns every requested goal.
+The tool's `details` stay bounded instead of carrying the complete roadmap. Project Goal `list` returns `projectGoalList`, single-goal reads and mutations return `goal`, and `apply-plan` returns `addedGoals`. The `delete` result returns `deletedGoalId`. Use another list page or `show` when later work needs more state.
 
 Moves preserve the task ID, title, status, and Project Goal association.
 Self-placement, already-satisfied placement, identical Session Task updates, and repeated status changes succeed without writing another session snapshot.
