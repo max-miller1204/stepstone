@@ -420,6 +420,71 @@ async function lockWorklistDirectory(dir: string): Promise<() => Promise<void>> 
 	});
 }
 
+/** The width used to decide whether a scalar list stays on one line. */
+const PROJECT_WORKLIST_LINE_WIDTH = 110;
+
+/** Biome displays each tab as two columns when it applies this repository's configuration. */
+const PROJECT_WORKLIST_INDENT_WIDTH = 2;
+
+type JsonScalar = null | boolean | number | string;
+
+function isJsonScalar(value: unknown): value is JsonScalar {
+	return value === null || ["boolean", "number", "string"].includes(typeof value);
+}
+
+function serializeJsonScalar(value: JsonScalar): string {
+	const serialized = JSON.stringify(value);
+	if (serialized === undefined) throw new TypeError("Project worklist contains a non-JSON scalar");
+	return serialized;
+}
+
+function emittedWidth(value: string): number {
+	return [...value].length;
+}
+
+/**
+ * Format JSON with the stable layout used by the committed roadmap.
+ *
+ * Objects and structural arrays stay expanded. A scalar array stays compact when
+ * the complete line fits. This matches the repository format without making a
+ * published executable depend on the development-only Biome package.
+ */
+function serializeJsonValue(value: unknown, level: number, column: number): string {
+	if (isJsonScalar(value)) return serializeJsonScalar(value);
+	if (Array.isArray(value)) {
+		if (value.length === 0) return "[]";
+		if (value.every(isJsonScalar)) {
+			const compact = `[${value.map(serializeJsonScalar).join(", ")}]`;
+			if (column + emittedWidth(compact) <= PROJECT_WORKLIST_LINE_WIDTH) return compact;
+		}
+		const itemIndent = "\t".repeat(level + 1);
+		const items = value.map(
+			(item) =>
+				`${itemIndent}${serializeJsonValue(item, level + 1, (level + 1) * PROJECT_WORKLIST_INDENT_WIDTH)}`,
+		);
+		return `[\n${items.join(",\n")}\n${"\t".repeat(level)}]`;
+	}
+	if (typeof value !== "object" || value === null) {
+		throw new TypeError(`Project worklist contains unsupported value type ${typeof value}`);
+	}
+	const entries = Object.entries(value);
+	if (entries.length === 0) return "{}";
+	const propertyIndent = "\t".repeat(level + 1);
+	const properties = entries.map(([key, item]) => {
+		const property = `${JSON.stringify(key)}: `;
+		const propertyColumn = (level + 1) * PROJECT_WORKLIST_INDENT_WIDTH + emittedWidth(property);
+		return `${propertyIndent}${property}${serializeJsonValue(item, level + 1, propertyColumn)}`;
+	});
+	return `{\n${properties.join(",\n")}\n${"\t".repeat(level)}}`;
+}
+
+function serializeProjectWorklist(worklist: RevisionedProjectWorklist): string {
+	// Apply JSON's normal omission and conversion rules before the layout pass.
+	const json = JSON.stringify(worklist);
+	if (json === undefined) throw new TypeError("Project worklist cannot be represented as JSON");
+	return `${serializeJsonValue(JSON.parse(json), 0, 0)}\n`;
+}
+
 /** Both absolute paths a migration moves the worklist between. */
 export interface ProjectWorklistMove {
 	fromPath: string;
@@ -544,7 +609,7 @@ export async function mutateProjectWorklist<T>(
 		const revisedWorklist = { ...worklist, revision };
 
 		tempName = resolve(dir, `.worklist-${randomBytes(8).toString("hex")}.tmp`);
-		await writeFile(tempName, `${JSON.stringify(revisedWorklist, null, 2)}\n`, "utf8");
+		await writeFile(tempName, serializeProjectWorklist(revisedWorklist), "utf8");
 		await rename(tempName, path);
 		tempName = undefined;
 		return { data: result, revision };

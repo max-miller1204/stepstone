@@ -71,6 +71,68 @@ describe("project store", () => {
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ...worklist, revision: 8 });
 	});
 
+	it("writes the complete worklist in the repository's stable format", async () => {
+		const path = await tempPath();
+		await mkdir(join(path, ".."), { recursive: true });
+		const worklist = {
+			version: 1,
+			revision: 4,
+			goals: [
+				{
+					id: "goal-1",
+					title: "Formatted",
+					status: "open",
+					createdAt: "2026-05-04T09:12:31.004Z",
+					updatedAt: "2026-05-04T09:12:31.004Z",
+					previousIds: ["former-goal"],
+					dependsOn: [
+						"first-dependency-with-a-long-stable-goal-id",
+						"second-dependency-with-a-long-stable-goal-id",
+					],
+					consumerMetadata: { labels: ["one", "two"] },
+				},
+			],
+			consumerMetadata: { preserved: true },
+		};
+		await writeFile(path, `${JSON.stringify(worklist, null, 2)}\n`);
+
+		const mutation = await mutateProjectWorklist(path, (current) => ({
+			worklist: current,
+			result: "formatted",
+		}));
+
+		expect(mutation).toEqual({ data: "formatted", revision: 5 });
+		expect(await readFile(path, "utf8")).toBe(
+			[
+				"{",
+				'\t"version": 1,',
+				'\t"revision": 5,',
+				'\t"goals": [',
+				"\t\t{",
+				'\t\t\t"id": "goal-1",',
+				'\t\t\t"title": "Formatted",',
+				'\t\t\t"status": "open",',
+				'\t\t\t"createdAt": "2026-05-04T09:12:31.004Z",',
+				'\t\t\t"updatedAt": "2026-05-04T09:12:31.004Z",',
+				'\t\t\t"previousIds": ["former-goal"],',
+				'\t\t\t"dependsOn": [',
+				'\t\t\t\t"first-dependency-with-a-long-stable-goal-id",',
+				'\t\t\t\t"second-dependency-with-a-long-stable-goal-id"',
+				"\t\t\t],",
+				'\t\t\t"consumerMetadata": {',
+				'\t\t\t\t"labels": ["one", "two"]',
+				"\t\t\t}",
+				"\t\t}",
+				"\t],",
+				'\t"consumerMetadata": {',
+				'\t\t"preserved": true',
+				"\t}",
+				"}",
+				"",
+			].join("\n"),
+		);
+	});
+
 	it("validates retired goal IDs when present", () => {
 		expect(isProjectWorklist({ version: 1, goals: [], retiredIds: ["deleted-goal"] })).toBe(true);
 		expect(isProjectWorklist({ version: 1, goals: [], retiredIds: ["deleted-goal", 1] })).toBe(false);
