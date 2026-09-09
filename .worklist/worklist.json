@@ -657,9 +657,10 @@
 			"description": "Submitting a prompt over standard input or a pane is what forces Stepstone to know how each harness accepts input. Writing the goal into the prepared workspace instead needs nothing from the harness at all, which is the same reason the generated AGENTS.md block works everywhere it is dropped. A person who opens the workspace, and any agent that reads what is in it, both find the goal already there.",
 			"group": "Automation",
 			"dependsOn": ["prepare-goal-workspaces-without"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-03T23:19:23.518Z"
+			"updatedAt": "2026-09-09T15:29:59.380Z",
+			"completedAt": "2026-09-09T15:29:59.380Z"
 		},
 		{
 			"id": "start-a-goal-into-its-own-worktree-from",
@@ -741,5 +742,5 @@
 			"updatedAt": "2026-08-18T22:17:01.718Z"
 		}
 	],
-	"revision": 305
+	"revision": 306
 }

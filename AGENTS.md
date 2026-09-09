@@ -1,20 +1,121 @@
-# stepstone agent notes
+# Stepstone agent notes
 
-- Read Pi's installed `docs/extensions.md`, `docs/tui.md`, `docs/packages.md`, and `docs/session-format.md` before changing extension APIs.
-- Session Tasks are canonical versioned custom-entry snapshots and must remain branch-aware.
-- Project Goals are canonical in `<git-root>/.worklist/worklist.json` and every mutation, from any interface (tool, command, dashboard, terminal board, CLI, dispatch driver), must go through the shared `WorklistApplicationService` in `src/application-service.ts`, whose writes run through `src/project-mutations.ts` so the cross-process lock plus atomic rename apply everywhere.
-- Which file that is comes from `resolveWorklistLocation` in `src/git.ts` and nowhere else: an explicit `--file` or `$STEPSTONE_WORKLIST`, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`. Any new interface resolves through it rather than joining the path itself, or the CLI, the board, and a live Pi session will disagree about which roadmap a repository has. An interface that outlives a single resolution, such as the open board or a live session, holds the `createWorklistLocator` closure and asks again on every read rather than remembering the answer, or a `migrate_path` run in another terminal leaves it reading and writing a file that is no longer the roadmap.
-- Never add a project lifecycle path that bypasses explicit confirmation.
-- Goal IDs are derived from the title in `src/goal-selection.ts` and frozen at creation; every ID a live goal has had stays resolvable and reserved, while deleting a goal retires all its IDs so they stay reserved but no longer resolve. Any new live-reference field that stores a goal ID must resolve through `findGoalByStoredId` and be rewritten by `migrateProjectGoalIds`.
-- Dependency edges are stored in one direction only, as `dependsOn` on the goal that waits; blocked, dependents, cycles, and the sequencing views behind `next`, `ready`, and `waves` are all derived in `src/dependencies.ts` and must never become stored state.
-- Nothing reachable from a published executable entry point may import `@earendil-works/*`; compiled bins have to run with only Node and their declared runtime dependencies, never Pi peers, which is why a Pi type belongs in an `import type` statement rather than an inline `import { type Foo }`: the inline form is a runtime import the scan rejects. The manifest's `bin` map is the list a new executable is added to, and everything else about it derives from or is asserted against that map: `executableEntryPoints` in `scripts/cli-import-graph.ts` reads each bin back to the `src/` file the build emitted it from and refuses a target it cannot resolve, and `tsconfig.build.json`'s `files` is asserted against that same derivation in `test/cli-import-graph.test.ts`, which needs no build, so a bin the build would emit nothing for fails by name rather than as a missing-file read inside the pack suite. The one entry still written by hand is a behavior-specific exercise in `BIN_EXERCISES` in `scripts/no-pi-install-check.ts`, which is compared against `bin` before the job packs anything. `npm run imports:check` scans the merged source graph, and `npm run no-pi-install:check` packs the tarball and drives every installed bin with no Pi present.
-- Keep the board's rendering pure in `src/tui/goal-board.ts` and all I/O in `src/tui/goal-board-runtime.ts`, so frames stay testable without a pseudo-terminal.
+## Extension APIs
+
+- Read Pi's installed `docs/extensions.md` and `docs/tui.md` before you change an extension API.
+- Read Pi's installed `docs/packages.md` and `docs/session-format.md` before you change an extension API.
+
+## Worklist data
+
+- Treat Session Tasks as canonical, versioned, and branch-aware custom-entry snapshots.
+- Store canonical Project Goals in `<git-root>/.worklist/worklist.json`.
+- Send every Project Goal mutation through `WorklistApplicationService` in `src/application-service.ts`.
+- Make `WorklistApplicationService` write through `src/project-mutations.ts`.
+- Preserve the cross-process lock and atomic rename for every write.
+- Use this mutation path for all tools, commands, dashboards, boards, CLIs, and dispatch drivers.
+- Require explicit confirmation for every project lifecycle action.
+
+## Worklist location
+
+- Resolve the worklist file only with `resolveWorklistLocation` in `src/git.ts`.
+- Use this location order:
+  1. An explicit `--file` value or `$STEPSTONE_WORKLIST` value.
+  2. `.worklist/worklist.json`.
+  3. The legacy `.pi/worklist.json`.
+- Use `createWorklistLocator` for an interface that outlives one location resolution.
+- Ask the locator for the path on every read.
+- Do not cache or construct the worklist path.
+
+## Goal IDs and dependencies
+
+- Derive a Goal ID from its title in `src/goal-selection.ts`.
+- Freeze the Goal ID when you create the goal.
+- Keep all current and former IDs of a live goal resolvable and reserved.
+- Keep all IDs of a deleted goal reserved but not resolvable.
+- Resolve every new live-reference Goal ID with `findGoalByStoredId`.
+- Rewrite every new Goal ID reference field with `migrateProjectGoalIds`.
+- Store dependency edges only in `dependsOn` on the goal that waits.
+- Derive blocked goals, dependents, cycles, `next`, `ready`, and `waves` in `src/dependencies.ts`.
+- Do not store derived dependency state.
+
+## Published executables
+
+- Do not import `@earendil-works/*` from code that a published executable can reach.
+- Run compiled executables with only Node and declared runtime dependencies.
+- Use `import type` for Pi types.
+- Do not use inline `import { type Foo }` syntax for Pi types.
+- Add each executable to the manifest `bin` map.
+- Derive executable entry points and build inputs from the `bin` map.
+- Keep `BIN_EXERCISES` in `scripts/no-pi-install-check.ts` aligned with the `bin` map.
+- Run `npm run imports:check` to verify the source graph.
+- Run `npm run no-pi-install:check` to verify all installed bins without Pi.
+
+## Terminal UI and schemas
+
+- Keep board rendering pure in `src/tui/goal-board.ts`.
+- Keep board I/O in `src/tui/goal-board-runtime.ts`.
 - Keep the widget compact and width-safe.
-- Keep the model-facing schema compatible with Google providers by using `StringEnum` for string enums.
-- Run `npm run check`, `npm audit`, `npm run pack:check`, `npm run no-pi-install:check`, and the real Pi RPC test before release.
-- Releases are published by CI from a `v*.*.*` tag push, never by hand: run `npm version <bump>` and `git push --follow-tags`, and never `npm publish`. Which bump that is belongs to [docs/releasing.md](docs/releasing.md#choosing-the-version-bump): while the package is below 1.0, retiring a published surface - a `bin`, a documented integration, a field a `--json` result carried - is breaking and takes a minor rather than a patch, because the version is the only signal a client resolving `@latest` reads before it upgrades. A `preversion` hook runs `npm run docs:check` before the bump, so a stale generated document stops a release while nothing has been tagged yet. Exactly one publish was exempt, and only while the condition held: the first publish of a package name that does not exist on npm yet, because Trusted Publishing has no package to authorize the workflow against until the name is claimed. That exemption is spent - the published name now resolves on npm - so every release goes through CI. The tag must agree with `package.json`, `.github/workflows/release.yml` re-runs `npm run verify` against the tagged commit, and npm authenticates that workflow by filename over OIDC, so renaming or moving it breaks publishing until the package's Trusted Publishers entry is updated to match.
-- Never hand-edit a generated file: `docs/cli.md`, `.claude/skills/stepstone/SKILL.md`, and `docs/ROADMAP.md` are all written by `scripts/generate-docs.ts`; run `npm run docs` and commit the result, which `npm run docs:check` and the test suite both enforce. [docs/development.md](docs/development.md#generated-files) owns which source renders which artifact and every rule that follows from it. `docs/ROADMAP.md` is a projection of `.worklist/worklist.json`, so regenerate it in the same commit that changes a goal rather than leaving the page stale.
-- Prose lives in the README and `docs/`: the README answers what this is and how to run it from a harness, and every longer explanation belongs in a `docs/` page it links. Project Goals are the product and Pi is one supported harness, so keep Pi-specific material in `docs/pi.md` rather than framing the roadmap as a Pi feature. `test/cli-contract.test.ts` reads the whole `docs/` directory, so a new page is covered the day it is added by the invocation, Node-floor, and contract-spelling assertions. The generated `docs/ROADMAP.md` is the one page left out of that sweep, because its body is goal prose rather than authored documentation: a goal that names a command in passing would fail the copy-paste-safety assertion, and a rename cannot be a demand to rewrite descriptions written before it. `test/roadmap.test.ts` holds the prose that page authors to the same rules. The contract-spelling assertion pins the published package name, the goal file environment override, and the goal file and skill directories wherever a document spells one as an instruction a reader follows - a command, a registry or gallery URL, an import specifier, a path - and holds every occurrence it finds to what the contract renders, so no document may name a published package, an override, or a directory the contract does not. Each shape also declares whether the documentation has to carry it: a required shape must occur at least once across README.md and `docs/`, so a rename that misses one fails rather than being carried by the shapes that were updated, and a shape that quietly stops matching fails rather than passing vacuously. The `<name>@1.2.3` version pin is the one optional shape, because a page pins a version where it has a reason to rather than to keep a pattern non-empty; every pin it does find is still held to the contract. Two shapes are matched only against this package's own names - `npm view|deprecate|i|install <name>` and that `<name>@1.2.3` pin - because a page names a dependency or a toolchain version that way as a matter of course. Every other shape claims the name it finds: an `npx -y <name>@latest` invocation, an `npm:<name>` specifier, an npm or Pi gallery URL, a version badge, and a `<name>/src/...` import all have to name this package, so a page that needs to name a different one in any of those shapes belongs in that assertion's `allowed` list rather than being worked around. Running prose and the GitHub URLs are outside all of it, and so is the `npx -y -p <name>@latest <dispatch-bin>` invocation the dispatch driver is documented through, because the `npx` shape anchors the name directly after `npx -y` and never reaches a name behind `-p`; a rename still has to sweep all of those by hand.
-- The published name lives in exactly one place, `CLI_COMMAND_CONTRACT.binary` in `src/cli-contract.ts`, which feeds every generated document, the CLI's own diagnostics, and the `name` and `bin` keys asserted from that contract in `test/compiled-cli.test.ts`. Read it from the contract wherever the published identity is what is meant - generated docs, user-facing diagnostics, the manifest name and bin keys, and anything else a rename has to move - so a rename stays a one-line change. The companion executable's name is `DISPATCH_BINARY` beside it, derived from `binary` and asserted as the second `bin` key, so read that rather than spelling the dispatch driver's own usage banner and stderr prefix. Incidental strings that merely happen to spell the name, such as the `stepstone-*` temporary-directory prefixes throughout `test/`, are not covered by this rule and need no sweep. The dispatch namespaces in `src/dispatch-driver.ts` and `src/dispatch-bindings.ts` - the `stepstone/<goal-id>` branch, the `stepstone-<goal-id>` worktree, the `stepstone:<goal-id>` Treehouse lease holder, and the `stepstone-dispatch` state directory with its `stepstone-dispatch-owner.json` ownership marker - are already written into refs, checkouts, and persisted run records that outlive any one invocation, so a rename leaves them alone rather than stranding every in-flight run it would no longer resolve.
-- The published tarball carries what an install reads and nothing else, so this file, `docs/development.md`, `docs/releasing.md`, and `docs/ROADMAP.md` are written for this checkout and held out of it. A new `docs/` page ships by default; holding one back takes both the manifest's `files` and `DEVELOPMENT_ONLY_FILES` in `test/compiled-cli.test.ts`, and every `npm pack` assertion in the suite belongs in that same file, because it is the suite that awaits `buildPackage()` and a pack from another test file races that rebuild of `dist/` across parallel workers. [docs/development.md](docs/development.md#what-the-published-package-carries) owns the rest.
-- Do not manually add a changelog.
+- Use `StringEnum` for model-facing string enums.
+
+## Releases
+
+- Publish releases only through CI after a `v*.*.*` tag push.
+- Run `npm version <bump>`.
+- Push the release with `git push --follow-tags`.
+- Never run `npm publish`.
+- Follow [docs/releasing.md](docs/releasing.md#choosing-the-version-bump) to select the version bump.
+- Use a minor bump for a breaking change while the package is below 1.0.
+- Treat removal of a `bin`, documented integration, or `--json` field as a breaking change.
+- Keep the tag version equal to the version in `package.json`.
+- Keep the release workflow at `.github/workflows/release.yml` unless you also update npm Trusted Publishing.
+- Before release, run these checks:
+  1. `npm run check`
+  2. `npm audit`
+  3. `npm run pack:check`
+  4. `npm run no-pi-install:check`
+  5. The real Pi RPC test
+
+## Generated files
+
+- Do not edit `docs/cli.md`, `.claude/skills/stepstone/SKILL.md`, or `docs/ROADMAP.md` by hand.
+- Run `npm run docs` to update generated files.
+- Commit generated files with their source changes.
+- Regenerate `docs/ROADMAP.md` in the same commit that changes `.worklist/worklist.json`.
+- Follow [docs/development.md](docs/development.md#generated-files) for generation rules.
+
+## Documentation
+
+- Keep the introduction and harness setup in `README.md`.
+- Put longer explanations in linked pages under `docs/`.
+- Treat Project Goals as the product and Pi as one supported harness.
+- Put Pi-specific material in `docs/pi.md`.
+- Make authored documentation pass `test/cli-contract.test.ts`.
+- Keep `docs/ROADMAP.md` out of the authored-document checks.
+- Check roadmap prose with `test/roadmap.test.ts`.
+- Use contract values for package names, environment variables, and published paths.
+- Add an intentional third-party value to the contract assertion's `allowed` list.
+- Do not bypass the contract assertion.
+
+## Published identity
+
+- Define the published name only in `CLI_COMMAND_CONTRACT.binary` in `src/cli-contract.ts`.
+- Read the published name from that contract in generated text, diagnostics, and manifest assertions.
+- Derive the companion executable name with `DISPATCH_BINARY`.
+- Keep these persistent dispatch namespaces unchanged during a package rename:
+  - `stepstone/<goal-id>` branches
+  - `stepstone-<goal-id>` worktrees
+  - `stepstone:<goal-id>` Treehouse lease holders
+  - The `stepstone-dispatch` state directory
+  - The `stepstone-dispatch-owner.json` ownership marker
+
+## Published package contents
+
+- Include only files that an installation needs in the published tarball.
+- Keep `AGENTS.md`, `docs/development.md`, `docs/releasing.md`, and `docs/ROADMAP.md` out of the tarball.
+- Ship new `docs/` pages by default.
+- Keep all `npm pack` assertions in `test/compiled-cli.test.ts`.
+- Follow [docs/development.md](docs/development.md#what-the-published-package-carries) for package-content rules.
+
+## Changelog
+
+- Do not add a changelog by hand.
