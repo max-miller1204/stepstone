@@ -133,6 +133,58 @@ describe("project store", () => {
 		);
 	});
 
+	it.each([false, true])("counts an object property's comma at the line limit: %s", async (last) => {
+		const path = await tempPath();
+		await mkdir(join(path, ".."), { recursive: true });
+		const text = "a".repeat(92);
+		const properties = last ? { goals: [], metadata: [text] } : { metadata: [text], goals: [] };
+		const worklist = { version: 1, revision: 0, ...properties };
+		await writeFile(path, JSON.stringify(worklist));
+
+		expect(await mutateProjectWorklist(path, (current) => ({ worklist: current, result: true }))).toEqual({
+			data: true,
+			revision: 1,
+		});
+		const contents = await readFile(path, "utf8");
+		const propertyLines = last
+			? ['\t"goals": [],', `\t"metadata": ["${text}"]`]
+			: ['\t"metadata": [', `\t\t"${text}"`, "\t],", '\t"goals": []'];
+		expect(contents).toBe(["{", '\t"version": 1,', '\t"revision": 1,', ...propertyLines, "}", ""].join("\n"));
+		expect(JSON.parse(contents)).toEqual({ ...worklist, revision: 1 });
+	});
+
+	it.each([false, true])("counts an array item's comma at the line limit: %s", async (last) => {
+		const path = await tempPath();
+		await mkdir(join(path, ".."), { recursive: true });
+		const text = "a".repeat(102);
+		const metadata = last ? [null, [text]] : [[text], null];
+		const worklist = { version: 1, revision: 0, goals: [], metadata };
+		await writeFile(path, JSON.stringify(worklist));
+
+		expect(await mutateProjectWorklist(path, (current) => ({ worklist: current, result: true }))).toEqual({
+			data: true,
+			revision: 1,
+		});
+		const contents = await readFile(path, "utf8");
+		const itemLines = last
+			? ["\t\tnull,", `\t\t["${text}"]`]
+			: ["\t\t[", `\t\t\t"${text}"`, "\t\t],", "\t\tnull"];
+		expect(contents).toBe(
+			[
+				"{",
+				'\t"version": 1,',
+				'\t"revision": 1,',
+				'\t"goals": [],',
+				'\t"metadata": [',
+				...itemLines,
+				"\t]",
+				"}",
+				"",
+			].join("\n"),
+		);
+		expect(JSON.parse(contents)).toEqual({ ...worklist, revision: 1 });
+	});
+
 	it("validates retired goal IDs when present", () => {
 		expect(isProjectWorklist({ version: 1, goals: [], retiredIds: ["deleted-goal"] })).toBe(true);
 		expect(isProjectWorklist({ version: 1, goals: [], retiredIds: ["deleted-goal", 1] })).toBe(false);

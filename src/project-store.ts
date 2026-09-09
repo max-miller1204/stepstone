@@ -449,18 +449,18 @@ function emittedWidth(value: string): number {
  * the complete line fits. This matches the repository format without making a
  * published executable depend on the development-only Biome package.
  */
-function serializeJsonValue(value: unknown, level: number, column: number): string {
+function serializeJsonValue(value: unknown, level: number, column: number, suffixWidth: number): string {
 	if (isJsonScalar(value)) return serializeJsonScalar(value);
 	if (Array.isArray(value)) {
 		if (value.length === 0) return "[]";
 		if (value.every(isJsonScalar)) {
 			const compact = `[${value.map(serializeJsonScalar).join(", ")}]`;
-			if (column + emittedWidth(compact) <= PROJECT_WORKLIST_LINE_WIDTH) return compact;
+			if (column + emittedWidth(compact) + suffixWidth <= PROJECT_WORKLIST_LINE_WIDTH) return compact;
 		}
 		const itemIndent = "\t".repeat(level + 1);
 		const items = value.map(
-			(item) =>
-				`${itemIndent}${serializeJsonValue(item, level + 1, (level + 1) * PROJECT_WORKLIST_INDENT_WIDTH)}`,
+			(item, index) =>
+				`${itemIndent}${serializeJsonValue(item, level + 1, (level + 1) * PROJECT_WORKLIST_INDENT_WIDTH, index < value.length - 1 ? 1 : 0)}`,
 		);
 		return `[\n${items.join(",\n")}\n${"\t".repeat(level)}]`;
 	}
@@ -470,10 +470,10 @@ function serializeJsonValue(value: unknown, level: number, column: number): stri
 	const entries = Object.entries(value);
 	if (entries.length === 0) return "{}";
 	const propertyIndent = "\t".repeat(level + 1);
-	const properties = entries.map(([key, item]) => {
+	const properties = entries.map(([key, item], index) => {
 		const property = `${JSON.stringify(key)}: `;
 		const propertyColumn = (level + 1) * PROJECT_WORKLIST_INDENT_WIDTH + emittedWidth(property);
-		return `${propertyIndent}${property}${serializeJsonValue(item, level + 1, propertyColumn)}`;
+		return `${propertyIndent}${property}${serializeJsonValue(item, level + 1, propertyColumn, index < entries.length - 1 ? 1 : 0)}`;
 	});
 	return `{\n${properties.join(",\n")}\n${"\t".repeat(level)}}`;
 }
@@ -482,7 +482,7 @@ function serializeProjectWorklist(worklist: RevisionedProjectWorklist): string {
 	// Apply JSON's normal omission and conversion rules before the layout pass.
 	const json = JSON.stringify(worklist);
 	if (json === undefined) throw new TypeError("Project worklist cannot be represented as JSON");
-	return `${serializeJsonValue(JSON.parse(json), 0, 0)}\n`;
+	return `${serializeJsonValue(JSON.parse(json), 0, 0, 0)}\n`;
 }
 
 /** Both absolute paths a migration moves the worklist between. */
