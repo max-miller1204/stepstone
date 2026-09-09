@@ -55,6 +55,7 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME matches package.json version $pkg_version"
 
+      - run: sudo apt-get update && sudo apt-get install --yes zsh
       - run: cp npm-shrinkwrap.json package-lock.json && npm ci --ignore-scripts && rm package-lock.json
 
       # Same gates as CI, re-run against the exact commit being published so a

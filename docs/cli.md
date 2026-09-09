@@ -14,6 +14,16 @@ npx -y stepstone@latest project <action> [arguments] [flags]
 
 Every `--json` result envelope reports the running package version as `meta.cliVersion`.
 
+## Shell completion
+
+After installing the package as a global command, install completion in the standard per-user Bash and Zsh data directories:
+
+```sh
+stepstone completion install
+```
+
+This command does not need a Git repository. Restart the shell after it finishes.
+
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.

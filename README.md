@@ -29,6 +29,17 @@ There is nothing to install. Run the CLI from npm on demand in any Git repositor
 npx -y stepstone@latest project list
 ```
 
+**Optional shell completion.**
+Install the package globally to use the packaged Bash or Zsh completion script:
+
+```sh
+npm install stepstone --global
+stepstone completion install
+```
+
+Restart the shell after installation.
+See [docs/usage.md](docs/usage.md#shell-completion) for paths and requirements.
+
 **[Pi](https://pi.dev) extension.**
 Install the [extension](docs/pi.md) when you want `/tasks`, a session widget, a model-facing tool, and Session Tasks:
 

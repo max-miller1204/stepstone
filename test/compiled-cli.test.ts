@@ -11,6 +11,7 @@ import {
 	renderSkillMarkdown,
 	SKILL_PATH,
 } from "../src/cli-contract.ts";
+import { installedCompletionPaths } from "../src/completion-installer.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
 import { DOCS_DIRECTORY, documentationPages } from "./docs-pages.ts";
 import { buildPackage, packedFilePaths } from "./npm-pack.ts";
@@ -42,9 +43,12 @@ interface CliResult {
 	stderr: string;
 }
 
-async function runCompiledCli(cwd: string, args: string[]): Promise<CliResult> {
+async function runCompiledCli(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<CliResult> {
 	try {
-		const { stdout, stderr } = await execFileAsync(process.execPath, [compiledCliPath, ...args], { cwd });
+		const { stdout, stderr } = await execFileAsync(process.execPath, [compiledCliPath, ...args], {
+			cwd,
+			env,
+		});
 		return { code: 0, stdout, stderr };
 	} catch (error) {
 		const failure = error as CliResult & { code: number | null };
@@ -134,6 +138,21 @@ describe("published stepstone package", () => {
 		expect(peers.length).toBeGreaterThan(0);
 		const notOptional = peers.filter((peer) => manifest.peerDependenciesMeta?.[peer]?.optional !== true);
 		expect(notOptional, "every peer must be marked optional in peerDependenciesMeta").toEqual([]);
+	});
+
+	it("installs shell completion outside a Git repository from the compiled bin", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-compiled-completion-"));
+		const dataHome = join(root, "data");
+		const result = await runCompiledCli(root, ["completion", "install"], {
+			...process.env,
+			XDG_DATA_HOME: dataHome,
+		});
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain("Installed Bash completion:");
+		expect(result.stdout).toContain("Installed Zsh completion:");
+		const paths = installedCompletionPaths({ XDG_DATA_HOME: dataHome });
+		expect(await readFile(paths.bash, "utf8")).toContain("complete -o filenames -F _stepstone stepstone");
+		expect(await readFile(paths.zsh, "utf8")).toContain("#compdef stepstone");
 	});
 
 	it("runs the full goal lifecycle from the compiled bin", async () => {

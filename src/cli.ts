@@ -17,6 +17,7 @@ import {
 	renderCliUsage,
 	WORKLIST_PATH_ENV,
 } from "./cli-contract.ts";
+import { installShellCompletions } from "./completion-installer.ts";
 import {
 	dependencyWaves,
 	dependentGoals,
@@ -1072,7 +1073,28 @@ async function runInteractiveBoard(
 	});
 }
 
+async function runCompletionInstall(invocation: CliInvocation): Promise<void> {
+	if (invocation.action !== "install") {
+		fail(`Unknown completion action ${invocation.action}\n\n${USAGE}`, 2);
+	}
+	if (invocation.rest.length > 0 || invocation.flagsUsed.size > 0 || invocation.description !== undefined) {
+		fail(`${CLI_COMMAND_CONTRACT.binary} completion install takes no arguments or flags\n\n${USAGE}`, 2);
+	}
+	const installed = await installShellCompletions();
+	for (const entry of installed) {
+		const label = entry.shell === "bash" ? "Bash" : "Zsh";
+		process.stdout.write(
+			`${entry.changed ? "Installed" : "Already installed"} ${label} completion: ${entry.path}\n`,
+		);
+	}
+	process.stdout.write("Restart the shell to load completion.\n");
+}
+
 async function run(invocation: CliInvocation): Promise<void> {
+	if (invocation.scope === "completion") {
+		await runCompletionInstall(invocation);
+		return;
+	}
 	if (invocation.scope !== "project") {
 		if (invocation.scope === "session") {
 			fail("Session Tasks live inside a Pi session and cannot be managed externally. Use /tasks in Pi.", 2);
