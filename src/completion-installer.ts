@@ -23,7 +23,7 @@ interface CompletionTarget {
 /** Resolve the standard per-user data directory without guessing another home. */
 function userDataHome(env: NodeJS.ProcessEnv): string {
 	const configured = env.XDG_DATA_HOME;
-	if (configured) {
+	if (configured !== undefined) {
 		if (!isAbsolute(configured)) throw new Error("XDG_DATA_HOME must be an absolute path");
 		return configured;
 	}

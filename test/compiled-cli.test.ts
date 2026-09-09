@@ -151,7 +151,7 @@ describe("published stepstone package", () => {
 		expect(result.stdout).toContain("Installed Bash completion:");
 		expect(result.stdout).toContain("Installed Zsh completion:");
 		const paths = installedCompletionPaths({ XDG_DATA_HOME: dataHome });
-		expect(await readFile(paths.bash, "utf8")).toContain("complete -F _stepstone stepstone");
+		expect(await readFile(paths.bash, "utf8")).toContain("complete -o filenames -F _stepstone stepstone");
 		expect(await readFile(paths.zsh, "utf8")).toContain("#compdef stepstone");
 	});
 

@@ -245,7 +245,7 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	assert.match(completion.stdout, /Installed Zsh completion:/);
 	assert.match(
 		await readFile(join(completionHome, "bash-completion", "completions", binary), "utf8"),
-		new RegExp(`complete -F _${binary} ${binary}`),
+		new RegExp(`complete -o filenames -F _${binary} ${binary}`),
 	);
 	assert.match(
 		await readFile(join(completionHome, "zsh", "site-functions", `_${binary}`), "utf8"),

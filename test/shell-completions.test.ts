@@ -30,6 +30,22 @@ async function runBashCompletion(path: string, words: string[], env?: NodeJS.Pro
 	return stdout.trim() === "" ? [] : stdout.trimEnd().split("\n");
 }
 
+async function runZshCompletion(path: string, words: string[], cwd: string): Promise<string[]> {
+	const script = [
+		"completion_file=$1; shift",
+		'words=("$@")',
+		"CURRENT=$#words",
+		"PREFIX=$words[CURRENT]",
+		`_describe() { local -a values; values=("${SHELL_PARAMETER_START}(@P)2}"); print -rl -- "${SHELL_PARAMETER_START}values[@]}"; }`,
+		'function run_completion { source "$completion_file"; }',
+		"run_completion",
+	].join("\n");
+	const { stdout } = await execFileAsync("zsh", ["-f", "-c", script, "completion-test", path, ...words], {
+		cwd,
+	});
+	return stdout.trim() === "" ? [] : stdout.trimEnd().split("\n");
+}
+
 describe("shell completion installation", () => {
 	it("installs both generated files in standard XDG data directories", async () => {
 		const dataHome = await mkdtemp(join(tmpdir(), "stepstone-completion-data-"));
@@ -52,6 +68,9 @@ describe("shell completion installation", () => {
 			zsh: "/home/example/.local/share/zsh/site-functions/_stepstone",
 		});
 		expect(() => installedCompletionPaths({})).toThrow("HOME is required");
+		expect(() => installedCompletionPaths({ XDG_DATA_HOME: "", HOME: "/home/example" })).toThrow(
+			"XDG_DATA_HOME must be an absolute path",
+		);
 		expect(() => installedCompletionPaths({ XDG_DATA_HOME: "relative" })).toThrow(
 			"XDG_DATA_HOME must be an absolute path",
 		);
@@ -107,6 +126,69 @@ describe("shell completion installation", () => {
 		expect(
 			await runBashCompletion(paths.bash, [CLI_COMMAND_CONTRACT.binary, "project", "move", "goal", "b"]),
 		).toEqual(["before"]);
+	});
+
+	it("keeps Bash path candidates with spaces intact", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-completion-spaces-"));
+		const paths = installedCompletionPaths({ XDG_DATA_HOME: root });
+		await installShellCompletions({ XDG_DATA_HOME: root });
+		const directory = join(root, "My Project");
+		const file = join(root, "My Plan.json");
+		await mkdir(directory);
+		await writeFile(file, "{}\n");
+		for (const [args, expected] of [
+			[["list", "--cwd"], [directory]],
+			[
+				["list", "--file"],
+				[file, directory],
+			],
+			[["apply-plan"], [file, directory]],
+		] as const) {
+			expect(
+				(
+					await runBashCompletion(paths.bash, [
+						CLI_COMMAND_CONTRACT.binary,
+						"project",
+						...args,
+						join(root, "My"),
+					])
+				).sort(),
+			).toEqual([...expected].sort());
+		}
+	});
+
+	it("reads branches from the preceding --cwd repository in both shells", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-completion-branches-"));
+		const repository = join(root, "Other Project");
+		await mkdir(repository);
+		await execFileAsync("git", ["init", "-q", repository]);
+		await execFileAsync("git", [
+			"-C",
+			repository,
+			"-c",
+			"user.name=Test",
+			"-c",
+			"user.email=test@example.com",
+			"commit",
+			"--allow-empty",
+			"-qm",
+			"Initial",
+		]);
+		await execFileAsync("git", ["-C", repository, "branch", "completion-target"]);
+		const paths = installedCompletionPaths({ XDG_DATA_HOME: root });
+		await installShellCompletions({ XDG_DATA_HOME: root });
+		const words = [
+			CLI_COMMAND_CONTRACT.binary,
+			"project",
+			"start",
+			"goal",
+			"--cwd",
+			repository,
+			"--branch",
+			"",
+		];
+		expect(await runBashCompletion(paths.bash, words)).toContain("completion-target");
+		expect(await runZshCompletion(paths.zsh, words, root)).toContain("completion-target");
 	});
 
 	it("reads goal IDs through the CLI and forwards location selectors", async () => {
