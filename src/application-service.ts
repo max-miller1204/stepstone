@@ -13,6 +13,7 @@ import {
 	type ProjectRootLookup,
 } from "./git.ts";
 import {
+	findGoalByStoredId,
 	MAX_REPORTED_GOAL_CANDIDATES,
 	resolveGoalSelector,
 	type UnresolvedGoalSelector,
@@ -627,7 +628,7 @@ function rejectUnsupportedProjectOptions(operation: WorklistOperation): void {
 			resolution: "use-project-add-or-update",
 		});
 	}
-	if (operation.links !== undefined && !GROUP_ACTIONS.has(operation.action)) {
+	if (operation.links !== undefined && !DEPENDS_ON_ACTIONS.has(operation.action)) {
 		throw validationError("links is only supported for project add and update.", {
 			fields: ["links"],
 			resolution: "use-project-add-or-update",
@@ -1310,7 +1311,7 @@ export class WorklistApplicationService {
 					});
 				}
 				const { goals, retiredIds, revision } = await readProjectGoals(projectPath);
-				const goal = goals.find((candidate) => candidate.id === operation.id);
+				const goal = findGoalByStoredId(goals, operation.id, retiredIds);
 				if (!goal) throw new ProjectGoalNotFoundError(operation.id);
 				return {
 					result: {

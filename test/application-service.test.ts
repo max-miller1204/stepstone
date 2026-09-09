@@ -2,12 +2,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	unwrapWorklistApplicationResult,
 	WorklistApplicationService,
 	type WorklistOperationSource,
 } from "../src/application-service.ts";
+import * as projectMutations from "../src/project-mutations.ts";
 import { WORKLIST_ERROR_CODES } from "../src/result-envelope.ts";
 import { SessionStore } from "../src/session-store.ts";
 import type { ProjectWorklist } from "../src/types.ts";
@@ -21,6 +22,70 @@ function createSessionStore() {
 }
 
 describe("worklist application service", () => {
+	it("rejects links on project list instead of ignoring them", async () => {
+		const projectPath = join(await mkdtemp(join(tmpdir(), "stepstone-list-links-")), "worklist.json");
+		const service = new WorklistApplicationService({ projectPath });
+		const result = await service.execute(
+			{ scope: "project", action: "list", links: ["https://example.com/spec"] },
+			{ source: "tool" },
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			error: { code: WORKLIST_ERROR_CODES.VALIDATION_FAILED, details: { fields: ["links"] } },
+			meta: { changed: false },
+		});
+	});
+
+	it("shows a live goal when its ID migrates between selector resolution and the detail read", async () => {
+		const projectPath = join(await mkdtemp(join(tmpdir(), "stepstone-show-migration-")), "worklist.json");
+		const timestamp = "2026-01-01T00:00:00.000Z";
+		await writeFile(
+			projectPath,
+			JSON.stringify({
+				version: 1,
+				revision: 1,
+				goals: [
+					{
+						id: "goal-123-abcdef12",
+						title: "Migrating goal",
+						description: "Full detail",
+						status: "open",
+						createdAt: timestamp,
+						updatedAt: timestamp,
+					},
+				],
+			}),
+		);
+		const service = new WorklistApplicationService({ projectPath });
+		const readGoals = projectMutations.readProjectGoals;
+		const read = vi.spyOn(projectMutations, "readProjectGoals").mockImplementationOnce(async (path) => {
+			const snapshot = await readGoals(path);
+			const migration = await service.execute(
+				{ scope: "project", action: "migrate_ids", confirm: true },
+				{ source: "cli" },
+			);
+			expect(migration.ok).toBe(true);
+			return snapshot;
+		});
+		try {
+			const result = await service.execute(
+				{ scope: "project", action: "show", id: "goal-123-abcdef12" },
+				{ source: "tool" },
+			);
+			expect(result).toMatchObject({
+				ok: true,
+				result: {
+					goal: { id: "migrating-goal", previousIds: ["goal-123-abcdef12"], description: "Full detail" },
+					blocked: false,
+					blocks: [],
+				},
+				meta: { changed: false, revisions: { project: "2" } },
+			});
+		} finally {
+			read.mockRestore();
+		}
+	});
+
 	it("projects and applies JSON plans through the canonical service boundary", async () => {
 		const projectPath = join(
 			await mkdtemp(join(tmpdir(), "stepstone-application-plan-")),
