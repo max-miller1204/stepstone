@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import {
 	jsonEncodedStringBytes,
 	TEXT_TRUNCATION_MARKER,
@@ -34,6 +35,7 @@ export interface ProjectGoalListRequest {
 interface ProjectGoalListCursor {
 	version: 1;
 	revision: string;
+	snapshot: string;
 	offset: number;
 	statuses: ProjectGoalStatus[] | null;
 	group: string | null;
@@ -57,7 +59,7 @@ export class ProjectGoalListCursorConflictError extends Error {
 
 	constructor(expectedRevision: string, actualRevision: string) {
 		super(
-			`Project Goal list cursor revision ${expectedRevision} does not match current revision ${actualRevision}.`,
+			`Project Goal list cursor does not match the current roadmap (cursor revision ${expectedRevision}, current revision ${actualRevision}). Restart project list.`,
 		);
 		this.name = "ProjectGoalListCursorConflictError";
 		this.expectedRevision = expectedRevision;
@@ -154,11 +156,13 @@ function decodeCursor(value: string): ProjectGoalListCursor {
 	}
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw invalidCursor();
 	const cursor = parsed as Record<string, unknown>;
-	const allowed = ["group", "offset", "revision", "statuses", "version"];
+	const allowed = ["group", "offset", "revision", "snapshot", "statuses", "version"];
 	if (Object.keys(cursor).some((key) => !allowed.includes(key))) throw invalidCursor();
 	if (
 		cursor.version !== 1 ||
 		typeof cursor.revision !== "string" ||
+		typeof cursor.snapshot !== "string" ||
+		!/^[a-f0-9]{64}$/.test(cursor.snapshot) ||
 		!Number.isSafeInteger(cursor.offset) ||
 		(cursor.offset as number) < 0 ||
 		!(cursor.group === null || typeof cursor.group === "string") ||
@@ -174,6 +178,7 @@ function decodeCursor(value: string): ProjectGoalListCursor {
 	return {
 		version: 1,
 		revision: cursor.revision,
+		snapshot: cursor.snapshot,
 		offset: cursor.offset as number,
 		statuses: statuses ?? null,
 		group: group ?? null,
@@ -245,7 +250,9 @@ export function projectProjectGoalList(
 	}
 
 	const decoded = request.cursor === undefined ? undefined : decodeCursor(request.cursor);
-	if (decoded && decoded.revision !== revision) {
+	// Revision counters belong to one worklist. Bind pages to its content as well.
+	const snapshot = createHash("sha256").update(JSON.stringify(goals)).digest("hex");
+	if (decoded && (decoded.revision !== revision || decoded.snapshot !== snapshot)) {
 		throw new ProjectGoalListCursorConflictError(decoded.revision, revision);
 	}
 	const statuses = decoded?.statuses ?? validateStatuses(request.statuses);
@@ -288,6 +295,7 @@ export function projectProjectGoalList(
 						nextCursor: encodeCursor({
 							version: 1,
 							revision,
+							snapshot,
 							offset: nextOffset,
 							statuses: statuses ?? null,
 							group: group ?? null,
@@ -324,6 +332,7 @@ export function projectProjectGoalList(
 					nextCursor: encodeCursor({
 						version: 1,
 						revision,
+						snapshot,
 						offset: nextOffset,
 						statuses: statuses ?? null,
 						group: group ?? null,

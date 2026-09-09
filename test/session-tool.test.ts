@@ -1216,6 +1216,43 @@ describe("registered model tool", () => {
 		});
 	});
 
+	it("rejects a cursor when location resolution selects a different roadmap at the same revision", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-list-location-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const timestamp = "2026-01-01T00:00:00.000Z";
+		const roadmap = (prefix: string) =>
+			JSON.stringify({
+				version: 1,
+				revision: 4,
+				goals: Array.from({ length: 3 }, (_, index) => ({
+					id: `${prefix}-${index}`,
+					title: `${prefix} ${index}`,
+					status: "open",
+					createdAt: timestamp,
+					updatedAt: timestamp,
+				})),
+			});
+		await mkdir(join(root, ".pi"));
+		await writeFile(join(root, ".pi", "worklist.json"), roadmap("legacy"));
+		const session = await startSession(root);
+		const listed = (await session.call({ scope: "project", action: "list", limit: 1 })) as {
+			details: WorklistOperationResult;
+		};
+		const cursor = listed.details.projectGoalList?.nextCursor;
+		if (!cursor) throw new Error("First page did not return a cursor");
+		await mkdir(join(root, ".worklist"));
+		await writeFile(join(root, ".worklist", "worklist.json"), roadmap("current"));
+		await expect(session.call({ scope: "project", action: "list", cursor })).rejects.toMatchObject({
+			code: "CONFLICT",
+			retryable: true,
+			conflict: { type: "revision" },
+		});
+		const restarted = (await session.call({ scope: "project", action: "list", limit: 1 })) as {
+			details: WorklistOperationResult;
+		};
+		expect(restarted.details.projectGoalList?.goals.map((goal) => goal.id)).toEqual(["current-0"]);
+	});
+
 	it("resolves the same goal file a terminal in the repository would", async () => {
 		// Canonical, because the resolver reports the canonical root back and a
 		// temporary directory reaches it through a symlink on macOS.

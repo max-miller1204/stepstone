@@ -133,6 +133,23 @@ describe("bounded Project Goal list projection", () => {
 		).toThrow(ProjectGoalListValidationError);
 	});
 
+	it("rejects same-revision cursors after order or filter fields change", () => {
+		const firstGoal = goal(1, { group: "Later" });
+		const secondGoal = goal(2, { group: "Later" });
+		const goals = [firstGoal, secondGoal];
+		const first = projectProjectGoalList(goals, "4", { limit: 1, statuses: ["open"], group: "Later" });
+		if (!first.nextCursor) throw new Error("First page did not return a cursor");
+		for (const changed of [
+			[secondGoal, firstGoal],
+			[goal(1, { group: "Later", status: "done" }), secondGoal],
+			[goal(1, { group: "Foundation" }), secondGoal],
+		]) {
+			expect(() => projectProjectGoalList(changed, "4", { cursor: first.nextCursor })).toThrow(
+				ProjectGoalListCursorConflictError,
+			);
+		}
+	});
+
 	it("selects ungrouped goals with an empty group filter", () => {
 		const page = projectProjectGoalList(
 			[goal(1), goal(2, { group: "Later" }), goal(3, { group: "  " })],
