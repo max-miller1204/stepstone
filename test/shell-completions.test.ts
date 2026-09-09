@@ -30,7 +30,12 @@ async function runBashCompletion(path: string, words: string[], env?: NodeJS.Pro
 	return stdout.trim() === "" ? [] : stdout.trimEnd().split("\n");
 }
 
-async function runZshCompletion(path: string, words: string[], cwd: string): Promise<string[]> {
+async function runZshCompletion(
+	path: string,
+	words: string[],
+	cwd: string,
+	env?: NodeJS.ProcessEnv,
+): Promise<string[]> {
 	const script = [
 		"completion_file=$1; shift",
 		'words=("$@")',
@@ -42,6 +47,7 @@ async function runZshCompletion(path: string, words: string[], cwd: string): Pro
 	].join("\n");
 	const { stdout } = await execFileAsync("zsh", ["-f", "-c", script, "completion-test", path, ...words], {
 		cwd,
+		env: { ...process.env, ...env },
 	});
 	return stdout.trim() === "" ? [] : stdout.trimEnd().split("\n");
 }
@@ -187,8 +193,16 @@ describe("shell completion installation", () => {
 			"--branch",
 			"",
 		];
-		expect(await runBashCompletion(paths.bash, words)).toContain("completion-target");
-		expect(await runZshCompletion(paths.zsh, words, root)).toContain("completion-target");
+		for (const directory of [
+			repository,
+			`"${repository}"`,
+			`'${repository}'`,
+			repository.replaceAll(" ", "\\ "),
+		]) {
+			const input = words.map((word) => (word === repository ? directory : word));
+			expect(await runBashCompletion(paths.bash, input)).toContain("completion-target");
+			expect(await runZshCompletion(paths.zsh, input, root)).toContain("completion-target");
+		}
 	});
 
 	it("reads goal IDs through the CLI and forwards location selectors", async () => {
@@ -216,6 +230,14 @@ describe("shell completion installation", () => {
 		);
 		expect(completions).toEqual(["alpha-goal"]);
 		expect((await readFile(log, "utf8")).trimEnd().split("\n")).toEqual(["project", "list", "--cwd", root]);
+
+		for (const description of ["--cwd", "--file", "--branch", "--"]) {
+			const words = [executable, "project", "update", "--cwd", root, "--description", description, "a"];
+			const env = { STEPSTONE_COMPLETION_LOG: log };
+			expect(await runBashCompletion(paths.bash, words, env)).toEqual(["alpha-goal"]);
+			expect(await runZshCompletion(paths.zsh, words, root, env)).toEqual(["alpha-goal", "beta-goal"]);
+			expect((await readFile(log, "utf8")).trimEnd().split("\n")).toEqual(["project", "list", "--cwd", root]);
+		}
 	});
 
 	it("runs completion install without a Git repository", async () => {
