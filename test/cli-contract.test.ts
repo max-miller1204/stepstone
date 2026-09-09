@@ -150,6 +150,7 @@ function publishedPackageSpellings(binary: string): SpellingEntry {
 		subject: "published package",
 		shapes: [
 			required(new RegExp(`npx -y (${PACKAGE_NAME})@latest`, "g")),
+			required(new RegExp(`\\b(${PACKAGE_NAME}) completion install\\b`, "g")),
 			required(new RegExp(String.raw`\bnpm:(${PACKAGE_NAME})`, "g")),
 			required(new RegExp(String.raw`\bnpm (?:view|deprecate|i|install) (${ownPackage})(?![\w@./-])`, "g")),
 			required(new RegExp(String.raw`\bnpmjs\.com/package/(${PACKAGE_NAME})`, "g")),
@@ -306,6 +307,9 @@ describe("single CLI command contract", () => {
 			expect(usage).toContain(flag.usage);
 			expect(flags).toContain(`\`${flag.usage}\``);
 		}
+		expect(usage).toContain(CLI_COMMAND_CONTRACT.completion.usage);
+		expect(usage).toContain(CLI_COMMAND_CONTRACT.completion.summary);
+		expect(guide).toContain(`${CLI_COMMAND_CONTRACT.binary} ${CLI_COMMAND_CONTRACT.completion.usage}`);
 		for (const exitCode of CLI_COMMAND_CONTRACT.exitCodes) {
 			expect(usage).toContain(`${exitCode.code} ${exitCode.meaning}`);
 		}

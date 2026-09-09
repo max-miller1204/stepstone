@@ -161,7 +161,7 @@ function assertNothingUnresolved(command: string, stderr: string): void {
 	);
 }
 
-function cliRunner(binPath: string, cwd: string) {
+function cliRunner(binPath: string, cwd: string, env?: NodeJS.ProcessEnv) {
 	// The bin's own name, so a failure names the command that was actually run
 	// without spelling the published name here as a literal.
 	const command = basename(binPath);
@@ -170,6 +170,7 @@ function cliRunner(binPath: string, cwd: string) {
 		try {
 			const { stdout, stderr } = await execFileAsync(binPath, args, {
 				cwd,
+				env,
 				maxBuffer: 32 * 1024 * 1024,
 				timeout: CLI_TIMEOUT_MS,
 			});
@@ -233,8 +234,23 @@ function goalIds(envelope: SuccessEnvelope): string[] {
 
 /** Drives the whole read, write, sequencing, and refusal surface of the bin. */
 async function exerciseCli(binPath: string, workspace: string, version: string): Promise<void> {
-	const runCli = cliRunner(binPath, workspace);
+	const completionHome = join(workspace, "completion-data");
+	const runCli = cliRunner(binPath, workspace, { ...process.env, XDG_DATA_HOME: completionHome });
 	const worklistPath = join(workspace, ".worklist", "worklist.json");
+
+	step("  shell completion install");
+	const completion = await runCli(["completion", "install"]);
+	assert.equal(completion.code, 0, `completion install exited ${completion.code}\n${completion.stderr}`);
+	assert.match(completion.stdout, /Installed Bash completion:/);
+	assert.match(completion.stdout, /Installed Zsh completion:/);
+	assert.match(
+		await readFile(join(completionHome, "bash-completion", "completions", binary), "utf8"),
+		new RegExp(`complete -F _${binary} ${binary}`),
+	);
+	assert.match(
+		await readFile(join(completionHome, "zsh", "site-functions", `_${binary}`), "utf8"),
+		new RegExp(`#compdef ${binary}`),
+	);
 
 	step("  list, add, show, find");
 	assert.deepEqual(goalIds(okEnvelope(await runCli(["project", "list", "--json"]), "list", version)), []);

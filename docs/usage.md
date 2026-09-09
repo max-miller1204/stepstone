@@ -25,6 +25,37 @@ In a development checkout, `node src/cli.ts project <action>` runs the same CLI 
 Running the TypeScript entry point directly needs Node 22.18 or newer, which strips types natively.
 On older versions, including this package's own floor, that entry point fails with an `Unknown file extension ".ts"` error while the compiled bin has no such requirement.
 
+## Shell completion
+
+Install the package globally, then install its generated Bash and Zsh completion files:
+
+```sh
+npm install stepstone --global
+stepstone completion install
+```
+
+The command writes to the standard per-user completion directories under `$XDG_DATA_HOME`.
+When `$XDG_DATA_HOME` is not set, it uses `$HOME/.local/share`.
+The installed files are:
+
+```text
+$XDG_DATA_HOME/bash-completion/completions/stepstone
+$XDG_DATA_HOME/zsh/site-functions/_stepstone
+```
+
+The command refuses to replace a file that Stepstone does not own.
+Run it again after a Stepstone update to refresh the completion definitions.
+Restart the shell after installation.
+
+Zsh loads the file when its `fpath` includes the standard user data directory and `compinit` is active.
+Bash loads the file through the `bash-completion` framework.
+No shell configuration change is needed when the existing shell setup already provides those loaders.
+
+The scripts complete the `project` scope, actions, action-specific flags, file paths, directories, Git branches, move placements, and goal IDs.
+Goal ID completion reads the current roadmap through the installed CLI.
+It honors `--cwd` and `--file` when either flag comes before the ID.
+Outside a Git repository, the command and flag completions still work, but no goal IDs are offered.
+
 ## Reading the roadmap
 
 ```sh

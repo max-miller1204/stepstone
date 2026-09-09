@@ -122,6 +122,10 @@ export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
 	dispatchBinary: DISPATCH_BINARY,
 	scope: "project",
+	completion: {
+		usage: "completion install",
+		summary: "Install Bash and Zsh completion in the standard per-user data directories",
+	},
 	intro: `Manage a repository's Project Goals in \`<git-root>/${WORKLIST_RELATIVE_PATH}\` from any shell, script, or coding agent, with nothing installed but Node. Every mutation runs through the same application service, cross-process lock, and atomic replacement as every other interface onto that file, so this CLI, the goal board, and a live Pi session may all be open on one repository. Session Tasks are a Pi extension feature and are managed from inside a Pi session instead.`,
 	/**
 	 * Trigger text agents match against to auto-load the skill. Deliberately
@@ -592,15 +596,20 @@ export function renderCliUsage(): string {
 	const contract = CLI_COMMAND_CONTRACT;
 	const flagColumn = Math.max(...contract.flags.map((flag) => flag.usage.length)) + 2;
 	const actionLines = contract.actions.map((action) => `  ${padUsage(action.usage)}${action.summary}`);
+	const completionLine = `  ${padUsage(contract.completion.usage)}${contract.completion.summary}`;
 	const flagLines = contract.flags.map((flag) => `  ${flag.usage.padEnd(flagColumn)}${flagSummary(flag)}`);
 	const exitCodes = contract.exitCodes.map((exitCode) => `${exitCode.code} ${exitCode.meaning}`).join(", ");
 	return [
 		`Usage: ${contract.binary} ${contract.scope} <action> [arguments] [flags]`,
+		`       ${contract.binary} ${contract.completion.usage}`,
 		"",
-		"Actions:",
+		"Project actions:",
 		...actionLines,
 		"",
-		"Flags:",
+		"Setup commands:",
+		completionLine,
+		"",
+		"Project flags:",
 		...flagLines,
 		"",
 		`Exit codes: ${exitCodes}.`,
@@ -810,6 +819,16 @@ export function renderCliGuide(): string {
 		"```",
 		"",
 		"Every `--json` result envelope reports the running package version as `meta.cliVersion`.",
+		"",
+		"## Shell completion",
+		"",
+		"After installing the package as a global command, install completion in the standard per-user Bash and Zsh data directories:",
+		"",
+		"```sh",
+		`${contract.binary} ${contract.completion.usage}`,
+		"```",
+		"",
+		"This command does not need a Git repository. Restart the shell after it finishes.",
 		"",
 		"## Where the goal file lives",
 		"",

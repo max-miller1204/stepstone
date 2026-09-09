@@ -1,0 +1,265 @@
+import { CLI_COMMAND_CONTRACT, GENERATOR_PATH } from "./cli-contract.ts";
+
+/** Stable marker that lets the installer replace only files it owns. */
+export const COMPLETION_OWNERSHIP_MARKER = `# Managed by ${CLI_COMMAND_CONTRACT.binary} completion install.`;
+
+const VALUE_FLAGS = new Set(
+	CLI_COMMAND_CONTRACT.flags.filter((flag) => flag.usage.includes(" <")).map((flag) => flag.name),
+);
+const SHELL_PARAMETER_START = "$" + "{";
+const GOAL_ID_ACTIONS = new Set([
+	"show",
+	"update",
+	"move",
+	"start",
+	"set_active",
+	"complete",
+	"reopen",
+	"archive",
+	"delete",
+]);
+
+/** Quote one generated value for a single-quoted shell word. */
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function actionFlags(action: string): string[] {
+	return CLI_COMMAND_CONTRACT.flags
+		.filter((flag) => flag.actions === undefined || flag.actions.includes(action))
+		.map((flag) => flag.name);
+}
+
+function bashCaseEntries(): string[] {
+	return CLI_COMMAND_CONTRACT.actions.map(
+		(action) => `\t\t${action.name}) flags=${shellQuote(actionFlags(action.name).join(" "))} ;;`,
+	);
+}
+
+/** Render a dependency-free Bash completion for the installed executable. */
+export function renderBashCompletion(): string {
+	const contract = CLI_COMMAND_CONTRACT;
+	const actions = contract.actions.map((action) => action.name).join(" ");
+	const valueFlags = [...VALUE_FLAGS].join(" ");
+	const goalIdActions = [...GOAL_ID_ACTIONS].join("|");
+	return [
+		COMPLETION_OWNERSHIP_MARKER,
+		`# Generated from src/cli-contract.ts by ${GENERATOR_PATH}. Do not edit manually.`,
+		"",
+		`_${contract.binary}_goal_ids() {`,
+		`\tlocal executable=${SHELL_PARAMETER_START}COMP_WORDS[0]} index`,
+		"\tlocal -a selectors=()",
+		"\tfor (( index=3; index<COMP_CWORD; index++ )); do",
+		`\t\tif [[ ${SHELL_PARAMETER_START}COMP_WORDS[index]} == --cwd || ${SHELL_PARAMETER_START}COMP_WORDS[index]} == --file ]]; then`,
+		`\t\t\tselectors+=("${SHELL_PARAMETER_START}COMP_WORDS[index]}" "${SHELL_PARAMETER_START}COMP_WORDS[index+1]}")`,
+		"\t\t\t((index++))",
+		"\t\tfi",
+		"\tdone",
+		`\t"$executable" project list "${SHELL_PARAMETER_START}selectors[@]}" 2>/dev/null | sed -n 's/^\\[[^]]*\\] \\([^:]*\\):.*/\\1/p'`,
+		"}",
+		"",
+		`_${contract.binary}_action_flags() {`,
+		"\tlocal action=$1 flags",
+		'\tcase "$action" in',
+		...bashCaseEntries(),
+		"\t\t*) flags='' ;;",
+		"\tesac",
+		"\tprintf '%s\\n' \"$flags\"",
+		"}",
+		"",
+		`_${contract.binary}() {`,
+		"\tlocal cur prev action flags positionals=0 index token skip_value=0",
+		"\tCOMPREPLY=()",
+		`\tcur=${SHELL_PARAMETER_START}COMP_WORDS[COMP_CWORD]}`,
+		`\tprev=${SHELL_PARAMETER_START}COMP_WORDS[COMP_CWORD-1]}`,
+		"",
+		'\tcase "$prev" in',
+		'\t\t--cwd) COMPREPLY=( $(compgen -d -- "$cur") ); return ;;',
+		'\t\t--file) COMPREPLY=( $(compgen -f -- "$cur") ); return ;;',
+		`\t\t--depends-on) COMPREPLY=( $(compgen -W "$(_${contract.binary}_goal_ids)" -- "$cur") ); return ;;`,
+		'\t\t--branch) COMPREPLY=( $(compgen -W "$(git branch --format=\'%(refname:short)\' 2>/dev/null)" -- "$cur") ); return ;;',
+		"\t\t--description|--append-description|--group|--link|--expect-updated-at) return ;;",
+		"\tesac",
+		"",
+		"\tif (( COMP_CWORD == 1 )); then",
+		`\t\tCOMPREPLY=( $(compgen -W ${shellQuote(`${contract.scope} completion`)} -- "$cur") )`,
+		"\t\treturn",
+		"\tfi",
+		`\tif [[ ${SHELL_PARAMETER_START}COMP_WORDS[1]} == completion ]]; then`,
+		"\t\tif (( COMP_CWORD == 2 )); then",
+		`\t\t\tCOMPREPLY=( $(compgen -W ${shellQuote("install")} -- "$cur") )`,
+		"\t\tfi",
+		"\t\treturn",
+		"\tfi",
+		"\tif (( COMP_CWORD == 2 )); then",
+		`\t\tCOMPREPLY=( $(compgen -W ${shellQuote(actions)} -- "$cur") )`,
+		"\t\treturn",
+		"\tfi",
+		"",
+		`\taction=${SHELL_PARAMETER_START}COMP_WORDS[2]}`,
+		`\tflags=$(_${contract.binary}_action_flags "$action")`,
+		"\tif [[ $cur == --* ]]; then",
+		'\t\tCOMPREPLY=( $(compgen -W "$flags" -- "$cur") )',
+		"\t\treturn",
+		"\tfi",
+		"",
+		"\tfor (( index=3; index<COMP_CWORD; index++ )); do",
+		`\t\ttoken=${SHELL_PARAMETER_START}COMP_WORDS[index]}`,
+		"\t\tif (( skip_value )); then",
+		"\t\t\tskip_value=0",
+		"\t\t\tcontinue",
+		"\t\tfi",
+		"\t\tif [[ $token == -- ]]; then break; fi",
+		"\t\tif [[ $token == --* ]]; then",
+		`\t\t\tif [[ ${shellQuote(` ${valueFlags} `)} == *" $token "* ]]; then skip_value=1; fi`,
+		"\t\t\tcontinue",
+		"\t\tfi",
+		"\t\t((positionals++))",
+		"\tdone",
+		"",
+		'\tcase "$action" in',
+		`\t\t${goalIdActions})`,
+		"\t\t\tif (( positionals == 0 )); then",
+		`\t\t\t\tCOMPREPLY=( $(compgen -W "$(_${contract.binary}_goal_ids) $flags" -- "$cur") )`,
+		"\t\t\telif [[ $action == move && $positionals == 1 ]]; then",
+		'\t\t\t\tCOMPREPLY=( $(compgen -W "up down before after $flags" -- "$cur") )',
+		"\t\t\telif [[ $action == move && $positionals == 2 && ( $prev == before || $prev == after ) ]]; then",
+		`\t\t\t\tCOMPREPLY=( $(compgen -W "$(_${contract.binary}_goal_ids) $flags" -- "$cur") )`,
+		"\t\t\telse",
+		'\t\t\t\tCOMPREPLY=( $(compgen -W "$flags" -- "$cur") )',
+		"\t\t\tfi",
+		"\t\t\t;;",
+		"\t\tapply-plan)",
+		'\t\t\tif (( positionals == 0 )); then COMPREPLY=( $(compgen -f -- "$cur") ); fi',
+		"\t\t\t;;",
+		'\t\t*) COMPREPLY=( $(compgen -W "$flags" -- "$cur") ) ;;',
+		"\tesac",
+		"}",
+		"",
+		`complete -F _${contract.binary} ${contract.binary}`,
+		"",
+	].join("\n");
+}
+
+function zshActionEntries(): string[] {
+	return CLI_COMMAND_CONTRACT.actions.map((action) =>
+		shellQuote(`${action.name}:${action.summary.replaceAll(":", "\\:")}`),
+	);
+}
+
+function zshFlagCaseEntries(): string[] {
+	return CLI_COMMAND_CONTRACT.actions.map(
+		(action) => `\t\t${action.name}) flags=(${actionFlags(action.name).map(shellQuote).join(" ")}) ;;`,
+	);
+}
+
+/** Render a Zsh completion for the installed executable. */
+export function renderZshCompletion(): string {
+	const contract = CLI_COMMAND_CONTRACT;
+	const valueFlags = [...VALUE_FLAGS].join(" ");
+	const goalIdActions = [...GOAL_ID_ACTIONS].join("|");
+	return [
+		`#compdef ${contract.binary}`,
+		COMPLETION_OWNERSHIP_MARKER,
+		`# Generated from src/cli-contract.ts by ${GENERATOR_PATH}. Do not edit manually.`,
+		"",
+		`_${contract.binary}_goal_ids() {`,
+		"\tlocal -a ids selectors",
+		"\tlocal -i index",
+		"\tfor (( index=4; index<CURRENT; index++ )); do",
+		"\t\tif [[ $words[index] == --cwd || $words[index] == --file ]]; then",
+		'\t\t\tselectors+=("$words[index]" "$words[index+1]")',
+		"\t\t\t((index++))",
+		"\t\tfi",
+		"\tdone",
+		`\tids=("${SHELL_PARAMETER_START}(@f)$(command "$words[1]" project list "${SHELL_PARAMETER_START}selectors[@]}" 2>/dev/null | sed -n 's/^\\[[^]]*\\] \\([^:]*\\):.*/\\1/p')}")`,
+		`\t(( ${SHELL_PARAMETER_START}#ids} )) && _describe 'goal' ids`,
+		"}",
+		"",
+		`_${contract.binary}_branches() {`,
+		"\tlocal -a branches",
+		`\tbranches=("${SHELL_PARAMETER_START}(@f)$(command git branch --format='%(refname:short)' 2>/dev/null)}")`,
+		`\t(( ${SHELL_PARAMETER_START}#branches} )) && _describe 'branch' branches`,
+		"}",
+		"",
+		`_${contract.binary}_action_flags() {`,
+		"\tlocal action=$1",
+		"\tlocal -a flags",
+		'\tcase "$action" in',
+		...zshFlagCaseEntries(),
+		"\t\t*) flags=() ;;",
+		"\tesac",
+		"\t_describe 'flag' flags",
+		"}",
+		"",
+		"local action token prev",
+		"local -i index positionals=0 skip_value=0",
+		"local -a actions",
+		"actions=(",
+		...zshActionEntries().map((entry) => `\t${entry}`),
+		")",
+		"",
+		"if (( CURRENT == 2 )); then",
+		`\tcompadd -- ${shellQuote(contract.scope)} ${shellQuote("completion")}`,
+		"\treturn",
+		"fi",
+		"if [[ $words[2] == completion ]]; then",
+		"\tif (( CURRENT == 3 )); then",
+		`\t\tcompadd -- ${shellQuote("install")}`,
+		"\tfi",
+		"\treturn",
+		"fi",
+		"if (( CURRENT == 3 )); then",
+		"\t_describe 'action' actions",
+		"\treturn",
+		"fi",
+		"",
+		"action=$words[3]",
+		"prev=$words[CURRENT-1]",
+		'case "$prev" in',
+		"\t--cwd) _directories; return ;;",
+		"\t--file) _files; return ;;",
+		`\t--depends-on) _${contract.binary}_goal_ids; return ;;`,
+		`\t--branch) _${contract.binary}_branches; return ;;`,
+		"\t--description|--append-description|--group|--link|--expect-updated-at) return ;;",
+		"esac",
+		"if [[ $PREFIX == --* ]]; then",
+		`\t_${contract.binary}_action_flags "$action"`,
+		"\treturn",
+		"fi",
+		"",
+		"for (( index=4; index<CURRENT; index++ )); do",
+		"\ttoken=$words[index]",
+		"\tif (( skip_value )); then",
+		"\t\tskip_value=0",
+		"\t\tcontinue",
+		"\tfi",
+		"\tif [[ $token == -- ]]; then break; fi",
+		"\tif [[ $token == --* ]]; then",
+		`\t\tif [[ ${shellQuote(` ${valueFlags} `)} == *" $token "* ]]; then skip_value=1; fi`,
+		"\t\tcontinue",
+		"\tfi",
+		"\t((positionals++))",
+		"done",
+		"",
+		'case "$action" in',
+		`\t${goalIdActions})`,
+		"\t\tif (( positionals == 0 )); then",
+		`\t\t\t_${contract.binary}_goal_ids`,
+		"\t\telif [[ $action == move && $positionals == 1 ]]; then",
+		"\t\t\tlocal -a placements=(up down before after)",
+		"\t\t\t_describe 'placement' placements",
+		"\t\telif [[ $action == move && $positionals == 2 && ( $prev == before || $prev == after ) ]]; then",
+		`\t\t\t_${contract.binary}_goal_ids`,
+		"\t\telse",
+		`\t\t\t_${contract.binary}_action_flags "$action"`,
+		"\t\tfi",
+		"\t\t;;",
+		"\tapply-plan)",
+		"\t\tif (( positionals == 0 )); then _files; fi",
+		"\t\t;;",
+		`\t*) _${contract.binary}_action_flags "$action" ;;`,
+		"esac",
+		"",
+	].join("\n");
+}
