@@ -9,7 +9,9 @@ import {
 	CLI_COMMAND_CONTRACT,
 	DISPATCH_BINARY,
 	renderSkillMarkdown,
+	renderSkillReferenceMarkdown,
 	SKILL_PATH,
+	SKILL_REFERENCE_PATH,
 } from "../src/cli-contract.ts";
 import { installedCompletionPaths } from "../src/completion-installer.ts";
 import { ROADMAP_PATH } from "../src/roadmap.ts";
@@ -321,7 +323,13 @@ describe("published stepstone package", () => {
 		const paths = await packedFilePaths();
 		// Fenced blocks are dropped before inline spans are read: their fences are
 		// backticks too, and pairing across one shifts every span that follows it.
-		const prose = renderSkillMarkdown().replace(/```[\s\S]*?```/g, "");
+		expect(paths).toContain(SKILL_REFERENCE_PATH);
+		for (const [, target] of renderSkillMarkdown().matchAll(
+			/\[[^\]]+\]\((references\/[^)#]+)(?:#[^)]*)?\)/g,
+		)) {
+			expect(paths).toContain(posix.join(posix.dirname(SKILL_PATH), target as string));
+		}
+		const prose = renderSkillReferenceMarkdown().replace(/```[\s\S]*?```/g, "");
 		const referenced = [...new Set([...prose.matchAll(/`([^`\n]+)`/g)].map(([, span]) => span))]
 			.filter((span) => span.startsWith(`${DOCS_DIRECTORY}/`) && span.endsWith(".md"))
 			.sort();
