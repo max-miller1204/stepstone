@@ -18,6 +18,10 @@
 
 See `docs/storage.md`, `docs/dependencies.md`, and `docs/pi.md`.
 
+## Review
+
+- use tmux's capture pane feature for screenshots as pr evidence
+
 ## Published package
 
 - Keep published executable graphs free of runtime Pi imports.
