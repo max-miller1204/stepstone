@@ -37,11 +37,14 @@ A search overrides it, because every section shown under a query holds a match a
 
 ## Order, filtering, and emphasis
 
-`o` cycles between dependency and recent order, and the header names the current one.
+`o` cycles the order through dependency, file, status, and recent, and the header names the current one.
 Dependency order is the default.
-Both orders use file order as their tiebreak, so neither view changes the stored roadmap.
-Both views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
-Use the CLI to reorder the stored roadmap because the board always shows a derived order.
+File order is the roadmap's canonical order, so that view shows exactly what the file says and `K` and `J`, or Shift+Up and Shift+Down, rearrange it against the neighbouring visible row inside the goal's own section.
+A section boundary is an end of the list for a move, and the board says which section it ended, because a goal that crossed one would be filed back under its own header and report a move the screen never shows.
+A move is written to the file as the neighbouring goal landing before the moved one rather than the moved one landing after its neighbour; both spell the same pair order, and only the first leaves every section where it was.
+Reordering is refused outside file order, where the rows are not where the file puts them and a move would edit an arrangement the screen is not showing.
+Status, recent, and dependency are views over that same order, which stays their tiebreak, so an arrangement survives a trip through them.
+Those views lift the active goal above every other row and give it a marker of its own, so the work in flight is the first thing the list says.
 
 Dependency order ranks each goal by the wave `project waves` puts it in, so the board and the CLI read the same edges the same way.
 Sections still hold the goals filed under them, so those waves order the list inside each section rather than flattening the roadmap into a single frontier; `project waves` is the flat read, and it is the one to ask when the question is what the whole roadmap can start next.
@@ -77,7 +80,8 @@ The header shows per-status totals across the whole roadmap, so a filtered list 
 | `a`, `e` | Add a goal, or rename the selected one |
 | `E` | Edit the selected goal's description in `$VISUAL` or `$EDITOR` |
 | `c` `r` `x` `d` | Complete, reopen, archive, or delete the selected goal |
-| `f`, `o` | Cycle the status filter, or the order: dependency, recent |
+| `f`, `o` | Cycle the status filter, or the order: dependency, file, status, recent |
+| `K` `J` or Shift+Up, Shift+Down | Move the selected goal up or down within its section, in file order only |
 | `/` | Search titles and descriptions |
 | `R`, `?`, `q` | Reload from disk, show the key map, or quit |
 
