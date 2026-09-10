@@ -67,6 +67,14 @@ The project CLI exercise asserts exit codes and `--json` envelopes across `list`
 The dispatch exercise starts the installed driver, prepares a real worktree, and reads its ignored `STEPSTONE_GOAL.md` handoff before checking persisted status; the preparation-only contract needs no agent executable.
 The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
+## Screenshot demo
+
+Run `npm run demo:screenshots` to create a clean demo repository in `artifacts/stepstone-ui-demo`.
+The script adds a varied Project Goal roadmap and a Pi session with Session Tasks.
+It also creates `open-pi.sh` and `open-project-ui.sh` launchers in the demo repository.
+Resize the terminal to about 116 columns by 40 rows before you take each screenshot.
+The `artifacts` directory is ignored by Git.
+
 ## Generated files
 
 `docs/cli.md` and `.claude/skills/stepstone/SKILL.md` are generated from `src/cli-contract.ts` by `scripts/generate-docs.ts`.
