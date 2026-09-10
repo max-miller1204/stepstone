@@ -8,6 +8,7 @@
 			"!.pi-subagents",
 			"!.pi",
 			"!.worklist",
+			"!artifacts",
 			"!dist",
 			"!.no-mistakes"
 		]

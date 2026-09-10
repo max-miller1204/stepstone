@@ -87,25 +87,11 @@ All of it lands in `.worklist/worklist.json` at the repository root, which is me
 Add `--json` to any command for a deterministic result envelope instead of prose, which is how agents and scripts should read it.
 Run `npx -y stepstone@latest project ui` for a full-screen [terminal board](docs/board.md) over the same goals.
 
-## How it works
-
-A goal is a broad outcome with a title, an optional description, a status, and a slug ID derived from its title and frozen afterwards, so a reference written in a commit message or a PR stays valid after a rename.
-Statuses are `open`, `active`, `done`, and `archived`; at most one goal is active, because `set_active` demotes whichever goal held it, and completing, reopening, archiving, or deleting one always requires explicit user intent, from a `--confirm` flag or a keystroke a person pressed.
-
-Dependency edges say which goals must land first, and blocked is derived from those edges on every read rather than stored, so nothing is ever left marked blocked after the work holding it up finished.
-`ready` is the whole parallel frontier, `next` is its first entry, and `waves` lays the unfinished goals out in the earliest layer each could start in.
-
-Every interface writes through one application service, one cross-process lock, and one atomic file replacement, so a CLI call, an open board, and a live Pi session can share a repository without corrupting the file or losing an edit.
-Optional preconditions, a file-wide revision and a single goal's `updatedAt`, turn a stale read into a reported conflict instead of a silent overwrite.
-
-Nothing the CLI or workspace-preparation driver loads imports a Pi package, so the published executables run with no Pi installation.
-A prepared checkout carries its goal in an ignored root `STEPSTONE_GOAL.md`, letting any person or harness pick up the work without Stepstone launching it or transporting a prompt.
-That is enforced by source-level import scans and by a CI job that packs the tarball and drives every installed bin with no Pi present.
-
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
+| [docs/how-it-works.md](docs/how-it-works.md) | Goal identity, lifecycle, dependency state, persistence, and executable boundaries |
 | [docs/usage.md](docs/usage.md) | Running the CLI: reads, writes, `--json` envelopes, exit codes, conflicts |
 | [docs/cli.md](docs/cli.md) | Generated `project` command reference: every action, flag, and rule |
 | [docs/goals.md](docs/goals.md) | The goal model: fields, statuses, IDs, order, groups, JSON plans |
