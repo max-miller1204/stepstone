@@ -36,7 +36,7 @@ add <title...> [--description <text> | -- <description...>]
 apply-plan <plan.json>
 update <id> [title...] [--description <text> | -- <description...>]
 move <id> up|down|before <id>|after <id>
-start <id> [--branch <name> | --clear]
+start <id> [--branch <name> | --worktree | --clear] [worktree options]
 set_active <id>
 complete <id> --confirm
 reopen <id> --confirm
@@ -60,6 +60,8 @@ Flags:
 - `--depends-on <id>` - Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update.
 - `--link <url>` - Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update.
 - `--branch <name>` - Record the branch working on a goal; project start defaults to the current Git branch; only for project start.
+- `--worktree` - Create and claim the deterministic `stepstone/<goal-id>` branch in a linked Git worktree beside the main checkout; only for project start.
+- `--workspace-parent <path>` - Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode; only for project start.
 - `--clear` - Release the branch claim on a goal; only for project start.
 - `--expect-updated-at <timestamp>` - Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete.
 - `--dry-run` - Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path.

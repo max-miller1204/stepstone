@@ -551,6 +551,13 @@ export interface CurrentGitBranchResult {
 	error?: GitCommandFailure;
 }
 
+export interface CurrentGitRevisionResult {
+	/** The exact commit checked out at HEAD. */
+	revision: string | null;
+	/** Why Git could not resolve HEAD. */
+	error?: GitCommandFailure;
+}
+
 /**
  * The branch checked out in `cwd`, keeping detached HEAD distinct from a Git
  * command that failed.
@@ -575,6 +582,21 @@ export function currentGitBranch(cwd: string, options: GitCommandOptions = {}): 
 		return { branch: raw.trim() || null };
 	} catch (error) {
 		return { branch: null, error: describeCommandFailure(error) };
+	}
+}
+
+/** Resolve the exact commit at HEAD without requiring HEAD to name a branch. */
+export function currentGitRevision(cwd: string, options: GitCommandOptions = {}): CurrentGitRevisionResult {
+	try {
+		const raw = execFileSync("git", ["rev-parse", "--verify", "HEAD^{commit}"], {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
+		});
+		return { revision: raw.trim() || null };
+	} catch (error) {
+		return { revision: null, error: describeCommandFailure(error) };
 	}
 }
 

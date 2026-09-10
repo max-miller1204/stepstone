@@ -53,7 +53,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `npx -y stepstone@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
 | `npx -y stepstone@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |
 | `npx -y stepstone@latest project move <id> up\|down\|before <id>\|after <id>` | Reorder a goal in the roadmap's canonical file order |
-| `npx -y stepstone@latest project start <id> [--branch <name> \| --clear]` | Claim a goal on a branch, or release its branch claim |
+| `npx -y stepstone@latest project start <id> [--branch <name> \| --worktree \| --clear] [worktree options]` | Claim a goal on a branch, create its Git worktree, or release its branch claim |
 | `npx -y stepstone@latest project set_active <id>` | Make a goal the single active goal |
 | `npx -y stepstone@latest project complete <id> --confirm` | Mark a goal done. Requires explicit user confirmation |
 | `npx -y stepstone@latest project reopen <id> --confirm` | Reopen a done or archived goal. Requires explicit user confirmation |
@@ -78,6 +78,8 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `--depends-on <id>` | Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update |
 | `--link <url>` | Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update |
 | `--branch <name>` | Record the branch working on a goal; project start defaults to the current Git branch; only for project start |
+| `--worktree` | Create and claim the deterministic `stepstone/<goal-id>` branch in a linked Git worktree beside the main checkout; only for project start |
+| `--workspace-parent <path>` | Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode; only for project start |
 | `--clear` | Release the branch claim on a goal; only for project start |
 | `--expect-updated-at <timestamp>` | Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete |
 | `--dry-run` | Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path |
@@ -186,6 +188,8 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - Ask next for the goal to start, ready for everything that could run in parallel, and waves for how the rest of the roadmap is layered; never pick a goal off list yourself, because list cannot tell you what is blocked or already claimed.
 - Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.
 - Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.
+- Use `start <id> --worktree` to create and claim the deterministic `stepstone/<goal-id>` branch in a linked checkout; read `result.worktreePath` instead of guessing where it was created.
+- A failed worktree claim preserves the created checkout for inspection and reports its path; never assume a failed command removed Git state whose outcome it could not prove.
 - Run migrate_ids only when the user explicitly asks for it; it rewrites stored IDs, though every old ID keeps resolving afterwards.
 - Leave the goal file where it is unless the user asks to move it: a repository still on `.pi/worklist.json` works untouched, and migrate_path is theirs to request.
 - Report the two-worklist warning to the user rather than working around it; only stepstone reads the file it names, and merging them is a decision about which goals survive.

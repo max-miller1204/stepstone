@@ -160,6 +160,8 @@ export interface WorklistOperationResult {
 	tasks?: SessionTask[];
 	/** The one goal a single-goal read or mutation returns. */
 	goal?: ProjectGoal;
+	/** Absolute linked checkout created by project start --worktree. */
+	worktreePath?: string;
 	/** Goal collections returned only by operations that explicitly read a complete collection. */
 	goals?: ProjectGoal[];
 	/** Bounded Project Goal page returned to a Pi model or direct Pi command. */

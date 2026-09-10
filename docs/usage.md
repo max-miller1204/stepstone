@@ -89,6 +89,8 @@ npx -y stepstone@latest project move <id> before <anchor-id>
 npx -y stepstone@latest project set_active <id>
 npx -y stepstone@latest project start <id>
 npx -y stepstone@latest project start <id> --branch feat/parser
+npx -y stepstone@latest project start <id> --worktree
+npx -y stepstone@latest project start <id> --worktree --workspace-parent ../worktrees
 npx -y stepstone@latest project start <id> --clear
 npx -y stepstone@latest project apply-plan plan.json --dry-run --json
 npx -y stepstone@latest project apply-plan plan.json --json
@@ -99,7 +101,9 @@ npx -y stepstone@latest project apply-plan plan.json --json
 `--depends-on <id>` records a goal that must land first and may be repeated, `--depends-on ''` alone clears every edge, and an update replaces the stored set rather than adding to it.
 `--link <url>` stores an informational absolute HTTP or HTTPS URL such as the issue or design a goal came from, behaves the same way - repeatable, replaced whole by an update, cleared by `--link ''` alone - and rejects anything that is not an absolute HTTP or HTTPS URL, so the field never accumulates text a reader cannot follow.
 `start` records which branch is working on a goal, as a dispatch claim rather than a status change: the goal keeps whatever status it had, and `--branch <name>` names the branch while an omitted flag uses the current Git branch, which is read and never created, so a run on a detached HEAD asks for `--branch` instead of guessing.
-`--json` keeps the two reasons a claim has no branch apart: a detached HEAD is a `VALIDATION_FAILED` envelope naming the `branch` field, while a Git that could not answer the lookup at all is an `UNAVAILABLE` envelope carrying Git's own diagnostic, marked retryable only when the command was killed rather than refused.
+`start <id> --worktree` instead creates the deterministic `stepstone/<goal-id>` branch at the main checkout's current `HEAD`, checks it out in `stepstone-<goal-id>` beside the main checkout, and claims the goal only after Git creates the linked checkout. `--workspace-parent <path>` selects another existing parent directory. The JSON result reports the absolute path as `result.worktreePath`.
+Worktree creation must run from the main checkout. A stale goal baseline creates nothing. If the later claim fails after Git creates the checkout, Stepstone preserves the worktree and reports its path for inspection instead of deleting Git state whose outcome it cannot prove.
+`--json` keeps the two reasons a plain claim has no branch apart: a detached HEAD is a `VALIDATION_FAILED` envelope naming the `branch` field, while a Git that could not answer the lookup at all is an `UNAVAILABLE` envelope carrying Git's own diagnostic, marked retryable only when the command was killed rather than refused.
 A claimed goal drops out of `ready` and `next`, which is the point - see [docs/dependencies.md](dependencies.md#sequencing-reads) - so every claim needs a release: `start <id> --clear` un-claims an abandoned dispatch and `complete` clears the branch on its way to done.
 A settled goal refuses a new claim, though `--clear` still releases one it is already holding; see [docs/goals.md](goals.md#statuses).
 The published `stepstone-dispatch` executable prepares and claims approved goal workspaces, writes each goal into an ignored root `STEPSTONE_GOAL.md`, persists workspace custody for restart, and exposes resume, status, inspection, recovery, and cleanup operations without starting or prompting an agent; see [docs/dispatch.md](dispatch.md).

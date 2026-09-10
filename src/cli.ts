@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
 	projectGoalSelectionError,
 	projectRootUnavailableError,
@@ -9,6 +9,7 @@ import {
 	type WorklistApplicationFailure,
 	type WorklistApplicationResult,
 	WorklistApplicationService,
+	type WorklistApplicationSuccess,
 	type WorklistOperation,
 } from "./application-service.ts";
 import {
@@ -28,17 +29,21 @@ import {
 	resolveDependencies,
 	unfinishedGoals,
 } from "./dependencies.ts";
+import { GitWorktreeBinding } from "./dispatch-bindings.ts";
 import { goalCount, goalSection } from "./format.ts";
 import {
 	createWorklistLocator,
 	currentGitBranch,
+	currentGitRevision,
 	type GitCommandFailure,
 	type GitRootFailure,
 	gitCommandDiagnostic,
 	gitFailureDetails,
 	isTransientGitFailure,
 	resolveGitRoot,
+	resolveMainWorktree,
 	resolveWorklistLocation,
+	resolveWorktreePlacement,
 	shadowedWorklistWarning,
 	type WorklistLocation,
 } from "./git.ts";
@@ -108,6 +113,10 @@ interface CliInvocation {
 	/** Informational URLs; an empty entry clears every link. */
 	links?: string[];
 	branch?: string;
+	/** Create a deterministic branch in a linked Git worktree before claiming it. */
+	worktree: boolean;
+	/** Existing parent directory for a newly created worktree. */
+	workspaceParent?: string;
 	clear: boolean;
 	expectedUpdatedAt?: string;
 	/** Report what a mutation would do without writing it. */
@@ -244,6 +253,8 @@ interface ParsedCliHead {
 	group?: string;
 	expectedUpdatedAt?: string;
 	branch?: string;
+	worktree: boolean;
+	workspaceParent?: string;
 	clear: boolean;
 	json: boolean;
 	confirm: boolean;
@@ -264,6 +275,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	let appendDescription: string | undefined;
 	let group: string | undefined;
 	let branch: string | undefined;
+	let worktree = false;
+	let workspaceParent: string | undefined;
 	let clear = false;
 	let expectedUpdatedAt: string | undefined;
 	let cwd = process.cwd();
@@ -330,6 +343,13 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 				branch = readFlagValue(head, index, part, "a branch name");
 				index++;
 				break;
+			case "--worktree":
+				worktree = true;
+				break;
+			case "--workspace-parent":
+				workspaceParent = readFlagValue(head, index, part, "an existing directory");
+				index++;
+				break;
 			case "--clear":
 				clear = true;
 				break;
@@ -368,6 +388,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		dryRun,
 		group,
 		branch,
+		worktree,
+		workspaceParent,
 		clear,
 		expectedUpdatedAt,
 		json,
@@ -753,7 +775,7 @@ class WorklistCliFailure extends Error {
 async function executeCliOperation(
 	service: WorklistApplicationService,
 	operation: WorklistOperation,
-): Promise<WorklistApplicationResult> {
+): Promise<WorklistApplicationSuccess> {
 	const envelope = await service.execute(operation, { source: "cli" });
 	if (!envelope.ok) throw new WorklistCliFailure(envelope);
 	return envelope;
@@ -988,6 +1010,216 @@ async function runPathMigration(
 	});
 	const moved = envelope.ok ? envelope.result.previousWorklistPath : undefined;
 	report(invocation, envelope, formatPathMigration(moved, worklist.currentPath, false));
+}
+
+/** Refuse worktree creation anywhere the roadmap mutation would be refused after Git changed state. */
+function requireMainWorktreeForStart(location: ProjectLocation): void {
+	const placement = resolveWorktreePlacement(location.root);
+	if (placement.kind === "main") return;
+	if (placement.kind === "unavailable") {
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+				message: `Git could not determine whether ${location.root} is the main worktree: ${placement.failure.message}.`,
+				retryable: false,
+				details: {
+					resolution: "repair-main-worktree-lookup",
+					gitInvocation: placement.failure.invocation,
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+	const main = resolveMainWorktree(location.root);
+	const details =
+		main.kind === "checkout"
+			? { currentWorktree: location.root, mainWorktree: main.path, resolution: "run-from-main-worktree" }
+			: {
+					currentWorktree: location.root,
+					...(main.kind === "no-checkout" ? { gitDirectory: main.gitDirectory } : {}),
+					resolution: main.kind === "no-checkout" ? "provide-main-worktree" : "repair-main-worktree-lookup",
+				};
+	throw new WorklistCliFailure({
+		ok: false,
+		scope: "project",
+		action: "start",
+		error: {
+			code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+			message:
+				main.kind === "checkout"
+					? `Project start --worktree must run from the main worktree at ${main.path}.`
+					: "Project start --worktree requires a repository with a main worktree checkout.",
+			retryable: false,
+			details,
+		},
+		meta: { changed: false, semanticNoOp: false, changedFields: [] },
+	});
+}
+
+/** Report a caller baseline conflict before creating any Git state. */
+function requireCurrentGoalBaseline(goal: ProjectGoal, expectedUpdatedAt?: string): void {
+	if (expectedUpdatedAt === undefined || expectedUpdatedAt === goal.updatedAt) return;
+	throw new WorklistCliFailure({
+		ok: false,
+		scope: "project",
+		action: "start",
+		error: {
+			code: WORKLIST_ERROR_CODES.CONFLICT,
+			message: `Project goal ${goal.id} changed after it was read.`,
+			retryable: true,
+			conflict: {
+				type: "goal-updated-at",
+				id: goal.id,
+				expectedUpdatedAt,
+				actualUpdatedAt: goal.updatedAt,
+				resolution: "refresh-and-retry",
+			},
+		},
+		meta: { changed: false, semanticNoOp: false, changedFields: [] },
+	});
+}
+
+/** Keep the created checkout visible when the later roadmap claim does not succeed. */
+function preservedWorktreeFailure(
+	failure: WorklistCliFailure,
+	worktreePath: string,
+	branch: string,
+): WorklistCliFailure {
+	return new WorklistCliFailure({
+		...failure.envelope,
+		error: {
+			...failure.envelope.error,
+			message: `${failure.envelope.error.message} Worktree ${worktreePath} on ${branch} was created and preserved for inspection.`,
+			details: { ...failure.envelope.error.details, worktreePath, branch },
+		},
+	});
+}
+
+/** Create one deterministic linked checkout, then claim the goal on its branch. */
+async function runWorktreeStart(
+	invocation: CliInvocation,
+	service: WorklistApplicationService,
+	location: ProjectLocation,
+): Promise<void> {
+	if (invocation.clear || invocation.branch !== undefined) {
+		fail(`project start --worktree cannot be combined with --branch or --clear\n\n${USAGE}`, 2);
+	}
+	requireMainWorktreeForStart(location);
+	const selector = requireId(invocation);
+	const { goals, retiredIds } = await readProjectSnapshot(service, "start");
+	const goal = selectGoal(goals, selector, "start", retiredIds);
+	requireCurrentGoalBaseline(goal, invocation.expectedUpdatedAt);
+	if (goal.status === "done" || goal.status === "archived") {
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+				message: "A done or archived Project Goal must be reopened before it can be started.",
+				retryable: false,
+				details: { id: goal.id, resolution: "reopen-project-goal" },
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+	const requestedParent = resolve(invocation.workspaceParent ?? dirname(location.root));
+	let parent: string;
+	try {
+		parent = await realpath(requestedParent);
+	} catch {
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: WORKLIST_ERROR_CODES.VALIDATION_FAILED,
+				message: `Workspace parent ${requestedParent} is not an existing directory.`,
+				retryable: false,
+				details: {
+					fields: ["workspaceParent"],
+					path: requestedParent,
+					resolution: "provide-existing-workspace-parent",
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+	const branch = `stepstone/${goal.id}`;
+	const revision = currentGitRevision(location.root);
+	if (revision.error || !revision.revision) {
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+				message: revision.error
+					? `Git could not resolve HEAD: ${gitCommandDiagnostic(revision.error)}.`
+					: "Git resolved no commit at HEAD.",
+				retryable: revision.error ? isTransientGitFailure(revision.error) : false,
+				details: gitFailureDetails("repair-git-head", revision.error),
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+	const expectedWorktreePath = join(parent, `stepstone-${goal.id}`);
+	let workspace: Awaited<ReturnType<GitWorktreeBinding["acquire"]>>;
+	try {
+		workspace = await new GitWorktreeBinding(location.root, parent).acquire(goal, branch, revision.revision);
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		throw new WorklistCliFailure({
+			ok: false,
+			scope: "project",
+			action: "start",
+			error: {
+				code: WORKLIST_ERROR_CODES.UNAVAILABLE,
+				message: `Git worktree creation could not be verified: ${reason}. Inspect ${expectedWorktreePath} and ${branch} before retrying.`,
+				retryable: false,
+				details: {
+					branch,
+					worktreePath: expectedWorktreePath,
+					resolution: "inspect-git-worktree-state",
+				},
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+	}
+	try {
+		const envelope = await executeCliOperation(service, {
+			scope: "project",
+			action: "start",
+			id: goal.id,
+			branch,
+			expectedUpdatedAt: goal.updatedAt,
+		});
+		const claimed = envelope.ok ? envelope.result.goal : undefined;
+		if (!claimed || claimed.branch !== branch) {
+			throw new Error(
+				`Project start returned no exact ${branch} claim. Worktree ${workspace.path} was preserved for inspection.`,
+			);
+		}
+		const result: WorklistOperationResult = {
+			...envelope.result,
+			scope: "project",
+			action: "start",
+			worktreePath: workspace.path,
+		};
+		report(
+			invocation,
+			{ ...envelope, result },
+			`Started project goal ${claimed.id} on ${branch} in ${workspace.path}`,
+		);
+	} catch (error) {
+		if (error instanceof WorklistCliFailure) {
+			throw preservedWorktreeFailure(error, workspace.path, branch);
+		}
+		throw error;
+	}
 }
 
 async function runSetActive(invocation: CliInvocation, service: WorklistApplicationService): Promise<void> {
@@ -1314,6 +1546,13 @@ async function run(invocation: CliInvocation): Promise<void> {
 			return;
 		}
 		case "start": {
+			if (invocation.workspaceParent !== undefined && !invocation.worktree) {
+				fail(`project start --workspace-parent requires --worktree\n\n${USAGE}`, 2);
+			}
+			if (invocation.worktree) {
+				await runWorktreeStart(invocation, service, location);
+				return;
+			}
 			const id = requireId(invocation);
 			if (invocation.clear && invocation.branch !== undefined) {
 				fail(`project start cannot combine --branch with --clear\n\n${USAGE}`, 2);

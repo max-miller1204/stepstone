@@ -220,8 +220,8 @@ export const CLI_COMMAND_CONTRACT = {
 		},
 		{
 			name: "start",
-			usage: "start <id> [--branch <name> | --clear]",
-			summary: "Claim a goal on a branch, or release its branch claim",
+			usage: "start <id> [--branch <name> | --worktree | --clear] [worktree options]",
+			summary: "Claim a goal on a branch, create its Git worktree, or release its branch claim",
 		},
 		{
 			name: "set_active",
@@ -337,6 +337,20 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "--branch",
 			usage: "--branch <name>",
 			summary: "Record the branch working on a goal; project start defaults to the current Git branch",
+			actions: ["start"],
+		},
+		{
+			name: "--worktree",
+			usage: "--worktree",
+			summary:
+				"Create and claim the deterministic `stepstone/<goal-id>` branch in a linked Git worktree beside the main checkout",
+			actions: ["start"],
+		},
+		{
+			name: "--workspace-parent",
+			usage: "--workspace-parent <path>",
+			summary:
+				"Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode",
 			actions: ["start"],
 		},
 		{
@@ -507,6 +521,8 @@ export const CLI_COMMAND_CONTRACT = {
 		"Ask next for the goal to start, ready for everything that could run in parallel, and waves for how the rest of the roadmap is layered; never pick a goal off list yourself, because list cannot tell you what is blocked or already claimed.",
 		"Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.",
 		"Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.",
+		"Use `start <id> --worktree` to create and claim the deterministic `stepstone/<goal-id>` branch in a linked checkout; read `result.worktreePath` instead of guessing where it was created.",
+		"A failed worktree claim preserves the created checkout for inspection and reports its path; never assume a failed command removed Git state whose outcome it could not prove.",
 		"Run migrate_ids only when the user explicitly asks for it; it rewrites stored IDs, though every old ID keeps resolving afterwards.",
 		`Leave the goal file where it is unless the user asks to move it: a repository still on \`${LEGACY_WORKLIST_RELATIVE_PATH}\` works untouched, and migrate_path is theirs to request.`,
 		`Report the two-worklist warning to the user rather than working around it; only ${BINARY} reads the file it names, and merging them is a decision about which goals survive.`,

@@ -282,6 +282,35 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 		"beta-goal",
 	]);
 
+	step("  create and claim one Git worktree");
+	await run("git", ["config", "user.name", "Stepstone Check"], workspace);
+	await run("git", ["config", "user.email", "stepstone@example.test"], workspace);
+	await run("git", ["add", ".worklist/worklist.json"], workspace);
+	await run("git", ["commit", "-q", "-m", "seed CLI worktree fixture"], workspace);
+	const worktreeParent = join(dirname(workspace), `${basename(workspace)}-worktrees`);
+	await mkdir(worktreeParent);
+	const canonicalWorktreeParent = await realpath(worktreeParent);
+	const worktreePath = join(canonicalWorktreeParent, "stepstone-beta-goal");
+	const prepared = okEnvelope(
+		await runCli([
+			"project",
+			"start",
+			"beta-goal",
+			"--worktree",
+			"--workspace-parent",
+			canonicalWorktreeParent,
+			"--json",
+		]),
+		"start",
+		version,
+	);
+	assert.equal(prepared.result.worktreePath, worktreePath);
+	assert.equal((prepared.result.goal as { branch?: string }).branch, "stepstone/beta-goal");
+	assert.match(await readFile(join(worktreePath, ".git"), "utf8"), /gitdir:/);
+	okEnvelope(await runCli(["project", "start", "beta-goal", "--clear", "--json"]), "start", version);
+	await run("git", ["worktree", "remove", "--force", worktreePath], workspace);
+	await run("git", ["branch", "-D", "stepstone/beta-goal"], workspace);
+
 	const shown = okEnvelope(await runCli(["project", "show", "alpha", "--json"]), "show", version);
 	assert.equal((shown.result.goal as { description: string }).description, "First goal");
 

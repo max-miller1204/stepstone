@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 20 open, 46 done, 4 archived.
+70 goals: 1 active, 19 open, 46 done, 4 archived.
 
 ## Orchestrator
 
@@ -293,7 +293,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `prepare-goal-workspaces-without` (done).
 
-- **[open]** Start a goal into its own worktree from the CLI - `start-a-goal-into-its-own-worktree-from`
+- **[active]** Start a goal into its own worktree from the CLI - `start-a-goal-into-its-own-worktree-from`
 
   project start records a branch name and creates nothing, so the checkout a goal is worked in is still assembled by hand every time. Starting a goal should be able to create its branch and worktree and report where it is, using only Git, so the single most common manual step becomes one command rather than a recipe.
 
@@ -333,7 +333,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   A driver that no longer runs anything is a claim ledger over Git worktrees, which is close to what starting a goal already does. Folding it into the one published CLI would retire the second executable, its entry point, and its packaging checks, and leave a single surface to learn. The second executable was published recently enough that nothing depends on it yet, and that stops being true as soon as anyone scripts against it.
 
-  Depends on `start-a-goal-into-its-own-worktree-from` (open).
+  Depends on `start-a-goal-into-its-own-worktree-from` (active).
 
 ## Later
 
