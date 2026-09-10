@@ -7,12 +7,10 @@ import { describe, expect, it } from "vitest";
 import { parseTasksCommand, WORKLIST_PROMPT_GUIDELINES } from "../src/extension.ts";
 import { addProjectGoal, moveProjectGoal, readProjectGoals } from "../src/project-mutations.ts";
 import { readProjectWorklist } from "../src/project-store.ts";
-import { renderRoadmapMarkdown } from "../src/roadmap.ts";
 import type { ProjectGoal, SessionTask } from "../src/types.ts";
 import {
 	buildWidgetLines,
 	Dashboard,
-	type DashboardAction,
 	DashboardDetail,
 	type DashboardResult,
 	type DashboardState,
@@ -36,6 +34,11 @@ const goals: ProjectGoal[] = [
 
 const identityTheme = {
 	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+} as Theme;
+
+const visibleDimTheme = {
+	fg: (color: string, text: string) => (color === "dim" ? `<dim>${text}</dim>` : text),
 	bold: (text: string) => text,
 } as Theme;
 
@@ -125,7 +128,7 @@ describe("dashboard ordering controls", () => {
 		});
 	});
 
-	it("moves the selected Project Goal with the same keys as a Session Task", () => {
+	it("refuses Project Goal moves and directs users to the terminal board", () => {
 		const roadmap: ProjectGoal[] = ["g1", "g2", "g3"].map((id) => ({
 			...goals[0],
 			id,
@@ -133,23 +136,15 @@ describe("dashboard ordering controls", () => {
 			status: "open",
 		}));
 		const state: DashboardState = { scope: "project", selectedId: "g2" };
-		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
-			action: { kind: "move", scope: "project", id: "g2", beforeId: "g1" },
-			state: restoredDashboardState(state, 1),
-		});
-		// A goal moving down is written as the pair it ends up in, so the goal that
-		// ends up first keeps the file position its section is placed by.
-		expect(dashboardInput("\u001b[1;2B", state, tasks, roadmap)).toEqual({
-			action: { kind: "move", scope: "project", id: "g3", beforeId: "g2" },
-			state: restoredDashboardState(state, 1),
-		});
-
-		// The ends of the list have no neighbour to anchor against, so nothing moves.
-		const first: DashboardState = { scope: "project", selectedId: "g1" };
-		expect(dashboardInput("\u001b[1;2A", first, tasks, roadmap)).toBeUndefined();
+		for (const key of ["\u001b[1;2A", "\u001b[1;2B"]) {
+			expect(dashboardInput(key, state, tasks, roadmap)).toBeUndefined();
+		}
+		const dashboard = new Dashboard(tasks, roadmap, identityTheme, () => {}, state);
+		expect(dashboard.render(100).join("\n")).toContain("Reorder goals: terminal board File order");
+		expect(dashboard.render(100).join("\n")).not.toContain("shift+↑↓ move");
 	});
 
-	it("targets actions and moves to the rendered grouped Project Goal order", () => {
+	it("targets actions to the rendered grouped Project Goal order", () => {
 		const roadmap: ProjectGoal[] = [
 			{ ...goals[0], id: "alpha-one", title: "Alpha one", group: "Alpha", status: "open" },
 			{ ...goals[0], id: "beta-one", title: "Beta one", group: "Beta", status: "open" },
@@ -161,10 +156,7 @@ describe("dashboard ordering controls", () => {
 			action: { kind: "view", scope: "project", id: "alpha-two" },
 			state: restoredDashboardState(state, 2, ["Alpha"], "Alpha"),
 		});
-		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toEqual({
-			action: { kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" },
-			state: restoredDashboardState(state, 2, ["Alpha"], "Alpha"),
-		});
+		expect(dashboardInput("\u001b[1;2A", state, tasks, roadmap)).toBeUndefined();
 
 		const dashboard = new Dashboard(
 			tasks,
@@ -226,34 +218,26 @@ describe("dashboard ordering controls", () => {
 		).toBeUndefined();
 	});
 
-	it("keeps section order when a grouped Project Goal steps down its own section", async () => {
+	it("does not write a move when dependency order differs from file order", async () => {
 		const path = join(await mkdtemp(join(tmpdir(), "stepstone-dashboard-")), ".worklist", "worklist.json");
-		await addProjectGoal(path, "Alpha one", { group: "Alpha" });
-		await addProjectGoal(path, "Beta one", { group: "Beta" });
-		await addProjectGoal(path, "Alpha two", { group: "Alpha" });
+		await addProjectGoal(path, "Ready");
+		await addProjectGoal(path, "Later", { dependsOn: ["ready"] });
+		await moveProjectGoal(path, "later", { beforeId: "ready" });
 		const { goals: roadmap } = await readProjectGoals(path);
 
-		const result = dashboardInput(
-			"\u001b[1;2B",
-			{ scope: "project", selectedId: "alpha-one" },
-			tasks,
-			roadmap,
-		);
-		const action = result?.action as Extract<DashboardAction, { kind: "move" }> | undefined;
-		expect(action).toEqual({ kind: "move", scope: "project", id: "alpha-two", beforeId: "alpha-one" });
-		expect(result?.state.selectedId).toBe("alpha-one");
-		if (action?.beforeId === undefined) throw new Error("expected a before-anchored move");
-
-		const moved = await moveProjectGoal(path, action.id, { beforeId: action.beforeId });
-		expect(moved.goals.map((goal) => goal.id)).toEqual(["alpha-two", "alpha-one", "beta-one"]);
-
-		// The generated page is where a crossed section order would be committed, so
-		// the move is checked against its headings rather than the file order alone.
-		const { data } = await readProjectWorklist(path);
-		const headings = renderRoadmapMarkdown(data)
-			.split("\n")
-			.filter((line) => line.startsWith("## "));
-		expect(headings).toEqual(["## Alpha", "## Beta"]);
+		const before = await readProjectWorklist(path);
+		const actions: DashboardResult[] = [];
+		const dashboard = new Dashboard(tasks, roadmap, identityTheme, (result) => actions.push(result), {
+			scope: "project",
+		});
+		const output = dashboard.render(100).join("\n");
+		expect(output.indexOf("Ready")).toBeLessThan(output.indexOf("Later"));
+		dashboard.handleInput("\u001b[1;2B");
+		dashboard.handleInput("j");
+		dashboard.handleInput("\u001b[1;2A");
+		expect(actions).toEqual([]);
+		expect(dashboard.render(100).join("\n")).toContain("Reorder goals: terminal board File order");
+		expect(await readProjectWorklist(path)).toEqual(before);
 	});
 
 	it("returns no entry carrying a newline from stored goal and group text", () => {
@@ -391,6 +375,37 @@ describe("dashboard navigation and project rendering", () => {
 		dashboard.handleInput("\u001b[A");
 		dashboard.handleInput(" ");
 		expect(dashboard.render(100).join("\n")).not.toContain("Active goal");
+	});
+
+	it("always lists Project Goals in dependency order", () => {
+		const sequenced: ProjectGoal[] = [
+			{ ...goals[0], id: "later", title: "Later", status: "open", dependsOn: ["ready"] },
+			{ ...goals[0], id: "ready", title: "Ready", status: "open" },
+		];
+		const output = new Dashboard([], sequenced, identityTheme, () => {}, { scope: "project" })
+			.render(100)
+			.join("\n");
+
+		expect(output.indexOf("Ready")).toBeLessThan(output.indexOf("Later"));
+	});
+
+	it("dims blocked Project Goals unless they are selected", () => {
+		const sequenced: ProjectGoal[] = [
+			{ ...goals[0], id: "later", title: "Later", status: "open", dependsOn: ["ready"] },
+			{ ...goals[0], id: "ready", title: "Ready", status: "open" },
+		];
+		const unselected = new Dashboard([], sequenced, visibleDimTheme, () => {}, { scope: "project" })
+			.render(100)
+			.join("\n");
+		expect(unselected).toContain("<dim>Later</dim>");
+
+		const selected = new Dashboard([], sequenced, visibleDimTheme, () => {}, {
+			scope: "project",
+			selectedId: "later",
+		})
+			.render(100)
+			.join("\n");
+		expect(selected).not.toContain("<dim>Later</dim>");
 	});
 
 	it("shows readiness, claims, later waves, and stuck work without replacing groups", () => {
@@ -705,9 +720,9 @@ describe("dashboard navigation and project rendering", () => {
 		// first row - which is re-packed to whole hints rather than truncated.
 		const sharedRow = shared.find((line) => line.includes("above ·"));
 		expect(sharedRow).toBeDefined();
-		expect(sharedRow?.startsWith("2 above · 1 below  tab switch")).toBe(true);
+		expect(sharedRow?.startsWith("2 above · 1 below  Reorder goals: terminal board File order")).toBe(true);
 		expect(sharedRow?.endsWith("...")).toBe(false);
-		expect(sharedRow?.endsWith("navigate")).toBe(true);
+		expect(sharedRow?.endsWith("tab switch")).toBe(true);
 	});
 
 	it("spends no row on a count when every row of the list is on screen", () => {

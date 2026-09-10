@@ -39,12 +39,16 @@ The dashboard keeps the selected row in a terminal-height viewport, with counts 
 Press `f` to cycle the status filter: Session Tasks offer open, done, and all, while Project Goals offer open, done, archived, and all.
 
 In Session Tasks, `a` appends, `i` inserts before the selected task, and Shift+Up or Shift+Down moves the selected task.
-Project Goals support `a` to add and the same Shift+Up and Shift+Down to reorder, but not insertion at a position.
-A goal moves within its own section, where a section boundary is an end of the list, and the move is written to the file exactly as the board writes it, so one keystroke means the same thing on both surfaces.
+Project Goals support `a` to add, but not insertion at a position or reordering.
+To reorder Project Goals, run `npx -y stepstone@latest project ui` in a terminal.
+Press `o` to select File order, then use Shift+Up or Shift+Down.
+A goal moves within its own section, where a section boundary is an end of the list.
 On a task or goal in either scope, press Enter to open a detail window, Space to advance status, `e` to edit, `d` to delete, and Escape to close.
 Session Task edits change the title, while Project Goal edits can also change the description.
 
-The Project Goals pane reads in the same visual language as the [terminal goal board](board.md), which owns what each treatment means: the active goal keeps its own marker and full contrast, settled goals recede, and a goal that has gone stale carries its age.
+The Project Goals pane always uses the dependency order from the [terminal goal board](board.md).
+It uses the same visual language: the active goal keeps its own marker and full contrast, and settled or blocked goals recede unless selected.
+A goal that has gone stale carries its age.
 Each unfinished goal also carries a compact sequencing cue derived from the dependency graph and claim fields.
 `READY` marks an unclaimed Wave 1 goal, `ACTIVE` marks the active goal, `CLAIMED` marks a goal claimed by a branch, `W2` and later numbers mark later dependency waves, and `STUCK` marks a goal that no wave can reach.
 The list keeps the cue at the right edge of a bounded row area, so wide terminals do not separate it from the title.

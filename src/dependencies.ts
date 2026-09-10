@@ -299,3 +299,30 @@ export function projectGoalSequenceCues(
 	}
 	return cues;
 }
+
+/**
+ * Goals in the dependency schedule shown by interactive Project Goal lists.
+ *
+ * Active work stays first. Settled work follows because it has already released
+ * its dependents. Unfinished goals then follow their earliest dependency wave.
+ * File order breaks every tie, and unreachable work stays last.
+ */
+export function goalsInDependencyOrder(
+	goals: readonly ProjectGoal[],
+	retiredIds: readonly string[] = [],
+): ProjectGoal[] {
+	const fileRank = new Map(goals.map((goal, index) => [goal.id, index]));
+	const cues = projectGoalSequenceCues(goals, retiredIds);
+	const rank = (goal: ProjectGoal): number => {
+		if (goal.status === "done" || goal.status === "archived") return 0;
+		return cues.get(goal.id)?.wave ?? Number.MAX_SAFE_INTEGER;
+	};
+	return [...goals].sort((left, right) => {
+		if ((left.status === "active") !== (right.status === "active")) {
+			return left.status === "active" ? -1 : 1;
+		}
+		const wave = rank(left) - rank(right);
+		if (wave !== 0) return wave;
+		return (fileRank.get(left.id) ?? 0) - (fileRank.get(right.id) ?? 0);
+	});
+}

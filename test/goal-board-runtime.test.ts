@@ -216,7 +216,7 @@ describe("goal board runtime", () => {
 		for (const title of ["First", "Second", "Third"]) await seed(root, ["add", title]);
 
 		const board = await openBoard(root);
-		board.send("J");
+		board.send("oJ");
 		await waitFor(
 			async () => (await board.goals()).map((goal) => goal.id).join() === "second,first,third",
 			"the moved goal to land in the file",
@@ -240,7 +240,7 @@ describe("goal board runtime", () => {
 		for (const title of ["First", "Second", "Third"]) await seed(root, ["add", title]);
 
 		const board = await openBoard(root);
-		board.send("JJq");
+		board.send("oJJq");
 		await board.done;
 
 		expect((await board.goals()).map((goal) => goal.id)).toEqual(["second", "third", "first"]);

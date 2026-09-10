@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	dependentGoals,
+	goalsInDependencyOrder,
 	isGoalBlocked,
 	projectGoalSequenceCues,
 	resolveDependencies,
@@ -15,7 +16,6 @@ import {
 	goalStalenessDays,
 	goalStatusCounts,
 	isUngroupedList,
-	resolveSectionReorder,
 	sectionHolding,
 } from "./format.ts";
 import type { ProjectGoal, SessionTask, SessionTaskPlacement } from "./types.ts";
@@ -293,7 +293,7 @@ export class Dashboard {
 
 	/** The goals the Project Goal pane lists, before they are grouped into rows. */
 	private visibleGoals(): ProjectGoal[] {
-		return this.goals.filter((goal) => goalMatchesFilter(goal, this.projectFilter));
+		return goalsInDependencyOrder(this.goals).filter((goal) => goalMatchesFilter(goal, this.projectFilter));
 	}
 
 	/**
@@ -350,17 +350,12 @@ export class Dashboard {
 		this.done({ action, state: this.state() });
 	}
 
-	/** Reorder the selected item within the filtered list it is shown in. */
+	/** Reorder the selected Session Task within its filtered list. */
 	private moveAction(
 		item: { id: string },
 		items: Array<{ id: string }>,
 		delta: -1 | 1,
 	): DashboardAction | undefined {
-		if (this.scope === "project") {
-			const section = sectionHolding(goalSections(this.visibleGoals()), item.id);
-			const placement = section && resolveSectionReorder(section.goals, item.id, delta);
-			return placement ? { kind: "move", scope: "project", ...placement } : undefined;
-		}
 		const index = items.findIndex((candidate) => candidate.id === item.id);
 		const anchor = items[index + delta];
 		if (!anchor) return undefined;
@@ -376,6 +371,8 @@ export class Dashboard {
 				? 1
 				: undefined;
 		if (delta === undefined) return false;
+		// Dependency order cannot persist a manual move. The help names the file-order interface.
+		if (this.scope === "project") return true;
 		const item = this.rowItem(this.rows()[this.selected]);
 		const action = item && this.moveAction(item, this.items(), delta);
 		if (action) this.finish(action);
@@ -545,8 +542,14 @@ export class Dashboard {
 		const showAge = reserve(age, 12);
 		const title = truncateToWidth(compactDescription(goal.title), titleWidth);
 		const settled = goal.status === "done" || goal.status === "archived";
+		const blocked = isGoalBlocked(this.goals, goal);
+		const selected = index === this.selected;
 		const styled =
-			goal.status === "active" ? th.fg("accent", th.bold(title)) : settled ? th.fg("dim", title) : title;
+			goal.status === "active"
+				? th.fg("accent", th.bold(title))
+				: !selected && (settled || blocked)
+					? th.fg("dim", title)
+					: title;
 		const padding = " ".repeat(Math.max(0, titleWidth - visibleWidth(title)));
 		const badge = showAge ? ` ${th.fg("muted", age)}` : "";
 		const sequence =
@@ -584,7 +587,7 @@ export class Dashboard {
 		const help =
 			this.scope === "session"
 				? "tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  enter view  space advance  a append  i insert  shift+↑↓ move  e edit  d delete  esc close"
-				: "tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  ←→ collapse/open  space advance/toggle section  enter open/view  a add  shift+↑↓ move  e edit  d delete  esc close";
+				: "Reorder goals: terminal board File order  tab switch  f filter  ↑↓/jk navigate  pgup/pgdn scroll  ←→ collapse/open  space advance/toggle section  enter open/view  a add  e edit  d delete  esc close";
 
 		const terminalHeight = this.terminalRows();
 		const targetHeight = Number.isFinite(terminalHeight)

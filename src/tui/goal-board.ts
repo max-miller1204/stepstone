@@ -66,12 +66,12 @@ const FILTER_LABELS: Readonly<Record<GoalFilter, string>> = {
 /**
  * How the list is arranged, cycled with `o`.
  *
- * `file` is first and is the default because it is the roadmap's canonical
+ * `dependency` is first and is the default. `file` is the roadmap's canonical
  * order: it is what the file stores, what `move` edits, and what every other
- * reader of the worklist sees. The rest are views over that same order, which
- * stays their tiebreak, so switching back never loses the arrangement.
+ * reader of the worklist sees. File order stays the tiebreak for each derived
+ * view, so switching between views never loses the stored arrangement.
  *
- * `dependency` is the schedule the graph implies rather than a fourth way to
+ * `dependency` is the schedule the graph implies rather than another way to
  * arrange the file: it ranks each goal by the wave `project waves` puts it in, so
  * the board and the CLI read the edges the same way, and the file the user
  * arranged is left exactly as it is. Sections still partition the list, so the
@@ -79,7 +79,7 @@ const FILTER_LABELS: Readonly<Record<GoalFilter, string>> = {
  * into one frontier - the same relationship status and recent order have to
  * sections, and `project waves` stays the flat read of the whole graph.
  */
-export const GOAL_SORTS = ["file", "status", "recent", "dependency"] as const;
+export const GOAL_SORTS = ["dependency", "file", "status", "recent"] as const;
 export type GoalSort = (typeof GOAL_SORTS)[number];
 
 const SORT_LABELS: Readonly<Record<GoalSort, string>> = {
@@ -248,7 +248,7 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
 	{ keys: "c / r / x", description: "Complete, reopen, or archive (asks first)" },
 	{ keys: "d", description: "Delete permanently (asks first)" },
 	{ keys: "f", description: "Cycle the status filter" },
-	{ keys: "o", description: "Cycle the order: file, status, recent, dependency" },
+	{ keys: "o", description: "Cycle the order: dependency, file, status, recent" },
 	{ keys: "K / J", description: "Move the selected goal within its section (file order only)" },
 	{ keys: "/", description: "Search titles and descriptions" },
 	{ keys: "R", description: "Reload from disk" },
@@ -313,7 +313,7 @@ export class GoalBoard {
 	private readonly now: () => number;
 	private goals: ProjectGoal[];
 	private filter: GoalFilter = "open";
-	private sort: GoalSort = "file";
+	private sort: GoalSort = "dependency";
 	private query = "";
 	private selectedKey: string | undefined;
 	private focus: "list" | "detail" = "list";

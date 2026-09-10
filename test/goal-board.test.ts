@@ -152,8 +152,9 @@ describe("goal board layout", () => {
 });
 
 describe("goal board presentation", () => {
-	it("shows the file's own order first, and groups by status on request", () => {
+	it("shows file order on request, and groups by status on request", () => {
 		const board = createBoard();
+		press(board, "o");
 		press(board, "fff");
 		const rows = listedRows(board);
 		expect(rows[0]).toContain("Replace legacy");
@@ -168,7 +169,7 @@ describe("goal board presentation", () => {
 		// A settled goal sitting early in the file stays there until the status
 		// order is asked for, which is the whole point of a canonical file order.
 		const settledFirst = createBoard([GOALS[3], GOALS[1], GOALS[0]]);
-		press(settledFirst, "fff");
+		press(settledFirst, "offf");
 		expect(listedRows(settledFirst)[0]).toContain("Ship the CLI");
 		press(settledFirst, "o");
 		expect(listedRows(settledFirst)[0]).toContain("Replace legacy authenticat");
@@ -183,6 +184,7 @@ describe("goal board presentation", () => {
 			createdAt: "2026-01-09T00:00:00.000Z",
 		});
 		const board = createBoard([...GOALS.slice(1), newest]);
+		press(board, "o");
 		press(board, "fff");
 		// File order shows the goal where the file puts it: last.
 		expect(listedRows(board).at(-1)).toContain("Started last");
@@ -197,9 +199,11 @@ describe("goal board presentation", () => {
 		}
 	});
 
-	it("cycles the order through file, status, recent, and dependency, keeping file order as the tiebreak", () => {
+	it("opens in dependency order and cycles through every order", () => {
 		const board = createBoard();
 		const header = () => plainFrame(board)[0] ?? "";
+		expect(header()).toContain("⇅ Dependency");
+		press(board, "o");
 		expect(header()).toContain("⇅ File");
 		press(board, "o");
 		expect(header()).toContain("⇅ Status");
@@ -228,7 +232,6 @@ describe("goal board presentation", () => {
 			goal({ id: "landed", title: "Landed", status: "done" }),
 		]);
 		press(board, "fff");
-		press(board, "ooo");
 		expect(plainFrame(board)[0]).toContain("⇅ Dependency");
 		// Landed work sits ahead of the wave it released; a hand-edited cycle is in
 		// no wave at all and sorts last rather than vanishing from the list.
@@ -514,8 +517,8 @@ describe("goal board presentation", () => {
 	});
 
 	it("drops the header counts before the filter when the header runs out of room", () => {
-		const header = plainFrame(createBoard(), 50, 20)[0] ?? "";
-		expect(header).toContain("Open · ⇅ File · 3 of 5");
+		const header = plainFrame(createBoard(), 60, 20)[0] ?? "";
+		expect(header).toContain("Open · ⇅ Dependency · 3 of 5");
 		expect(header).not.toContain("◆ 1");
 	});
 
@@ -657,7 +660,7 @@ describe("goal board presentation", () => {
 
 	it("dims settled rows only where they sit alongside live work", () => {
 		const board = createBoard(GOALS, true);
-		press(board, "fff");
+		press(board, "offf");
 		const dimmedTitle = (frame: string[], title: string) =>
 			frame.some((line) => line.includes(`${DIM}${title}`));
 		expect(dimmedTitle(board.render(100, 20).lines, "Ship the CLI")).toBe(true);
@@ -747,7 +750,7 @@ describe("goal board presentation", () => {
 	it("ages goals still in play, and leaves settled ones alone", () => {
 		const later = Date.parse("2026-03-01T00:00:00.000Z");
 		const board = createBoard(GOALS, false, later);
-		press(board, "fff");
+		press(board, "offf");
 		const rows = listedRows(board);
 		expect(rows[0]).toMatch(/Replace legacy authent.*ACTIVE 58d$/);
 		expect(rows.find((row) => row.includes("Ship the CLI"))).not.toMatch(/\d+d$/);
@@ -898,15 +901,15 @@ describe("goal board navigation", () => {
 	it("cycles the filter through open, done, archived, and all", () => {
 		const board = createBoard();
 		const label = () => plainFrame(board)[0];
-		expect(label()).toContain("Open · ⇅ File · 3 of 5");
+		expect(label()).toContain("Open · ⇅ Dependency · 3 of 5");
 		press(board, "f");
-		expect(label()).toContain("Done · ⇅ File · 1 of 5");
+		expect(label()).toContain("Done · ⇅ Dependency · 1 of 5");
 		press(board, "f");
-		expect(label()).toContain("Archived · ⇅ File · 1 of 5");
+		expect(label()).toContain("Archived · ⇅ Dependency · 1 of 5");
 		press(board, "f");
-		expect(label()).toContain("All · ⇅ File · 5 of 5");
+		expect(label()).toContain("All · ⇅ Dependency · 5 of 5");
 		press(board, "f");
-		expect(label()).toContain("Open · ⇅ File · 3 of 5");
+		expect(label()).toContain("Open · ⇅ Dependency · 3 of 5");
 	});
 
 	it("narrows the list while typing a search and restores it on escape", () => {
@@ -917,7 +920,7 @@ describe("goal board navigation", () => {
 		press(board, "\r");
 		expect(plainFrame(board)[0]).toContain("/focus");
 		press(board, ESC);
-		expect(plainFrame(board)[0]).toContain("Open · ⇅ File · 3 of 5");
+		expect(plainFrame(board)[0]).toContain("Open · ⇅ Dependency · 3 of 5");
 	});
 
 	it("reopens a search prefilled so the query can be refined", () => {
@@ -968,6 +971,7 @@ describe("goal board navigation", () => {
 describe("goal board reordering", () => {
 	it("moves the selected goal against its neighbouring row", () => {
 		const board = createBoard();
+		press(board, "o");
 		press(board, `${ESC}[B`);
 		expect(board.selectedGoal?.id).toBe("g-open-1");
 		expect(press(board, "J")).toEqual([
@@ -994,6 +998,7 @@ describe("goal board reordering", () => {
 
 	it("accepts shift+arrows for the terminals that report them", () => {
 		const board = createBoard();
+		press(board, "o");
 		expect(press(board, `${ESC}[1;2B`)).toMatchObject([{ kind: "reorder", goalId: "g-active", delta: 1 }]);
 		// A plain arrow is still navigation, not a reorder.
 		expect(press(board, `${ESC}[B`)).toEqual([]);
@@ -1003,12 +1008,14 @@ describe("goal board reordering", () => {
 
 	it("anchors on the visible neighbour, skipping the rows a filter hides", () => {
 		const board = createBoard();
+		press(board, "o");
 		press(board, "/日\r");
 		// The search leaves one row, so there is nothing to move against.
 		expect(press(board, "K")).toEqual([]);
 		expect(plainFrame(board).at(-2)).toContain("Already first.");
 
 		const filtered = createBoard();
+		press(filtered, "o");
 		press(filtered, `${ESC}[B${ESC}[B`);
 		expect(filtered.selectedGoal?.id).toBe("g-open-2");
 		// The done and archived goals are hidden, so down is already the end.
@@ -1023,6 +1030,7 @@ describe("goal board reordering", () => {
 			goal({ id: "later", title: "Later", group: "Delivery" }),
 			goal({ id: "loose", title: "Loose" }),
 		]);
+		press(board, "o");
 		expandAll(board);
 		// Down from the section's first goal onto its last, which has nowhere to go.
 		press(board, `${ESC}[B`);
@@ -1058,6 +1066,7 @@ describe("goal board reordering", () => {
 			goal({ id: "two", title: "Second", group: "Foundation" }),
 		];
 		const board = createBoard(goals);
+		press(board, "o");
 		expandAll(board);
 		const [intent] = press(board, "J");
 		if (intent?.kind !== "reorder") throw new Error("Expected reorder intent");
@@ -1101,6 +1110,7 @@ describe("goal board reordering", () => {
 			goal({ id: "old-b", title: "B" }),
 		];
 		const board = createBoard(original);
+		press(board, "o");
 		const [intent] = press(board, "J");
 		if (intent?.kind !== "reorder") throw new Error("Expected reorder intent");
 
@@ -1122,13 +1132,16 @@ describe("goal board reordering", () => {
 
 	it("reorders only in file order, since the other views are not the file", () => {
 		const board = createBoard();
+		expect(press(board, "J")).toEqual([]);
+		expect(plainFrame(board).at(-2)).toContain("Reorder in file order only");
+
+		press(board, "o");
+		expect(press(board, "J")).toMatchObject([{ kind: "reorder" }]);
 		for (const derived of ["status", "recent", "dependency"]) {
 			press(board, "o");
 			expect(press(board, "J"), derived).toEqual([]);
 			expect(plainFrame(board).at(-2)).toContain("Reorder in file order only");
 		}
-		press(board, "o");
-		expect(press(board, "J")).toMatchObject([{ kind: "reorder" }]);
 	});
 });
 
