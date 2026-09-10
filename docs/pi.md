@@ -40,7 +40,7 @@ Press `f` to cycle the status filter: Session Tasks offer open, done, and all, w
 
 In Session Tasks, `a` appends, `i` inserts before the selected task, and Shift+Up or Shift+Down moves the selected task.
 Project Goals support `a` to add, but not insertion at a position or reordering.
-To reorder Project Goals, run `stepstone project ui` in a terminal.
+To reorder Project Goals, run `npx -y stepstone@latest project ui` in a terminal.
 Press `o` to select File order, then use Shift+Up or Shift+Down.
 A goal moves within its own section, where a section boundary is an end of the list.
 On a task or goal in either scope, press Enter to open a detail window, Space to advance status, `e` to edit, `d` to delete, and Escape to close.
