@@ -39,7 +39,9 @@ The dashboard keeps the selected row in a terminal-height viewport, with counts 
 Press `f` to cycle the status filter: Session Tasks offer open, done, and all, while Project Goals offer open, done, archived, and all.
 
 In Session Tasks, `a` appends, `i` inserts before the selected task, and Shift+Up or Shift+Down moves the selected task.
-Project Goals support `a` to add and the same Shift+Up and Shift+Down to reorder, but not insertion at a position.
+Project Goals support `a` to add, but not insertion at a position or reordering.
+To reorder Project Goals, run `stepstone project ui` in a terminal.
+Press `o` to select File order, then use Shift+Up or Shift+Down.
 A goal moves within its own section, where a section boundary is an end of the list.
 On a task or goal in either scope, press Enter to open a detail window, Space to advance status, `e` to edit, `d` to delete, and Escape to close.
 Session Task edits change the title, while Project Goal edits can also change the description.
