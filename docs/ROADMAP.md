@@ -299,41 +299,41 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `prepare-goal-workspaces-without` (done).
 
-- **[open]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
+- **[open, blocked]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
 
-  Cleanup currently proves a worker session is closed before it removes a checkout, which is only possible because the driver started that worker. Preparation cannot know whether somebody still has a terminal open there, so the guard has to become Git state it can actually read: uncommitted changes, unpushed commits, an unmerged branch. That is a stronger guard than process liveness ever was, which is why an operator override had to exist alongside it.
+  Before Stepstone removes a prepared checkout, verify Git state that it can observe: no uncommitted changes, no unpushed commits, and no unmerged branch. Preserve existing workspace identity checks. Refuse cleanup when any check fails, report the exact reason, and require an explicit operator override for intentional destructive cleanup.
 
-  Depends on `prepare-goal-workspaces-without` (done).
+  Depends on `report-why-a-preparation-pass-refused` (open).
 
-- **[open]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
+- **[open, blocked]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
 
-  A claim today implies a live worker the driver can observe. Once preparation stops launching, a goal can be claimed and its workspace prepared and then never opened, holding the goal off the ready frontier with nothing to notice. This design buys that problem, so it needs an answer built in rather than discovered: surfacing untouched or aged claims, and letting one be abandoned back to the frontier.
+  Surface prepared claims that appear abandoned by using evidence Stepstone can observe, such as claim age and workspace or branch activity. Let an operator inspect the evidence and explicitly release an abandoned claim back to the ready frontier. Do not infer agent or terminal liveness.
 
-  Depends on `prepare-goal-workspaces-without` (done).
+  Depends on `scrub-a-prepared-workspace-on-verified` (open).
 
-- **[open]** Prove workspace preparation on every supported platform - `prove-workspace-preparation-on-every`
+- **[open, blocked]** Prove workspace preparation on every supported platform - `prove-workspace-preparation-on-every`
 
-  Detached process sessions are refused anywhere but Linux, because ownership was checked by reading a session token out of the process table. Nothing else in the driver needed that, so removing session hosting removes the restriction, and the project's claim to run in any ecosystem on any platform becomes checkable. CI covers Linux and macOS today and nothing covers Windows.
+  Exercise workspace preparation on every supported operating system with real Git. Cover worktree creation, the ignored goal handoff, claim recovery, merged-work reconciliation, and safe cleanup. Add a platform to the support claim only when CI runs this behavior there and the repository scripts work on that platform.
 
-  Depends on `prepare-goal-workspaces-without` (done).
+  Depends on `verify-the-remaining-external` (open), `authoritative-pull-request-quality-gates` (open).
 
 - **[open]** Report why a preparation pass refused or rolled back - `report-why-a-preparation-pass-refused`
 
-  A failure that rolls back cleanly reports only that it released and cleaned, discarding the reason the boundary gave, so an attempt that could not proceed is indistinguishable from a pass that had nothing to do. The paths that preserve custody already name their cause. Every terminal outcome a boundary failure produced should name that failure.
+  Preserve and report the original boundary failure when a preparation attempt rolls back, releases a claim, or cleans a workspace. Human-readable and JSON results must distinguish a pass with no work from a pass that refused work. Keep the reason through recovery so an operator can fix the cause instead of repeating an opaque attempt.
 
   Depends on `prepare-goal-workspaces-without` (done).
 
-- **[open]** Verify the remaining external boundaries against real tools - `verify-the-remaining-external`
+- **[open, blocked]** Verify the remaining external boundaries against real tools - `verify-the-remaining-external`
 
-  The dispatch suites drive fake external executables built from the binding's own expectations, so a binding that disagrees with the real tool's arguments, readiness, or error codes passes every check and fails only in front of a user. Three such defects shipped that way. Once only Git and the GitHub CLI remain, both of which are already required, verifying against the real tools is small enough to be routine.
+  Test the preparation workflow against the real Git and GitHub CLI boundaries instead of relying only on fake executables. Cover preparation, claim, merged-pull-request reconciliation, recovery, and cleanup with retained failure evidence. Run this verification after the driver behavior is settled so it protects the contract that will be consolidated into the project CLI.
 
-  Depends on `prepare-goal-workspaces-without` (done).
+  Depends on `notice-a-claim-nobody-is-working-on` (open).
 
-- **[open]** Fold workspace preparation into the project CLI - `fold-workspace-preparation-into-the`
+- **[open, blocked]** Fold workspace preparation into the project CLI - `fold-workspace-preparation-into-the`
 
-  A driver that no longer runs anything is a claim ledger over Git worktrees, which is close to what starting a goal already does. Folding it into the one published CLI would retire the second executable, its entry point, and its packaging checks, and leave a single surface to learn. The second executable was published recently enough that nothing depends on it yet, and that stops being true as soon as anyone scripts against it.
+  Move the preparation-only driver's remaining custody, recovery, reconciliation, and cleanup behavior into the project CLI after that behavior is complete and verified. Preserve or explicitly migrate persisted dispatch state. Then retire the second executable, its entry point, its documentation, and its packaging checks in a minor release because the executable is a published surface.
 
-  Depends on `start-a-goal-into-its-own-worktree-from` (done).
+  Depends on `hand-a-prepared-workspace-its-goal-as-a` (done), `start-a-goal-into-its-own-worktree-from` (done), `prove-workspace-preparation-on-every` (open).
 
 ## Later
 
@@ -375,19 +375,17 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `tui-polish-quick-readability-wins-in` (done), `tui-groups-collapsible-group-sections` (done).
 
-- **[open]** focus-mode: show only Session Tasks linked to the active goal - `focus-mode-show-only-session-tasks`
+- **[open, blocked]** focus-mode: show only Session Tasks linked to the active goal - `focus-mode-show-only-session-tasks`
 
-  Replaces earlier goal future-focus. Show only Session Tasks linked to the active Project Goal via SessionTask.goalId in the widget and dashboard, with a toggle to return to all tasks.
+  Show only Session Tasks linked to the featured Project Goal through SessionTask.goalId, with a Pi dashboard and widget toggle that returns to all tasks. This is Pi-only work, so defer it until the cross-harness workspace preparation surface is consolidated into the project CLI.
 
-  Re-scoped 2026-08-08 by the harness pivot: this is Pi-surface work. Project Goals are now the cross-harness product and Session Tasks are a Pi extension feature, kept working and documented but no longer receiving investment. The goal stays open because the Pi extension stays supported, but it sits behind the Harness group and behind any goal that serves every harness rather than one.
+  Depends on `fold-workspace-preparation-into-the` (open).
 
-- **[open]** task-promotion: promote a Session Task into a Project Goal - `task-promotion-promote-a-session-task`
+- **[open, blocked]** task-promotion: promote a Session Task into a Project Goal - `task-promotion-promote-a-session-task`
 
-  Replaces earlier goal future-promote. Manually promote a Session Task into a Project Goal, carrying the title and recording promotedFrom provenance on the new goal.
+  Manually promote a Session Task into a Project Goal, carrying its title and recording promotedFrom provenance on the new goal. Implement this Pi-only workflow after focus mode because both change SessionTask goal linking and the Pi task surfaces, so automated work must not run them in parallel.
 
-  Re-scoped 2026-08-08 by the harness pivot: this is Pi-surface work. Project Goals are now the cross-harness product and Session Tasks are a Pi extension feature, kept working and documented but no longer receiving investment. The goal stays open because the Pi extension stays supported, but it sits behind the Harness group and behind any goal that serves every harness rather than one.
-
-  Depends on `slug-ids-human-readable-goal-ids-and` (done).
+  Depends on `slug-ids-human-readable-goal-ids-and` (done), `focus-mode-show-only-session-tasks` (open).
 
 - **[archived]** archive-browsing: archived goals in the Pi dashboard - `archive-browsing-archived-goals-in-the`
 
@@ -437,7 +435,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Standardize pull request presentation with a repository-owned `.github/pull_request_template.md` using the same core headings as Colony: Summary, Why, Observable changes, Validation, Risk and rollback, Visual evidence, Reviewer notes, and Checklist. Keep headings stable, allow N/A for genuinely inapplicable sections, and do not treat template completion as semantic proof. Ensure both normal GitHub creation and any `gh`-based delivery command use the template instead of generating free-form agent prose.
 
-  Depends on `deterministic-local-quality-gates` (done), `exercise-stepstone-workflows-end-to-end` (open).
+  Depends on `deterministic-local-quality-gates` (done), `exercise-stepstone-workflows-end-to-end` (open), `make-repository-script-child-processes` (open).
 
 - **[open, blocked]** Harden repository supply chain - `harden-repository-supply-chain`
 
@@ -474,3 +472,5 @@ A goal's description is a record of what was decided when it was written rather 
   Half of that is beyond any check. A dead executable name is greppable, but prose that plans around a retired transport names no dead token, and a goal the project has outgrown reads perfectly. So the audit is guidance an agent follows rather than a command that asserts, and it belongs in the one skill rather than a second one: its own rule block on the command contract beside the capture, dependency, and dispatch rules, reached through trigger text in the skill description exactly as the dispatch guidance already is. A second skill would add an install to onboarding that is deliberately being simplified, duplicate a capture rule that has to stand on its own anyway, and put two near-identical trigger descriptions in competition.
 
   Tell the agent what to look for: a description naming a command, flag, documentation page, or executable that resolves to nothing; a goal still open whose recorded branch has already merged; an edge that only ever meant waiting for a goal that is now done; a goal whose premise the project has since abandoned. Point the capture workflow at it as well, so a proposed batch is read against the goals it obsoletes at the moment it is proposed, which is when this drift is created rather than when it is discovered. That capture rule has to be self-contained, because guidance reaches a repository through whichever surface was installed. A skill runs only when asked, so anything that has to fail unattended stays a separate decision. Claim staleness belongs to the goal that owns claims; this one owns descriptions that stopped being true.
+
+  Extend the capture guidance so an agent reads related open and active goals before drafting a plan, identifies overlap and stale assumptions, and records must-land-before edges against both new and existing goals. After an approved plan lands, run project waves --json when sequencing matters and report unexpected Wave 1 work or unreachable goals instead of assuming the graph is correct.
