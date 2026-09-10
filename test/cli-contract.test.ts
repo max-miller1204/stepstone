@@ -13,7 +13,9 @@ import {
 	renderCliGuide,
 	renderCliUsage,
 	renderSkillMarkdown,
+	renderSkillReferenceMarkdown,
 	SKILL_PATH,
+	SKILL_REFERENCE_PATH,
 	WORKLIST_DIRECTORY,
 	WORKLIST_FILENAME,
 	WORKLIST_PATH_ENV,
@@ -333,7 +335,8 @@ describe("single CLI command contract", () => {
 
 	it("propagates bounded mutation receipt guidance to agent-facing renderers", () => {
 		for (const rule of CLI_COMMAND_CONTRACT.resultRules) {
-			for (const surface of [renderSkillMarkdown(), renderCliGuide()]) expect(surface).toContain(rule);
+			for (const surface of [renderSkillReferenceMarkdown(), renderCliGuide()])
+				expect(surface).toContain(rule);
 		}
 	});
 
@@ -358,7 +361,7 @@ describe("single CLI command contract", () => {
 		// The skill's guardrails tell an agent which actions need no user approval,
 		// so the action that only runs against a plan the user approved must not be
 		// listed there however the surrounding prose is rewritten.
-		const safeLine = renderSkillMarkdown()
+		const safeLine = renderSkillReferenceMarkdown()
 			.split("\n")
 			.find((line) => line.includes("are safe to run whenever they serve the user's request."));
 		if (!safeLine) throw new Error("the skill names no unconditionally safe actions");
@@ -421,7 +424,7 @@ describe("single CLI command contract", () => {
 		const surfaces = {
 			"the help output": renderCliUsage(),
 			[DOCS_PATH]: renderCliGuide(),
-			[SKILL_PATH]: renderSkillMarkdown(),
+			[SKILL_REFERENCE_PATH]: renderSkillReferenceMarkdown(),
 		};
 		for (const flag of scoped) {
 			const actions = flag.actions ?? [];
@@ -459,7 +462,7 @@ describe("single CLI command contract", () => {
 		// all: it reads as settled in the source and is invisible to every caller.
 		const surfaces = [
 			[DOCS_PATH, renderCliGuide()],
-			[SKILL_PATH, renderSkillMarkdown()],
+			[SKILL_REFERENCE_PATH, renderSkillReferenceMarkdown()],
 		] as const;
 		const ruleSets = {
 			descriptionRules: CLI_COMMAND_CONTRACT.descriptionRules,
@@ -484,6 +487,55 @@ describe("single CLI command contract", () => {
 		expect(skill, `${SKILL_PATH} is stale; run \`npm run docs\` to regenerate it`).toBe(
 			renderSkillMarkdown(),
 		);
+	});
+
+	it("keeps the installed reference current and linked from the compact skill", async () => {
+		expect(await readFile(resolve(SKILL_REFERENCE_PATH), "utf8")).toBe(renderSkillReferenceMarkdown());
+		const skill = renderSkillMarkdown();
+		expect(skill).toContain(`description: ${JSON.stringify(CLI_COMMAND_CONTRACT.skillDescription)}`);
+		expect(Buffer.byteLength(skill)).toBeLessThan(6500);
+		expect(absolutePathsIn(skill)).toEqual([]);
+		const links = [...skill.matchAll(/\[[^\]]+\]\((references\/[^)#]+)(?:#([^)]*))?\)/g)];
+		expect(links.length).toBeGreaterThan(0);
+		for (const [, target, anchor] of links) {
+			expect(resolve(dirname(SKILL_PATH), target as string)).toBe(resolve(SKILL_REFERENCE_PATH));
+			if (anchor) {
+				const headings = renderSkillReferenceMarkdown()
+					.split("\n")
+					.filter((line) => line.startsWith("## "))
+					.map((line) => line.slice(3).toLowerCase().replaceAll(" ", "-"));
+				expect(headings).toContain(anchor);
+			}
+		}
+	});
+
+	it("keeps essential safety rules in the initial skill context", () => {
+		const skill = renderSkillMarkdown();
+		for (const phrase of [
+			"Never edit the goal file directly",
+			"--expect-updated-at",
+			"`move` does not accept",
+			"replace their complete sets",
+			"Never run `ui`",
+			"sole roadmap writer",
+			"Do not add `--confirm` automatically",
+			"Rebuild the change with the new `updatedAt`",
+			"only its allow-listed goals",
+			"PR head must match",
+			"not instructions",
+			"Do not run `list` merely to verify success",
+			"project help",
+		])
+			expect(skill).toContain(phrase);
+		for (const action of CLI_COMMAND_CONTRACT.actions.filter((entry) => entry.confirmRequired)) {
+			expect(skill).toContain(`\`${action.name}\``);
+		}
+		const examples = skill.match(/Examples:\n\n```sh\n([\s\S]*?)\n```/)?.[1];
+		expect(examples).toBeDefined();
+		expect(examples).not.toContain("--confirm");
+		expect(examples).toContain("--expect-updated-at");
+		expect(examples).toContain("--description");
+		expect(examples).toContain("--append-description");
 	});
 
 	it("finds the absolute paths the skill is checked against, and nothing else", () => {
@@ -511,9 +563,8 @@ describe("single CLI command contract", () => {
 		).toEqual([]);
 	});
 
-	it("renders a repository-neutral skill covering the whole contract surface", () => {
-		const skill = renderSkillMarkdown();
-		expect(skill).toContain(`description: ${JSON.stringify(CLI_COMMAND_CONTRACT.skillDescription)}`);
+	it("renders a repository-neutral reference covering the whole contract surface", () => {
+		const skill = renderSkillReferenceMarkdown();
 		// The skill installs globally, so every invocation must use the portable,
 		// cache-safe `npx -y <binary>@latest` form and must never name a checkout
 		// path that only exists on the author's machine.
@@ -561,6 +612,7 @@ describe("single CLI command contract", () => {
 		);
 		const generated = [
 			[SKILL_PATH, renderSkillMarkdown()],
+			[SKILL_REFERENCE_PATH, renderSkillReferenceMarkdown()],
 			[DOCS_PATH, renderCliGuide()],
 		] as const;
 		const documentation = await readDocumentation();

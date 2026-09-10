@@ -12,7 +12,14 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { DOCS_PATH, renderCliGuide, renderSkillMarkdown, SKILL_PATH } from "../src/cli-contract.ts";
+import {
+	DOCS_PATH,
+	renderCliGuide,
+	renderSkillMarkdown,
+	renderSkillReferenceMarkdown,
+	SKILL_PATH,
+	SKILL_REFERENCE_PATH,
+} from "../src/cli-contract.ts";
 import { createWorklistLocator } from "../src/git.ts";
 import { readProjectWorklist } from "../src/project-store.ts";
 import { ROADMAP_PATH, renderRoadmapMarkdown } from "../src/roadmap.ts";
@@ -46,6 +53,7 @@ if (worklist.error) {
 const artifacts = [
 	{ path: DOCS_PATH, render: renderCliGuide },
 	{ path: SKILL_PATH, render: renderSkillMarkdown },
+	{ path: SKILL_REFERENCE_PATH, render: renderSkillReferenceMarkdown },
 	{ path: ROADMAP_PATH, render: () => renderRoadmapMarkdown(worklist.data) },
 ];
 const check = process.argv.includes("--check");
