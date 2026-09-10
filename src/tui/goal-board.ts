@@ -1,5 +1,11 @@
 import type { WorklistOperation } from "../application-service.ts";
-import { dependencyWaves, dependentGoals, isGoalBlocked, resolveDependencies } from "../dependencies.ts";
+import {
+	dependentGoals,
+	isGoalBlocked,
+	type ProjectGoalSequenceCue,
+	projectGoalSequenceCues,
+	resolveDependencies,
+} from "../dependencies.ts";
 import {
 	formatGoalTimestamp,
 	GOAL_STATUS_MARKERS,
@@ -332,8 +338,14 @@ export class GoalBoard {
 	 */
 	private readonly expandedGroups = new Set<string>();
 
-	/** Wave numbers for `dependency` order, rebuilt whenever the goals are replaced. */
-	private waveRanks: { goals: readonly ProjectGoal[]; ranks: Map<string, number> } | undefined;
+	/** Sequencing cues and wave numbers, rebuilt whenever the goals are replaced. */
+	private sequenceCache:
+		| {
+				goals: readonly ProjectGoal[];
+				cues: Map<string, ProjectGoalSequenceCue>;
+				ranks: Map<string, number>;
+		  }
+		| undefined;
 
 	constructor(options: GoalBoardOptions) {
 		this.palette = options.palette;
@@ -453,17 +465,20 @@ export class GoalBoard {
 	 * has none: this answer depends on the goals and on nothing else about the
 	 * view, and it is recomputed several times per keystroke without it.
 	 */
-	private dependencyRanks(): Map<string, number> {
-		if (this.waveRanks?.goals !== this.goals) {
+	private sequenceCues(): Map<string, ProjectGoalSequenceCue> {
+		if (this.sequenceCache?.goals !== this.goals) {
+			const cues = projectGoalSequenceCues(this.goals);
 			const ranks = new Map<string, number>();
-			const { waves, unreachable } = dependencyWaves(this.goals);
-			waves.forEach((wave, index) => {
-				for (const goal of wave) ranks.set(goal.id, index + 1);
-			});
-			for (const goal of unreachable) ranks.set(goal.id, UNREACHABLE_WAVE);
-			this.waveRanks = { goals: this.goals, ranks };
+			for (const [id, cue] of cues) ranks.set(id, cue.wave ?? UNREACHABLE_WAVE);
+			this.sequenceCache = { goals: this.goals, cues, ranks };
 		}
-		return this.waveRanks.ranks;
+		return this.sequenceCache.cues;
+	}
+
+	private dependencyRanks(): Map<string, number> {
+		this.sequenceCues();
+		if (!this.sequenceCache) throw new Error("Project Goal sequence cache was not initialized.");
+		return this.sequenceCache.ranks;
 	}
 
 	/**
@@ -1312,8 +1327,8 @@ export class GoalBoard {
 	}
 
 	/**
-	 * One list row: pointer, status marker, title, and a staleness badge pushed to
-	 * the right edge. The row always fills exactly `width` cells so the pane
+	 * One list row: pointer, status marker, title, and derived sequencing cue.
+	 * Staleness follows the cue when both fit. The row always fills exactly `width` cells so the pane
 	 * borders stay aligned whatever the title and the badge turn out to be.
 	 *
 	 * A goal under a section header is inset from it, so the list reads as a tree
@@ -1330,15 +1345,20 @@ export class GoalBoard {
 		const { accent, muted, dim, bold, warning } = this.palette;
 		const goal = row.goal;
 		const inset = row.indented ? " ".repeat(SECTION_INDENT) : "";
-		// What the title and the badge share, once the pointer, the marker, their
+		// What the title and badges share, once the pointer, the marker, their
 		// spaces, and the inset have taken theirs.
 		const titleSpace = available - 4 - visibleWidth(inset);
+		const cue = this.sequenceCues().get(goal.id);
+		const cueBadge = cue?.badge ?? "";
+		const cueWant = cueBadge === "" ? 0 : visibleWidth(cueBadge) + 2;
+		const cueSlot = titleSpace - cueWant >= MIN_BADGED_TITLE_WIDTH ? cueWant : 0;
 		const stale = goalStalenessDays(goal, this.now());
-		const badge = stale === undefined ? "" : `${stale}d`;
-		// A space on each side keeps the badge off both the title and the border.
-		// It is a nudge, though, so a list too narrow to carry one goes without.
-		const slot = badge === "" ? 0 : visibleWidth(badge) + 2;
-		const badgeSlot = titleSpace - slot >= MIN_BADGED_TITLE_WIDTH ? slot : 0;
+		const ageBadge = stale === undefined ? "" : `${stale}d`;
+		const ageWant = ageBadge === "" ? 0 : visibleWidth(ageBadge) + 1;
+		// Sequence is the actionable fact. Age is the optional nudge, so it drops
+		// first when both badges would take too much title space.
+		const ageSlot = titleSpace - cueSlot - ageWant >= MIN_BADGED_TITLE_WIDTH ? ageWant : 0;
+		const badgeSlot = cueSlot + ageSlot;
 		const pointer = isSelected ? (this.focus === "list" ? accent("❯") : muted("❯")) : " ";
 		const marker = this.statusStyle(goal.status)(GOAL_STATUS_MARKERS[goal.status]);
 		const title = truncateToWidth(singleLine(goal.title), Math.max(1, titleSpace - badgeSlot));
@@ -1360,8 +1380,13 @@ export class GoalBoard {
 					: title;
 		const line = ` ${pointer} ${inset}${marker} ${label}`;
 		if (badgeSlot === 0) return fitToWidth(line, width);
-		const pad = " ".repeat(badgeSlot - visibleWidth(badge) - 1);
-		return `${fitToWidth(line, width - badgeSlot)}${pad}${warning(badge)} `;
+		const sequenceStyle = cueBadge === "STUCK" ? warning : cueBadge.startsWith("W") ? muted : accent;
+		const right = [
+			...(cueSlot > 0 ? [sequenceStyle(cueBadge)] : []),
+			...(ageSlot > 0 ? [warning(ageBadge)] : []),
+		].join(" ");
+		const pad = " ".repeat(badgeSlot - visibleWidth(right) - 1);
+		return `${fitToWidth(line, width - badgeSlot)}${pad}${right} `;
 	}
 
 	/** One `LABEL value` row of the detail pane, whatever the pane is describing. */
@@ -1435,6 +1460,11 @@ export class GoalBoard {
 		// says so in words, and the DEPENDS rows below say what it is waiting on.
 		const blockedNote = isGoalBlocked(this.goals, goal) ? warning(`${SEPARATOR}blocked`) : "";
 		lines.push(field("STATUS", goal.status.toUpperCase(), this.statusStyle(goal.status)) + blockedNote);
+		const cue = this.sequenceCues().get(goal.id);
+		if (cue) {
+			lines.push(field("SEQUENCE", cue.unreachable ? "Unreachable" : `Wave ${cue.wave}`, plain));
+			lines.push(field("READINESS", cue.readiness, cue.badge === "STUCK" ? warning : plain));
+		}
 		if (goal.group !== undefined) lines.push(field("GROUP", singleLine(goal.group), muted));
 		if (goal.branch !== undefined) lines.push(field("BRANCH", singleLine(goal.branch), accent));
 		// The badge in the list is only a number; spell out what it means here.

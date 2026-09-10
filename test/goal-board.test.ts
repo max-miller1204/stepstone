@@ -155,13 +155,15 @@ describe("goal board presentation", () => {
 	it("shows the file's own order first, and groups by status on request", () => {
 		const board = createBoard();
 		press(board, "fff");
-		expect(listedRows(board).map((row) => row.slice(2))).toEqual([
-			"Replace legacy authentication",
-			"Add focus mode",
-			"日本語のタイトルです",
-			"Ship the CLI",
-			"Old idea",
-		]);
+		const rows = listedRows(board);
+		expect(rows[0]).toContain("Replace legacy");
+		expect(rows[0]).toContain("ACTIVE");
+		expect(rows[1]).toContain("Add focus mode");
+		expect(rows[1]).toContain("READY");
+		expect(rows[2]).toContain("日本語のタイトルです");
+		expect(rows[2]).toContain("READY");
+		expect(rows[3]).toBe("✓ Ship the CLI");
+		expect(rows[4]).toBe("◌ Old idea");
 
 		// A settled goal sitting early in the file stays there until the status
 		// order is asked for, which is the whole point of a canonical file order.
@@ -169,7 +171,7 @@ describe("goal board presentation", () => {
 		press(settledFirst, "fff");
 		expect(listedRows(settledFirst)[0]).toContain("Ship the CLI");
 		press(settledFirst, "o");
-		expect(listedRows(settledFirst)[0]).toContain("Replace legacy authentication");
+		expect(listedRows(settledFirst)[0]).toContain("Replace legacy authenticat");
 		expect(listedRows(settledFirst).at(-1)).toContain("Ship the CLI");
 	});
 
@@ -232,16 +234,46 @@ describe("goal board presentation", () => {
 		// no wave at all and sorts last rather than vanishing from the list.
 		expect(listedRows(board).map((row) => row.slice(2))).toEqual([
 			"Landed",
-			"First",
-			"Second",
-			"Third",
-			"Cyclic",
-			"Cyclic too",
+			"First                         READY",
+			"Second                           W2",
+			"Third                            W3",
+			"Cyclic                        STUCK",
+			"Cyclic too                    STUCK",
 		]);
 
 		// The file itself is untouched by the view: file order still reads as written.
 		press(board, "o");
 		expect(listedRows(board)[0]).toContain("Third");
+	});
+
+	it("shows every sequencing cue without replacing project groups", () => {
+		const board = createBoard([
+			goal({ id: "ready", title: "Ready", group: "Delivery" }),
+			goal({ id: "active", title: "Active", group: "Delivery", status: "active" }),
+			goal({ id: "claimed", title: "Claimed", group: "Delivery", branch: "feat/claimed" }),
+			goal({ id: "later", title: "Later", group: "Delivery", dependsOn: ["ready"] }),
+			goal({ id: "stuck", title: "Stuck", group: "Delivery", dependsOn: ["missing"] }),
+			goal({ id: "done", title: "Done", group: "Delivery", status: "done" }),
+		]);
+		press(board, "fff");
+		expandAll(board);
+		const frame = plainFrame(board).join("\n");
+
+		expect(frame).toMatch(/▾ Delivery\s+\(6\)/);
+		expect(listedRows(board).find((row) => row.includes("Ready"))).toContain("READY");
+		expect(listedRows(board).find((row) => row.includes("Active"))).toContain("ACTIVE");
+		expect(listedRows(board).find((row) => row.includes("Claimed"))).toContain("CLAIMED");
+		expect(listedRows(board).find((row) => row.includes("Later"))).toContain("W2");
+		expect(listedRows(board).find((row) => row.includes("Stuck"))).toContain("STUCK");
+		expect(listedRows(board).find((row) => row.includes("Done"))).toBe("✓ Done");
+	});
+
+	it("refreshes sequencing cues when the roadmap changes", () => {
+		const board = createBoard([goal({ id: "same", title: "Same goal" })]);
+		expect(listedRows(board)[0]).toContain("READY");
+
+		board.setGoals([goal({ id: "same", title: "Same goal", branch: "feat/same" })]);
+		expect(listedRows(board)[0]).toContain("CLAIMED");
 	});
 
 	it("keeps the selection where it is when the filter changes under it", () => {
@@ -677,6 +709,8 @@ describe("goal board presentation", () => {
 		const detail = detailLines(board);
 
 		expect(detail.some((line) => /STATUS\s+OPEN · blocked/.test(line))).toBe(true);
+		expect(detail.some((line) => /SEQUENCE\s+Unreachable/.test(line))).toBe(true);
+		expect(detail.some((line) => /READINESS\s+Stuck/.test(line))).toBe(true);
 		expect(detail.find((line) => line.includes("DEPENDS"))).toMatch(/DEPENDS\s+✓ g-done/);
 		expect(detail.some((line) => /^\s+○ g-open$/.test(line))).toBe(true);
 		// An edge naming no goal can never be satisfied, so it is called out.
@@ -689,12 +723,33 @@ describe("goal board presentation", () => {
 		expect(detailLines(unblocked).some((line) => line.includes("blocked"))).toBe(false);
 	});
 
+	it("explains readiness for each sequence state and omits it for settled goals", () => {
+		const detailFor = (goals: ProjectGoal[], id: string, filterAll = false): string => {
+			const board = createBoard(goals);
+			if (filterAll) press(board, "fff");
+			while (board.selectedGoal?.id !== id) press(board, "j");
+			return detailLines(board).join("\n");
+		};
+		const ready = goal({ id: "ready", title: "Ready" });
+		const later = goal({ id: "later", title: "Later", dependsOn: ["ready"] });
+		const claimed = goal({ id: "claimed", title: "Claimed", branch: "feat/claimed" });
+		const active = goal({ id: "active", title: "Active", status: "active" });
+		const done = goal({ id: "done", title: "Done", status: "done" });
+		const goals = [ready, later, claimed, active, done];
+
+		expect(detailFor(goals, "ready")).toMatch(/SEQUENCE\s+Wave 1[\s\S]*READINESS\s+Ready/);
+		expect(detailFor(goals, "later")).toMatch(/SEQUENCE\s+Wave 2[\s\S]*READINESS\s+Blocked/);
+		expect(detailFor(goals, "claimed")).toMatch(/SEQUENCE\s+Wave 1[\s\S]*READINESS\s+Claimed/);
+		expect(detailFor(goals, "active")).toMatch(/SEQUENCE\s+Wave 1[\s\S]*READINESS\s+Active/);
+		expect(detailFor(goals, "done", true)).not.toMatch(/SEQUENCE|READINESS/);
+	});
+
 	it("ages goals still in play, and leaves settled ones alone", () => {
 		const later = Date.parse("2026-03-01T00:00:00.000Z");
 		const board = createBoard(GOALS, false, later);
 		press(board, "fff");
 		const rows = listedRows(board);
-		expect(rows[0]).toMatch(/Replace legacy authentication\s+58d$/);
+		expect(rows[0]).toMatch(/Replace legacy authent.*ACTIVE 58d$/);
 		expect(rows.find((row) => row.includes("Ship the CLI"))).not.toMatch(/\d+d$/);
 		// The detail pane spells out what the badge on the selected row means.
 		press(board, "g");
@@ -703,11 +758,15 @@ describe("goal board presentation", () => {
 		expect(plainFrame(board).join("\n")).not.toContain("untouched");
 	});
 
-	it("keeps a staleness badge off a list too narrow to carry one", () => {
+	it("drops the optional age before the sequencing cue on a narrow list", () => {
 		const later = Date.parse("2026-03-01T00:00:00.000Z");
 		const board = createBoard(GOALS, false, later);
-		expect(plainFrame(board, 30, 12).join("\n")).toContain("58d");
-		expect(plainFrame(board, 20, 8).join("\n")).not.toContain("58d");
+		const medium = plainFrame(board, 30, 12).join("\n");
+		expect(medium).toContain("ACTIVE");
+		expect(medium).not.toContain("58d");
+		const narrow = plainFrame(board, 20, 8).join("\n");
+		expect(narrow).not.toContain("ACTIVE");
+		expect(narrow).not.toContain("58d");
 	});
 
 	it("always keeps the help and quit hints in the key bar", () => {

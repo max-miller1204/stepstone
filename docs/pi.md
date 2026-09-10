@@ -45,6 +45,9 @@ On a task or goal in either scope, press Enter to open a detail window, Space to
 Session Task edits change the title, while Project Goal edits can also change the description.
 
 The Project Goals pane reads in the same visual language as the [terminal goal board](board.md), which owns what each treatment means: the active goal keeps its own marker and full contrast, settled goals recede, a goal that has gone stale carries its age, and a goal waiting on work that has not landed is marked blocked.
+Each unfinished goal also carries a compact sequencing cue derived from the dependency graph and claim fields.
+`READY` marks an unclaimed Wave 1 goal, `ACTIVE` marks the active goal, `CLAIMED` marks a goal claimed by a branch, `W2` and later numbers mark later dependency waves, and `STUCK` marks a goal that no wave can reach.
+The detail window spells out the goal's wave or unreachable state and its readiness.
 Goals are filed into headed sections by the rule the board's [sections](board.md#sections) describe, down to a roadmap where nothing is grouped staying a plain list.
 Grouped roadmaps open with every section collapsed, just like the board.
 Select a section header and press Space to toggle it, Right or Enter to open it, or Left to close it; Enter on an open section steps into its first goal, and Left on a goal inside a section closes that section and selects its header.

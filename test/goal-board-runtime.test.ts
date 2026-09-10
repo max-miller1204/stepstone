@@ -409,7 +409,7 @@ describe("goal board runtime", () => {
 
 		await seed(root, ["add", "Added with watches unavailable"]);
 		await waitFor(
-			() => board.output.text.includes("Added with watches unavailable"),
+			() => board.output.text.includes("Added with watches"),
 			"the externally added goal to appear without any watcher",
 		);
 
@@ -426,7 +426,7 @@ describe("goal board runtime", () => {
 
 		await seed(root, ["add", "Added after the watcher failed"]);
 		await waitFor(
-			() => board.output.text.includes("Added after the watcher failed"),
+			() => board.output.text.includes("Added after the watcher"),
 			"the externally added goal to appear after the watcher failed",
 		);
 

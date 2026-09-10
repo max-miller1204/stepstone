@@ -8,6 +8,7 @@ import {
 	isGoalBlocked,
 	isGoalClaimed,
 	nextGoal,
+	projectGoalSequenceCues,
 	readyGoals,
 	resolveDependencies,
 	unsatisfiedDependencies,
@@ -228,6 +229,38 @@ describe("project goal sequencing", () => {
 		const { waves, unreachable } = dependencyWaves(goals);
 		expect(waves.map((wave) => wave.map((entry) => entry.id))).toEqual([["startable"]]);
 		expect(unreachable.map((entry) => entry.id)).toEqual(["dangling", "loop-a", "loop-b", "behind-the-loop"]);
+	});
+
+	it("derives compact cues for readiness, claims, later waves, and unreachable work", () => {
+		const goals = [
+			goal({ id: "ready" }),
+			goal({ id: "active", status: "active", branch: "feat/active" }),
+			goal({ id: "claimed", branch: "feat/claimed" }),
+			goal({ id: "later", dependsOn: ["ready"] }),
+			goal({ id: "stuck", dependsOn: ["missing"] }),
+			goal({ id: "done", status: "done" }),
+			goal({ id: "archived", status: "archived" }),
+		];
+
+		expect(Object.fromEntries(projectGoalSequenceCues(goals))).toEqual({
+			ready: { badge: "READY", readiness: "Ready", wave: 1 },
+			active: { badge: "ACTIVE", readiness: "Active", wave: 1 },
+			claimed: { badge: "CLAIMED", readiness: "Claimed", wave: 1 },
+			later: { badge: "W2", readiness: "Blocked", wave: 2 },
+			stuck: { badge: "STUCK", readiness: "Stuck", unreachable: true },
+		});
+	});
+
+	it("keeps an active or claimed cue when no dependency wave can reach it", () => {
+		const goals = [
+			goal({ id: "active", status: "active", dependsOn: ["missing"] }),
+			goal({ id: "claimed", branch: "feat/claimed", dependsOn: ["missing"] }),
+		];
+
+		expect(Object.fromEntries(projectGoalSequenceCues(goals))).toEqual({
+			active: { badge: "ACTIVE", readiness: "Active", unreachable: true },
+			claimed: { badge: "CLAIMED", readiness: "Claimed", unreachable: true },
+		});
 	});
 
 	it("resolves sequencing edges through former IDs and past retired ones", () => {

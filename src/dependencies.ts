@@ -259,3 +259,43 @@ export function dependencyWaves(
 	}
 	return { waves, unreachable: remaining };
 }
+
+export interface ProjectGoalSequenceCue {
+	badge: "ACTIVE" | "CLAIMED" | "READY" | `W${number}` | "STUCK";
+	readiness: "Active" | "Claimed" | "Ready" | "Blocked" | "Stuck";
+	/** Earliest dependency wave, absent when no wave can reach the goal. */
+	wave?: number;
+	unreachable?: true;
+}
+
+/**
+ * Compact sequencing cues for unfinished goals, keyed by stable goal ID.
+ *
+ * A cue is a derived view over the dependency graph and claim fields. It never
+ * becomes stored state. Active and branch claims take precedence over readiness
+ * because work already in flight must not read as available to start again.
+ */
+export function projectGoalSequenceCues(
+	goals: readonly ProjectGoal[],
+	retiredIds: readonly string[] = [],
+): Map<string, ProjectGoalSequenceCue> {
+	const cues = new Map<string, ProjectGoalSequenceCue>();
+	const cueFor = (goal: ProjectGoal, wave?: number): ProjectGoalSequenceCue => {
+		if (goal.status === "active") return { badge: "ACTIVE", readiness: "Active", ...(wave ? { wave } : {}) };
+		if (goal.branch !== undefined)
+			return { badge: "CLAIMED", readiness: "Claimed", ...(wave ? { wave } : {}) };
+		if (wave === 1) return { badge: "READY", readiness: "Ready", wave };
+		if (wave !== undefined) return { badge: `W${wave}`, readiness: "Blocked", wave };
+		return { badge: "STUCK", readiness: "Stuck", unreachable: true };
+	};
+
+	const { waves, unreachable } = dependencyWaves(goals, retiredIds);
+	waves.forEach((wave, index) => {
+		for (const goal of wave) cues.set(goal.id, cueFor(goal, index + 1));
+	});
+	for (const goal of unreachable) {
+		const cue = cueFor(goal);
+		cues.set(goal.id, { ...cue, unreachable: true });
+	}
+	return cues;
+}

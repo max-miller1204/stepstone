@@ -175,8 +175,8 @@ describe("dashboard ordering controls", () => {
 			() => Date.parse("2026-01-06T00:00:00.000Z"),
 		);
 		const output = dashboard.render(100).join("\n");
-		expect(output).toContain("  ○ Alpha one alpha-one");
-		expect(output).toContain(">   ○ Alpha two alpha-two");
+		expect(output).toContain("  ○ Alpha one READY alpha-one");
+		expect(output).toContain(">   ○ Alpha two READY alpha-two");
 		expect(output.indexOf("Alpha two")).toBeLessThan(output.indexOf("Beta"));
 	});
 
@@ -279,7 +279,7 @@ describe("dashboard ordering controls", () => {
 		const output = dashboard.render(100);
 		expect(output.every((line) => !line.includes("\n"))).toBe(true);
 		expect(output.join("\n")).toContain("▾ Pi Surfaces");
-		expect(output.join("\n")).toContain("◆ Two lines multi");
+		expect(output.join("\n")).toContain("◆ Two lines ACTIVE multi");
 		expect(output.join("\n")).toContain("Description: Line one line two");
 	});
 
@@ -376,18 +376,92 @@ describe("dashboard navigation and project rendering", () => {
 		dashboard.handleInput(" ");
 		const expanded = dashboard.render(100).join("\n");
 		expect(expanded).toContain("> ▾ Foundation (1)");
-		expect(expanded).toContain("    ◆ Active goal active");
+		expect(expanded).toContain("    ◆ Active goal ACTIVE active");
 		expect(expanded).not.toContain("Waiting goal waiting");
 
 		dashboard.handleInput("\u001b[B");
 		dashboard.handleInput("\u001b[B");
 		dashboard.handleInput(" ");
-		expect(dashboard.render(100).join("\n")).toMatch(/○ Waiting goal \d+d waiting/);
+		expect(dashboard.render(100).join("\n")).toMatch(/○ Waiting goal \d+d READY waiting/);
 
 		dashboard.handleInput("\u001b[A");
 		dashboard.handleInput("\u001b[A");
 		dashboard.handleInput(" ");
 		expect(dashboard.render(100).join("\n")).not.toContain("Active goal active");
+	});
+
+	it("shows readiness, claims, later waves, and stuck work without replacing groups", () => {
+		const sequenced: ProjectGoal[] = [
+			{ ...goals[0], id: "ready", title: "Ready", group: "Delivery", status: "open" },
+			{ ...goals[0], id: "active", title: "Active", group: "Delivery", status: "active" },
+			{
+				...goals[0],
+				id: "claimed",
+				title: "Claimed",
+				group: "Delivery",
+				status: "open",
+				branch: "feat/claimed",
+			},
+			{
+				...goals[0],
+				id: "later",
+				title: "Later",
+				group: "Delivery",
+				status: "open",
+				dependsOn: ["ready"],
+			},
+			{
+				...goals[0],
+				id: "stuck",
+				title: "Stuck",
+				group: "Delivery",
+				status: "open",
+				dependsOn: ["missing"],
+			},
+		];
+		const dashboard = new Dashboard(
+			[],
+			sequenced,
+			identityTheme,
+			() => {},
+			{ scope: "project", expandedGroups: ["Delivery"] },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100).join("\n");
+
+		expect(output).toContain("▾ Delivery (5)");
+		expect(output).toContain("○ Ready READY ready");
+		expect(output).toContain("◆ Active ACTIVE active");
+		expect(output).toContain("○ Claimed CLAIMED claimed");
+		expect(output).toContain("○ Later blocked W2 later");
+		expect(output).toContain("○ Stuck blocked STUCK stuck");
+	});
+
+	it("keeps claimed and stuck cues visible when a narrow row drops stable IDs", () => {
+		const sequenced: ProjectGoal[] = [
+			{
+				...goals[0],
+				id: "claimed-goal-with-a-long-id",
+				title: "Claimed goal with a long title",
+				status: "open",
+				branch: "feat/claimed",
+			},
+			{
+				...goals[0],
+				id: "stuck-goal-with-a-long-id",
+				title: "Stuck goal with a long title",
+				status: "open",
+				dependsOn: ["missing"],
+			},
+		];
+		const lines = new Dashboard([], sequenced, identityTheme, () => {}, { scope: "project" }).render(24);
+		const output = lines.join("\n");
+
+		expect(output).toContain("CLAIMED");
+		expect(output).toContain("STUCK");
+		expect(output).not.toContain("claimed-goal-with-a-long-id");
+		expect(output).not.toContain("stuck-goal-with-a-long-id");
+		expect(lines.every((line) => visibleWidth(line) <= 24)).toBe(true);
 	});
 
 	it("cycles open, done, archived, and all Project Goal filters and preserves view state", () => {
@@ -1278,6 +1352,10 @@ describe("dashboard detail view", () => {
 		const output = lines.join("\n");
 
 		expect(output).toContain("Project Goal Details");
+		expect(output).toContain("Sequence");
+		expect(output).toContain("Wave 1");
+		expect(output).toContain("Readiness");
+		expect(output).toContain("Active");
 		expect(output).toContain("A complete description that should");
 		expect(output).toContain("wrap across several terminal lines");
 		expect(output).toContain("Second paragraph remains separate.");
