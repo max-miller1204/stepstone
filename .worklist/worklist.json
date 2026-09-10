@@ -668,9 +668,10 @@
 			"description": "project start records a branch name and creates nothing, so the checkout a goal is worked in is still assembled by hand every time. Starting a goal should be able to create its branch and worktree and report where it is, using only Git, so the single most common manual step becomes one command rather than a recipe.",
 			"group": "Automation",
 			"dependsOn": ["prepare-goal-workspaces-without"],
-			"status": "open",
+			"status": "active",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-08-18T21:42:28.061Z"
+			"updatedAt": "2026-09-09T20:47:07.575Z",
+			"branch": "feat/start-goal-worktree"
 		},
 		{
 			"id": "scrub-a-prepared-workspace-on-verified",
@@ -742,5 +743,5 @@
 			"updatedAt": "2026-08-18T22:17:01.718Z"
 		}
 	],
-	"revision": 306
+	"revision": 308
 }
