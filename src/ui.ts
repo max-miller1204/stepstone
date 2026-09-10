@@ -525,7 +525,6 @@ export class Dashboard {
 				? th.fg("accent", GOAL_STATUS_MARKERS.active)
 				: GOAL_STATUS_MARKERS[goal.status];
 		const cue = this.sequenceCues.get(goal.id);
-		const blocked = isGoalBlocked(this.goals, goal);
 		const stale = goalStalenessDays(goal, this.now());
 		const lead = `${prefix} ${inset}${marker} `;
 		let titleWidth = Math.max(1, width - visibleWidth(lead));
@@ -536,26 +535,22 @@ export class Dashboard {
 			titleWidth -= needed;
 			return true;
 		};
-		// Keep the sequencing cue first. The stable ID remains in the detail view
-		// when a narrow row cannot hold both facts. Blocked and age are lower-value
-		// hints and yield after the ID.
+		// Keep the sequencing cue at the right edge. Age yields first when a row
+		// cannot hold both. The detail view carries the stable ID and blocked state.
 		const showCue = reserve(cue?.badge ?? "", 4);
-		const showId = reserve(goal.id, 12);
-		const showBlocked = reserve(blocked ? "blocked" : "", 12);
 		const age = stale === undefined ? "" : `${stale}d`;
 		const showAge = reserve(age, 12);
 		const title = truncateToWidth(compactDescription(goal.title), titleWidth);
 		const settled = goal.status === "done" || goal.status === "archived";
 		const styled =
 			goal.status === "active" ? th.fg("accent", th.bold(title)) : settled ? th.fg("dim", title) : title;
+		const padding = " ".repeat(Math.max(0, titleWidth - visibleWidth(title)));
 		const badge = showAge ? ` ${th.fg("muted", age)}` : "";
-		const blockedBadge = showBlocked ? ` ${th.fg("muted", "blocked")}` : "";
 		const sequence =
 			showCue && cue
 				? ` ${th.fg(cue.badge === "STUCK" || cue.badge.startsWith("W") ? "muted" : "accent", cue.badge)}`
 				: "";
-		const id = showId ? ` ${th.fg("dim", goal.id)}` : "";
-		return `${lead}${styled}${badge}${blockedBadge}${sequence}${id}`;
+		return `${lead}${styled}${padding}${badge}${sequence}`;
 	}
 
 	render(width: number): string[] {
