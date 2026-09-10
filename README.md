@@ -10,6 +10,16 @@ stepstone keeps a repository's roadmap inside the repository.
 Project Goals are a list committed alongside the code, which any coding agent and any human at a terminal reads and changes through the same CLI.
 Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to start, what can run in parallel, and what each finished goal unblocks.
 
+## Interfaces
+
+Run `npx -y stepstone@latest project ui` to open the Project Goal board. This view uses dependency order.
+
+![Stepstone Project Goal board in dependency order](docs/images/stepstone-project-ui.png)
+
+Install the Pi extension and run `/tasks` to open the Stepstone dashboard in Pi.
+
+![Stepstone dashboard in Pi](docs/images/stepstone-pi-ui.png)
+
 ## Install
 
 **Agent Skill.**
