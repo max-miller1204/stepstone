@@ -175,8 +175,10 @@ describe("dashboard ordering controls", () => {
 			() => Date.parse("2026-01-06T00:00:00.000Z"),
 		);
 		const output = dashboard.render(100).join("\n");
-		expect(output).toContain("  ○ Alpha one alpha-one");
-		expect(output).toContain(">   ○ Alpha two alpha-two");
+		expect(output).toMatch(/ {2}○ Alpha one\s+READY/);
+		expect(output).toMatch(/> {3}○ Alpha two\s+READY/);
+		expect(output).not.toContain("alpha-one");
+		expect(output).not.toContain("alpha-two");
 		expect(output.indexOf("Alpha two")).toBeLessThan(output.indexOf("Beta"));
 	});
 
@@ -279,7 +281,8 @@ describe("dashboard ordering controls", () => {
 		const output = dashboard.render(100);
 		expect(output.every((line) => !line.includes("\n"))).toBe(true);
 		expect(output.join("\n")).toContain("▾ Pi Surfaces");
-		expect(output.join("\n")).toContain("◆ Two lines multi");
+		expect(output.join("\n")).toMatch(/◆ Two lines\s+ACTIVE/);
+		expect(output.join("\n")).not.toContain("multi");
 		expect(output.join("\n")).toContain("Description: Line one line two");
 	});
 
@@ -371,23 +374,125 @@ describe("dashboard navigation and project rendering", () => {
 		expect(collapsed).toContain("Goals: ◆ 1 · ○ 1 · ✓ 1 · ◌ 1 · 2 of 4 match");
 		expect(collapsed).toContain("> ▸ Foundation (1)");
 		expect(collapsed).toContain("  ▸ Ungrouped (1)");
-		expect(collapsed).not.toContain("Active goal active");
+		expect(collapsed).not.toContain("Active goal");
 
 		dashboard.handleInput(" ");
 		const expanded = dashboard.render(100).join("\n");
 		expect(expanded).toContain("> ▾ Foundation (1)");
-		expect(expanded).toContain("    ◆ Active goal active");
-		expect(expanded).not.toContain("Waiting goal waiting");
+		expect(expanded).toMatch(/ {4}◆ Active goal\s+ACTIVE/);
+		expect(expanded).not.toContain("Waiting goal");
 
 		dashboard.handleInput("\u001b[B");
 		dashboard.handleInput("\u001b[B");
 		dashboard.handleInput(" ");
-		expect(dashboard.render(100).join("\n")).toMatch(/○ Waiting goal \d+d waiting/);
+		expect(dashboard.render(100).join("\n")).toMatch(/○ Waiting goal\s+\d+d READY/);
 
 		dashboard.handleInput("\u001b[A");
 		dashboard.handleInput("\u001b[A");
 		dashboard.handleInput(" ");
-		expect(dashboard.render(100).join("\n")).not.toContain("Active goal active");
+		expect(dashboard.render(100).join("\n")).not.toContain("Active goal");
+	});
+
+	it("shows readiness, claims, later waves, and stuck work without replacing groups", () => {
+		const sequenced: ProjectGoal[] = [
+			{ ...goals[0], id: "ready", title: "Ready", group: "Delivery", status: "open" },
+			{ ...goals[0], id: "active", title: "Active", group: "Delivery", status: "active" },
+			{
+				...goals[0],
+				id: "claimed",
+				title: "Claimed",
+				group: "Delivery",
+				status: "open",
+				branch: "feat/claimed",
+			},
+			{
+				...goals[0],
+				id: "later",
+				title: "Later",
+				group: "Delivery",
+				status: "open",
+				dependsOn: ["ready"],
+			},
+			{
+				...goals[0],
+				id: "stuck",
+				title: "Stuck",
+				group: "Delivery",
+				status: "open",
+				dependsOn: ["missing"],
+			},
+		];
+		const dashboard = new Dashboard(
+			[],
+			sequenced,
+			identityTheme,
+			() => {},
+			{ scope: "project", expandedGroups: ["Delivery"] },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		);
+		const output = dashboard.render(100).join("\n");
+
+		expect(output).toContain("▾ Delivery (5)");
+		expect(output).toMatch(/○ Ready\s+READY/);
+		expect(output).toMatch(/◆ Active\s+ACTIVE/);
+		expect(output).toMatch(/○ Claimed\s+CLAIMED/);
+		expect(output).toMatch(/○ Later\s+W2/);
+		expect(output).toMatch(/○ Stuck\s+STUCK/);
+		for (const hidden of ["blocked", " ready", " active", " claimed", " later", " stuck"]) {
+			expect(output).not.toContain(hidden);
+		}
+	});
+
+	it("keeps cues near titles on wide terminals and truncates long titles before the cue", () => {
+		const longTitle = "Replace legacy authentication across every supported client before rollout";
+		const sequenced: ProjectGoal = {
+			...goals[0],
+			id: "long-ready",
+			title: longTitle,
+			status: "open",
+		};
+		const lines = new Dashboard(
+			[],
+			[sequenced],
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		).render(120);
+		const row = lines.find((line) => line.includes("Replace legacy"));
+
+		expect(row).toBeDefined();
+		expect(visibleWidth(row ?? "")).toBe(64);
+		expect(row).toContain("...");
+		expect(row).toMatch(/ READY$/);
+		expect(row).not.toContain(longTitle);
+	});
+
+	it("keeps claimed and stuck cues visible when a narrow row drops stable IDs", () => {
+		const sequenced: ProjectGoal[] = [
+			{
+				...goals[0],
+				id: "claimed-goal-with-a-long-id",
+				title: "Claimed goal with a long title",
+				status: "open",
+				branch: "feat/claimed",
+			},
+			{
+				...goals[0],
+				id: "stuck-goal-with-a-long-id",
+				title: "Stuck goal with a long title",
+				status: "open",
+				dependsOn: ["missing"],
+			},
+		];
+		const lines = new Dashboard([], sequenced, identityTheme, () => {}, { scope: "project" }).render(24);
+		const output = lines.join("\n");
+
+		expect(output).toContain("CLAIMED");
+		expect(output).toContain("STUCK");
+		expect(output).not.toContain("claimed-goal-with-a-long-id");
+		expect(output).not.toContain("stuck-goal-with-a-long-id");
+		expect(lines.every((line) => visibleWidth(line) <= 24)).toBe(true);
 	});
 
 	it("cycles open, done, archived, and all Project Goal filters and preserves view state", () => {
@@ -406,8 +511,8 @@ describe("dashboard navigation and project rendering", () => {
 		const done = dashboard.render(100).join("\n");
 		expect(done).toContain("Filter: Done (f to change)");
 		expect(done).toContain("▾ Foundation (1)");
-		expect(done).toContain("✓ Done goal done");
-		expect(done).not.toContain("Active goal active");
+		expect(done).toContain("✓ Done goal");
+		expect(done).not.toContain("Active goal");
 
 		dashboard.handleInput("a");
 		expect(result?.state).toMatchObject({
@@ -416,7 +521,7 @@ describe("dashboard navigation and project rendering", () => {
 			expandedGroups: ["Foundation"],
 		});
 		const restored = new Dashboard([], roadmap, identityTheme, () => {}, result?.state);
-		expect(restored.render(100).join("\n")).toContain("✓ Done goal done");
+		expect(restored.render(100).join("\n")).toContain("✓ Done goal");
 
 		dashboard.handleInput("f");
 		expect(dashboard.render(100).join("\n")).toContain("Filter: Archived (f to change)");
@@ -1278,6 +1383,10 @@ describe("dashboard detail view", () => {
 		const output = lines.join("\n");
 
 		expect(output).toContain("Project Goal Details");
+		expect(output).toContain("Sequence");
+		expect(output).toContain("Wave 1");
+		expect(output).toContain("Readiness");
+		expect(output).toContain("Active");
 		expect(output).toContain("A complete description that should");
 		expect(output).toContain("wrap across several terminal lines");
 		expect(output).toContain("Second paragraph remains separate.");

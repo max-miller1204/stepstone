@@ -56,7 +56,13 @@ It wraps on word boundaries across up to four rows of its own, because the file 
 Those rows stay reserved while the condition holds, so a passing message takes the status line without clearing the warning off the screen and without shifting the list and detail panes; a terminal with no rows to spare falls back to the warning taking that line itself, truncated.
 
 In the all view, done and archived rows recede so live work stays legible beside them, and a goal waiting on work that has not landed recedes in every view for the same reason; the selected row always keeps full contrast.
-A goal still in play that has gone untouched for 30 days or more carries its age at the right edge of its row when at least 12 cells remain for the title, and the detail pane spells that age out under `UPDATED`.
+Each unfinished row carries a compact sequencing cue derived from the same graph and claim fields as `ready` and `waves`.
+`READY` marks an unclaimed Wave 1 goal.
+`ACTIVE` marks the active goal, and `CLAIMED` marks a goal claimed by a branch.
+`W2` and later numbers mark later dependency waves.
+`STUCK` marks a goal that no wave can reach.
+The detail pane spells out the wave or unreachable state and the readiness value.
+A goal still in play that has gone untouched for 30 days or more carries its age at the right edge of its row when enough space remains after the sequencing cue, and the detail pane spells that age out under `UPDATED`.
 Settled goals are never aged: a done or archived goal is finished rather than neglected.
 The header shows per-status totals across the whole roadmap, so a filtered list still reports its overall shape; on narrow terminals, those counts yield first to the filter and shown-of-total labels.
 

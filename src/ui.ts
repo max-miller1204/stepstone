@@ -1,6 +1,11 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { dependentGoals, isGoalBlocked, resolveDependencies } from "./dependencies.ts";
+import {
+	dependentGoals,
+	isGoalBlocked,
+	projectGoalSequenceCues,
+	resolveDependencies,
+} from "./dependencies.ts";
 import {
 	compactDescription,
 	formatGoalTimestamp,
@@ -86,6 +91,8 @@ const SESSION_FILTERS: readonly Exclude<DashboardFilter, "archived">[] = ["open"
 const PROJECT_FILTERS: readonly DashboardFilter[] = ["open", "done", "archived", "all"];
 /** Rows the wrapped key map may occupy before the rest of it is left off screen. */
 const HELP_ROW_LIMIT = 3;
+/** Keep sequencing cues near their titles instead of stretching rows across wide terminals. */
+const PROJECT_GOAL_ROW_MAX_WIDTH = 64;
 
 /**
  * The key map packed into rows no wider than the pane, one hint at a time.
@@ -221,6 +228,7 @@ export class Dashboard {
 	private sessionFilter: Exclude<DashboardFilter, "archived">;
 	private projectFilter: DashboardFilter;
 	private readonly expandedGroups: Set<string>;
+	private readonly sequenceCues: ReturnType<typeof projectGoalSequenceCues>;
 
 	constructor(
 		private readonly tasks: SessionTask[],
@@ -235,6 +243,7 @@ export class Dashboard {
 		this.sessionFilter = initialState?.sessionFilter ?? "open";
 		this.projectFilter = initialState?.projectFilter ?? "open";
 		this.expandedGroups = new Set(initialState?.expandedGroups ?? []);
+		this.sequenceCues = projectGoalSequenceCues(goals);
 		this.listScroll = Math.max(0, Math.floor(initialState?.listScroll ?? 0));
 
 		// A state from the pre-collapse dashboard names only a goal. Keep that goal
@@ -499,7 +508,7 @@ export class Dashboard {
 		}
 	}
 
-	private renderRow(row: DashboardRow, index: number): string {
+	private renderRow(row: DashboardRow, index: number, width: number): string {
 		const th = this.theme;
 		const prefix = index === this.selected ? th.fg("accent", ">") : " ";
 		if (row.kind === "group") {
@@ -517,14 +526,34 @@ export class Dashboard {
 			goal.status === "active"
 				? th.fg("accent", GOAL_STATUS_MARKERS.active)
 				: GOAL_STATUS_MARKERS[goal.status];
+		const cue = this.sequenceCues.get(goal.id);
+		const stale = goalStalenessDays(goal, this.now());
+		const lead = `${prefix} ${inset}${marker} `;
+		const rowWidth = Math.min(width, PROJECT_GOAL_ROW_MAX_WIDTH);
+		let titleWidth = Math.max(1, rowWidth - visibleWidth(lead));
+		const reserve = (text: string, minimumTitleWidth: number): boolean => {
+			if (text === "") return false;
+			const needed = visibleWidth(text) + 1;
+			if (titleWidth - needed < minimumTitleWidth) return false;
+			titleWidth -= needed;
+			return true;
+		};
+		// Keep the sequencing cue at the right edge. Age yields first when a row
+		// cannot hold both. The detail view carries the stable ID and blocked state.
+		const showCue = reserve(cue?.badge ?? "", 4);
+		const age = stale === undefined ? "" : `${stale}d`;
+		const showAge = reserve(age, 12);
+		const title = truncateToWidth(compactDescription(goal.title), titleWidth);
 		const settled = goal.status === "done" || goal.status === "archived";
-		const title = compactDescription(goal.title);
 		const styled =
 			goal.status === "active" ? th.fg("accent", th.bold(title)) : settled ? th.fg("dim", title) : title;
-		const stale = goalStalenessDays(goal, this.now());
-		const badge = stale === undefined ? "" : ` ${th.fg("muted", `${stale}d`)}`;
-		const blocked = isGoalBlocked(this.goals, goal) ? ` ${th.fg("muted", "blocked")}` : "";
-		return `${prefix} ${inset}${marker} ${styled}${badge}${blocked} ${th.fg("dim", goal.id)}`;
+		const padding = " ".repeat(Math.max(0, titleWidth - visibleWidth(title)));
+		const badge = showAge ? ` ${th.fg("muted", age)}` : "";
+		const sequence =
+			showCue && cue
+				? ` ${th.fg(cue.badge === "STUCK" || cue.badge.startsWith("W") ? "muted" : "accent", cue.badge)}`
+				: "";
+		return `${lead}${styled}${padding}${badge}${sequence}`;
 	}
 
 	render(width: number): string[] {
@@ -680,7 +709,7 @@ export class Dashboard {
 		const listLines = rows.length
 			? rows
 					.slice(this.listScroll, this.listScroll + listHeight)
-					.map((row, offset) => this.renderRow(row, this.listScroll + offset))
+					.map((row, offset) => this.renderRow(row, this.listScroll + offset, width))
 			: [th.fg("dim", "  No items in this view. Press f to change the filter or a to add one.")];
 		const hiddenAbove = this.listScroll;
 		const hiddenBelow = Math.max(0, rows.length - (this.listScroll + listLines.length));
@@ -729,6 +758,11 @@ function buildGoalDetailSections(
 	addSection("Title", goal.title, "accent");
 	const blocked = isGoalBlocked(goals, goal) ? " · blocked" : "";
 	addSection("Status", `${GOAL_STATUS_MARKERS[goal.status]} ${goal.status.toUpperCase()}${blocked}`);
+	const cue = projectGoalSequenceCues(goals).get(goal.id);
+	if (cue) {
+		addSection("Sequence", cue.unreachable ? "Unreachable" : `Wave ${cue.wave}`);
+		addSection("Readiness", cue.readiness);
+	}
 	if (goal.group !== undefined) addSection("Group", goalSection(goal) ?? "Ungrouped", "muted");
 	if (goal.branch !== undefined) addSection("Branch", goal.branch, "muted");
 	const stale = goalStalenessDays(goal);
