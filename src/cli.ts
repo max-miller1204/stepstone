@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, realpath } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve } from "node:path";
 import {
@@ -29,9 +29,9 @@ import {
 	resolveDependencies,
 	unfinishedGoals,
 } from "./dependencies.ts";
-import { GitWorktreeBinding } from "./dispatch-bindings.ts";
 import { goalCount, goalSection } from "./format.ts";
 import {
+	createGoalWorktree,
 	createWorklistLocator,
 	currentGitBranch,
 	currentGitRevision,
@@ -1130,6 +1130,7 @@ async function runWorktreeStart(
 	let parent: string;
 	try {
 		parent = await realpath(requestedParent);
+		if (!(await stat(parent)).isDirectory()) throw new Error("Workspace parent is not a directory");
 	} catch {
 		throw new WorklistCliFailure({
 			ok: false,
@@ -1167,9 +1168,9 @@ async function runWorktreeStart(
 		});
 	}
 	const expectedWorktreePath = join(parent, `stepstone-${goal.id}`);
-	let workspace: Awaited<ReturnType<GitWorktreeBinding["acquire"]>>;
+	const workspace = { path: expectedWorktreePath };
 	try {
-		workspace = await new GitWorktreeBinding(location.root, parent).acquire(goal, branch, revision.revision);
+		createGoalWorktree(location.root, expectedWorktreePath, branch, revision.revision);
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
 		throw new WorklistCliFailure({

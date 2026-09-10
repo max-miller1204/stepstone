@@ -9,8 +9,41 @@ import {
 } from "./cli-contract.ts";
 import { singleLine } from "./tui/text.ts";
 
-/** How long any Git command in this module may take before it is killed. */
+/** Default time limit for Git lookups. */
 export const GIT_COMMAND_TIMEOUT_MS = 10000;
+
+/** Create a linked checkout without dispatch custody records. Preserve all state on failure. */
+export function createGoalWorktree(root: string, path: string, branch: string, revision: string): void {
+	const run = (args: string[]): string => {
+		try {
+			return execFileSync("git", args, {
+				cwd: root,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 30000,
+				killSignal: "SIGKILL",
+			});
+		} catch (error) {
+			const failure = describeCommandFailure(error);
+			throw new Error(
+				`${gitCommandDiagnostic(failure)}${failure.timedOut ? " (the command timed out)" : ""}`,
+			);
+		}
+	};
+	run(["worktree", "add", "-b", branch, path, revision]);
+	const records = run(["worktree", "list", "--porcelain", "-z"]).split("\0\0");
+	const matching = records.filter((record) => record.split("\0").includes(`worktree ${path}`));
+	const fields = matching[0]?.split("\0");
+	if (
+		matching.length !== 1 ||
+		!fields?.includes(`HEAD ${revision}`) ||
+		!fields.includes(`branch refs/heads/${branch}`) ||
+		fields.includes("bare") ||
+		fields.includes("detached")
+	) {
+		throw new Error("Git did not register the expected worktree, branch, and revision");
+	}
+}
 
 /** The errno a run killed for outliving its time limit is reported with. */
 const TIMED_OUT_CODE = "ETIMEDOUT";
