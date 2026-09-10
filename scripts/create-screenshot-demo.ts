@@ -1,12 +1,14 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const demoRoot = join(repositoryRoot, "artifacts", "stepstone-ui-demo");
 const sessionDir = join(demoRoot, ".pi-sessions");
 const extensionPath = join(repositoryRoot, "src", "extension.ts");
 const cliPath = join(repositoryRoot, "src", "cli.ts");
+const piPath = join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "cli.js");
 
 function daysAgo(days: number): string {
 	return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -170,8 +172,9 @@ class RpcClient {
 
 	constructor() {
 		this.child = spawn(
-			"pi",
+			process.execPath,
 			[
+				piPath,
 				"--mode",
 				"rpc",
 				"--offline",
@@ -319,10 +322,12 @@ async function seedSessionTasks(): Promise<void> {
 			timestamp: new Date().toISOString(),
 			cwd: demoRoot,
 		};
-		await writeFile(
-			state.sessionFile,
-			`${[header, ...finalEntries].map((entry) => JSON.stringify(entry)).join("\n")}\n`,
-		);
+		let session = `${[header, ...finalEntries].map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+		// Keep task references stable in every snapshot and command result.
+		for (const [index, task] of snapshot.data.tasks.entries()) {
+			session = session.replaceAll(task.id, `st-demo-${String(index + 1).padStart(3, "0")}`);
+		}
+		await writeFile(state.sessionFile, session);
 	} finally {
 		await rpc.close();
 	}
@@ -344,11 +349,11 @@ async function main(): Promise<void> {
 	const boardLauncher = join(demoRoot, "open-project-ui.sh");
 	await writeFile(
 		piLauncher,
-		`#!/bin/sh\nset -eu\ncd -- "$(dirname "$0")"\nexec pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files --use-theme dark --session-dir .pi-sessions -e ${JSON.stringify(extensionPath)} --continue "/tasks"\n`,
+		`#!/bin/sh\nset -eu\ncd -- "$(dirname "$0")"\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(piPath)} --offline --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files --use-theme dark --session-dir .pi-sessions -e ${JSON.stringify(extensionPath)} --continue "/tasks"\n`,
 	);
 	await writeFile(
 		boardLauncher,
-		`#!/bin/sh\nset -eu\ncd -- "$(dirname "$0")"\nexec node ${JSON.stringify(cliPath)} project ui\n`,
+		`#!/bin/sh\nset -eu\ncd -- "$(dirname "$0")"\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cliPath)} project ui\n`,
 	);
 	await chmod(piLauncher, 0o755);
 	await chmod(boardLauncher, 0o755);
@@ -362,7 +367,7 @@ async function main(): Promise<void> {
 				else reject(new Error(`git ${args.join(" ")} exited with code ${String(code)}.`));
 			});
 		});
-	await git(["init", "-q"]);
+	await git(["init", "-q", "--initial-branch=main"]);
 	await git(["add", "README.md", ".worklist/worklist.json"]);
 	await git([
 		"-c",

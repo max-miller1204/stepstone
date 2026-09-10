@@ -18,9 +18,11 @@
 
 See `docs/storage.md`, `docs/dependencies.md`, and `docs/pi.md`.
 
-## Review
+## Screenshots
 
-- use tmux's capture pane feature for screenshots as pr evidence
+- Run `npm run screenshots:update` after visual changes to update the README images.
+- Use the generated images as PR evidence. Captures are in `artifacts/screenshots`.
+- See `docs/development.md` for screenshot requirements and verification steps.
 
 ## Published package
 

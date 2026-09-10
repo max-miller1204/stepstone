@@ -67,13 +67,61 @@ The project CLI exercise asserts exit codes and `--json` envelopes across `list`
 The dispatch exercise starts the installed driver, prepares a real worktree, and reads its ignored `STEPSTONE_GOAL.md` handoff before checking persisted status; the preparation-only contract needs no agent executable.
 The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
-## Screenshot demo
+## README screenshots
 
-Run `npm run demo:screenshots` to create a clean demo repository in `artifacts/stepstone-ui-demo`.
-The script adds a varied Project Goal roadmap and a Pi session with Session Tasks.
-It also creates `open-pi.sh` and `open-project-ui.sh` launchers in the demo repository.
-Resize the terminal to about 116 columns by 40 rows before you take each screenshot.
+After a visual change, run:
+
+```sh
+npm ci
+npm run screenshots:update
+```
+
+The screenshot command runs the `src/cli.ts` entry point, which needs Node 22.18 or newer.
+Use tmux 3.5 or newer on macOS or Linux.
+Install tmux through your package manager. Global packages on this workstation use `dots`.
+Pi and the image renderer come from the pinned development dependencies.
+No provider login or display server is required.
+
+The command replaces these files:
+
+- `docs/images/stepstone-project-ui.png`
+- `docs/images/stepstone-pi-ui.png`
+
+The script starts the real CLI and Pi extension in a separate tmux server.
+It captures each pane with `tmux capture-pane` at 116 columns by 40 rows.
+It uses fixed dates, task IDs, fonts, colors, and demo data.
+The Pi process uses a separate configuration and a dummy API key.
+It runs only extension commands. It does not send model requests.
+The clock override applies only to screenshot subprocesses.
+
+The board capture expands each section and selects the public beta goal.
+The Pi capture shows the Session Tasks tab.
+Change the key sequences in `scripts/update-screenshots.ts` to change these views.
+The script waits for expected content and a stable pane before it captures an image.
+A failed capture stops the command before it replaces either README image.
+
+Inspect the PNGs before you commit them.
+The raw ANSI captures, SVGs, and PNG copies are in `artifacts/screenshots`.
+The fonts and their licenses are in `scripts/screenshot-assets`.
+Repeated runs with the same checkout, dependencies, and tmux version produce identical PNGs.
+To check this:
+
+```sh
+npm run screenshots:update
+shasum -a 256 docs/images/*.png > artifacts/screenshots.sha256
+npm run screenshots:update
+shasum -a 256 -c artifacts/screenshots.sha256
+```
+
+The command recreates `artifacts/screenshots` and `artifacts/stepstone-ui-demo`.
+Do not store work in these directories.
+It leaves your running tmux server and Pi configuration unchanged.
+If the process is killed before cleanup, remove `artifacts/screenshots.lock` before you run it again.
 The `artifacts` directory is ignored by Git.
+
+For manual exploration, `npm run demo:screenshots` creates the same demo roadmap and Session Tasks.
+It creates `open-pi.sh` and `open-project-ui.sh` in `artifacts/stepstone-ui-demo`.
+These manual launchers use your normal environment and current date.
 
 ## Generated files
 
