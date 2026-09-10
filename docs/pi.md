@@ -47,7 +47,8 @@ Session Task edits change the title, while Project Goal edits can also change th
 The Project Goals pane reads in the same visual language as the [terminal goal board](board.md), which owns what each treatment means: the active goal keeps its own marker and full contrast, settled goals recede, and a goal that has gone stale carries its age.
 Each unfinished goal also carries a compact sequencing cue derived from the dependency graph and claim fields.
 `READY` marks an unclaimed Wave 1 goal, `ACTIVE` marks the active goal, `CLAIMED` marks a goal claimed by a branch, `W2` and later numbers mark later dependency waves, and `STUCK` marks a goal that no wave can reach.
-The list keeps the cue at the right edge and drops the optional age first when space is short.
+The list keeps the cue at the right edge of a bounded row area, so wide terminals do not separate it from the title.
+When space is short, the list drops the optional age first and truncates a long title before the cue.
 The detail window holds the stable ID, explicit blocked state, wave or unreachable state, and readiness.
 Goals are filed into headed sections by the rule the board's [sections](board.md#sections) describe, down to a roadmap where nothing is grouped staying a plain list.
 Grouped roadmaps open with every section collapsed, just like the board.

@@ -443,6 +443,31 @@ describe("dashboard navigation and project rendering", () => {
 		}
 	});
 
+	it("keeps cues near titles on wide terminals and truncates long titles before the cue", () => {
+		const longTitle = "Replace legacy authentication across every supported client before rollout";
+		const sequenced: ProjectGoal = {
+			...goals[0],
+			id: "long-ready",
+			title: longTitle,
+			status: "open",
+		};
+		const lines = new Dashboard(
+			[],
+			[sequenced],
+			identityTheme,
+			() => {},
+			{ scope: "project" },
+			() => Date.parse("2026-01-06T00:00:00.000Z"),
+		).render(120);
+		const row = lines.find((line) => line.includes("Replace legacy"));
+
+		expect(row).toBeDefined();
+		expect(visibleWidth(row ?? "")).toBe(64);
+		expect(row).toContain("...");
+		expect(row).toMatch(/ READY$/);
+		expect(row).not.toContain(longTitle);
+	});
+
 	it("keeps claimed and stuck cues visible when a narrow row drops stable IDs", () => {
 		const sequenced: ProjectGoal[] = [
 			{

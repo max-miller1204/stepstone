@@ -91,6 +91,8 @@ const SESSION_FILTERS: readonly Exclude<DashboardFilter, "archived">[] = ["open"
 const PROJECT_FILTERS: readonly DashboardFilter[] = ["open", "done", "archived", "all"];
 /** Rows the wrapped key map may occupy before the rest of it is left off screen. */
 const HELP_ROW_LIMIT = 3;
+/** Keep sequencing cues near their titles instead of stretching rows across wide terminals. */
+const PROJECT_GOAL_ROW_MAX_WIDTH = 64;
 
 /**
  * The key map packed into rows no wider than the pane, one hint at a time.
@@ -527,7 +529,8 @@ export class Dashboard {
 		const cue = this.sequenceCues.get(goal.id);
 		const stale = goalStalenessDays(goal, this.now());
 		const lead = `${prefix} ${inset}${marker} `;
-		let titleWidth = Math.max(1, width - visibleWidth(lead));
+		const rowWidth = Math.min(width, PROJECT_GOAL_ROW_MAX_WIDTH);
+		let titleWidth = Math.max(1, rowWidth - visibleWidth(lead));
 		const reserve = (text: string, minimumTitleWidth: number): boolean => {
 			if (text === "") return false;
 			const needed = visibleWidth(text) + 1;
