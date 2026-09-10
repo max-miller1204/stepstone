@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	dependentGoals,
+	goalsInDependencyOrder,
 	isGoalBlocked,
 	projectGoalSequenceCues,
 	resolveDependencies,
@@ -293,7 +294,7 @@ export class Dashboard {
 
 	/** The goals the Project Goal pane lists, before they are grouped into rows. */
 	private visibleGoals(): ProjectGoal[] {
-		return this.goals.filter((goal) => goalMatchesFilter(goal, this.projectFilter));
+		return goalsInDependencyOrder(this.goals).filter((goal) => goalMatchesFilter(goal, this.projectFilter));
 	}
 
 	/**
@@ -545,8 +546,14 @@ export class Dashboard {
 		const showAge = reserve(age, 12);
 		const title = truncateToWidth(compactDescription(goal.title), titleWidth);
 		const settled = goal.status === "done" || goal.status === "archived";
+		const blocked = isGoalBlocked(this.goals, goal);
+		const selected = index === this.selected;
 		const styled =
-			goal.status === "active" ? th.fg("accent", th.bold(title)) : settled ? th.fg("dim", title) : title;
+			goal.status === "active"
+				? th.fg("accent", th.bold(title))
+				: !selected && (settled || blocked)
+					? th.fg("dim", title)
+					: title;
 		const padding = " ".repeat(Math.max(0, titleWidth - visibleWidth(title)));
 		const badge = showAge ? ` ${th.fg("muted", age)}` : "";
 		const sequence =

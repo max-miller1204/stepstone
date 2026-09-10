@@ -5,6 +5,7 @@ import {
 	findDependencyCycle,
 	findDependencyCycleFromRoots,
 	formatDependencyCycle,
+	goalsInDependencyOrder,
 	isGoalBlocked,
 	isGoalClaimed,
 	nextGoal,
@@ -229,6 +230,26 @@ describe("project goal sequencing", () => {
 		const { waves, unreachable } = dependencyWaves(goals);
 		expect(waves.map((wave) => wave.map((entry) => entry.id))).toEqual([["startable"]]);
 		expect(unreachable.map((entry) => entry.id)).toEqual(["dangling", "loop-a", "loop-b", "behind-the-loop"]);
+	});
+
+	it("orders active, settled, dependency waves, and unreachable work", () => {
+		const goals = [
+			goal({ id: "later", dependsOn: ["ready"] }),
+			goal({ id: "stuck", dependsOn: ["missing"] }),
+			goal({ id: "done", status: "done" }),
+			goal({ id: "ready" }),
+			goal({ id: "active", status: "active" }),
+			goal({ id: "same-wave" }),
+		];
+
+		expect(goalsInDependencyOrder(goals).map((entry) => entry.id)).toEqual([
+			"active",
+			"done",
+			"ready",
+			"same-wave",
+			"later",
+			"stuck",
+		]);
 	});
 
 	it("derives compact cues for readiness, claims, later waves, and unreachable work", () => {

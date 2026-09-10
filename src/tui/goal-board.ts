@@ -1,6 +1,7 @@
 import type { WorklistOperation } from "../application-service.ts";
 import {
 	dependentGoals,
+	goalsInDependencyOrder,
 	isGoalBlocked,
 	type ProjectGoalSequenceCue,
 	projectGoalSequenceCues,
@@ -9,16 +10,14 @@ import {
 import {
 	formatGoalTimestamp,
 	GOAL_STATUS_MARKERS,
-	GOAL_STATUS_RANK,
 	goalSection,
 	goalSections,
 	goalStalenessDays,
 	goalStatusCounts,
 	isUngroupedList,
-	resolveSectionReorder,
 	UNGROUPED_SECTION_KEY,
 } from "../format.ts";
-import { findGoalByStoredId, matchesGoalQuery } from "../goal-selection.ts";
+import { matchesGoalQuery } from "../goal-selection.ts";
 import type { ProjectGoal, ProjectGoalStatus } from "../types.ts";
 import type { KeyEvent } from "./keys.ts";
 import { isInterrupt } from "./keys.ts";
@@ -66,40 +65,17 @@ const FILTER_LABELS: Readonly<Record<GoalFilter, string>> = {
 /**
  * How the list is arranged, cycled with `o`.
  *
- * `file` is first and is the default because it is the roadmap's canonical
- * order: it is what the file stores, what `move` edits, and what every other
- * reader of the worklist sees. The rest are views over that same order, which
- * stays their tiebreak, so switching back never loses the arrangement.
- *
- * `dependency` is the schedule the graph implies rather than a fourth way to
- * arrange the file: it ranks each goal by the wave `project waves` puts it in, so
- * the board and the CLI read the edges the same way, and the file the user
- * arranged is left exactly as it is. Sections still partition the list, so the
- * waves order the goals inside each section rather than flattening the roadmap
- * into one frontier - the same relationship status and recent order have to
- * sections, and `project waves` stays the flat read of the whole graph.
+ * Dependency order is the default. It shows the schedule that the graph implies.
+ * Recent order shows the goals touched most recently. File order remains the
+ * tiebreak for both views, so neither view changes the stored roadmap.
  */
-export const GOAL_SORTS = ["file", "status", "recent", "dependency"] as const;
+export const GOAL_SORTS = ["dependency", "recent"] as const;
 export type GoalSort = (typeof GOAL_SORTS)[number];
 
 const SORT_LABELS: Readonly<Record<GoalSort, string>> = {
-	file: "⇅ File",
-	status: "⇅ Status",
-	recent: "⇅ Recent",
 	dependency: "⇅ Dependency",
+	recent: "⇅ Recent",
 };
-
-/**
- * Where the goals no wave holds sort in dependency order.
- *
- * A done or archived goal is already behind everything it released, so it sits
- * ahead of the first wave rather than being given a layer of its own. A goal on
- * a hand-edited cycle, or waiting on an edge that names no goal, is in no wave
- * at all and sorts last, so the list reads as the schedule and then what is
- * stuck rather than quietly dropping the goals nobody can start.
- */
-const SETTLED_WAVE = 0;
-const UNREACHABLE_WAVE = Number.MAX_SAFE_INTEGER;
 
 /** Narrower than this and a row drops its staleness badge rather than its title. */
 const MIN_BADGED_TITLE_WIDTH = 12;
@@ -129,16 +105,6 @@ export interface BoardMessage {
 export type BoardIntent =
 	| { kind: "quit" }
 	| { kind: "reload" }
-	| {
-			kind: "reorder";
-			goalId: string;
-			delta: -1 | 1;
-			/** The goals of the moved goal's own section, in the order the list showed them. */
-			sectionGoalIds: string[];
-			success: string;
-			/** What to say if the anchor is gone by the time the move is written. */
-			blocked: string;
-	  }
 	| { kind: "operation"; operation: WorklistOperation; success: string }
 	| { kind: "edit-description"; goal: ProjectGoal };
 
@@ -248,23 +214,12 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
 	{ keys: "c / r / x", description: "Complete, reopen, or archive (asks first)" },
 	{ keys: "d", description: "Delete permanently (asks first)" },
 	{ keys: "f", description: "Cycle the status filter" },
-	{ keys: "o", description: "Cycle the order: file, status, recent, dependency" },
-	{ keys: "K / J", description: "Move the selected goal within its section (file order only)" },
+	{ keys: "o", description: "Cycle the order: dependency, recent" },
 	{ keys: "/", description: "Search titles and descriptions" },
 	{ keys: "R", description: "Reload from disk" },
 	{ keys: "?", description: "Show this help" },
 	{ keys: "q / esc", description: "Quit" },
 ];
-
-/**
- * Why a move stopped, named once so the board and the runtime's fallback for a
- * reorder that raced a reload cannot answer the same condition two ways.
- */
-export function sectionEdgeMessage(goal: ProjectGoal, delta: -1 | 1): string {
-	const edge = delta < 0 ? "Already first" : "Already last";
-	const section = goalSection(goal);
-	return section === undefined ? `${edge}.` : `${edge} in ${section}.`;
-}
 
 /** The browse keys that act on one goal, and so have nothing to act on from a header. */
 const GOAL_KEYS: ReadonlySet<string> = new Set(["s", "e", "E", "c", "r", "x", "d"]);
@@ -313,7 +268,7 @@ export class GoalBoard {
 	private readonly now: () => number;
 	private goals: ProjectGoal[];
 	private filter: GoalFilter = "open";
-	private sort: GoalSort = "file";
+	private sort: GoalSort = "dependency";
 	private query = "";
 	private selectedKey: string | undefined;
 	private focus: "list" | "detail" = "list";
@@ -343,7 +298,6 @@ export class GoalBoard {
 		| {
 				goals: readonly ProjectGoal[];
 				cues: Map<string, ProjectGoalSequenceCue>;
-				ranks: Map<string, number>;
 		  }
 		| undefined;
 
@@ -382,72 +336,28 @@ export class GoalBoard {
 		this.message = { text, tone };
 	}
 
-	/**
-	 * The file move that lands the reorder the user asked for on screen.
-	 *
-	 * The placement itself comes from the shared rule every goal surface reorders
-	 * by, so the board and the inline dashboard write the same file for the same
-	 * keystroke. Resolved here against the goals as they are now, so an intent
-	 * that raced a reload still names goals this board holds, and a source that
-	 * has since gone falls back to a direction step the mutation resolves itself.
-	 */
-	resolveReorder(intent: Extract<BoardIntent, { kind: "reorder" }>): WorklistOperation | undefined {
-		const sectionIds = new Set(
-			intent.sectionGoalIds.flatMap((id) => {
-				const goal = findGoalByStoredId(this.goals, id);
-				return goal ? [goal.id] : [];
-			}),
-		);
-		const section = this.goals.filter((goal) => sectionIds.has(goal.id));
-		const source = findGoalByStoredId(this.goals, intent.goalId);
-		if (!source) {
-			return {
-				scope: "project",
-				action: "move",
-				id: intent.goalId,
-				direction: intent.delta < 0 ? "up" : "down",
-			};
-		}
-		const placement = resolveSectionReorder(section, source.id, intent.delta);
-		return placement && { scope: "project", action: "move", ...placement };
-	}
-
 	get selectedGoal(): ProjectGoal | undefined {
 		const row = this.selectedRow();
 		return row?.kind === "goal" ? row.goal : undefined;
 	}
 
 	/**
-	 * The goals on screen, in the order the current sort puts them.
+	 * The goals on screen, in dependency or recent order.
 	 *
-	 * File order is the tiebreak of every sort and the whole of the `file` sort,
-	 * so the arrangement a user built with `K` and `J` survives a trip through the
-	 * other views. The active goal is lifted to the top of the derived orders but
-	 * not of `file`: that view is a faithful picture of the file, which is exactly
-	 * what makes reordering in it land where the user watched it land.
+	 * File order breaks ties. Active work stays first in both views.
 	 */
 	private visibleGoals(): ProjectGoal[] {
-		const fileOrder = new Map(this.goals.map((goal, index) => [goal.id, index]));
-		const rank = (goal: ProjectGoal): number => fileOrder.get(goal.id) ?? 0;
-		const waves = this.sort === "dependency" ? this.dependencyRanks() : undefined;
-		const wave = (goal: ProjectGoal): number => waves?.get(goal.id) ?? SETTLED_WAVE;
-		return this.goals
-			.filter((goal) => matchesFilter(goal, this.filter) && matchesGoalQuery(goal, this.query))
-			.sort((left, right) => {
-				if (this.sort === "file") return rank(left) - rank(right);
-				if (isActive(left) !== isActive(right)) return isActive(left) ? -1 : 1;
-				if (this.sort === "status") {
-					const status = GOAL_STATUS_RANK[left.status] - GOAL_STATUS_RANK[right.status];
-					if (status !== 0) return status;
-				} else if (this.sort === "dependency") {
-					const layer = wave(left) - wave(right);
-					if (layer !== 0) return layer;
-				} else {
-					const updated = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-					if (Number.isFinite(updated) && updated !== 0) return updated;
-				}
-				return rank(left) - rank(right);
-			});
+		const fileRank = new Map(this.goals.map((goal, index) => [goal.id, index]));
+		const ordered =
+			this.sort === "dependency"
+				? goalsInDependencyOrder(this.goals)
+				: [...this.goals].sort((left, right) => {
+						if (isActive(left) !== isActive(right)) return isActive(left) ? -1 : 1;
+						const updated = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+						if (Number.isFinite(updated) && updated !== 0) return updated;
+						return (fileRank.get(left.id) ?? 0) - (fileRank.get(right.id) ?? 0);
+					});
+		return ordered.filter((goal) => matchesFilter(goal, this.filter) && matchesGoalQuery(goal, this.query));
 	}
 
 	/**
@@ -468,17 +378,9 @@ export class GoalBoard {
 	private sequenceCues(): Map<string, ProjectGoalSequenceCue> {
 		if (this.sequenceCache?.goals !== this.goals) {
 			const cues = projectGoalSequenceCues(this.goals);
-			const ranks = new Map<string, number>();
-			for (const [id, cue] of cues) ranks.set(id, cue.wave ?? UNREACHABLE_WAVE);
-			this.sequenceCache = { goals: this.goals, cues, ranks };
+			this.sequenceCache = { goals: this.goals, cues };
 		}
 		return this.sequenceCache.cues;
-	}
-
-	private dependencyRanks(): Map<string, number> {
-		this.sequenceCues();
-		if (!this.sequenceCache) throw new Error("Project Goal sequence cache was not initialized.");
-		return this.sequenceCache.ranks;
 	}
 
 	/**
@@ -977,48 +879,11 @@ export class GoalBoard {
 		this.listScroll = 0;
 	}
 
-	/** The visible goals filed under the same section as this one, in list order. */
-	private sectionGoals(goal: ProjectGoal): ProjectGoal[] {
-		const section = goalSection(goal);
-		return this.visibleGoals().filter((candidate) => goalSection(candidate) === section);
-	}
-
-	/**
-	 * Move the selected goal one row through the section it is shown in.
-	 *
-	 * The anchor is the neighboring visible row inside the goal's own section
-	 * rather than a file index, so a move under a filter or a search lands beside
-	 * the goal the user can actually see instead of stepping over hidden ones, and
-	 * a move in a grouped board is a step the board can show: anchoring on the next
-	 * visible row regardless of section would write a file order the sections put
-	 * back exactly as it was, reporting a move that never appears. A section
-	 * boundary is therefore an end of the list, and says which section it ended.
-	 * Only the `file` sort can reorder: in a derived order the rows are not where
-	 * the file puts them, so a move would edit an arrangement the screen is not
-	 * showing.
-	 */
-	private reorder(delta: -1 | 1): BoardIntent | undefined {
-		const goal = this.selectedGoal;
-		if (!goal) return undefined;
-		if (this.sort !== "file") {
-			this.message = { text: `Reorder in file order only. Press o until ${SORT_LABELS.file}.`, tone: "info" };
-			return undefined;
-		}
-		const section = this.sectionGoals(goal);
-		const sourceIndex = section.findIndex((candidate) => candidate.id === goal.id);
-		const anchor = section[sourceIndex + delta];
-		if (!anchor) {
-			this.message = { text: sectionEdgeMessage(goal, delta), tone: "info" };
-			return undefined;
-		}
-		return {
-			kind: "reorder",
-			goalId: goal.id,
-			delta,
-			sectionGoalIds: section.map((candidate) => candidate.id),
-			success: `Moved ${quoteTitle(goal.title)} ${delta < 0 ? "up" : "down"}`,
-			blocked: sectionEdgeMessage(goal, delta),
-		};
+	/** Tell users to use the CLI because both board orders are derived views. */
+	private reorder(_delta: -1 | 1): BoardIntent | undefined {
+		if (!this.selectedGoal) return undefined;
+		this.message = { text: "Reorder from the CLI because the board shows a derived order.", tone: "info" };
+		return undefined;
 	}
 
 	private openAddPrompt(): void {
@@ -1713,7 +1578,6 @@ export class GoalBoard {
 			"E describe",
 			"f filter",
 			"o order",
-			"KJ reorder",
 			"/ search",
 		];
 		const available = Math.max(1, width - 2);

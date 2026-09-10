@@ -39,6 +39,11 @@ const identityTheme = {
 	bold: (text: string) => text,
 } as Theme;
 
+const visibleDimTheme = {
+	fg: (color: string, text: string) => (color === "dim" ? `<dim>${text}</dim>` : text),
+	bold: (text: string) => text,
+} as Theme;
+
 describe("widget", () => {
 	it("caps the widget and hides completed tasks", () => {
 		const lines = buildWidgetLines(tasks, goals);
@@ -391,6 +396,37 @@ describe("dashboard navigation and project rendering", () => {
 		dashboard.handleInput("\u001b[A");
 		dashboard.handleInput(" ");
 		expect(dashboard.render(100).join("\n")).not.toContain("Active goal");
+	});
+
+	it("always lists Project Goals in dependency order", () => {
+		const sequenced: ProjectGoal[] = [
+			{ ...goals[0], id: "later", title: "Later", status: "open", dependsOn: ["ready"] },
+			{ ...goals[0], id: "ready", title: "Ready", status: "open" },
+		];
+		const output = new Dashboard([], sequenced, identityTheme, () => {}, { scope: "project" })
+			.render(100)
+			.join("\n");
+
+		expect(output.indexOf("Ready")).toBeLessThan(output.indexOf("Later"));
+	});
+
+	it("dims blocked Project Goals unless they are selected", () => {
+		const sequenced: ProjectGoal[] = [
+			{ ...goals[0], id: "later", title: "Later", status: "open", dependsOn: ["ready"] },
+			{ ...goals[0], id: "ready", title: "Ready", status: "open" },
+		];
+		const unselected = new Dashboard([], sequenced, visibleDimTheme, () => {}, { scope: "project" })
+			.render(100)
+			.join("\n");
+		expect(unselected).toContain("<dim>Later</dim>");
+
+		const selected = new Dashboard([], sequenced, visibleDimTheme, () => {}, {
+			scope: "project",
+			selectedId: "later",
+		})
+			.render(100)
+			.join("\n");
+		expect(selected).not.toContain("<dim>Later</dim>");
 	});
 
 	it("shows readiness, claims, later waves, and stuck work without replacing groups", () => {

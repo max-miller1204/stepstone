@@ -152,30 +152,21 @@ describe("goal board layout", () => {
 });
 
 describe("goal board presentation", () => {
-	it("shows the file's own order first, and groups by status on request", () => {
+	it("opens in dependency order and uses file order to break wave ties", () => {
 		const board = createBoard();
 		press(board, "fff");
 		const rows = listedRows(board);
 		expect(rows[0]).toContain("Replace legacy");
 		expect(rows[0]).toContain("ACTIVE");
-		expect(rows[1]).toContain("Add focus mode");
-		expect(rows[1]).toContain("READY");
-		expect(rows[2]).toContain("日本語のタイトルです");
-		expect(rows[2]).toContain("READY");
-		expect(rows[3]).toBe("✓ Ship the CLI");
-		expect(rows[4]).toBe("◌ Old idea");
-
-		// A settled goal sitting early in the file stays there until the status
-		// order is asked for, which is the whole point of a canonical file order.
-		const settledFirst = createBoard([GOALS[3], GOALS[1], GOALS[0]]);
-		press(settledFirst, "fff");
-		expect(listedRows(settledFirst)[0]).toContain("Ship the CLI");
-		press(settledFirst, "o");
-		expect(listedRows(settledFirst)[0]).toContain("Replace legacy authenticat");
-		expect(listedRows(settledFirst).at(-1)).toContain("Ship the CLI");
+		expect(rows[1]).toBe("✓ Ship the CLI");
+		expect(rows[2]).toBe("◌ Old idea");
+		expect(rows[3]).toContain("Add focus mode");
+		expect(rows[3]).toContain("READY");
+		expect(rows[4]).toContain("日本語のタイトルです");
+		expect(rows[4]).toContain("READY");
 	});
 
-	it("lifts the active goal above every other row in the derived orders", () => {
+	it("lifts the active goal above every other row in both orders", () => {
 		const newest = goal({
 			id: "g-late",
 			title: "Started last",
@@ -184,28 +175,21 @@ describe("goal board presentation", () => {
 		});
 		const board = createBoard([...GOALS.slice(1), newest]);
 		press(board, "fff");
-		// File order shows the goal where the file puts it: last.
-		expect(listedRows(board).at(-1)).toContain("Started last");
-		for (const sort of ["o", "o", "o"]) {
-			press(board, sort);
+		for (const input of ["", "o"]) {
+			press(board, input);
 			const rows = listedRows(board);
-			// The lifted row also carries its own marker, so it reads as the odd row
-			// out with no color at all.
 			expect(rows[0]).toContain("Started last");
 			expect(rows[0]?.startsWith("◆")).toBe(true);
 			expect(rows.slice(1).some((row) => row.startsWith("◆"))).toBe(false);
 		}
 	});
 
-	it("cycles the order through file, status, recent, and dependency, keeping file order as the tiebreak", () => {
+	it("cycles only between dependency and recent order", () => {
 		const board = createBoard();
 		const header = () => plainFrame(board)[0] ?? "";
-		expect(header()).toContain("⇅ File");
-		press(board, "o");
-		expect(header()).toContain("⇅ Status");
+		expect(header()).toContain("⇅ Dependency");
 		press(board, "o");
 		expect(header()).toContain("⇅ Recent");
-		// Recent puts the most recently touched open goal first, behind the active one.
 		const touched = GOALS.map((entry) =>
 			entry.id === "g-open-2" ? goal({ ...entry, updatedAt: "2026-01-05T00:00:00.000Z" }) : entry,
 		);
@@ -213,9 +197,6 @@ describe("goal board presentation", () => {
 		expect(listedRows(board)[1]).toContain("日本語");
 		press(board, "o");
 		expect(header()).toContain("⇅ Dependency");
-		press(board, "o");
-		expect(header()).toContain("⇅ File");
-		expect(listedRows(board)[1]).toContain("Add focus mode");
 	});
 
 	it("orders by the same dependency waves the CLI reports, stuck goals last", () => {
@@ -228,7 +209,6 @@ describe("goal board presentation", () => {
 			goal({ id: "landed", title: "Landed", status: "done" }),
 		]);
 		press(board, "fff");
-		press(board, "ooo");
 		expect(plainFrame(board)[0]).toContain("⇅ Dependency");
 		// Landed work sits ahead of the wave it released; a hand-edited cycle is in
 		// no wave at all and sorts last rather than vanishing from the list.
@@ -240,10 +220,6 @@ describe("goal board presentation", () => {
 			"Cyclic                        STUCK",
 			"Cyclic too                    STUCK",
 		]);
-
-		// The file itself is untouched by the view: file order still reads as written.
-		press(board, "o");
-		expect(listedRows(board)[0]).toContain("Third");
 	});
 
 	it("shows every sequencing cue without replacing project groups", () => {
@@ -514,8 +490,8 @@ describe("goal board presentation", () => {
 	});
 
 	it("drops the header counts before the filter when the header runs out of room", () => {
-		const header = plainFrame(createBoard(), 50, 20)[0] ?? "";
-		expect(header).toContain("Open · ⇅ File · 3 of 5");
+		const header = plainFrame(createBoard(), 60, 20)[0] ?? "";
+		expect(header).toContain("Open · ⇅ Dependency · 3 of 5");
 		expect(header).not.toContain("◆ 1");
 	});
 
@@ -662,7 +638,7 @@ describe("goal board presentation", () => {
 			frame.some((line) => line.includes(`${DIM}${title}`));
 		expect(dimmedTitle(board.render(100, 20).lines, "Ship the CLI")).toBe(true);
 		expect(dimmedTitle(board.render(100, 20).lines, "Add focus mode")).toBe(false);
-		press(board, "gjjj\r");
+		press(board, "gj\r");
 		expect(board.selectedGoal?.id).toBe("g-done");
 		expect(dimmedTitle(board.render(100, 20).lines, "Ship the CLI")).toBe(false);
 
@@ -754,7 +730,7 @@ describe("goal board presentation", () => {
 		// The detail pane spells out what the badge on the selected row means.
 		press(board, "g");
 		expect(plainFrame(board).join("\n")).toContain("58d untouched");
-		press(board, "G");
+		press(board, "gj");
 		expect(plainFrame(board).join("\n")).not.toContain("untouched");
 	});
 
@@ -898,15 +874,15 @@ describe("goal board navigation", () => {
 	it("cycles the filter through open, done, archived, and all", () => {
 		const board = createBoard();
 		const label = () => plainFrame(board)[0];
-		expect(label()).toContain("Open · ⇅ File · 3 of 5");
+		expect(label()).toContain("Open · ⇅ Dependency · 3 of 5");
 		press(board, "f");
-		expect(label()).toContain("Done · ⇅ File · 1 of 5");
+		expect(label()).toContain("Done · ⇅ Dependency · 1 of 5");
 		press(board, "f");
-		expect(label()).toContain("Archived · ⇅ File · 1 of 5");
+		expect(label()).toContain("Archived · ⇅ Dependency · 1 of 5");
 		press(board, "f");
-		expect(label()).toContain("All · ⇅ File · 5 of 5");
+		expect(label()).toContain("All · ⇅ Dependency · 5 of 5");
 		press(board, "f");
-		expect(label()).toContain("Open · ⇅ File · 3 of 5");
+		expect(label()).toContain("Open · ⇅ Dependency · 3 of 5");
 	});
 
 	it("narrows the list while typing a search and restores it on escape", () => {
@@ -917,7 +893,7 @@ describe("goal board navigation", () => {
 		press(board, "\r");
 		expect(plainFrame(board)[0]).toContain("/focus");
 		press(board, ESC);
-		expect(plainFrame(board)[0]).toContain("Open · ⇅ File · 3 of 5");
+		expect(plainFrame(board)[0]).toContain("Open · ⇅ Dependency · 3 of 5");
 	});
 
 	it("reopens a search prefilled so the query can be refined", () => {
@@ -965,114 +941,14 @@ describe("goal board navigation", () => {
 	});
 });
 
-describe("goal board reordering", () => {
-	it("moves the selected goal against its neighbouring row", () => {
+describe("goal board derived ordering", () => {
+	it("directs reordering to the CLI from either displayed order", () => {
 		const board = createBoard();
-		press(board, `${ESC}[B`);
-		expect(board.selectedGoal?.id).toBe("g-open-1");
-		expect(press(board, "J")).toEqual([
-			{
-				kind: "reorder",
-				goalId: "g-open-1",
-				delta: 1,
-				sectionGoalIds: ["g-active", "g-open-1", "g-open-2"],
-				success: expect.stringContaining("down"),
-				blocked: "Already last.",
-			},
-		]);
-		expect(press(board, "K")).toEqual([
-			{
-				kind: "reorder",
-				goalId: "g-open-1",
-				delta: -1,
-				sectionGoalIds: ["g-active", "g-open-1", "g-open-2"],
-				success: expect.stringContaining("up"),
-				blocked: "Already first.",
-			},
-		]);
-	});
-
-	it("accepts shift+arrows for the terminals that report them", () => {
-		const board = createBoard();
-		expect(press(board, `${ESC}[1;2B`)).toMatchObject([{ kind: "reorder", goalId: "g-active", delta: 1 }]);
-		// A plain arrow is still navigation, not a reorder.
-		expect(press(board, `${ESC}[B`)).toEqual([]);
-		expect(board.selectedGoal?.id).toBe("g-open-1");
-		expect(press(board, `${ESC}[1;2A`)).toMatchObject([{ kind: "reorder", goalId: "g-open-1", delta: -1 }]);
-	});
-
-	it("anchors on the visible neighbour, skipping the rows a filter hides", () => {
-		const board = createBoard();
-		press(board, "/日\r");
-		// The search leaves one row, so there is nothing to move against.
-		expect(press(board, "K")).toEqual([]);
-		expect(plainFrame(board).at(-2)).toContain("Already first.");
-
-		const filtered = createBoard();
-		press(filtered, `${ESC}[B${ESC}[B`);
-		expect(filtered.selectedGoal?.id).toBe("g-open-2");
-		// The done and archived goals are hidden, so down is already the end.
-		expect(press(filtered, "J")).toEqual([]);
-		expect(plainFrame(filtered).at(-2)).toContain("Already last.");
-	});
-
-	it("treats a section boundary as an end, since a crossing move would not show", () => {
-		const board = createBoard([
-			goal({ id: "one", title: "First", group: "Foundation" }),
-			goal({ id: "two", title: "Second", group: "Foundation" }),
-			goal({ id: "later", title: "Later", group: "Delivery" }),
-			goal({ id: "loose", title: "Loose" }),
-		]);
-		expandAll(board);
-		// Down from the section's first goal onto its last, which has nowhere to go.
-		press(board, `${ESC}[B`);
-		expect(board.selectedGoal?.id).toBe("two");
-		expect(press(board, "J")).toEqual([]);
-		expect(plainFrame(board).at(-2)).toContain("Already last in Foundation.");
-
-		// Up inside the section still moves, and anchors on the section's own rows.
-		expect(press(board, "K")).toEqual([
-			{
-				kind: "reorder",
-				goalId: "two",
-				delta: -1,
-				sectionGoalIds: ["one", "two"],
-				success: expect.stringContaining("up"),
-				blocked: "Already first in Foundation.",
-			},
-		]);
-
-		// An ungrouped goal is at an end of its own implicit section, not of the list.
-		press(board, "G");
-		expect(board.selectedGoal?.id).toBe("loose");
-		expect(press(board, "K")).toEqual([]);
-		expect(plainFrame(board).at(-2)).toContain("Already first.");
-	});
-
-	it("keeps a section where it was when its own first goal moves down", () => {
-		// Foundation and Delivery interleave in file order, so a move written as
-		// "source after anchor" would hand Foundation's position to Delivery.
-		const goals = [
-			goal({ id: "one", title: "First", group: "Foundation" }),
-			goal({ id: "later", title: "Later", group: "Delivery" }),
-			goal({ id: "two", title: "Second", group: "Foundation" }),
-		];
-		const board = createBoard(goals);
-		expandAll(board);
-		const [intent] = press(board, "J");
-		if (intent?.kind !== "reorder") throw new Error("Expected reorder intent");
-		expect(board.resolveReorder(intent)).toEqual({
-			scope: "project",
-			action: "move",
-			id: "two",
-			beforeId: "one",
-		});
-
-		// Applying that move keeps Foundation first and swaps its two goals.
-		const moved = createBoard([goals[2], goals[0], goals[1]]);
-		expandAll(moved);
-		const rows = plainFrame(moved, 100, 24).join("\n");
-		expect(rows).toMatch(/▾ Foundation[\s\S]*Second[\s\S]*First[\s\S]*▾ Delivery[\s\S]*Later/);
+		for (const input of ["", "o"]) {
+			press(board, input);
+			expect(press(board, "J")).toEqual([]);
+			expect(plainFrame(board).at(-2)).toContain("Reorder from the CLI");
+		}
 	});
 
 	it("lands a deletion on the neighbouring goal rather than the top of the board", () => {
@@ -1092,43 +968,6 @@ describe("goal board reordering", () => {
 		// cursor back to the first goal of the whole roadmap.
 		board.setGoals([goals[0], goals[1], goals[3]]);
 		expect(board.selectedGoal?.id).toBe("c1");
-	});
-
-	it("keeps queued filtered reorder references valid across ID migration", () => {
-		const original = [
-			goal({ id: "old-a", title: "A" }),
-			goal({ id: "hidden", title: "Hidden", status: "done" }),
-			goal({ id: "old-b", title: "B" }),
-		];
-		const board = createBoard(original);
-		const [intent] = press(board, "J");
-		if (intent?.kind !== "reorder") throw new Error("Expected reorder intent");
-
-		board.setGoals([
-			{ ...original[0], id: "new-a", previousIds: ["old-a"] },
-			original[1],
-			{ ...original[2], id: "new-b", previousIds: ["old-b"] },
-		]);
-
-		// A downward move is written as "put the neighbour before the moved goal",
-		// which is the same pair order and cannot shift the section it sits in.
-		expect(board.resolveReorder(intent)).toEqual({
-			scope: "project",
-			action: "move",
-			id: "new-b",
-			beforeId: "new-a",
-		});
-	});
-
-	it("reorders only in file order, since the other views are not the file", () => {
-		const board = createBoard();
-		for (const derived of ["status", "recent", "dependency"]) {
-			press(board, "o");
-			expect(press(board, "J"), derived).toEqual([]);
-			expect(plainFrame(board).at(-2)).toContain("Reorder in file order only");
-		}
-		press(board, "o");
-		expect(press(board, "J")).toMatchObject([{ kind: "reorder" }]);
 	});
 });
 
