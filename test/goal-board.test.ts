@@ -769,6 +769,15 @@ describe("goal board presentation", () => {
 		expect(narrow).not.toContain("58d");
 	});
 
+	it("hides age when a narrow row cannot fit its sequencing cue", () => {
+		const later = Date.parse("2026-03-01T00:00:00.000Z");
+		const board = createBoard([goal({ id: "ready", title: "Ready goal" })], false, later);
+		const row = listedRows(board, 26, 8)[0];
+		expect(row).toContain("Ready goal");
+		expect(row).not.toContain("READY");
+		expect(row).not.toContain("58d");
+	});
+
 	it("always keeps the help and quit hints in the key bar", () => {
 		for (const width of [120, 100, 80, 60, 44, 30]) {
 			const bar = plainFrame(createBoard(), width, 20).at(-1) ?? "";

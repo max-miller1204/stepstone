@@ -1357,7 +1357,10 @@ export class GoalBoard {
 		const ageWant = ageBadge === "" ? 0 : visibleWidth(ageBadge) + 1;
 		// Sequence is the actionable fact. Age is the optional nudge, so it drops
 		// first when both badges would take too much title space.
-		const ageSlot = titleSpace - cueSlot - ageWant >= MIN_BADGED_TITLE_WIDTH ? ageWant : 0;
+		const ageSlot =
+			(cue === undefined || cueSlot > 0) && titleSpace - cueSlot - ageWant >= MIN_BADGED_TITLE_WIDTH
+				? ageWant
+				: 0;
 		const badgeSlot = cueSlot + ageSlot;
 		const pointer = isSelected ? (this.focus === "list" ? accent("❯") : muted("❯")) : " ";
 		const marker = this.statusStyle(goal.status)(GOAL_STATUS_MARKERS[goal.status]);
