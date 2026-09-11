@@ -307,13 +307,13 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open, blocked]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
 
-  Surface prepared claims that appear abandoned by using evidence Stepstone can observe, such as claim age and workspace or branch activity. Let an operator inspect the evidence and explicitly release an abandoned claim back to the ready frontier. Do not infer agent or terminal liveness.
+  After workspace preparation is consolidated into the project CLI, surface prepared claims that appear abandoned by using evidence Stepstone can observe, such as claim age and workspace or branch activity. Let an operator inspect the evidence and explicitly release an abandoned claim back to the ready frontier. Do not infer agent or terminal liveness.
 
-  Depends on `scrub-a-prepared-workspace-on-verified` (open).
+  Depends on `fold-workspace-preparation-into-the` (open).
 
 - **[open, blocked]** Prove workspace preparation on every supported platform - `prove-workspace-preparation-on-every`
 
-  Exercise workspace preparation on every supported operating system with real Git. Cover worktree creation, the ignored goal handoff, claim recovery, merged-work reconciliation, and safe cleanup. Add a platform to the support claim only when CI runs this behavior there and the repository scripts work on that platform.
+  Exercise workspace preparation on Ubuntu and macOS in CI with real Git. Run the coverage on Node 20, the declared minimum, and on the current Node LTS release. Cover worktree creation, the ignored goal handoff, claim recovery, merged-work reconciliation, and safe cleanup. Do not claim support for another operating system until CI runs this behavior there and the repository scripts work there.
 
   Depends on `verify-the-remaining-external` (open), `authoritative-pull-request-quality-gates` (open).
 
@@ -325,9 +325,9 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open, blocked]** Verify the remaining external boundaries against real tools - `verify-the-remaining-external`
 
-  Test the preparation workflow against the real Git and GitHub CLI boundaries instead of relying only on fake executables. Cover preparation, claim, merged-pull-request reconciliation, recovery, and cleanup with retained failure evidence. Run this verification after the driver behavior is settled so it protects the contract that will be consolidated into the project CLI.
+  Test the preparation workflow's remaining process boundaries through the real Git and GitHub CLI executables instead of injected fake executables. Cover preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup with retained failure evidence. This goal owns deep workspace-automation boundary cases. The Quality goal `exercise-stepstone-workflows-end-to-end` owns the broader packed CLI and Pi RPC workflow tier. Run this verification after safe cleanup behavior is settled so it protects the contract that will be consolidated into the project CLI.
 
-  Depends on `notice-a-claim-nobody-is-working-on` (open).
+  Depends on `scrub-a-prepared-workspace-on-verified` (open).
 
 - **[open, blocked]** Fold workspace preparation into the project CLI - `fold-workspace-preparation-into-the`
 
@@ -451,9 +451,9 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
 
-  Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and workspace preparation, claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
+  Create a broad deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and a representative workspace-preparation path. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
 
-  This is the tier that would have caught the binding defects that shipped: driving the real executables from a real repository is what the existing suites avoid by standing in fake external tools that agree with whatever the code sends them.
+  This goal owns broad product workflows through published surfaces. The Automation goal `verify-the-remaining-external` owns the deep matrix for real Git and GitHub CLI process boundaries, preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup.
 
   Depends on `deterministic-local-quality-gates` (done).
 

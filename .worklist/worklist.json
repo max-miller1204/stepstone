@@ -630,12 +630,12 @@
 		{
 			"id": "exercise-stepstone-workflows-end-to-end",
 			"title": "Exercise Stepstone workflows end to end",
-			"description": "Create a deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and workspace preparation, claim, resume, recovery, and cleanup. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.\n\nThis is the tier that would have caught the binding defects that shipped: driving the real executables from a real repository is what the existing suites avoid by standing in fake external tools that agree with whatever the code sends them.",
+			"description": "Create a broad deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and a representative workspace-preparation path. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.\n\nThis goal owns broad product workflows through published surfaces. The Automation goal `verify-the-remaining-external` owns the deep matrix for real Git and GitHub CLI process boundaries, preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup.",
 			"group": "Quality",
 			"dependsOn": ["deterministic-local-quality-gates"],
 			"status": "open",
 			"createdAt": "2026-08-18T01:10:33.397Z",
-			"updatedAt": "2026-08-18T21:46:12.087Z"
+			"updatedAt": "2026-09-11T00:14:54.955Z"
 		},
 		{
 			"id": "make-repository-script-child-processes",
@@ -691,22 +691,22 @@
 		{
 			"id": "notice-a-claim-nobody-is-working-on",
 			"title": "Notice a claim nobody is working on",
-			"description": "Surface prepared claims that appear abandoned by using evidence Stepstone can observe, such as claim age and workspace or branch activity. Let an operator inspect the evidence and explicitly release an abandoned claim back to the ready frontier. Do not infer agent or terminal liveness.",
+			"description": "After workspace preparation is consolidated into the project CLI, surface prepared claims that appear abandoned by using evidence Stepstone can observe, such as claim age and workspace or branch activity. Let an operator inspect the evidence and explicitly release an abandoned claim back to the ready frontier. Do not infer agent or terminal liveness.",
 			"group": "Automation",
-			"dependsOn": ["scrub-a-prepared-workspace-on-verified"],
+			"dependsOn": ["fold-workspace-preparation-into-the"],
 			"status": "open",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-10T04:28:56.713Z"
+			"updatedAt": "2026-09-11T00:14:43.455Z"
 		},
 		{
 			"id": "prove-workspace-preparation-on-every",
 			"title": "Prove workspace preparation on every supported platform",
-			"description": "Exercise workspace preparation on every supported operating system with real Git. Cover worktree creation, the ignored goal handoff, claim recovery, merged-work reconciliation, and safe cleanup. Add a platform to the support claim only when CI runs this behavior there and the repository scripts work on that platform.",
+			"description": "Exercise workspace preparation on Ubuntu and macOS in CI with real Git. Run the coverage on Node 20, the declared minimum, and on the current Node LTS release. Cover worktree creation, the ignored goal handoff, claim recovery, merged-work reconciliation, and safe cleanup. Do not claim support for another operating system until CI runs this behavior there and the repository scripts work there.",
 			"group": "Automation",
 			"dependsOn": ["verify-the-remaining-external", "authoritative-pull-request-quality-gates"],
 			"status": "open",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-10T04:29:11.079Z"
+			"updatedAt": "2026-09-11T00:14:54.976Z"
 		},
 		{
 			"id": "report-why-a-preparation-pass-refused",
@@ -716,17 +716,18 @@
 			"dependsOn": ["prepare-goal-workspaces-without"],
 			"status": "open",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-10T04:28:43.664Z"
+			"updatedAt": "2026-09-10T23:43:30.056Z",
+			"branch": "stepstone/report-why-a-preparation-pass-refused"
 		},
 		{
 			"id": "verify-the-remaining-external",
 			"title": "Verify the remaining external boundaries against real tools",
-			"description": "Test the preparation workflow against the real Git and GitHub CLI boundaries instead of relying only on fake executables. Cover preparation, claim, merged-pull-request reconciliation, recovery, and cleanup with retained failure evidence. Run this verification after the driver behavior is settled so it protects the contract that will be consolidated into the project CLI.",
+			"description": "Test the preparation workflow's remaining process boundaries through the real Git and GitHub CLI executables instead of injected fake executables. Cover preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup with retained failure evidence. This goal owns deep workspace-automation boundary cases. The Quality goal `exercise-stepstone-workflows-end-to-end` owns the broader packed CLI and Pi RPC workflow tier. Run this verification after safe cleanup behavior is settled so it protects the contract that will be consolidated into the project CLI.",
 			"group": "Automation",
-			"dependsOn": ["notice-a-claim-nobody-is-working-on"],
+			"dependsOn": ["scrub-a-prepared-workspace-on-verified"],
 			"status": "open",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-10T04:29:04.442Z"
+			"updatedAt": "2026-09-11T00:14:33.667Z"
 		},
 		{
 			"id": "fold-workspace-preparation-into-the",
@@ -752,5 +753,5 @@
 			"updatedAt": "2026-09-10T04:32:39.218Z"
 		}
 	],
-	"revision": 319
+	"revision": 328
 }
