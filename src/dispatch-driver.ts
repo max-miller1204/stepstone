@@ -622,7 +622,9 @@ export class DispatchDriver {
 			this.recordPreparationFailure(
 				entry,
 				"roadmap-claim",
-				error instanceof DispatchBoundaryError ? "refused" : "ambiguous",
+				error instanceof DispatchBoundaryError && error.worklistError.code !== "PERSISTENCE_FAILED"
+					? "refused"
+					: "ambiguous",
 				error,
 			);
 			entry.message = `Claim attempt failed before its outcome was reconciled: ${errorMessage(error)}`;

@@ -394,6 +394,27 @@ describe("workspace preparation driver", () => {
 		expect(resumed.entries.alpha.preparationFailure).toEqual(first.entries.alpha.preparationFailure);
 	});
 
+	it("keeps typed persistence failures ambiguous when the claim committed", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.roadmap.claimResponseFailure = new DispatchBoundaryError({
+			code: "PERSISTENCE_FAILED",
+			message: "Lock release failed after the claim write.",
+			retryable: false,
+		});
+		const run = await setup.create();
+		const first = await setup.makeDriver().advance(run.id);
+		expect(setup.roadmap.snapshot.goals[0]?.branch).toBe("stepstone/alpha");
+		expect(first.entries.alpha.preparationFailure).toMatchObject({
+			stage: "roadmap-claim",
+			classification: "ambiguous",
+			error: { code: "PERSISTENCE_FAILED", retryable: false },
+		});
+		const resumed = await setup.makeDriver().advance(run.id);
+		expect(resumed.entries.alpha.phase).toBe("ambiguous");
+		expect(resumed.entries.alpha.message).toContain("exact returned token was not journaled");
+		expect(resumed.entries.alpha.preparationFailure).toEqual(first.entries.alpha.preparationFailure);
+	});
+
 	it("keeps the original preparation failure through release and cleanup recovery", async () => {
 		const setup = fixture([goal("alpha")], 1);
 		setup.roadmap.claimResponseFailure = new Error("claim response was lost");
