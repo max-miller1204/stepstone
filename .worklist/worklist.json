@@ -714,10 +714,10 @@
 			"description": "Preserve and report the original boundary failure when a preparation attempt rolls back, releases a claim, or cleans a workspace. Human-readable and JSON results must distinguish a pass with no work from a pass that refused work. Keep the reason through recovery so an operator can fix the cause instead of repeating an opaque attempt.",
 			"group": "Automation",
 			"dependsOn": ["prepare-goal-workspaces-without"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-10T23:43:30.056Z",
-			"branch": "stepstone/report-why-a-preparation-pass-refused"
+			"updatedAt": "2026-09-11T03:25:52.532Z",
+			"completedAt": "2026-09-11T03:25:52.532Z"
 		},
 		{
 			"id": "verify-the-remaining-external",
@@ -753,5 +753,5 @@
 			"updatedAt": "2026-09-10T04:32:39.218Z"
 		}
 	],
-	"revision": 328
+	"revision": 330
 }

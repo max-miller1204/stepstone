@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 19 open, 47 done, 4 archived.
+70 goals: 18 open, 48 done, 4 archived.
 
 ## Orchestrator
 
@@ -299,11 +299,11 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `prepare-goal-workspaces-without` (done).
 
-- **[open, blocked]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
+- **[open]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
 
   Before Stepstone removes a prepared checkout, verify Git state that it can observe: no uncommitted changes, no unpushed commits, and no unmerged branch. Preserve existing workspace identity checks. Refuse cleanup when any check fails, report the exact reason, and require an explicit operator override for intentional destructive cleanup.
 
-  Depends on `report-why-a-preparation-pass-refused` (open).
+  Depends on `report-why-a-preparation-pass-refused` (done).
 
 - **[open, blocked]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
 
@@ -317,7 +317,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `verify-the-remaining-external` (open), `authoritative-pull-request-quality-gates` (open).
 
-- **[open]** Report why a preparation pass refused or rolled back - `report-why-a-preparation-pass-refused`
+- **[done]** Report why a preparation pass refused or rolled back - `report-why-a-preparation-pass-refused`
 
   Preserve and report the original boundary failure when a preparation attempt rolls back, releases a claim, or cleans a workspace. Human-readable and JSON results must distinguish a pass with no work from a pass that refused work. Keep the reason through recovery so an operator can fix the cause instead of repeating an opaque attempt.
 
