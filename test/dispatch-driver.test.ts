@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { FileDispatchStateStore, GitWorktreeBinding } from "../src/dispatch-bindings.ts";
 import {
 	DISPATCH_GOAL_FILE,
+	DispatchBoundaryError,
 	DispatchDriver,
 	type DispatchGoalBacking,
 	type DispatchGoalFile,
@@ -77,6 +78,8 @@ class FakeRoadmap implements RoadmapBinding {
 	readonly releases: Array<{ id: string; token: string }> = [];
 	readonly completions: Array<{ id: string; token: string }> = [];
 	completionResponseFailure?: Error;
+	claimFailure?: Error;
+	claimResponseFailure?: Error;
 	private counter = 0;
 
 	constructor(readonly snapshot: RoadmapSnapshot) {}
@@ -87,8 +90,10 @@ class FakeRoadmap implements RoadmapBinding {
 	async claim(id: string, branch: string, expectedUpdatedAt: string): Promise<ProjectGoal> {
 		const target = this.require(id);
 		if (target.updatedAt !== expectedUpdatedAt) throw new Error("claim conflict");
+		if (this.claimFailure) throw this.claimFailure;
 		this.claims.push({ id, branch, token: expectedUpdatedAt });
 		Object.assign(target, { branch, updatedAt: this.token() });
+		if (this.claimResponseFailure) throw this.claimResponseFailure;
 		return structuredClone(target);
 	}
 	async release(id: string, claimUpdatedAt: string): Promise<ProjectGoal> {
@@ -126,6 +131,7 @@ class FakeWorkspace implements WorkspaceBinding {
 	goalFileResponseFailure?: Error;
 	backingFailure?: Error;
 	backingResponseFailure?: Error;
+	cleanupFailure?: Error;
 	lastGoalContent?: string;
 	readonly acquired: string[] = [];
 	readonly cleaned: string[] = [];
@@ -215,6 +221,7 @@ class FakeWorkspace implements WorkspaceBinding {
 		}
 	}
 	async cleanup(_workspace: DispatchWorkspace, branch: string): Promise<void> {
+		if (this.cleanupFailure) throw this.cleanupFailure;
 		this.cleaned.push(branch);
 	}
 }
@@ -302,6 +309,140 @@ describe("workspace preparation driver", () => {
 		);
 		expect(advanced).not.toHaveProperty("sessionBinding");
 		expect(advanced.workspaceConfig).toEqual({});
+	});
+
+	it("reports no ready work separately from a refused preparation", async () => {
+		const blocked = fixture([goal("alpha", { dependsOn: ["dependency"] }), goal("dependency")], 1);
+		const blockedRun = await blocked.create(["alpha"]);
+
+		const noWork = await blocked.makeDriver().advance(blockedRun.id);
+
+		expect(noWork.lastPass).toMatchObject({
+			outcome: "no-ready-work",
+			attemptedGoalIds: [],
+			preparedGoalIds: [],
+			refusedGoalIds: [],
+		});
+		expect(noWork.entries).toEqual({});
+
+		const refused = fixture([goal("alpha")], 1);
+		refused.workspace.acquisitionFailure = new Error("worktree boundary refused the path");
+		const refusedRun = await refused.create();
+		const result = await refused.makeDriver().advance(refusedRun.id);
+
+		expect(result.lastPass).toMatchObject({
+			outcome: "refused",
+			attemptedGoalIds: ["alpha"],
+			preparedGoalIds: [],
+			refusedGoalIds: ["alpha"],
+		});
+		expect(result.entries.alpha.preparationFailure).toMatchObject({
+			stage: "workspace-acquisition",
+			classification: "ambiguous",
+			message: "worktree boundary refused the path",
+		});
+	});
+
+	it("persists the typed roadmap refusal without flattening its details", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.roadmap.claimFailure = new DispatchBoundaryError({
+			code: "CONFLICT",
+			message: "Project goal alpha changed after it was read.",
+			retryable: true,
+			conflict: {
+				type: "goal-updated-at",
+				id: "alpha",
+				expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+				actualUpdatedAt: "2026-01-01T00:00:01.000Z",
+				resolution: "refresh-and-retry",
+			},
+			details: { source: "canonical-roadmap" },
+		});
+		const run = await setup.create();
+
+		const refused = await setup.makeDriver().advance(run.id);
+
+		expect(refused.entries.alpha.preparationFailure).toMatchObject({
+			stage: "roadmap-claim",
+			classification: "refused",
+			error: {
+				code: "CONFLICT",
+				retryable: true,
+				conflict: { type: "goal-updated-at", resolution: "refresh-and-retry" },
+				details: { source: "canonical-roadmap" },
+			},
+		});
+	});
+
+	it("reports repeated claim refusals during resume", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.roadmap.claimFailure = new DispatchBoundaryError({
+			code: "PERSISTENCE_FAILED",
+			message: "Roadmap write failed.",
+			retryable: false,
+		});
+		const run = await setup.create();
+		const first = await setup.makeDriver().advance(run.id);
+		expect(first.entries.alpha.phase).toBe("claiming");
+		const resumed = await setup.makeDriver().advance(run.id);
+		expect(resumed.lastPass).toMatchObject({
+			outcome: "refused",
+			attemptedGoalIds: ["alpha"],
+			preparedGoalIds: [],
+			refusedGoalIds: ["alpha"],
+		});
+		expect(resumed.entries.alpha.preparationFailure).toEqual(first.entries.alpha.preparationFailure);
+	});
+
+	it("keeps typed persistence failures ambiguous when the claim committed", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.roadmap.claimResponseFailure = new DispatchBoundaryError({
+			code: "PERSISTENCE_FAILED",
+			message: "Lock release failed after the claim write.",
+			retryable: false,
+		});
+		const run = await setup.create();
+		const first = await setup.makeDriver().advance(run.id);
+		expect(setup.roadmap.snapshot.goals[0]?.branch).toBe("stepstone/alpha");
+		expect(first.entries.alpha.preparationFailure).toMatchObject({
+			stage: "roadmap-claim",
+			classification: "ambiguous",
+			error: { code: "PERSISTENCE_FAILED", retryable: false },
+		});
+		const resumed = await setup.makeDriver().advance(run.id);
+		expect(resumed.entries.alpha.phase).toBe("ambiguous");
+		expect(resumed.entries.alpha.message).toContain("exact returned token was not journaled");
+		expect(resumed.entries.alpha.preparationFailure).toEqual(first.entries.alpha.preparationFailure);
+	});
+
+	it("keeps the original preparation failure through release and cleanup recovery", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.roadmap.claimResponseFailure = new Error("claim response was lost");
+		const run = await setup.create();
+		const refused = await setup.makeDriver().advance(run.id);
+		const claimToken = setup.roadmap.snapshot.goals[0]?.updatedAt;
+		if (!claimToken) throw new Error("fixture lost the canonical claim token");
+
+		expect(refused.entries.alpha.preparationFailure).toMatchObject({
+			stage: "roadmap-claim",
+			classification: "ambiguous",
+			message: "claim response was lost",
+		});
+		setup.workspace.cleanupFailure = new Error("cleanup boundary refused the workspace");
+		const pending = await setup.makeDriver().recoverRelease(run.id, "alpha", claimToken);
+		expect(pending.entries.alpha).toMatchObject({
+			phase: "cleanup-pending",
+			message: expect.stringContaining("cleanup boundary refused the workspace"),
+			preparationFailure: { message: "claim response was lost" },
+		});
+
+		setup.workspace.cleanupFailure = undefined;
+		const cleaned = await setup.makeDriver().cleanup(run.id, "alpha");
+		expect(cleaned?.entries.alpha).toMatchObject({
+			phase: "cleaned",
+			message: "Released and cleaned.",
+			preparationFailure: { message: "claim response was lost" },
+		});
 	});
 
 	it("journals the exact handoff before claiming and resumes after a lost write response", async () => {
@@ -579,6 +720,11 @@ describe("workspace preparation driver", () => {
 		await acquisition.store.save(acquisitionRun);
 		const unknownWorkspace = await acquisition.makeDriver().advance(acquisitionRun.id);
 		expect(unknownWorkspace.entries.alpha.phase).toBe("ambiguous");
+		expect(unknownWorkspace.lastPass?.refusedGoalIds).toEqual(["alpha"]);
+		expect(unknownWorkspace.entries.alpha.preparationFailure).toMatchObject({
+			stage: "workspace-acquisition",
+			classification: "ambiguous",
+		});
 		expect(acquisition.roadmap.claims).toHaveLength(0);
 
 		const claiming = fixture([goal("alpha")], 1);
@@ -596,11 +742,18 @@ describe("workspace preparation driver", () => {
 
 		const interruptedClaim = await claiming.makeDriver().advance(claimRun.id);
 		expect(interruptedClaim.entries.alpha.phase).toBe("ambiguous");
+		expect(interruptedClaim.entries.alpha.preparationFailure).toMatchObject({
+			stage: "roadmap-claim",
+			classification: "ambiguous",
+		});
 		await expect(claiming.makeDriver().recoverRelease(claimRun.id, "alpha")).rejects.toThrow(
 			"no exact claim token",
 		);
 		const recovered = await claiming.makeDriver().recoverRelease(claimRun.id, "alpha", claimed.updatedAt);
 		expect(recovered.entries.alpha.phase).toBe("cleaned");
+		expect(recovered.entries.alpha.preparationFailure).toEqual(
+			interruptedClaim.entries.alpha.preparationFailure,
+		);
 		expect(claiming.roadmap.releases).toEqual([{ id: "alpha", token: claimed.updatedAt }]);
 	});
 
@@ -1018,7 +1171,12 @@ describe("published preparation CLI", () => {
 			await mkdir(workspaceParent);
 			await writeFile(
 				join(root, ".worklist", "worklist.json"),
-				JSON.stringify({ version: 1, revision: 0, goals: [goal("alpha")], retiredIds: [] }),
+				JSON.stringify({
+					version: 1,
+					revision: 0,
+					goals: [goal("alpha"), goal("beta"), goal("gamma")],
+					retiredIds: [],
+				}),
 			);
 			await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
 			await execFileAsync("git", ["config", "user.name", "Stepstone Test"], { cwd: root });
@@ -1048,12 +1206,81 @@ describe("published preparation CLI", () => {
 			};
 			const workspacePath = join(workspaceParent, "stepstone-alpha");
 			const goalFile = join(workspacePath, DISPATCH_GOAL_FILE);
-			expect(envelope.result.entries.alpha).toMatchObject({
-				phase: "prepared",
-				workspace: workspacePath,
-				goalFile,
+			expect(envelope.result).toMatchObject({
+				pass: {
+					outcome: "prepared",
+					attemptedGoalIds: ["alpha"],
+					preparedGoalIds: ["alpha"],
+					refusedGoalIds: [],
+				},
+				entries: {
+					alpha: { phase: "prepared", workspace: workspacePath, goalFile },
+				},
 			});
 			expect(await readFile(goalFile, "utf8")).toContain("Complete alpha thoroughly");
+
+			const noWork = await execFileAsync(
+				process.execPath,
+				[cli, "start", "--cwd", root, "--goal", "alpha", "--json"],
+				{ cwd: join(import.meta.dirname, "..") },
+			);
+			expect(JSON.parse(noWork.stdout)).toMatchObject({
+				ok: true,
+				result: {
+					pass: { outcome: "no-ready-work", attemptedGoalIds: [] },
+					entries: {},
+				},
+			});
+
+			await writeFile(join(workspaceParent, "stepstone-beta"), "occupied");
+			const humanRefusal = await execFileAsync(
+				process.execPath,
+				[cli, "start", "--cwd", root, "--goal", "beta", "--workspace-parent", workspaceParent],
+				{ cwd: join(import.meta.dirname, "..") },
+			);
+			expect(humanRefusal.stdout).toContain("Preparation refused: beta.");
+			expect(humanRefusal.stdout).toContain("Original preparation failure (workspace-acquisition");
+
+			await writeFile(join(workspaceParent, "stepstone-gamma"), "occupied");
+			const jsonRefusal = await execFileAsync(
+				process.execPath,
+				[cli, "start", "--cwd", root, "--goal", "gamma", "--workspace-parent", workspaceParent, "--json"],
+				{ cwd: join(import.meta.dirname, "..") },
+			);
+			const refusedEnvelope = JSON.parse(jsonRefusal.stdout) as {
+				result: { id: string; entries: Record<string, unknown>; pass: { outcome: string } };
+			};
+			expect(refusedEnvelope).toMatchObject({
+				ok: true,
+				result: {
+					pass: { outcome: "refused", refusedGoalIds: ["gamma"] },
+					entries: {
+						gamma: {
+							phase: "ambiguous",
+							preparationFailure: {
+								stage: "workspace-acquisition",
+								classification: "ambiguous",
+							},
+						},
+					},
+				},
+			});
+			const refusedStatus = await execFileAsync(
+				process.execPath,
+				[cli, "status", refusedEnvelope.result.id, "--cwd", root, "--json"],
+				{ cwd: join(import.meta.dirname, "..") },
+			);
+			expect(JSON.parse(refusedStatus.stdout)).toMatchObject({
+				ok: true,
+				result: [
+					{
+						entries: {
+							gamma: { preparationFailure: { stage: "workspace-acquisition" } },
+						},
+					},
+				],
+			});
+			expect(JSON.parse(refusedStatus.stdout).result[0]).not.toHaveProperty("pass");
 
 			const status = await execFileAsync(
 				process.execPath,
@@ -1063,6 +1290,33 @@ describe("published preparation CLI", () => {
 			expect(JSON.parse(status.stdout)).toMatchObject({
 				ok: true,
 				result: [{ entries: { alpha: { phase: "prepared", goalFile } } }],
+			});
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps typed roadmap failures in JSON error output", async () => {
+		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-dispatch-error-")));
+		const root = join(directory, "repo");
+		try {
+			await mkdir(join(root, ".worklist"), { recursive: true });
+			await writeFile(join(root, ".worklist", "worklist.json"), "{not-json");
+			await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+			await execFileAsync("git", ["config", "user.name", "Stepstone Test"], { cwd: root });
+			await execFileAsync("git", ["config", "user.email", "stepstone@example.test"], { cwd: root });
+			await execFileAsync("git", ["add", "."], { cwd: root });
+			await execFileAsync("git", ["commit", "-q", "-m", "seed"], { cwd: root });
+			const cli = join(import.meta.dirname, "..", "src", "dispatch.ts");
+			const failure = await execFileAsync(
+				process.execPath,
+				[cli, "start", "--cwd", root, "--goal", "alpha", "--json"],
+				{ cwd: join(import.meta.dirname, "..") },
+			).catch((error: unknown) => error as { stdout: string });
+
+			expect(JSON.parse(failure.stdout)).toMatchObject({
+				ok: false,
+				error: { code: "PERSISTENCE_FAILED", retryable: false },
 			});
 		} finally {
 			await rm(directory, { recursive: true, force: true });

@@ -492,6 +492,8 @@ export const CLI_COMMAND_CONTRACT = {
 	dispatchRules: [
 		`Start an approved preparation run with \`npx -y -p ${BINARY}@latest ${DISPATCH_BINARY} start --goal <id>...\`; repeated goal IDs are the immutable authorization allow-list.`,
 		"The published driver selects only allow-listed goals returned by a fresh ready frontier, prepares an isolated workspace, claims each exact `updatedAt`, and limits how many prepared claims it may hold at once.",
+		"Read the `pass` result from `start` and `resume`: `no-ready-work` means no allow-listed goal can start, while `refused` or `mixed` names work that reached a preparation boundary and did not prepare.",
+		"Each refused entry keeps its original structured `preparationFailure` after release and cleanup; read it through `status --json` or `inspect --json` instead of relying on the latest lifecycle message.",
 		"Each newly prepared workspace contains an ignored `STEPSTONE_GOAL.md` at its root with the goal ID, title, description, snapshot time, prepared branch, dependencies, links, and linked-worktree boundary; read that file before starting work.",
 		"Stepstone never starts, prompts, or supervises an agent; after preparation, open the reported workspace with whichever harness or terminal you choose.",
 		"The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; work inside an isolated workspace must not mutate the worklist.",
