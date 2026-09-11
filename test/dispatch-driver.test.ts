@@ -374,6 +374,26 @@ describe("workspace preparation driver", () => {
 		});
 	});
 
+	it("reports repeated claim refusals during resume", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		setup.roadmap.claimFailure = new DispatchBoundaryError({
+			code: "PERSISTENCE_FAILED",
+			message: "Roadmap write failed.",
+			retryable: false,
+		});
+		const run = await setup.create();
+		const first = await setup.makeDriver().advance(run.id);
+		expect(first.entries.alpha.phase).toBe("claiming");
+		const resumed = await setup.makeDriver().advance(run.id);
+		expect(resumed.lastPass).toMatchObject({
+			outcome: "refused",
+			attemptedGoalIds: ["alpha"],
+			preparedGoalIds: [],
+			refusedGoalIds: ["alpha"],
+		});
+		expect(resumed.entries.alpha.preparationFailure).toEqual(first.entries.alpha.preparationFailure);
+	});
+
 	it("keeps the original preparation failure through release and cleanup recovery", async () => {
 		const setup = fixture([goal("alpha")], 1);
 		setup.roadmap.claimResponseFailure = new Error("claim response was lost");

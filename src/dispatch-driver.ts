@@ -277,27 +277,10 @@ export class DispatchDriver {
 
 	async advance(runId: string): Promise<DispatchRun> {
 		const run = await this.dependencies.store.load(runId);
-		const before = new Map(
-			Object.entries(run.entries).map(([id, entry]) => [
-				id,
-				{ phase: entry.phase, updatedAt: entry.updatedAt },
-			]),
-		);
-		await this.reconcile(run);
-		const preparedGoalIds = Object.entries(run.entries)
-			.filter(([id, entry]) => entry.phase === "prepared" && before.get(id)?.phase !== "prepared")
-			.map(([id]) => id);
-		const refusedGoalIds = Object.entries(run.entries)
-			.filter(([id, entry]) => {
-				const previous = before.get(id);
-				return (
-					entry.phase === "ambiguous" &&
-					Boolean(entry.preparationFailure) &&
-					(!previous || previous.updatedAt !== entry.updatedAt)
-				);
-			})
-			.map(([id]) => id);
-		const attemptedGoalIds = [...new Set([...preparedGoalIds, ...refusedGoalIds])];
+		const reconciled = await this.reconcile(run);
+		const preparedGoalIds = [...reconciled].filter(([, prepared]) => prepared).map(([id]) => id);
+		const refusedGoalIds = [...reconciled].filter(([, prepared]) => !prepared).map(([id]) => id);
+		const attemptedGoalIds = [...reconciled.keys()];
 		const slots = run.maxParallel - Object.values(run.entries).filter(hasCanonicalCustody).length;
 		if (slots <= 0) {
 			await this.recordPassFromAttempts(
@@ -384,18 +367,28 @@ export class DispatchDriver {
 		return run;
 	}
 
-	private async reconcile(run: DispatchRun): Promise<void> {
+	private async reconcile(run: DispatchRun): Promise<Map<string, boolean>> {
+		const attempts = new Map<string, boolean>();
 		for (const entry of Object.values(run.entries)) {
 			if (["preparing", "acquiring", "claiming", "releasing"].includes(entry.phase)) {
+				const preparing = entry.phase !== "releasing";
 				await this.reconcileInterrupted(run, entry);
+				if (preparing) attempts.set(entry.goal.id, entry.phase === "prepared");
 			}
 			if (entry.workspace && (entry.phase === "prepared" || entry.phase === "ambiguous")) {
 				const canRetryUnclaimedHandoff =
 					entry.phase === "ambiguous" && !entry.claimUpdatedAt && entry.goalFile?.state === "pending";
-				if (!(await this.verifyPersistedWorkspace(run, entry))) continue;
-				if (!(await this.ensureGoalFile(run, entry))) continue;
+				if (!(await this.verifyPersistedWorkspace(run, entry))) {
+					attempts.set(entry.goal.id, false);
+					continue;
+				}
+				if (!(await this.ensureGoalFile(run, entry))) {
+					attempts.set(entry.goal.id, false);
+					continue;
+				}
 				if (!entry.claimUpdatedAt && canRetryUnclaimedHandoff) {
 					await this.claimGoal(run, entry);
+					attempts.set(entry.goal.id, entry.phase === "prepared");
 					if (!entry.claimUpdatedAt) continue;
 				}
 			}
@@ -417,6 +410,7 @@ export class DispatchDriver {
 			}
 			if (needsCleanup(entry)) await this.cleanupEntry(run, entry);
 		}
+		return attempts;
 	}
 
 	private async reconcileInterrupted(run: DispatchRun, entry: DispatchEntry): Promise<void> {
