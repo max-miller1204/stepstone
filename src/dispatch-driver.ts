@@ -423,6 +423,7 @@ export class DispatchDriver {
 				entry.phase = "ambiguous";
 				entry.message =
 					"Workspace acquisition was interrupted before its result was journaled; custody requires explicit inspection.";
+				this.recordPreparationFailure(entry, "workspace-acquisition", "ambiguous", new Error(entry.message));
 				await this.persist(run, entry);
 				return;
 			}
@@ -434,8 +435,11 @@ export class DispatchDriver {
 		const snapshot = await this.dependencies.roadmap.read();
 		const current = snapshot.goals.find((goal) => goal.id === entry.goal.id);
 		if (!current) {
+			const wasClaiming = entry.phase === "claiming";
 			entry.phase = "ambiguous";
 			entry.message = "Goal disappeared while a canonical mutation was in progress; custody preserved.";
+			if (wasClaiming)
+				this.recordPreparationFailure(entry, "roadmap-claim", "ambiguous", new Error(entry.message));
 			await this.persist(run, entry);
 			return;
 		}
@@ -443,6 +447,7 @@ export class DispatchDriver {
 			if (!entry.workspace) {
 				entry.phase = "ambiguous";
 				entry.message = "Claim intent has no persisted workspace; custody preserved.";
+				this.recordPreparationFailure(entry, "roadmap-claim", "ambiguous", new Error(entry.message));
 				await this.persist(run, entry);
 			} else if (
 				current.branch === entry.branch &&
@@ -452,6 +457,7 @@ export class DispatchDriver {
 				entry.phase = "ambiguous";
 				entry.message =
 					"Interrupted claim reached canonical state, but its exact returned token was not journaled; explicit token recovery is required.";
+				this.recordPreparationFailure(entry, "roadmap-claim", "ambiguous", new Error(entry.message));
 				await this.persist(run, entry);
 			} else if (!current.branch && current.updatedAt === entry.goal.updatedAt) {
 				await this.claimGoal(run, entry);
@@ -459,6 +465,7 @@ export class DispatchDriver {
 				entry.phase = "ambiguous";
 				entry.message =
 					"Canonical state does not prove the interrupted claim belongs to this run; custody preserved.";
+				this.recordPreparationFailure(entry, "roadmap-claim", "ambiguous", new Error(entry.message));
 				await this.persist(run, entry);
 			}
 			return;

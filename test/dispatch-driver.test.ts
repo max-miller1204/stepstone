@@ -699,6 +699,11 @@ describe("workspace preparation driver", () => {
 		await acquisition.store.save(acquisitionRun);
 		const unknownWorkspace = await acquisition.makeDriver().advance(acquisitionRun.id);
 		expect(unknownWorkspace.entries.alpha.phase).toBe("ambiguous");
+		expect(unknownWorkspace.lastPass?.refusedGoalIds).toEqual(["alpha"]);
+		expect(unknownWorkspace.entries.alpha.preparationFailure).toMatchObject({
+			stage: "workspace-acquisition",
+			classification: "ambiguous",
+		});
 		expect(acquisition.roadmap.claims).toHaveLength(0);
 
 		const claiming = fixture([goal("alpha")], 1);
@@ -716,11 +721,18 @@ describe("workspace preparation driver", () => {
 
 		const interruptedClaim = await claiming.makeDriver().advance(claimRun.id);
 		expect(interruptedClaim.entries.alpha.phase).toBe("ambiguous");
+		expect(interruptedClaim.entries.alpha.preparationFailure).toMatchObject({
+			stage: "roadmap-claim",
+			classification: "ambiguous",
+		});
 		await expect(claiming.makeDriver().recoverRelease(claimRun.id, "alpha")).rejects.toThrow(
 			"no exact claim token",
 		);
 		const recovered = await claiming.makeDriver().recoverRelease(claimRun.id, "alpha", claimed.updatedAt);
 		expect(recovered.entries.alpha.phase).toBe("cleaned");
+		expect(recovered.entries.alpha.preparationFailure).toEqual(
+			interruptedClaim.entries.alpha.preparationFailure,
+		);
 		expect(claiming.roadmap.releases).toEqual([{ id: "alpha", token: claimed.updatedAt }]);
 	});
 
