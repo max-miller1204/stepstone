@@ -32,9 +32,10 @@ import type {
 	RoadmapSnapshot,
 	WorkspaceBinding,
 } from "./dispatch-driver.ts";
-import { DISPATCH_GOAL_FILE } from "./dispatch-driver.ts";
+import { DISPATCH_GOAL_FILE, DispatchBoundaryError } from "./dispatch-driver.ts";
 import { acquireFileLock } from "./file-lock.ts";
 import { createWorklistLocator } from "./git.ts";
+import { WORKLIST_ERROR_CODES } from "./result-envelope.ts";
 import type { ProjectGoal } from "./types.ts";
 
 interface CommandResult {
@@ -74,7 +75,7 @@ async function runCommand(command: string, args: string[], cwd: string): Promise
 }
 
 function requireGoal(result: Awaited<ReturnType<WorklistApplicationService["execute"]>>): ProjectGoal {
-	if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
+	if (!result.ok) throw new DispatchBoundaryError(result.error);
 	if (!result.result.goal) throw new Error(`Project ${result.action} did not return its goal`);
 	return result.result.goal;
 }
@@ -90,7 +91,7 @@ export class ApplicationRoadmapBinding implements RoadmapBinding {
 
 	async read(): Promise<RoadmapSnapshot> {
 		const result = await this.service.readProjectSnapshot("dispatch");
-		if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
+		if (!result.ok) throw new DispatchBoundaryError(result.error);
 		return { goals: result.result.goals ?? [], retiredIds: result.result.retiredIds ?? [] };
 	}
 
@@ -175,6 +176,51 @@ const entrySchema = z
 			"cleaned",
 		]),
 		workspace: workspaceSchema.optional(),
+		preparationFailure: z
+			.object({
+				stage: z.enum([
+					"workspace-acquisition",
+					"workspace-verification",
+					"goal-file-handoff",
+					"goal-file-verification",
+					"roadmap-claim",
+				]),
+				classification: z.enum(["refused", "ambiguous"]),
+				message: safeString,
+				recordedAt: timestampSchema,
+				error: z
+					.object({
+						code: z.enum(WORKLIST_ERROR_CODES),
+						message: safeString,
+						retryable: z.boolean(),
+						conflict: z
+							.discriminatedUnion("type", [
+								z
+									.object({
+										type: z.literal("revision"),
+										expectedRevision: z.string().optional(),
+										actualRevision: z.string().optional(),
+										resolution: z.literal("refresh-and-retry"),
+									})
+									.strict(),
+								z
+									.object({
+										type: z.literal("goal-updated-at"),
+										id: goalIdSchema,
+										expectedUpdatedAt: timestampSchema,
+										actualUpdatedAt: timestampSchema,
+										resolution: z.literal("refresh-and-retry"),
+									})
+									.strict(),
+							])
+							.optional(),
+						details: z.record(z.string(), z.unknown()).optional(),
+					})
+					.strict()
+					.optional(),
+			})
+			.strict()
+			.optional(),
 		claimUpdatedAt: timestampSchema.optional(),
 		releaseUpdatedAt: timestampSchema.optional(),
 		completionIntentAt: timestampSchema.optional(),
@@ -231,6 +277,16 @@ const runSchema = z
 		createdAt: timestampSchema,
 		updatedAt: timestampSchema,
 		entries: z.record(goalIdSchema, entrySchema),
+		lastPass: z
+			.object({
+				outcome: z.enum(["no-ready-work", "capacity-full", "prepared", "refused", "mixed"]),
+				attemptedGoalIds: z.array(goalIdSchema),
+				preparedGoalIds: z.array(goalIdSchema),
+				refusedGoalIds: z.array(goalIdSchema),
+				recordedAt: timestampSchema,
+			})
+			.strict()
+			.optional(),
 	})
 	.strict()
 	.superRefine((run, context) => {
@@ -239,6 +295,54 @@ const runSchema = z
 		}
 
 		const approved = new Set(run.approvedGoalIds);
+		if (run.lastPass) {
+			const attempted = new Set(run.lastPass.attemptedGoalIds);
+			const prepared = new Set(run.lastPass.preparedGoalIds);
+			const refused = new Set(run.lastPass.refusedGoalIds);
+			if (
+				attempted.size !== run.lastPass.attemptedGoalIds.length ||
+				prepared.size !== run.lastPass.preparedGoalIds.length ||
+				refused.size !== run.lastPass.refusedGoalIds.length
+			) {
+				context.addIssue({ code: "custom", path: ["lastPass"], message: "goal IDs must be unique" });
+			}
+			if (
+				[...prepared].some((id) => refused.has(id) || !attempted.has(id)) ||
+				[...refused].some((id) => !attempted.has(id)) ||
+				[...attempted].some((id) => !prepared.has(id) && !refused.has(id))
+			) {
+				context.addIssue({
+					code: "custom",
+					path: ["lastPass"],
+					message: "attempted goals must partition into prepared and refused goals",
+				});
+			}
+			const expectedOutcome =
+				prepared.size > 0 && refused.size > 0
+					? "mixed"
+					: refused.size > 0
+						? "refused"
+						: prepared.size > 0
+							? "prepared"
+							: run.lastPass.outcome;
+			if (
+				expectedOutcome !== run.lastPass.outcome ||
+				(attempted.size === 0 && !["no-ready-work", "capacity-full"].includes(run.lastPass.outcome))
+			) {
+				context.addIssue({
+					code: "custom",
+					path: ["lastPass", "outcome"],
+					message: "does not match results",
+				});
+			}
+			if ([...attempted].some((id) => !approved.has(id))) {
+				context.addIssue({
+					code: "custom",
+					path: ["lastPass", "attemptedGoalIds"],
+					message: "must name only approved goals",
+				});
+			}
+		}
 		for (const [id, entry] of Object.entries(run.entries)) {
 			const path = ["entries", id];
 			if (entry.goal.id !== id || !approved.has(id)) {

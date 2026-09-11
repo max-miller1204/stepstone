@@ -20,6 +20,16 @@ Repeated `--goal` values are the immutable authorization allow-list. The driver 
 
 `--max-parallel` is the maximum number of goals the run may keep claimed and prepared at once. It does not describe running agents: Stepstone starts none. The default is 1.
 
+Each `start` and `resume` result includes a `pass` summary. It reports one of these outcomes:
+
+- `no-ready-work` when no allow-listed goal can start;
+- `capacity-full` when prepared custody fills the configured limit;
+- `prepared` when every attempted goal was prepared;
+- `refused` when no attempted goal was prepared; or
+- `mixed` when a pass prepared some goals and refused others.
+
+The summary also lists the attempted, prepared, and refused goal IDs. An empty ready frontier is a successful `no-ready-work` pass. A refused preparation is a successful state-machine pass with a durable refused entry. These results are distinct in JSON and human-readable output.
+
 A successful entry reports:
 
 - `phase: "prepared"`
@@ -105,6 +115,8 @@ npx -y -p stepstone@latest stepstone-dispatch inspect <run-id> <goal-id> --json
 ## Recovery
 
 An interrupted workspace acquisition, claim mutation, merge inspection, completion, release, or cleanup can leave an entry `ambiguous`. Ambiguity preserves the claim and workspace rather than guessing that custody is safe to discard.
+
+A refused preparation stores its first boundary failure in `preparationFailure`. This record includes the stage, classification, message, and time. A typed roadmap failure also keeps its code, retryability, conflict, and details. The entry `message` continues to report the latest lifecycle state. Release and cleanup can replace that message, but they do not replace the original preparation failure. Read both fields through `status --json` or `inspect --json` after recovery.
 
 After inspection, explicitly release an abandoned prepared claim:
 

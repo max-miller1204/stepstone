@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readyGoals } from "./dependencies.ts";
+import type { WorklistError } from "./result-envelope.ts";
 import type { ProjectGoal } from "./types.ts";
 
 export const DISPATCH_STATE_VERSION = 2 as const;
@@ -37,11 +38,35 @@ export interface DispatchGoalBacking {
 	inode: string;
 }
 
+export type DispatchPreparationStage =
+	| "workspace-acquisition"
+	| "workspace-verification"
+	| "goal-file-handoff"
+	| "goal-file-verification"
+	| "roadmap-claim";
+
+export interface DispatchPreparationFailure {
+	stage: DispatchPreparationStage;
+	classification: "refused" | "ambiguous";
+	message: string;
+	recordedAt: string;
+	error?: WorklistError;
+}
+
+export interface DispatchPass {
+	outcome: "no-ready-work" | "capacity-full" | "prepared" | "refused" | "mixed";
+	attemptedGoalIds: string[];
+	preparedGoalIds: string[];
+	refusedGoalIds: string[];
+	recordedAt: string;
+}
+
 export interface DispatchEntry {
 	goal: ProjectGoal;
 	branch: string;
 	phase: DispatchPhase;
 	workspace?: DispatchWorkspace;
+	preparationFailure?: DispatchPreparationFailure;
 	completionUpdatedAt?: string;
 	completionIntentAt?: string;
 	releaseUpdatedAt?: string;
@@ -65,6 +90,7 @@ export interface DispatchRun {
 	createdAt: string;
 	updatedAt: string;
 	entries: Record<string, DispatchEntry>;
+	lastPass?: DispatchPass;
 }
 
 export interface DispatchWorkspaceConfig {
@@ -122,6 +148,16 @@ export interface DispatchStateStore {
 	save(run: DispatchRun): Promise<void>;
 	list(): Promise<DispatchRun[]>;
 	remove(runId: string): Promise<void>;
+}
+
+export class DispatchBoundaryError extends Error {
+	readonly worklistError: WorklistError;
+
+	constructor(error: WorklistError) {
+		super(`${error.code}: ${error.message}`);
+		this.name = "DispatchBoundaryError";
+		this.worklistError = structuredClone(error);
+	}
 }
 
 export interface DispatchDependencies {
@@ -241,15 +277,57 @@ export class DispatchDriver {
 
 	async advance(runId: string): Promise<DispatchRun> {
 		const run = await this.dependencies.store.load(runId);
+		const before = new Map(
+			Object.entries(run.entries).map(([id, entry]) => [
+				id,
+				{ phase: entry.phase, updatedAt: entry.updatedAt },
+			]),
+		);
 		await this.reconcile(run);
+		const preparedGoalIds = Object.entries(run.entries)
+			.filter(([id, entry]) => entry.phase === "prepared" && before.get(id)?.phase !== "prepared")
+			.map(([id]) => id);
+		const refusedGoalIds = Object.entries(run.entries)
+			.filter(([id, entry]) => {
+				const previous = before.get(id);
+				return (
+					entry.phase === "ambiguous" &&
+					Boolean(entry.preparationFailure) &&
+					(!previous || previous.updatedAt !== entry.updatedAt)
+				);
+			})
+			.map(([id]) => id);
+		const attemptedGoalIds = [...new Set([...preparedGoalIds, ...refusedGoalIds])];
 		const slots = run.maxParallel - Object.values(run.entries).filter(hasCanonicalCustody).length;
-		if (slots <= 0) return run;
+		if (slots <= 0) {
+			await this.recordPassFromAttempts(
+				run,
+				attemptedGoalIds,
+				preparedGoalIds,
+				refusedGoalIds,
+				"capacity-full",
+			);
+			return run;
+		}
 		const snapshot = await this.dependencies.roadmap.read();
 		const approved = new Set(run.approvedGoalIds);
 		const ready = readyGoals(snapshot.goals, snapshot.retiredIds).filter(
 			(goal) => approved.has(goal.id) && !run.entries[goal.id],
 		);
-		for (const goal of ready.slice(0, slots)) await this.prepare(run, goal);
+		const attempted = ready.slice(0, slots);
+		for (const goal of attempted) await this.prepare(run, goal);
+		for (const goal of attempted) {
+			attemptedGoalIds.push(goal.id);
+			if (run.entries[goal.id]?.phase === "prepared") preparedGoalIds.push(goal.id);
+			else refusedGoalIds.push(goal.id);
+		}
+		await this.recordPassFromAttempts(
+			run,
+			attemptedGoalIds,
+			preparedGoalIds,
+			refusedGoalIds,
+			"no-ready-work",
+		);
 		return run;
 	}
 
@@ -506,6 +584,7 @@ export class DispatchDriver {
 			await this.persist(run, entry);
 		} catch (error) {
 			entry.phase = "ambiguous";
+			this.recordPreparationFailure(entry, "workspace-acquisition", "ambiguous", error);
 			entry.message = `Workspace acquisition outcome is ambiguous; inspect before recovery: ${errorMessage(error)}`;
 			await this.persist(run, entry);
 			return;
@@ -530,6 +609,7 @@ export class DispatchDriver {
 			);
 		} catch (error) {
 			entry.phase = "ambiguous";
+			this.recordPreparationFailure(entry, "goal-file-verification", "refused", error);
 			entry.message = `Final goal-file verification failed before canonical claim; workspace preserved: ${errorMessage(error)}`;
 			await this.persist(run, entry);
 			return;
@@ -538,6 +618,12 @@ export class DispatchDriver {
 		try {
 			claimed = await this.dependencies.roadmap.claim(entry.goal.id, entry.branch, entry.goal.updatedAt);
 		} catch (error) {
+			this.recordPreparationFailure(
+				entry,
+				"roadmap-claim",
+				error instanceof DispatchBoundaryError ? "refused" : "ambiguous",
+				error,
+			);
 			entry.message = `Claim attempt failed before its outcome was reconciled: ${errorMessage(error)}`;
 			await this.persist(run, entry);
 			return;
@@ -549,6 +635,12 @@ export class DispatchDriver {
 		) {
 			entry.claimUpdatedAt = claimed.updatedAt !== entry.goal.updatedAt ? claimed.updatedAt : undefined;
 			entry.phase = "ambiguous";
+			this.recordPreparationFailure(
+				entry,
+				"roadmap-claim",
+				"ambiguous",
+				new Error("Claim response did not contain the expected branch and fresh token"),
+			);
 			entry.message =
 				"Claim response did not contain the expected branch and fresh token; custody preserved.";
 			await this.persist(run, entry);
@@ -574,6 +666,12 @@ export class DispatchDriver {
 			(entry.goalFile.path !== expected.path || entry.goalFile.sha256 !== expected.sha256)
 		) {
 			entry.phase = "ambiguous";
+			this.recordPreparationFailure(
+				entry,
+				"goal-file-handoff",
+				"refused",
+				new Error("Persisted goal-file identity does not match this entry's immutable goal snapshot"),
+			);
 			entry.message = "Persisted goal-file identity does not match this entry's immutable goal snapshot.";
 			await this.persist(run, entry);
 			return false;
@@ -614,6 +712,7 @@ export class DispatchDriver {
 			await this.dependencies.workspace.writeGoalFile(entry.workspace, entry.goalFile, content);
 		} catch (error) {
 			entry.phase = "ambiguous";
+			this.recordPreparationFailure(entry, "goal-file-handoff", "ambiguous", error);
 			entry.message = `Goal-file handoff could not be verified; workspace preserved: ${errorMessage(error)}`;
 			await this.persist(run, entry);
 			return false;
@@ -677,10 +776,52 @@ export class DispatchDriver {
 			return true;
 		} catch (error) {
 			entry.phase = "ambiguous";
+			this.recordPreparationFailure(entry, "workspace-verification", "ambiguous", error);
 			entry.message = `Persisted workspace custody could not be verified: ${errorMessage(error)}`;
 			await this.persist(run, entry);
 			return false;
 		}
+	}
+
+	private recordPreparationFailure(
+		entry: DispatchEntry,
+		stage: DispatchPreparationStage,
+		classification: DispatchPreparationFailure["classification"],
+		error: unknown,
+	): void {
+		if (entry.preparationFailure) return;
+		entry.preparationFailure = {
+			stage,
+			classification,
+			message: errorMessage(error),
+			recordedAt: this.now().toISOString(),
+			...(error instanceof DispatchBoundaryError ? { error: structuredClone(error.worklistError) } : {}),
+		};
+	}
+
+	private async recordPassFromAttempts(
+		run: DispatchRun,
+		attemptedGoalIds: string[],
+		preparedGoalIds: string[],
+		refusedGoalIds: string[],
+		emptyOutcome: "no-ready-work" | "capacity-full",
+	): Promise<void> {
+		const outcome: DispatchPass["outcome"] =
+			preparedGoalIds.length > 0 && refusedGoalIds.length > 0
+				? "mixed"
+				: refusedGoalIds.length > 0
+					? "refused"
+					: preparedGoalIds.length > 0
+						? "prepared"
+						: emptyOutcome;
+		run.lastPass = {
+			outcome,
+			attemptedGoalIds,
+			preparedGoalIds,
+			refusedGoalIds,
+			recordedAt: this.now().toISOString(),
+		};
+		await this.persist(run);
 	}
 
 	private requireEntry(run: DispatchRun, goalId: string): DispatchEntry {

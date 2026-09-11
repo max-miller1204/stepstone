@@ -11,6 +11,7 @@ import {
 } from "./dispatch-bindings.ts";
 import {
 	DISPATCH_GOAL_FILE,
+	DispatchBoundaryError,
 	DispatchDriver,
 	type DispatchRun,
 	type DispatchWorkspaceConfig,
@@ -104,7 +105,7 @@ function requireMainWorktree(repositoryRoot: string): void {
 	if (placement.kind === "unavailable") throw new Error(placement.failure.message);
 }
 
-function summarize(run: DispatchRun): object {
+function summarize(run: DispatchRun, reportPass = false): object {
 	return {
 		id: run.id,
 		repositoryRoot: run.repositoryRoot,
@@ -123,12 +124,55 @@ function summarize(run: DispatchRun): object {
 					goalFile:
 						entry.workspace && entry.goalFile ? join(entry.workspace.path, entry.goalFile.path) : undefined,
 					mergedPr: entry.mergedPr,
+					preparationFailure: entry.preparationFailure,
 					message: entry.message,
 					updatedAt: entry.updatedAt,
 				},
 			]),
 		),
+		...(reportPass && run.lastPass ? { pass: run.lastPass } : {}),
 	};
+}
+
+function humanRun(run: DispatchRun, reportPass: boolean): string {
+	const lines: string[] = [];
+	if (reportPass && run.lastPass) {
+		switch (run.lastPass.outcome) {
+			case "no-ready-work":
+				lines.push("No approved goal is ready for preparation.");
+				break;
+			case "capacity-full":
+				lines.push("Preparation capacity is full.");
+				break;
+			case "prepared":
+				lines.push(`Prepared: ${run.lastPass.preparedGoalIds.join(", ")}.`);
+				break;
+			case "refused":
+				lines.push(`Preparation refused: ${run.lastPass.refusedGoalIds.join(", ")}.`);
+				break;
+			case "mixed":
+				lines.push(`Prepared: ${run.lastPass.preparedGoalIds.join(", ")}.`);
+				lines.push(`Preparation refused: ${run.lastPass.refusedGoalIds.join(", ")}.`);
+				break;
+		}
+	}
+	for (const [id, entry] of Object.entries(run.entries)) {
+		lines.push(`${id}: ${entry.phase}${entry.message ? `: ${entry.message}` : ""}`);
+		if (entry.preparationFailure) {
+			lines.push(
+				`  Original preparation failure (${entry.preparationFailure.stage}, ${entry.preparationFailure.classification}): ${entry.preparationFailure.message}`,
+			);
+		}
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+function printRun(run: DispatchRun, json: boolean, reportPass: boolean): void {
+	if (json) {
+		print(summarize(run, reportPass), true);
+		return;
+	}
+	process.stdout.write(humanRun(run, reportPass));
 }
 
 function print(value: unknown, json: boolean): void {
@@ -204,7 +248,7 @@ async function main(): Promise<void> {
 				workspaceConfig: config,
 			});
 			const advanced = await store.withRunLock(run.id, () => driver.advance(run.id));
-			print(summarize(advanced), invocation.json);
+			printRun(advanced, invocation.json, true);
 			return;
 		}
 		case "resume": {
@@ -215,7 +259,7 @@ async function main(): Promise<void> {
 				assertRunRepository(run, repositoryRoot);
 				return createDriver(run, store).advance(run.id);
 			});
-			print(summarize(advanced), invocation.json);
+			printRun(advanced, invocation.json, true);
 			return;
 		}
 		case "status": {
@@ -224,7 +268,10 @@ async function main(): Promise<void> {
 				? [await store.load(invocation.positionals[0])]
 				: await store.list();
 			for (const run of runs) assertRunRepository(run, repositoryRoot);
-			print(runs.map(summarize), invocation.json);
+			print(
+				runs.map((run) => summarize(run)),
+				invocation.json,
+			);
 			return;
 		}
 		case "inspect": {
@@ -250,7 +297,7 @@ async function main(): Promise<void> {
 					one(invocation, "claim-updated-at"),
 				);
 			});
-			print(summarize(recovered), invocation.json);
+			printRun(recovered, invocation.json, false);
 			return;
 		}
 		case "cleanup": {
@@ -263,7 +310,8 @@ async function main(): Promise<void> {
 				assertRunRepository(run, repositoryRoot);
 				return createDriver(run, store).cleanup(run.id, invocation.positionals[1]);
 			});
-			print(result ? summarize(result) : { removedRunId: runId }, invocation.json);
+			if (result) printRun(result, invocation.json, false);
+			else print({ removedRunId: runId }, invocation.json);
 			return;
 		}
 		default:
@@ -274,7 +322,8 @@ async function main(): Promise<void> {
 main().catch((error: unknown) => {
 	const message = error instanceof Error ? error.message : String(error);
 	if (process.argv.includes("--json")) {
-		process.stdout.write(`${JSON.stringify({ ok: false, error: { message } }, null, 2)}\n`);
+		const details = error instanceof DispatchBoundaryError ? error.worklistError : { message };
+		process.stdout.write(`${JSON.stringify({ ok: false, error: details }, null, 2)}\n`);
 	} else {
 		process.stderr.write(`stepstone-dispatch: ${message}\n`);
 	}
