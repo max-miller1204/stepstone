@@ -61,7 +61,9 @@ env -i HOME="$HOME" PATH="$PATH" gh api user --jq 'has("login")'
 The first command must report an active keyring login. The second must print
 `true`. Git HTTPS operations use the existing `osxkeychain` credential helper.
 Verify it with `git config --get-all credential.helper`. Stop if authentication
-fails; do not inject another token. `HOME` preserves the local Codex login and GitHub CLI
+fails; do not inject another token. Record a concise blocker brief in the issue
+workpad and move the issue to `Human Review`. Include the missing access, its
+impact, and the action needed to restore it. `HOME` preserves the local Codex login and GitHub CLI
 configuration. `PATH` locates the installed tools.
 
 This environment policy prevents inherited-token exposure. It does not isolate
