@@ -14,7 +14,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { basename, delimiter, join, resolve } from "node:path";
-import { parseTape, selectScenarios, VHS_VERSION } from "./contract.mjs";
+import { parseTape, previewTimestamp, selectScenarios, VHS_VERSION } from "./contract.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const scenariosDirectory = join(import.meta.dirname, "scenarios");
@@ -242,7 +242,7 @@ if (action === "list") {
 							video,
 						]),
 					);
-					assert.ok(Number(metadata.media.format.duration) > 0, "Empty video.");
+					const previewTime = previewTimestamp(Number(metadata.media.format.duration));
 					assert.equal(metadata.media.streams[0].width, width);
 					assert.equal(metadata.media.streams[0].height, height);
 					await logged("ffmpeg", [
@@ -251,7 +251,7 @@ if (action === "list") {
 						"error",
 						"-y",
 						"-ss",
-						"10",
+						String(previewTime),
 						"-i",
 						video,
 						"-frames:v",

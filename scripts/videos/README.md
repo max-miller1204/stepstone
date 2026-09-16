@@ -28,7 +28,7 @@ Each run replaces `artifacts/videos/<scenario>/`. Do not store work there. A sin
 Successful renders contain:
 
 - `<scenario>.mp4`: H.264 video with terminal margins.
-- `preview.png`: a frame at 10 seconds for review.
+- `preview.png`: a frame at the video midpoint or 10 seconds, whichever comes first.
 - `commands.jsonl`: actual CLI arguments, output, diagnostics, and exit status.
 - `process.log`: setup, replay or recording, verification, and encoder output.
 - `metadata.json`: commit, dirty-tree flag, CLI version, tape hash, tool versions, media properties, and video hash.

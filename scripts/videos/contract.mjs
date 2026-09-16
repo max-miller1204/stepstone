@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 
 export const VHS_VERSION = "0.12.0";
 
+export function previewTimestamp(duration) {
+	assert.ok(Number.isFinite(duration) && duration > 0, "Invalid video duration.");
+	return Math.min(10, duration / 2);
+}
+
 export function selectScenarios(available, requested) {
 	assert.ok(available.length > 0, "No video scenarios found.");
 	if (requested === undefined || requested === "all") return available;

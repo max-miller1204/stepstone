@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { parseTape, selectScenarios } from "./contract.mjs";
+import { parseTape, previewTimestamp, selectScenarios } from "./contract.mjs";
+
+test("preview timestamps stay inside short videos and cap long videos at ten seconds", () => {
+	for (const duration of [1 / 60, 0.5, 1, 9, 10, 20, 120]) {
+		const timestamp = previewTimestamp(duration);
+		assert.ok(timestamp >= 0 && timestamp < duration);
+		assert.equal(timestamp, Math.min(10, duration / 2));
+	}
+	for (const duration of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+		assert.throws(() => previewTimestamp(duration), /Invalid video duration/);
+	}
+});
 
 const tape = await readFile(new URL("./scenarios/workspace-lifecycle/demo.tape", import.meta.url), "utf8");
 
