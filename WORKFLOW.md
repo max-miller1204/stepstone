@@ -108,7 +108,7 @@ The agent should be able to talk to Linear, either via a configured Linear MCP s
 - `In Progress` -> implementation actively underway.
 - `Human Review` -> PR is attached and validated; waiting on human approval.
 - `Merging` -> approved by human; execute the `land` skill flow (do not call `gh pr merge` directly).
-- `Rework` -> reviewer requested changes; planning + implementation required.
+- `Rework` -> reset the attempt once, create a fresh branch and workpad, then move to `In Progress` before implementation.
 - `Done` -> terminal state; no further action required.
 
 ## Step 0: Determine current ticket state and route
@@ -258,10 +258,9 @@ Use this only when completion is blocked by missing required tools or missing au
 3. Close the existing PR tied to the issue.
 4. Remove the existing `## Codex Workpad` comment from the issue.
 5. Create a fresh branch from `origin/main`.
-6. Start over from the normal kickoff flow:
-   - If current issue state is `Todo`, move it to `In Progress`; otherwise keep the current state.
-   - Create a new bootstrap `## Codex Workpad` comment.
-   - Build a fresh plan/checklist and execute end-to-end.
+6. Create a new bootstrap `## Codex Workpad` comment for the fresh branch.
+7. Move the issue from `Rework` to `In Progress` before implementation continues. This completes the one-time reset. Later turns must continue this attempt through the `In Progress` flow.
+8. Start over from the normal kickoff flow. Build a fresh plan/checklist in the new workpad and execute end-to-end.
 
 ## Completion bar before Human Review
 

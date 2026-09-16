@@ -14,8 +14,9 @@ Use these issue states:
 5. Codex moves the issue to `Human Review` after all local and remote checks
    pass.
 6. Move the issue to `Rework` when the implementation needs a new attempt.
-7. Move the issue to `Merging` after approval.
-8. Codex lands the pull request and moves the issue to `Done`.
+7. Codex creates a fresh branch and workpad, then moves the issue to `In Progress`. Later turns continue that attempt without another reset.
+8. Move the issue to `Merging` after approval.
+9. Codex lands the pull request and moves the issue to `Done`.
 
 A `Todo` issue does not start until each Linear `blockedBy` issue reaches a
 terminal state.
@@ -75,7 +76,7 @@ Start with one issue at a time. `WORKFLOW.md` sets
 `Human Review` is not an active Symphony state. Symphony pauses work there.
 Move the issue to one of these states:
 
-- `Rework` to start a clean implementation attempt.
+- `Rework` to start a clean implementation attempt. Codex resets the branch and workpad once, then moves the issue to `In Progress`.
 - `Merging` to authorize the agent to land the pull request.
 
 Do not move an issue directly to `Done`. The workflow uses a confirmed GitHub
