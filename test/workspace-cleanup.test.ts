@@ -4,10 +4,11 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { GitWorktreeBinding } from "../src/dispatch-bindings.ts";
 import { DISPATCH_GOAL_FILE, type DispatchGoalFile } from "../src/dispatch-driver.ts";
 import type { ProjectGoal } from "../src/types.ts";
+import { compileWorkspaceFixture } from "./fixtures/compile-workspace.ts";
 
 const exec = promisify(execFile);
 const directories: string[] = [];
@@ -299,6 +300,11 @@ describe("verified workspace cleanup", () => {
 });
 
 describe("cleanup operator flow", () => {
+	let cli: string;
+	beforeAll(async () => {
+		cli = join(await compileWorkspaceFixture("cleanup-cli"), "src/dispatch.js");
+	});
+
 	it.each([false, true])(
 		"reports refusals and requires an explicit override (force=%s)",
 		{ timeout: 30_000 },
@@ -311,7 +317,6 @@ describe("cleanup operator flow", () => {
 				join(f.root, ".worklist", "worklist.json"),
 				JSON.stringify({ version: 1, revision: 0, goals: [goal], retiredIds: [] }),
 			);
-			const cli = join(import.meta.dirname, "..", "src", "dispatch.ts");
 			const run = async (...args: string[]) =>
 				(await exec(process.execPath, [cli, ...args, "--cwd", f.root], { cwd: f.root })).stdout;
 			const start = JSON.parse(

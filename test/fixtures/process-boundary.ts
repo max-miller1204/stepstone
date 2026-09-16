@@ -4,10 +4,18 @@ import { createServer } from "node:http";
 import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { DispatchRun, RoadmapSnapshot } from "../../src/dispatch-driver.ts";
+import { compileWorkspaceFixture } from "./compile-workspace.ts";
 
 const exec = promisify(execFile);
-const runner = resolve(import.meta.dirname, "dispatch-boundary.ts");
 const artifactRoot = resolve(import.meta.dirname, "../../artifacts/process-boundaries");
+let runner: string;
+
+// Node 20 cannot execute TypeScript. Compile the subprocess and its production
+// imports separately from dist/, which the package tests rebuild concurrently.
+export async function compileProcessBoundaryRunner(): Promise<void> {
+	runner = join(await compileWorkspaceFixture("process-boundary"), "test/fixtures/dispatch-boundary.js");
+}
+
 export const branch = "stepstone/alpha";
 const goal = {
 	id: "alpha",
@@ -151,6 +159,7 @@ class ProcessBoundary {
 				accept();
 			});
 		});
+		await this.command(process.execPath, ["--version"]);
 		await this.command("git", ["--version"]);
 		await this.command("gh", ["--version"]);
 		await this.git("init", "-q", "-b", "main");
