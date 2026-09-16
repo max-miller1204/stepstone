@@ -23,7 +23,15 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes zsh
       - run: cp npm-shrinkwrap.json package-lock.json && npm ci --ignore-scripts && rm package-lock.json
+      - run: git --version && gh --version
       - run: npm run check
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: process-boundary-evidence-${{ matrix.os }}
+          path: artifacts/process-boundaries/
+          include-hidden-files: true
+          if-no-files-found: ignore
       # Audit the shipped production tree only: the dev/peer tree pins a known
       # brace-expansion finding via @earendil-works/pi-coding-agent's published
       # npm-shrinkwrap.json, which is not fixable locally (earendil-works/pi#7090).

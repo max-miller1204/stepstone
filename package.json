@@ -70,6 +70,7 @@
 		"prepack": "npm run build",
 		"preversion": "npm run docs:check",
 		"test": "vitest run",
+		"test:boundaries": "vitest run test/process-boundaries.test.ts test/workspace-cleanup.test.ts",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
 		"format": "biome format --write .",
