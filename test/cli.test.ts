@@ -1083,6 +1083,49 @@ describe("project goal CLI", () => {
 		expect((await readGoals(root))[0].title).toBe("From elsewhere");
 	});
 
+	it("reports a child below a Git ceiling as outside a repository in text and JSON", async () => {
+		const root = await tempGitRepo();
+		const ceiling = join(root, "ceiling");
+		const child = join(ceiling, "child");
+		await mkdir(child, { recursive: true });
+		const env = { GIT_CEILING_DIRECTORIES: ceiling };
+		const human = await runCli(root, ["project", "list", "--cwd", child], env);
+		expect(human.code).toBe(1);
+		expect(diagnostic(human.stderr).trim()).toBe(
+			"Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
+		);
+		const json = await runCli(child, ["project", "list", "--json"], env);
+		expect(json.code).toBe(1);
+		expect(json.stdout).toBe("");
+		expect(parseJson(json.stderr)).toMatchObject({
+			ok: false,
+			scope: "project",
+			action: "list",
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "run-inside-git-repository", gitExitCode: 128, gitTimedOut: false },
+			},
+			meta: { changed: false, semanticNoOp: false, changedFields: [] },
+		});
+
+		await execFileAsync("git", ["init", "-q"], { cwd: child });
+		const config = join(child, ".git", "config");
+		const original = await readFile(config, "utf8");
+		await writeFile(config, "not a config\n");
+		const refused = await runCli(child, ["project", "list", "--json"], env);
+		expect(refused.code).toBe(1);
+		expect(parseJson(refused.stderr)).toMatchObject({
+			error: {
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "repair-git-repository", gitExitCode: 128, gitTimedOut: false },
+			},
+		});
+		await writeFile(config, original);
+		expect((await runCli(child, ["project", "list", "--json"], env)).code).toBe(0);
+	});
+
 	it("does not call a Git that never ran a verdict about the repository", async () => {
 		const root = await tempGitRepo();
 
