@@ -23,7 +23,7 @@ hooks:
   after_create: |
     git clone https://github.com/max-miller1204/stepstone.git .
 agent:
-  max_concurrent_agents: 2
+  max_concurrent_agents: 10
   max_turns: 20
 codex:
   command: >-

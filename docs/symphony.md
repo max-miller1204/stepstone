@@ -102,7 +102,7 @@ they apply:
 Add Linear blocker relations before moving the issue to `Todo`. Symphony uses
 those relations to delay blocked work.
 
-`WORKFLOW.md` sets `agent.max_concurrent_agents` to `2`. Symphony can run two
+`WORKFLOW.md` sets `agent.max_concurrent_agents` to `10`. Symphony can run 10
 independent issues at the same time while blocker relations keep dependent
 issues queued.
 
