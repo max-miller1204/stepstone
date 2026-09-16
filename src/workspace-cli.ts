@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { type ClaimEvidence, DEFAULT_STALE_AFTER_HOURS, inspectPreparedClaims } from "./claim-evidence.ts";
 import { CLI_COMMAND_CONTRACT, renderWorkspaceUsage } from "./cli-contract.ts";
 import {
 	ApplicationRoadmapBinding,
@@ -61,7 +62,11 @@ function requireMainWorktree(repositoryRoot: string): void {
 	if (placement.kind === "unavailable") throw new Error(placement.failure.message);
 }
 
-function summarize(run: DispatchRun, reportPass = false): object {
+function summarize(
+	run: DispatchRun,
+	reportPass = false,
+	evidence: Record<string, ClaimEvidence> = {},
+): object {
 	return {
 		id: run.id,
 		repositoryRoot: run.repositoryRoot,
@@ -83,6 +88,7 @@ function summarize(run: DispatchRun, reportPass = false): object {
 					preparationFailure: entry.preparationFailure,
 					message: entry.message,
 					updatedAt: entry.updatedAt,
+					...(evidence[id] ? { claimEvidence: evidence[id] } : {}),
 				},
 			]),
 		),
@@ -159,6 +165,30 @@ function assertRunRepository(run: DispatchRun, repositoryRoot: string): void {
 	if (run.repositoryRoot !== repositoryRoot) {
 		throw new Error(`Run ${run.id} belongs to ${run.repositoryRoot}, not ${repositoryRoot}`);
 	}
+}
+
+function staleAfterHours(invocation: Invocation): number {
+	const hours = positiveInteger(
+		one(invocation, "stale-after-hours"),
+		DEFAULT_STALE_AFTER_HOURS,
+		"stale-after-hours",
+	);
+	if (!Number.isSafeInteger(hours * 3600000)) {
+		throw new WorkspaceUsageError("--stale-after-hours exceeds the supported timestamp range");
+	}
+	return hours;
+}
+
+function readClaimEvidence(run: DispatchRun, invocation: Invocation, goalId?: string) {
+	return inspectPreparedClaims(
+		run,
+		new ApplicationRoadmapBinding(run.repositoryRoot),
+		new GitWorktreeBinding(run.repositoryRoot, run.workspaceConfig.workspaceParent),
+		{
+			staleAfterHours: staleAfterHours(invocation),
+			goalId,
+		},
+	);
 }
 
 export async function runWorkspace(input: WorkspaceInvocation, cliVersion: string): Promise<void> {
@@ -246,10 +276,11 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 				? [await store.load(invocation.positionals[0])]
 				: await store.list();
 			for (const run of runs) assertRunRepository(run, repositoryRoot);
-			print(
-				runs.map((run) => summarize(run)),
-				output,
-			);
+			// Validate even an empty run list, where no observation helper would be called.
+			staleAfterHours(invocation);
+			const summaries = [];
+			for (const run of runs) summaries.push(summarize(run, false, await readClaimEvidence(run, invocation)));
+			print(summaries, output);
 			return;
 		}
 		case "inspect": {
@@ -259,7 +290,15 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 			assertRunRepository(run, repositoryRoot);
 			const entry = run.entries[invocation.positionals[1]];
 			if (!entry) throw new Error(`Run ${run.id} has no entry for goal ${invocation.positionals[1]}`);
-			print({ run: summarize(run), goal: entry }, output);
+			const evidence = await readClaimEvidence(run, invocation, invocation.positionals[1]);
+			print(
+				{
+					run: summarize(run, false, evidence),
+					goal: entry,
+					...(evidence[entry.goal.id] ? { claimEvidence: evidence[entry.goal.id] } : {}),
+				},
+				output,
+			);
 			return;
 		}
 		case "recover": {

@@ -150,12 +150,17 @@ export const CLI_COMMAND_CONTRACT = {
 			summary: "Reconcile merged work and refill preparation capacity",
 			flags: [],
 		},
-		{ name: "status", usage: "status [run-id]", summary: "Read persisted run status", flags: [] },
+		{
+			name: "status",
+			usage: "status [run-id] [--stale-after-hours <hours>]",
+			summary: "Read run status and observable prepared-claim evidence",
+			flags: ["--stale-after-hours"],
+		},
 		{
 			name: "inspect",
-			usage: "inspect <run-id> <goal-id>",
-			summary: "Read complete workspace custody",
-			flags: [],
+			usage: "inspect <run-id> <goal-id> [--stale-after-hours <hours>]",
+			summary: "Read complete workspace custody and fresh claim evidence before explicit recovery",
+			flags: ["--stale-after-hours"],
 		},
 		{
 			name: "recover",
@@ -319,6 +324,13 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "--max-parallel",
 			usage: "--max-parallel <count>",
 			summary: "Limit workspace start to this many prepared claims (default 1)",
+			actions: ["workspace"],
+		},
+		{
+			name: "--stale-after-hours",
+			usage: "--stale-after-hours <hours>",
+			summary:
+				"Set the claim and local branch inactivity threshold for workspace status/inspect (default 24)",
 			actions: ["workspace"],
 		},
 		{

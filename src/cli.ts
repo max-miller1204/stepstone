@@ -297,6 +297,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		switch (part) {
 			case "--goal":
 			case "--max-parallel":
+			case "--stale-after-hours":
 			case "--claim-updated-at": {
 				const name = part.slice(2);
 				workspaceOptions.set(name, [
