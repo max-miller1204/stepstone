@@ -2,6 +2,8 @@
 
 `stepstone-dispatch` prepares isolated workspaces for an explicitly approved set of Project Goals. It claims each goal on the canonical roadmap, persists enough workspace custody to resume after interruption, and can complete a goal only after finding a matching merged pull request.
 
+The published package's compiled bin supports workspace preparation on Linux and macOS with Node 20 or newer, Git, and the GitHub CLI (`gh`) for merged-work reconciliation. CI exercises Ubuntu and macOS on Node 20 and Node 24 LTS with real Git and gh. Windows and other operating systems are not supported until CI covers these behaviors and the repository scripts work there. See [development checks](https://github.com/max-miller1204/stepstone/blob/main/docs/development.md#checks) for the coverage and the newer runtime needed to run TypeScript source scripts.
+
 It does **not** run an agent harness. It never starts a process or pane, submits a prompt, chooses an agent kind, or supervises a session. After preparation, a human or a root agent opens the reported workspace using whichever terminal and coding harness they prefer. The workspace already contains its goal in `STEPSTONE_GOAL.md`; no prompt transport is needed.
 
 ## Start a preparation run

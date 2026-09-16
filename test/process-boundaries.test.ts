@@ -1,8 +1,10 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { DISPATCH_GOAL_FILE } from "../src/dispatch-driver.ts";
-import { branch, withProcessBoundary } from "./fixtures/process-boundary.ts";
+import { branch, compileProcessBoundaryRunner, withProcessBoundary } from "./fixtures/process-boundary.ts";
+
+beforeAll(compileProcessBoundaryRunner);
 
 // Deep binding/process cases. Packed executable and Pi RPC workflows live in
 // their own tiers; this suite never replaces git, gh, or an application binding.
