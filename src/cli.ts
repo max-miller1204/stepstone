@@ -29,6 +29,7 @@ import {
 	resolveDependencies,
 	unfinishedGoals,
 } from "./dependencies.ts";
+import { DispatchBoundaryError } from "./dispatch-driver.ts";
 import { goalCount, goalSection } from "./format.ts";
 import {
 	createGoalWorktree,
@@ -63,6 +64,7 @@ import type {
 	ProjectPlanWarning,
 	WorklistOperationResult,
 } from "./types.ts";
+import { runWorkspace, WorkspaceUsageError } from "./workspace-cli.ts";
 
 /**
  * Command line entry point for Project Goals, driving the repository's goal file
@@ -97,6 +99,7 @@ let shadowedWorklistPath: string | undefined;
 const USAGE = renderCliUsage();
 
 interface CliInvocation {
+	workspaceOptions: Map<string, string[]>;
 	scope: string;
 	action: string;
 	rest: string[];
@@ -238,6 +241,7 @@ function readClearableFlagValue(
 }
 
 interface ParsedCliHead {
+	workspaceOptions: Map<string, string[]>;
 	positionals: string[];
 	flagsUsed: Set<string>;
 	dependsOn: string[];
@@ -264,6 +268,7 @@ interface ParsedCliHead {
 
 function parseCliHead(head: readonly string[]): ParsedCliHead {
 	const positionals: string[] = [];
+	const workspaceOptions = new Map<string, string[]>();
 	const flagsUsed = new Set<string>();
 	const dependsOn: string[] = [];
 	const links: string[] = [];
@@ -290,6 +295,22 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		}
 		flagsUsed.add(part);
 		switch (part) {
+			case "--goal":
+			case "--max-parallel":
+			case "--claim-updated-at": {
+				const name = part.slice(2);
+				workspaceOptions.set(name, [
+					...(workspaceOptions.get(name) ?? []),
+					readFlagValue(head, index, part, "a value"),
+				]);
+				index++;
+				break;
+			}
+			case "--release":
+			case "--force":
+			case "--help":
+				workspaceOptions.set(part.slice(2), []);
+				break;
 			case "--json":
 				json = true;
 				break;
@@ -377,6 +398,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	};
 	return {
 		positionals,
+		workspaceOptions,
 		flagsUsed,
 		dependsOn,
 		links,
@@ -1342,6 +1364,10 @@ async function run(invocation: CliInvocation): Promise<void> {
 		process.stdout.write(`${USAGE}\n`);
 		return;
 	}
+	if (invocation.action === "workspace") {
+		await runWorkspace(invocation, packageVersion);
+		return;
+	}
 	const location = resolveProjectLocation(invocation);
 	const service = new WorklistApplicationService({ projectPath: location.worklist.path });
 
@@ -1618,6 +1644,25 @@ const invocation = parseArgs(process.argv.slice(2));
 try {
 	await run(invocation);
 } catch (error) {
+	if (invocation.action === "workspace") {
+		const code =
+			error instanceof WorkspaceUsageError
+				? 2
+				: error instanceof DispatchBoundaryError
+					? exitCodeForError(error.worklistError.code)
+					: 1;
+		if (invocation.json) {
+			const details =
+				error instanceof DispatchBoundaryError
+					? error.worklistError
+					: { message: error instanceof Error ? error.message : String(error) };
+			process.stderr.write(
+				`${JSON.stringify({ ok: false, scope: "project", action: `workspace ${invocation.rest[0] ?? "help"}`, error: details, meta: { cliVersion: packageVersion } }, null, 2)}\n`,
+			);
+			process.exit(code);
+		}
+		fail(error instanceof Error ? error.message : String(error), code);
+	}
 	if (error instanceof WorklistCliFailure) {
 		const code = exitCodeForError(error.envelope.error.code);
 		if (invocation.json) {

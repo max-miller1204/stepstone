@@ -1,12 +1,12 @@
 {
 	"name": "stepstone",
-	"version": "0.11.2",
+	"version": "0.12.0",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "stepstone",
-			"version": "0.11.2",
+			"version": "0.12.0",
 			"bundleDependencies": [
 				"proper-lockfile",
 				"zod"
@@ -17,8 +17,7 @@
 				"zod": "^4.4.3"
 			},
 			"bin": {
-				"stepstone": "dist/cli.js",
-				"stepstone-dispatch": "dist/dispatch.js"
+				"stepstone": "dist/cli.js"
 			},
 			"devDependencies": {
 				"@biomejs/biome": "^2.2.4",

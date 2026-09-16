@@ -368,7 +368,8 @@ describe("single CLI command contract", () => {
 		const unconditionallySafe = new Set([...safeLine.matchAll(/`([a-z_-]+)`/g)].map(([, name]) => name));
 
 		for (const action of CLI_COMMAND_CONTRACT.actions) {
-			const gated = action.confirmRequired || action.interactive || action.name === "help";
+			const gated =
+				action.confirmRequired || action.interactive || action.approvalScoped || action.name === "help";
 			const owned = action.captureWorkflow !== undefined;
 			expect(
 				unconditionallySafe.has(action.name),
@@ -773,6 +774,7 @@ describe("single CLI command contract", () => {
 			"delete",
 			"migrate_ids",
 			"migrate_path",
+			"workspace",
 			"help",
 		]);
 

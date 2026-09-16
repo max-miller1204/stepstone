@@ -113,6 +113,37 @@ describe("shell completion installation", () => {
 		await expect(execFileAsync("zsh", ["-n", paths.zsh])).resolves.toBeDefined();
 	});
 
+	it("completes workspace actions and only their accepted flags in Bash and Zsh", async () => {
+		const dataHome = await mkdtemp(join(tmpdir(), "stepstone-workspace-completion-"));
+		await installShellCompletions({ XDG_DATA_HOME: dataHome });
+		const paths = installedCompletionPaths({ ...process.env, XDG_DATA_HOME: dataHome });
+		for (const complete of [
+			(words: string[]) => runBashCompletion(paths.bash, words),
+			(words: string[]) => runZshCompletion(paths.zsh, words, dataHome),
+		]) {
+			expect(await complete([CLI_COMMAND_CONTRACT.binary, "project", "workspace", ""])).toEqual(
+				expect.arrayContaining(["start", "resume", "status", "inspect", "recover", "cleanup"]),
+			);
+			const common = await complete([CLI_COMMAND_CONTRACT.binary, "project", "workspace", "--"]);
+			expect(common).toEqual(expect.arrayContaining(["--cwd", "--json", "--help"]));
+			expect(common).not.toContain("--file");
+			const start = await complete([CLI_COMMAND_CONTRACT.binary, "project", "workspace", "start", "--"]);
+			expect(start).toContain("--goal");
+			expect(start).not.toContain("--force");
+			expect(start).not.toContain("--file");
+			const cleanup = await complete([
+				CLI_COMMAND_CONTRACT.binary,
+				"project",
+				"workspace",
+				"cleanup",
+				"run",
+				"--",
+			]);
+			expect(cleanup).toContain("--force");
+			expect(cleanup).not.toContain("--goal");
+		}
+	});
+
 	it("completes the scope, actions, action flags, and move placements in Bash", async () => {
 		const dataHome = await mkdtemp(join(tmpdir(), "stepstone-completion-behavior-"));
 		const paths = installedCompletionPaths({ XDG_DATA_HOME: dataHome });

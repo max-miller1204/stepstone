@@ -1,6 +1,6 @@
-#!/usr/bin/env node
 import { realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { CLI_COMMAND_CONTRACT, renderWorkspaceUsage } from "./cli-contract.ts";
 import {
 	ApplicationRoadmapBinding,
 	currentDispatchTarget,
@@ -9,92 +9,45 @@ import {
 	GitHubMergeEvidenceBinding,
 	GitWorktreeBinding,
 } from "./dispatch-bindings.ts";
-import {
-	DISPATCH_GOAL_FILE,
-	DispatchBoundaryError,
-	DispatchDriver,
-	type DispatchRun,
-	type DispatchWorkspaceConfig,
-} from "./dispatch-driver.ts";
+import { DispatchDriver, type DispatchRun, type DispatchWorkspaceConfig } from "./dispatch-driver.ts";
 import { resolveGitRoot, resolveWorktreePlacement } from "./git.ts";
 
 interface Invocation {
 	action: string;
 	positionals: string[];
 	options: Map<string, string[]>;
-	json: boolean;
 }
 
-const HELP = `Usage: stepstone-dispatch <action> [arguments] [flags]
+export interface WorkspaceInvocation {
+	description?: string;
+	rest: string[];
+	cwd: string;
+	json: boolean;
+	workspaceParent?: string;
+	workspaceOptions: Map<string, string[]>;
+	flagsUsed: ReadonlySet<string>;
+}
 
-Actions:
-  start --goal <id>... [preparation flags]
-  resume <run-id>
-  status [run-id]
-  inspect <run-id> <goal-id>
-  recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]
-  cleanup <run-id> [goal-id] [--force]
+export class WorkspaceUsageError extends Error {}
 
-Preparation flags for start:
-  --workspace-parent <path>            Worktree parent directory
-  --max-parallel <count>               Maximum prepared claims; default: 1
-
-Common flags:
-  --cwd <repository>                   Default: current directory
-  --json
-  --help
-
-Cleanup --force requires a goal ID and explicitly discards uncommitted, unpushed,
-or unmerged work. Workspace identity checks always apply.
-
-Each prepared workspace contains an ignored ${DISPATCH_GOAL_FILE} handoff at its root.
-Stepstone prepares and claims workspaces. It never starts, prompts, or supervises an agent.
-`;
-
-function parseArguments(argv: string[]): Invocation {
-	const options = new Map<string, string[]>();
-	const positionals: string[] = [];
-	const valueOptions = new Set(["cwd", "goal", "workspace-parent", "max-parallel", "claim-updated-at"]);
-	let json = false;
-	for (let index = 0; index < argv.length; index += 1) {
-		const token = argv[index];
-		if (token === "--json") {
-			json = true;
-			continue;
-		}
-		if (token === "--help" || token === "-h") {
-			options.set("help", []);
-			continue;
-		}
-		if (token === "--release" || token === "--force") {
-			options.set(token.slice(2), []);
-			continue;
-		}
-		if (token.startsWith("--")) {
-			const name = token.slice(2);
-			if (!valueOptions.has(name)) throw new Error(`Unknown flag ${token}`);
-			const value = argv[index + 1];
-			if (value === undefined || value.startsWith("--")) throw new Error(`${token} requires a value`);
-			options.set(name, [...(options.get(name) ?? []), value]);
-			index += 1;
-			continue;
-		}
-		positionals.push(token);
-	}
-	return { action: positionals.shift() ?? "help", positionals, options, json };
+interface WorkspaceOutput {
+	json: boolean;
+	action: string;
+	cliVersion: string;
 }
 
 function one(invocation: Invocation, name: string): string | undefined {
 	const values = invocation.options.get(name);
 	if (!values) return undefined;
-	if (values.length !== 1) throw new Error(`--${name} may be passed only once`);
+	if (values.length !== 1) throw new WorkspaceUsageError(`--${name} may be passed only once`);
 	return values[0];
 }
 
 function positiveInteger(value: string | undefined, fallback: number, name: string): number {
 	if (value === undefined) return fallback;
 	const parsed = Number(value);
-	if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`--${name} must be a positive integer`);
+	if (!Number.isSafeInteger(parsed) || parsed < 1)
+		throw new WorkspaceUsageError(`--${name} must be a positive integer`);
 	return parsed;
 }
 
@@ -102,7 +55,7 @@ function requireMainWorktree(repositoryRoot: string): void {
 	const placement = resolveWorktreePlacement(repositoryRoot);
 	if (placement.kind === "linked") {
 		throw new Error(
-			`Dispatch must run from the repository's main worktree, not linked worktree ${repositoryRoot}`,
+			`Project workspace commands must run from the repository's main worktree, not linked worktree ${repositoryRoot}`,
 		);
 	}
 	if (placement.kind === "unavailable") throw new Error(placement.failure.message);
@@ -170,17 +123,19 @@ function humanRun(run: DispatchRun, reportPass: boolean): string {
 	return `${lines.join("\n")}\n`;
 }
 
-function printRun(run: DispatchRun, json: boolean, reportPass: boolean): void {
-	if (json) {
-		print(summarize(run, reportPass), true);
+function printRun(run: DispatchRun, output: WorkspaceOutput, reportPass: boolean): void {
+	if (output.json) {
+		print(summarize(run, reportPass), output);
 		return;
 	}
 	process.stdout.write(humanRun(run, reportPass));
 }
 
-function print(value: unknown, json: boolean): void {
-	if (json) {
-		process.stdout.write(`${JSON.stringify({ ok: true, result: value }, null, 2)}\n`);
+function print(value: unknown, output: WorkspaceOutput): void {
+	if (output.json) {
+		process.stdout.write(
+			`${JSON.stringify({ ok: true, scope: "project", action: `workspace ${output.action}`, result: value, meta: { cliVersion: output.cliVersion } }, null, 2)}\n`,
+		);
 		return;
 	}
 	if (Array.isArray(value)) {
@@ -206,14 +161,29 @@ function assertRunRepository(run: DispatchRun, repositoryRoot: string): void {
 	}
 }
 
-async function main(): Promise<void> {
-	const invocation = parseArguments(process.argv.slice(2));
-	if (invocation.action === "help" || invocation.options.has("help")) {
-		process.stdout.write(HELP);
-		return;
+export async function runWorkspace(input: WorkspaceInvocation, cliVersion: string): Promise<void> {
+	if (input.description !== undefined)
+		throw new WorkspaceUsageError("project workspace does not accept description text");
+	const [action = "help", ...positionals] = input.rest;
+	const invocation: Invocation = {
+		action,
+		positionals,
+		options: new Map(input.workspaceOptions),
+	};
+	invocation.options.set("cwd", [input.cwd]);
+	if (input.workspaceParent !== undefined)
+		invocation.options.set("workspace-parent", [input.workspaceParent]);
+	const output: WorkspaceOutput = { json: input.json, action, cliVersion };
+	const command = CLI_COMMAND_CONTRACT.workspaceActions.find((entry) => entry.name === action);
+	if (action !== "help" && !command) throw new WorkspaceUsageError(`Unknown workspace action ${action}`);
+	const allowed = new Set<string>(["--cwd", "--json", "--help", ...(command?.flags ?? [])]);
+	for (const flag of input.flagsUsed) {
+		if (!allowed.has(flag))
+			throw new WorkspaceUsageError(`${flag} is not valid for project workspace ${action}`);
 	}
-	if (invocation.options.has("force") && invocation.action !== "cleanup") {
-		throw new Error("--force is only valid for cleanup");
+	if (invocation.action === "help" || invocation.options.has("help")) {
+		process.stdout.write(renderWorkspaceUsage());
+		return;
 	}
 	const cwd = resolve(one(invocation, "cwd") ?? process.cwd());
 	const rootResult = resolveGitRoot(cwd);
@@ -225,7 +195,7 @@ async function main(): Promise<void> {
 	switch (invocation.action) {
 		case "start": {
 			if (invocation.positionals.length > 0)
-				throw new Error("start accepts goal IDs through repeated --goal flags");
+				throw new WorkspaceUsageError("start accepts goal IDs through repeated --goal flags");
 			const workspaceParent = one(invocation, "workspace-parent");
 			const config: DispatchWorkspaceConfig = {
 				...(workspaceParent ? { workspaceParent: await realpath(resolve(workspaceParent)) } : {}),
@@ -254,44 +224,47 @@ async function main(): Promise<void> {
 				workspaceConfig: config,
 			});
 			const advanced = await store.withRunLock(run.id, () => driver.advance(run.id));
-			printRun(advanced, invocation.json, true);
+			printRun(advanced, output, true);
 			return;
 		}
 		case "resume": {
-			if (invocation.positionals.length !== 1) throw new Error("resume requires exactly one run ID");
+			if (invocation.positionals.length !== 1)
+				throw new WorkspaceUsageError("resume requires exactly one run ID");
 			const runId = invocation.positionals[0];
 			const advanced = await store.withRunLock(runId, async () => {
 				const run = await store.load(runId);
 				assertRunRepository(run, repositoryRoot);
 				return createDriver(run, store).advance(run.id);
 			});
-			printRun(advanced, invocation.json, true);
+			printRun(advanced, output, true);
 			return;
 		}
 		case "status": {
-			if (invocation.positionals.length > 1) throw new Error("status accepts at most one run ID");
+			if (invocation.positionals.length > 1)
+				throw new WorkspaceUsageError("status accepts at most one run ID");
 			const runs = invocation.positionals[0]
 				? [await store.load(invocation.positionals[0])]
 				: await store.list();
 			for (const run of runs) assertRunRepository(run, repositoryRoot);
 			print(
 				runs.map((run) => summarize(run)),
-				invocation.json,
+				output,
 			);
 			return;
 		}
 		case "inspect": {
-			if (invocation.positionals.length !== 2) throw new Error("inspect requires a run ID and goal ID");
+			if (invocation.positionals.length !== 2)
+				throw new WorkspaceUsageError("inspect requires a run ID and goal ID");
 			const run = await store.load(invocation.positionals[0]);
 			assertRunRepository(run, repositoryRoot);
 			const entry = run.entries[invocation.positionals[1]];
 			if (!entry) throw new Error(`Run ${run.id} has no entry for goal ${invocation.positionals[1]}`);
-			print({ run: summarize(run), goal: entry }, invocation.json);
+			print({ run: summarize(run), goal: entry }, output);
 			return;
 		}
 		case "recover": {
 			if (invocation.positionals.length !== 2 || !invocation.options.has("release")) {
-				throw new Error("recover requires a run ID, goal ID, and --release");
+				throw new WorkspaceUsageError("recover requires a run ID, goal ID, and --release");
 			}
 			const runId = invocation.positionals[0];
 			const recovered = await store.withRunLock(runId, async () => {
@@ -303,12 +276,12 @@ async function main(): Promise<void> {
 					one(invocation, "claim-updated-at"),
 				);
 			});
-			printRun(recovered, invocation.json, false);
+			printRun(recovered, output, false);
 			return;
 		}
 		case "cleanup": {
 			if (invocation.positionals.length < 1 || invocation.positionals.length > 2) {
-				throw new Error("cleanup requires a run ID and optional goal ID");
+				throw new WorkspaceUsageError("cleanup requires a run ID and optional goal ID");
 			}
 			const runId = invocation.positionals[0];
 			const result = await store.withRunLock(runId, async () => {
@@ -320,22 +293,11 @@ async function main(): Promise<void> {
 					invocation.options.has("force"),
 				);
 			});
-			if (result) printRun(result, invocation.json, false);
-			else print({ removedRunId: runId }, invocation.json);
+			if (result) printRun(result, output, false);
+			else print({ removedRunId: runId }, output);
 			return;
 		}
 		default:
 			throw new Error(`Unknown action ${invocation.action}`);
 	}
 }
-
-main().catch((error: unknown) => {
-	const message = error instanceof Error ? error.message : String(error);
-	if (process.argv.includes("--json")) {
-		const details = error instanceof DispatchBoundaryError ? error.worklistError : { message };
-		process.stdout.write(`${JSON.stringify({ ok: false, error: details }, null, 2)}\n`);
-	} else {
-		process.stderr.write(`stepstone-dispatch: ${message}\n`);
-	}
-	process.exitCode = 1;
-});

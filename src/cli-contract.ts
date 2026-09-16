@@ -10,6 +10,8 @@ export interface CliActionContract {
 	name: string;
 	usage: string;
 	summary: string;
+	/** Contains operations limited to an explicitly approved plan or recovery. */
+	approvalScoped?: boolean;
 	/** Requires --confirm and an explicit user request. */
 	confirmRequired?: boolean;
 	/** Takes over the terminal until the user quits; agents must never run it. */
@@ -98,14 +100,14 @@ export const GENERATOR_PATH = "scripts/generate-docs.ts";
 export const DOCS_PATH = "docs/cli.md";
 
 /**
- * Repository-relative path of the authored dispatch recipe the skill points at.
+ * Repository-relative path of the authored workspace recipe the skill points at.
  *
  * Named here so the skill renders the same qualified path it renders for the
  * command reference: an agent reading the installed skill from a consumer
  * repository resolves a bare `docs/` path against that repository, where the
  * page does not exist.
  */
-export const DISPATCH_DOCS_PATH = "docs/dispatch.md";
+export const WORKSPACE_DOCS_PATH = "docs/workspaces.md";
 
 /**
  * Repository-relative path of the generated agent skill.
@@ -115,12 +117,8 @@ export const DISPATCH_DOCS_PATH = "docs/dispatch.md";
  */
 export const SKILL_PATH = `.claude/skills/${BINARY}/SKILL.md`;
 
-/** Published companion executable that runs the resumable dispatch contract. */
-export const DISPATCH_BINARY = `${BINARY}-dispatch`;
-
 export const CLI_COMMAND_CONTRACT = {
 	binary: BINARY,
-	dispatchBinary: DISPATCH_BINARY,
 	scope: "project",
 	completion: {
 		usage: "completion install",
@@ -139,6 +137,39 @@ export const CLI_COMMAND_CONTRACT = {
 		/** Node floor for running src/cli.ts directly, which relies on native type stripping. */
 		sourceNodeFloor: "22.18",
 	},
+	workspaceActions: [
+		{
+			name: "start",
+			usage: "start --goal <id>... [--max-parallel <count>] [--workspace-parent <path>]",
+			summary: "Prepare and claim approved goals",
+			flags: ["--goal", "--max-parallel", "--workspace-parent"],
+		},
+		{
+			name: "resume",
+			usage: "resume <run-id>",
+			summary: "Reconcile merged work and refill preparation capacity",
+			flags: [],
+		},
+		{ name: "status", usage: "status [run-id]", summary: "Read persisted run status", flags: [] },
+		{
+			name: "inspect",
+			usage: "inspect <run-id> <goal-id>",
+			summary: "Read complete workspace custody",
+			flags: [],
+		},
+		{
+			name: "recover",
+			usage: "recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]",
+			summary: "Release an inspected claim and attempt cleanup",
+			flags: ["--release", "--claim-updated-at"],
+		},
+		{
+			name: "cleanup",
+			usage: "cleanup <run-id> [goal-id] [--force]",
+			summary: "Remove verified completed or released workspaces",
+			flags: ["--force"],
+		},
+	],
 	actions: [
 		{
 			name: "list",
@@ -265,12 +296,51 @@ export const CLI_COMMAND_CONTRACT = {
 			confirmRequired: true,
 		},
 		{
+			name: "workspace",
+			approvalScoped: true,
+			usage: "workspace <action> [arguments] [flags]",
+			summary:
+				"Prepare, inspect, reconcile, recover, and clean up approved goal workspaces; workspace help lists actions",
+		},
+		{
 			name: "help",
 			usage: "help",
 			summary: "Print this help",
 		},
 	] satisfies CliActionContract[],
 	flags: [
+		{
+			name: "--goal",
+			usage: "--goal <id>",
+			summary: "Authorize one goal for workspace start; repeat for the approved set",
+			actions: ["workspace"],
+		},
+		{
+			name: "--max-parallel",
+			usage: "--max-parallel <count>",
+			summary: "Limit workspace start to this many prepared claims (default 1)",
+			actions: ["workspace"],
+		},
+		{
+			name: "--release",
+			usage: "--release",
+			summary: "Explicitly release the inspected claim with workspace recover",
+			actions: ["workspace"],
+		},
+		{
+			name: "--claim-updated-at",
+			usage: "--claim-updated-at <timestamp>",
+			summary: "Supply a verified claim token for workspace recover",
+			actions: ["workspace"],
+		},
+		{
+			name: "--force",
+			usage: "--force",
+			summary:
+				"Explicitly discard work with workspace cleanup; requires a goal ID and preserves identity checks",
+			actions: ["workspace"],
+		},
+		{ name: "--help", usage: "--help", summary: "Show workspace command help", actions: ["workspace"] },
 		{
 			name: "--json",
 			usage: "--json",
@@ -351,7 +421,7 @@ export const CLI_COMMAND_CONTRACT = {
 			usage: "--workspace-parent <path>",
 			summary:
 				"Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode",
-			actions: ["start"],
+			actions: ["start", "workspace"],
 		},
 		{
 			name: "--clear",
@@ -490,8 +560,8 @@ export const CLI_COMMAND_CONTRACT = {
 		"All three are reads derived from the stored edges the same way `blocked` is, so nothing is cached and no command has to be re-run to refresh them.",
 	],
 	dispatchRules: [
-		`Start an approved preparation run with \`npx -y -p ${BINARY}@latest ${DISPATCH_BINARY} start --goal <id>...\`; repeated goal IDs are the immutable authorization allow-list.`,
-		"The published driver selects only allow-listed goals returned by a fresh ready frontier, prepares an isolated workspace, claims each exact `updatedAt`, and limits how many prepared claims it may hold at once.",
+		`Start an approved preparation run with \`npx -y ${BINARY}@latest project workspace start --goal <id>...\`; repeated goal IDs are the immutable authorization allow-list.`,
+		"The workspace command selects only allow-listed goals returned by a fresh ready frontier, prepares an isolated workspace, claims each exact `updatedAt`, and limits how many prepared claims it may hold at once.",
 		"Read the `pass` result from `start` and `resume`: `no-ready-work` means no allow-listed goal can start, while `refused` or `mixed` names work that reached a preparation boundary and did not prepare.",
 		"Each refused entry keeps its original structured `preparationFailure` after release and cleanup; read it through `status --json` or `inspect --json` instead of relying on the latest lifecycle message.",
 		"Each newly prepared workspace contains an ignored `STEPSTONE_GOAL.md` at its root with the goal ID, title, description, snapshot time, prepared branch, dependencies, links, and linked-worktree boundary; read that file before starting work.",
@@ -743,7 +813,8 @@ export function renderSkillReferenceMarkdown(): string {
 			!action.confirmRequired &&
 			!action.interactive &&
 			action.name !== "help" &&
-			action.captureWorkflow === undefined,
+			action.captureWorkflow === undefined &&
+			!action.approvalScoped,
 	);
 	const interactiveActions = contract.actions.filter((action) => action.interactive);
 	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
@@ -859,7 +930,7 @@ export function renderSkillReferenceMarkdown(): string {
 		"",
 		...contract.dispatchRules.map((rule) => `- ${rule}`),
 		"",
-		`Git workspace preparation, recovery, and cleanup rules are documented in the package's \`${DISPATCH_DOCS_PATH}\`.`,
+		`Git workspace preparation, recovery, and cleanup rules are documented in the package's \`${WORKSPACE_DOCS_PATH}\`.`,
 		"",
 		"## Guardrails",
 		"",
@@ -874,6 +945,7 @@ export function renderSkillReferenceMarkdown(): string {
 		`- Exit code 4 (${exitCodeMeaning(4)}) means a concurrent change conflicted with yours; re-read current state with \`list\` or \`show\` before retrying.`,
 		"  A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.",
 		`- ${actionNameList(safeActions)} are safe to run whenever they serve the user's request.`,
+		"- `workspace status` and `workspace inspect` are reads; `workspace start` needs the approved goal set, `resume` keeps that authorization, and recovery or destructive cleanup needs explicit operator intent.",
 		"- `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.",
 		`- ${actionNameList(interactiveActions)} opens a full-screen board for the human at the keyboard, not for you.`,
 		"  Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.",
@@ -944,6 +1016,18 @@ export function renderCliGuide(): string {
 		"",
 		...markdownTable(["Command", "Description"], actionRows),
 		"",
+		"## Workspace commands",
+		"",
+		...markdownTable(
+			["Command", "Description"],
+			contract.workspaceActions.map((action) => [
+				`\`npx -y ${publishedBinary} project workspace ${action.usage}\``,
+				action.summary,
+			]),
+		),
+		"",
+		`See [workspace preparation, recovery, and cleanup](workspaces.md). Existing version 2 dispatch state is read in place; no migration is needed.`,
+		"",
 		"## Flags",
 		"",
 		...markdownTable(["Flag", "Description"], flagRows),
@@ -988,6 +1072,23 @@ export function renderCliGuide(): string {
 		"## Agent guidance",
 		"",
 		...guidelineLines,
+		"",
+	].join("\n");
+}
+
+/** Help for the project CLI's resumable workspace command family. */
+export function renderWorkspaceUsage(): string {
+	return [
+		`Usage: ${CLI_COMMAND_CONTRACT.binary} project workspace <action> [arguments] [flags]`,
+		"",
+		"Workspace actions:",
+		...CLI_COMMAND_CONTRACT.workspaceActions.map((action) => `  ${action.usage}\n    ${action.summary}`),
+		"",
+		"Use --cwd <repository> to select the main worktree; --json emits a result envelope.",
+		"Each prepared workspace contains an ignored STEPSTONE_GOAL.md handoff at its root.",
+		"Stepstone prepares and claims workspaces. It never starts, prompts, or supervises an agent.",
+		"Cleanup --force requires a goal ID and explicitly discards uncommitted, unpushed,",
+		"or unmerged work. Workspace identity checks always apply.",
 		"",
 	].join("\n");
 }

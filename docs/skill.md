@@ -26,7 +26,7 @@ The [`skills` CLI](https://github.com/vercel-labs/skills) reads `.claude/skills/
 Installing the npm package does not install the skill.
 The tarball carries `.claude/skills/stepstone/SKILL.md` so the published package stays self-describing, but `node_modules` is not a directory agents scan for skills.
 
-The skill installs no code and pins no version: it invokes the published CLI as `npx -y stepstone@latest` and the workspace-preparation driver as `npx -y -p stepstone@latest stepstone-dispatch`, so an agent that loads it is always driving the current release.
+The skill installs no code and pins no version: it invokes the published CLI as `npx -y stepstone@latest` including workspace preparation as `npx -y stepstone@latest project workspace`, so an agent that loads it is always driving the current release.
 
 ## How it is produced
 

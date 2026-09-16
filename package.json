@@ -1,6 +1,6 @@
 {
 	"name": "stepstone",
-	"version": "0.11.2",
+	"version": "0.12.0",
 	"description": "A shared roadmap of project goals for coding agents and the humans working beside them.",
 	"type": "module",
 	"keywords": [
@@ -38,8 +38,7 @@
 		"package.json"
 	],
 	"bin": {
-		"stepstone": "dist/cli.js",
-		"stepstone-dispatch": "dist/dispatch.js"
+		"stepstone": "dist/cli.js"
 	},
 	"main": "./src/extension.ts",
 	"exports": {
@@ -54,7 +53,6 @@
 	},
 	"scripts": {
 		"worklist": "node ./src/cli.ts",
-		"dispatch": "node ./src/dispatch.ts",
 		"demo:screenshots": "node ./scripts/create-screenshot-demo.ts",
 		"screenshots:update": "node ./scripts/update-screenshots.ts",
 		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",

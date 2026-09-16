@@ -32,4 +32,4 @@ Source-level import scans and a CI job enforce this rule by installing the packe
 See [goals.md](goals.md) for the goal model.
 See [dependencies.md](dependencies.md) for dependency sequencing.
 See [storage.md](storage.md) for persistence and concurrency.
-See [dispatch.md](dispatch.md) for prepared workspaces.
+See [workspaces.md](workspaces.md) for prepared workspaces.

@@ -61,12 +61,32 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `npx -y stepstone@latest project delete <id> --confirm` | Delete a goal permanently. Requires explicit user confirmation |
 | `npx -y stepstone@latest project migrate_ids --confirm` | Rewrite randomly generated goal IDs as title-derived ones. Requires explicit user confirmation |
 | `npx -y stepstone@latest project migrate_path --confirm` | Move the goal file from the legacy path to .worklist/worklist.json. Requires explicit user confirmation |
+| `npx -y stepstone@latest project workspace <action> [arguments] [flags]` | Prepare, inspect, reconcile, recover, and clean up approved goal workspaces; workspace help lists actions |
 | `npx -y stepstone@latest project help` | Print this help |
+
+## Workspace commands
+
+| Command | Description |
+| --- | --- |
+| `npx -y stepstone@latest project workspace start --goal <id>... [--max-parallel <count>] [--workspace-parent <path>]` | Prepare and claim approved goals |
+| `npx -y stepstone@latest project workspace resume <run-id>` | Reconcile merged work and refill preparation capacity |
+| `npx -y stepstone@latest project workspace status [run-id]` | Read persisted run status |
+| `npx -y stepstone@latest project workspace inspect <run-id> <goal-id>` | Read complete workspace custody |
+| `npx -y stepstone@latest project workspace recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]` | Release an inspected claim and attempt cleanup |
+| `npx -y stepstone@latest project workspace cleanup <run-id> [goal-id] [--force]` | Remove verified completed or released workspaces |
+
+See [workspace preparation, recovery, and cleanup](workspaces.md). Existing version 2 dispatch state is read in place; no migration is needed.
 
 ## Flags
 
 | Flag | Description |
 | --- | --- |
+| `--goal <id>` | Authorize one goal for workspace start; repeat for the approved set; only for project workspace |
+| `--max-parallel <count>` | Limit workspace start to this many prepared claims (default 1); only for project workspace |
+| `--release` | Explicitly release the inspected claim with workspace recover; only for project workspace |
+| `--claim-updated-at <timestamp>` | Supply a verified claim token for workspace recover; only for project workspace |
+| `--force` | Explicitly discard work with workspace cleanup; requires a goal ID and preserves identity checks; only for project workspace |
+| `--help` | Show workspace command help; only for project workspace |
 | `--json` | Print the deterministic result envelope as JSON (stdout on success, stderr on failure) |
 | `--confirm` | Acknowledge an action that requires confirmation; pass it only for an explicit user request |
 | `--cwd <dir>` | Resolve the git root from this directory instead of the working directory |
@@ -79,7 +99,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `--link <url>` | Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update |
 | `--branch <name>` | Record the branch working on a goal; project start defaults to the current Git branch; only for project start |
 | `--worktree` | Create and claim the deterministic `stepstone/<goal-id>` branch in a linked Git worktree beside the main checkout; only for project start |
-| `--workspace-parent <path>` | Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode; only for project start |
+| `--workspace-parent <path>` | Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode; only for project start and workspace |
 | `--clear` | Release the branch claim on a goal; only for project start |
 | `--expect-updated-at <timestamp>` | Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete |
 | `--dry-run` | Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path |

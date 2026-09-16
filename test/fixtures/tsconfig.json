@@ -11,5 +11,5 @@
 		"sourceMap": false
 	},
 	"include": [],
-	"files": ["dispatch-boundary.ts", "../../src/dispatch.ts"]
+	"files": ["dispatch-boundary.ts", "../../src/cli.ts"]
 }

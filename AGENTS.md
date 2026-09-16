@@ -31,7 +31,6 @@ See `docs/storage.md`, `docs/dependencies.md`, and `docs/pi.md`.
 - Add executables to the manifest `bin` map and `BIN_EXERCISES`.
 - Run `npm run imports:check` and `npm run no-pi-install:check`.
 - Treat `CLI_COMMAND_CONTRACT.binary` as the published identity source.
-- Derive the companion executable name with `DISPATCH_BINARY`.
 - Keep persistent dispatch namespaces unchanged during package renames.
 
 See `docs/development.md` for checks and package rules.

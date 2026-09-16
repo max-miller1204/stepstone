@@ -21,7 +21,6 @@ const manifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8
 	bin: Record<string, string>;
 };
 const binary = manifest.name;
-const dispatchBinary = `${binary}-dispatch`;
 const install = join(h.root, "install");
 const packagePath = join(install, "node_modules", manifest.name);
 // Resolve the executable from the packed manifest, never from dist in this checkout.
@@ -70,7 +69,7 @@ async function installed(): Promise<void> {
 		await readFile(join(packagePath, "package.json"), "utf8"),
 	) as typeof manifest;
 	assert.equal(installedManifest.version, manifest.version);
-	assert.deepEqual(Object.keys(installedManifest.bin).sort(), [binary, dispatchBinary].sort());
+	assert.deepEqual(Object.keys(installedManifest.bin).sort(), [binary]);
 	bins = Object.fromEntries(
 		Object.entries(installedManifest.bin).map(([name, path]) => [name, join(packagePath, path)]),
 	);
@@ -79,10 +78,10 @@ async function installed(): Promise<void> {
 		files.filter((path) => /(^|[/\\])(@earendil-works|typebox)([/\\]|$)/.test(path)),
 		[],
 	);
-	// Both entry points must start even in the fast subset. The project CLI's
+	// Both project command families must start even in the fast subset. The CLI's
 	// top-level help is a usage error, so exercise its normal JSON read instead.
 	assert.deepEqual(await ids(await h.repository("installed-bin")), []);
-	await h.checked(process.execPath, [bins[dispatchBinary] as string, "--help"], install);
+	await h.checked(process.execPath, [bins[binary] as string, "project", "workspace", "--help"], install);
 }
 
 async function plansAndConflicts(): Promise<void> {
@@ -297,7 +296,9 @@ async function workspacePreparation(): Promise<void> {
 	const result = await h.checked(
 		process.execPath,
 		[
-			bins[dispatchBinary] as string,
+			bins[binary] as string,
+			"project",
+			"workspace",
 			"start",
 			"--goal",
 			"prepared-goal",
@@ -329,7 +330,7 @@ async function workspacePreparation(): Promise<void> {
 	const status = JSON.parse(
 		await h.checked(
 			process.execPath,
-			[bins[dispatchBinary] as string, "status", receipt.result.id, "--json"],
+			[bins[binary] as string, "project", "workspace", "status", receipt.result.id, "--json"],
 			cwd,
 		),
 	);

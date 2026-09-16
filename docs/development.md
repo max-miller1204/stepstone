@@ -13,7 +13,7 @@ npm run no-pi-install:check
 
 `npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
 The `node src/cli.ts` entry point needs Node 22.18 or newer for native type stripping.
-`npm run dispatch` runs this checkout's second published executable, the workspace-preparation driver in `src/dispatch.ts`, under that same requirement; [docs/dispatch.md](dispatch.md) documents what it does.
+`node src/cli.ts project workspace <action>` manages resumable workspace preparation under that same requirement; [docs/workspaces.md](workspaces.md) documents preparation, custody, recovery, reconciliation, and cleanup.
 The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for published executables, which Node refuses to type-strip under `node_modules`.
 
 ## Checks
@@ -62,7 +62,7 @@ It installs one tarball offline with optional peers omitted, asserts that the in
 The RPC scenarios launch the pinned development Pi executable with the **installed package** as its extension, with no provider credentials or model requests.
 The harness imports only Node APIs and its subprocess helpers; it never imports Stepstone application internals.
 
-`npm run test:e2e:fast` is the representative pre-PR subset: empty reads, first writes, approved-plan preview and application, all-or-nothing invalid plans, lifecycle confirmation, optimistic conflicts, both executable entry points, and Session Task/Project Goal changes through packed Pi RPC.
+`npm run test:e2e:fast` is the representative pre-PR subset: empty reads, first writes, approved-plan preview and application, all-or-nothing invalid plans, lifecycle confirmation, optimistic conflicts, workspace command help, and Session Task/Project Goal changes through packed Pi RPC.
 `npm run test:e2e` adds legacy/current/environment/explicit location precedence, live Pi location changes, held-lock refusal, concurrent batch writers with atomic-file observations, linked-worktree read/no-op/preview/refusal behavior, generated-roadmap drift and regeneration, and dispatch preparation through persisted status and the goal handoff.
 Roadmap generation invokes the repository's real generator script in a disposable source copy because generated `docs/ROADMAP.md` is deliberately excluded from the published package.
 
@@ -119,7 +119,7 @@ That is why a Pi type belongs in an `import type` statement rather than an inlin
 It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and drives every published executable through the behavior-specific function named in `BIN_EXERCISES`.
 The manifest's `bin` map is compared against that exercise map before packing, so a new executable cannot ship without being started from the isolated install.
 The project CLI exercise asserts exit codes and `--json` envelopes across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
-The dispatch exercise starts the installed driver, prepares a real worktree, and reads its ignored `STEPSTONE_GOAL.md` handoff before checking persisted status; the preparation-only contract needs no agent executable.
+The project CLI exercise also runs `project workspace start`, prepares a real worktree, and reads its ignored `STEPSTONE_GOAL.md` handoff before checking persisted status through `project workspace status`; the preparation-only contract needs no agent executable.
 The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 The check launches npm with the current Node executable and `npm_execpath`, preserving the npm implementation that started it without resolving an npm shell shim.

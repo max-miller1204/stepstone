@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { copyFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -18,5 +19,6 @@ export async function compileWorkspaceFixture(suite: "process-boundary" | "clean
 		],
 		{ timeout: 30_000 },
 	);
+	await copyFile(resolve(import.meta.dirname, "../../package.json"), resolve(output, "package.json"));
 	return output;
 }

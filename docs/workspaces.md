@@ -1,6 +1,6 @@
 # Prepare approved goal workspaces
 
-`stepstone-dispatch` prepares isolated workspaces for an explicitly approved set of Project Goals. It claims each goal on the canonical roadmap, persists enough workspace custody to resume after interruption, and can complete a goal only after finding a matching merged pull request.
+`project workspace` in the Stepstone CLI prepares isolated workspaces for an explicitly approved set of Project Goals. It claims each goal on the canonical roadmap, persists enough workspace custody to resume after interruption, and can complete a goal only after finding a matching merged pull request.
 
 The published package's compiled bin supports workspace preparation on Linux and macOS with Node 20 or newer, Git, and the GitHub CLI (`gh`) for merged-work reconciliation. CI exercises Ubuntu and macOS on Node 20 and Node 24 LTS with real Git and gh. Windows and other operating systems are not supported until CI covers these behaviors and the repository scripts work there. See [development checks](https://github.com/max-miller1204/stepstone/blob/main/docs/development.md#checks) for the coverage and the newer runtime needed to run TypeScript source scripts.
 
@@ -11,7 +11,7 @@ It does **not** run an agent harness. It never starts a process or pane, submits
 Run the driver from the repository's main worktree:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch start \
+npx -y stepstone@latest project workspace start \
   --goal first-approved-goal \
   --goal second-approved-goal \
   --max-parallel 2 \
@@ -61,7 +61,7 @@ The goal snapshot is written before the canonical claim. If writing or ignoring 
 Preparation needs no tool beyond Git:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch start \
+npx -y stepstone@latest project workspace start \
   --goal approved-goal \
   --workspace-parent /absolute/workspace/parent \
   --json
@@ -87,7 +87,7 @@ Runtime state is stored under the repository's Git common directory at `stepston
 Resume after a restart or after prepared work lands:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch resume <run-id> --json
+npx -y stepstone@latest project workspace resume <run-id> --json
 ```
 
 A resume pass:
@@ -107,9 +107,9 @@ A closed terminal, an exited agent, silence, or an unmerged pull request is neve
 These actions only read persisted state:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch status --json
-npx -y -p stepstone@latest stepstone-dispatch status <run-id> --json
-npx -y -p stepstone@latest stepstone-dispatch inspect <run-id> <goal-id> --json
+npx -y stepstone@latest project workspace status --json
+npx -y stepstone@latest project workspace status <run-id> --json
+npx -y stepstone@latest project workspace inspect <run-id> <goal-id> --json
 ```
 
 `status` summarizes paths and phases. `inspect` includes the complete persisted goal and workspace custody record.
@@ -123,13 +123,13 @@ A refused preparation stores its first boundary failure in `preparationFailure`.
 After inspection, explicitly release an abandoned prepared claim:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch recover <run-id> <goal-id> --release --json
+npx -y stepstone@latest project workspace recover <run-id> <goal-id> --release --json
 ```
 
 If a claim reached the roadmap but its response was lost before the exact token was journaled, supply the `updatedAt` verified from the current claimed goal:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch recover <run-id> <goal-id> \
+npx -y stepstone@latest project workspace recover <run-id> <goal-id> \
   --release \
   --claim-updated-at <timestamp> \
   --json
@@ -144,7 +144,7 @@ A journaled completion outcome cannot be released through recovery. Use `resume`
 Completed or exactly released entries are cleaned automatically only when Git safety checks pass. Retry a pending cleanup with:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch cleanup <run-id> [goal-id] --json
+npx -y stepstone@latest project workspace cleanup <run-id> [goal-id] --json
 ```
 
 Without a goal ID, cleanup processes all eligible entries and removes the run record after every entry is `cleaned`. It refuses while an entry still owns a prepared claim.
@@ -166,7 +166,7 @@ Read the exact refusal reason in the entry's `message` through `cleanup`, `statu
 To intentionally discard an inspected workspace's uncommitted, unpushed, or unmerged work, explicitly name the goal and pass `--force`:
 
 ```sh
-npx -y -p stepstone@latest stepstone-dispatch cleanup <run-id> <goal-id> --force --json
+npx -y stepstone@latest project workspace cleanup <run-id> <goal-id> --force --json
 ```
 
 This override applies only to that invocation and goal. It is not accepted by `recover` or `resume`, cannot bypass a prepared claim or workspace identity checks, and is never persisted for an automatic retry. Successful forced cleanup records the override in the entry's message.
@@ -176,3 +176,11 @@ This override applies only to that invocation and goal. It is not accepted by `r
 Preparation-only runs use dispatch state version 2. The goal-file receipt is an additive optional field so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before inspecting merge evidence or making another canonical roadmap mutation for that prepared workspace.
 
 Version 1 belonged to the removed session-hosting driver and may contain live process or pane custody. Current Stepstone refuses that state rather than silently dropping launch metadata or attempting to control somebody else's session. Inspect or recover a version 1 run with the Stepstone release that created it before upgrading.
+
+## Upgrading from the companion executable
+
+Version 0.12.0 removes the `stepstone-dispatch` executable. Replace that command in scripts with `npx -y stepstone@latest project workspace`, keeping the action, run IDs, goal IDs, and flags.
+The project CLI reads existing version 2 state in place: the `stepstone-dispatch` directory, `stepstone-dispatch-owner.json` markers, lock files, workspace receipts, and goal handoffs keep their existing names and formats. No migration or re-claim is needed. Version 1 state remains refused as described above.
+
+Workspace JSON results preserve the former `result` payload and add `scope: "project"`, an `action` such as `workspace status`, and `meta.cliVersion`. Failures now go to stderr, like other project CLI failures. Workspace envelopes report run state rather than an atomic roadmap mutation receipt; they do not claim `meta.changed` for a multi-step operation. Use `status` or `inspect` after an interruption.
+Workspace commands use the repository's resolved goal file (including `STEPSTONE_WORKLIST`); `--file` is not supported for persisted runs. Keep the same goal-file environment when resuming a run.
