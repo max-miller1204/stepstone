@@ -23,7 +23,7 @@ const MUTATIONS: readonly Mutation[] = [
 		name: "accept a dangling dependency",
 		file: "src/dependencies.ts",
 		from: "target !== undefined && isDependencySatisfied(target)",
-		to: "target === undefined && isDependencySatisfied(target)",
+		to: "target === undefined || isDependencySatisfied(target)",
 		test: "test/dependencies.test.ts",
 	},
 	{
