@@ -1,4 +1,4 @@
-name: PR video evidence
+name: PR video verification
 
 on:
   pull_request:
@@ -30,34 +30,18 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-          cache: false
-      - name: Install recording tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes ttyd ffmpeg fonts-dejavu-core
-          go install github.com/charmbracelet/vhs@v0.12.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Install repository dependencies
         run: cp npm-shrinkwrap.json package-lock.json && npm ci --ignore-scripts && rm package-lock.json
       - name: Test scenario contract
         run: npm run videos:test
       - name: Verify actual commands without recording
         run: npm run videos:check -- "$VIDEO_SCENARIO"
-      - name: Record and verify again
-        env:
-          VHS_NO_SANDBOX: '1'
-        run: npm run videos:render -- "$VIDEO_SCENARIO"
       - uses: actions/upload-artifact@v4
         id: evidence
         if: always()
         with:
-          name: stepstone-videos-${{ github.run_id }}-${{ github.run_attempt }}
+          name: stepstone-video-checks-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            artifacts/videos/**/*.mp4
-            artifacts/videos/**/preview.png
             artifacts/videos/**/metadata.json
             artifacts/videos/**/commands.jsonl
             artifacts/videos/**/process.log
@@ -70,5 +54,5 @@ jobs:
           ARTIFACT_URL: ${{ steps.evidence.outputs.artifact-url }}
         run: |
           if [ -n "$ARTIFACT_URL" ]; then
-            printf '## Video evidence\n\n[Download videos and verification logs](%s)\n\nReview the MP4 before attaching it to the PR.\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+            printf '## Video scenario verification\n\n[Download verification logs](%s)\n\nRender and review the MP4 locally before attaching it to the PR.\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
           fi

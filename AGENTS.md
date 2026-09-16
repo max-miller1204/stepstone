@@ -27,9 +27,9 @@ See `docs/storage.md`, `docs/dependencies.md`, and `docs/pi.md`.
 ## PR videos
 
 - Use reusable VHS scenarios in `scripts/videos/scenarios` for video evidence.
-- Run `npm run videos:check -- <scenario>`, then `npm run videos:render -- <scenario>`.
+- Run `npm run videos:check -- <scenario>`, then run `npm run videos:render -- <scenario>` locally.
 - Inspect the MP4 at full and half size. Passing behavior checks does not prove legibility.
-- Include a video or CI artifact link in the PR Evidence section when video evidence is useful.
+- Attach the reviewed MP4 in the PR Evidence section when video evidence is useful. Use the CI artifact only for verification logs.
 - See `scripts/videos/README.md` for scenario rules and the CI workflow.
 
 ## Published package

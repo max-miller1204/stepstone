@@ -17,9 +17,9 @@ Omit the scenario name, or pass `all`, to run every scenario. Unknown names fail
 
 - `videos:test` tests the tape parser and scenario-selection rules.
 - `videos:check` builds the CLI and replays the tape's exact shell commands without typing delays. It requires Node 22.18 or newer, Bash, Git, and jq. It does not require VHS or FFmpeg.
-- `videos:render` builds the CLI, records the same tape, checks its results, and encodes an MP4. It also requires VHS **0.12.0**, ttyd, FFmpeg with libx264, and FFprobe. The runner refuses another VHS version.
+- `videos:render` builds the CLI, records the same tape, checks its results, and encodes an MP4. Run it locally. It requires VHS **0.12.0**, ttyd, FFmpeg with libx264, and FFprobe. The runner refuses another VHS version.
 
-Manage workstation tools through `dots`. The runner does not install global tools. It resolves mise-managed executables before creating an isolated HOME.
+Manage workstation tools through `dots`. The runner does not install global tools. It resolves mise-managed executables before creating an isolated HOME. CI runs `videos:test` and `videos:check`. CI does not install recording tools or render videos.
 
 ## Outputs
 
@@ -64,7 +64,7 @@ The current `workspace-lifecycle` scenario records preparation, an ignored goal 
 
 The fixture, commands, layout, and behavioral assertions are repeatable. Live timestamps, run IDs, absolute paths, and browser/font versions can differ. MP4 bytes are not promised to match across machines.
 
-CI is the reference capture environment: Ubuntu 24.04, Node 24, and VHS 0.12.0. FFmpeg, ttyd, and system font packages come from that runner's package repository. Metadata records the encoder and runtime versions. No provider credentials or GitHub authentication reach the fixture environment. VHS may download its headless browser on first use.
+The local capture environment supplies VHS, ttyd, FFmpeg, the browser, and fonts. Metadata records the encoder and runtime versions. No provider credentials or GitHub authentication reach the fixture environment. VHS may download its headless browser on first use. CI verifies the same commands without browser rendering.
 
 Do not run videos in parallel with another build or `npm run verify`, because each can replace `dist/`.
 
@@ -76,7 +76,7 @@ Do not run videos in parallel with another build or `npm run verify`, because ea
 4. Add the reproduction command to the PR's Testing section.
 5. Attach the MP4 to the PR's Evidence section using GitHub's upload control, or link the CI artifact.
 
-The `PR video evidence` workflow runs on pull requests that change a scenario or shared video tooling. It verifies and renders all scenarios because shared setup and capture changes can affect each one. It does not render on every product-code PR.
+The `PR video verification` workflow runs on pull requests that change a scenario or shared video tooling. It verifies all scenarios because shared setup changes can affect each one. It never renders videos.
 
 For a product-code PR that uses an unchanged scenario, run the workflow manually on that branch:
 
@@ -84,7 +84,7 @@ For a product-code PR that uses an unchanged scenario, run the workflow manually
 gh workflow run videos.yml --ref <branch> -f scenario=workspace-lifecycle
 ```
 
-The check summary links the artifact. Artifacts expire after 14 days and may require a GitHub login. They are downloads, not inline PR players. Attach the selected MP4 to the PR for inline playback and longer-lived evidence. The workflow has read-only repository permissions and does not post comments or change PR bodies.
+The check summary links verification logs. Artifacts expire after 14 days and may require a GitHub login. Attach the locally reviewed MP4 to the PR for inline playback. The workflow has read-only repository permissions and does not post comments or change PR bodies.
 
 Example PR evidence:
 

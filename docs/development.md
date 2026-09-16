@@ -192,7 +192,7 @@ These manual launchers use your normal environment and current date.
 
 Use the named VHS scenarios in `scripts/videos/scenarios` for video evidence. Run `npm run videos:list` to see available scenarios. Run `videos:check` before `videos:render`, then watch the output in `artifacts/videos/<scenario>/`.
 
-The `PR video evidence` workflow verifies and renders scenarios when their tapes or shared tooling change. For product changes that use an unchanged scenario, dispatch the workflow on the PR branch. Its check summary links downloadable videos and verification logs. Attach an MP4 to the PR for inline playback. No workflow changes PR bodies or publishes videos automatically.
+The `PR video verification` workflow checks scenarios when their tapes or shared tooling change. It does not run VHS or render videos. For product changes that use an unchanged scenario, dispatch the workflow on the PR branch. Its check summary links verification logs. Render and review the MP4 locally, then attach it to the PR for inline playback. No workflow changes PR bodies or publishes videos automatically.
 
 See the [video workflow guide](../scripts/videos/README.md) for tool versions, fixture isolation, scenario authoring, reproduction limits, and PR evidence examples. Do not run capture beside another build or package check because both use `dist/`.
 
