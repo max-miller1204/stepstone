@@ -124,7 +124,7 @@ The agent should be able to talk to Linear, either via a configured Linear MCP s
    - `Merging` -> on entry, open and follow `.codex/skills/land/SKILL.md`; do not call `gh pr merge` directly.
    - `Rework` -> run rework flow.
    - `Done` -> do nothing and shut down.
-4. Check whether a PR already exists for the current branch and whether it is closed.
+4. Resolve the issue branch before checking its PR state. In a fresh workspace on `main`, read the issue's `branchName` from Linear and query GitHub for that branch explicitly, including closed PRs. On continuation, query the current non-main issue branch. Do not query the clone's `main` branch as the issue branch.
    - If a branch PR exists and is `CLOSED` or `MERGED`, treat prior branch work as non-reusable for this run.
    - Create a fresh branch from `origin/main` and restart execution flow as a new attempt.
 5. For `Todo` tickets, do startup sequencing in this exact order:
