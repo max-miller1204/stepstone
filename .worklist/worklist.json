@@ -786,10 +786,10 @@
 			"description": "Publish a deterministic, reusable video scenario that shows approved goals, workspace preparation, the generated branch and STEPSTONE_GOAL.md handoff, status inspection, and safe resume behavior. Make the capture readable at full and half size. Verify its behavior in CI. Add the final video to the README without committing transient recording state.",
 			"group": "Release 0.12",
 			"dependsOn": ["remove-the-symphony-incorporation"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T18:17:32.376Z",
-			"branch": "stepstone/show-the-workspace-dispatcher-in-the"
+			"updatedAt": "2026-09-16T18:19:43.320Z",
+			"completedAt": "2026-09-16T18:19:43.320Z"
 		},
 		{
 			"id": "release-stepstone-0-12-0",
@@ -922,5 +922,5 @@
 			"updatedAt": "2026-09-16T07:09:20.058Z"
 		}
 	],
-	"revision": 352
+	"revision": 353
 }
