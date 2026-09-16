@@ -85,6 +85,13 @@ The project CLI exercise asserts exit codes and `--json` envelopes across `list`
 The dispatch exercise starts the installed driver, prepares a real worktree, and reads its ignored `STEPSTONE_GOAL.md` handoff before checking persisted status; the preparation-only contract needs no agent executable.
 The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
+The check launches npm with the current Node executable and `npm_execpath`, preserving the npm implementation that started it without resolving an npm shell shim.
+When invoked directly without `npm_execpath`, it falls back to `npm` on `PATH`.
+The installed executables still run by their command names with the isolated install's `node_modules/.bin` first on `PATH`, so their shims and interpreters are exercised.
+On Windows the check fails explicitly before setup: [Node cannot launch `.bat` and `.cmd` shims with `execFile` without a shell](https://nodejs.org/api/child_process.html#spawning-bat-and-cmd-files-on-windows).
+The pre-push gate retains this required check and propagates its failure.
+Real Windows support is a separate decision that requires Windows CI to validate installed shim execution; invoking the JavaScript targets directly would not prove the same behavior.
+
 ## README screenshots
 
 After a visual change, run:

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WorklistApplicationService } from "../src/application-service.ts";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 import worklistExtension from "../src/extension.ts";
@@ -1443,6 +1443,43 @@ describe("registered model tool", () => {
 			code: "UNAVAILABLE",
 			details: { resolution: "run-inside-git-repository" },
 		});
+	});
+
+	it("keeps absent and repairable repositories distinct below a Git ceiling", async () => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-ceiling-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const ceiling = join(root, "ceiling");
+		const child = join(ceiling, "child");
+		await mkdir(child, { recursive: true });
+		vi.stubEnv("GIT_CEILING_DIRECTORIES", ceiling);
+		try {
+			const outside = await startSession(child);
+			await expect(outside.call({ scope: "project", action: "list" })).rejects.toMatchObject({
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "run-inside-git-repository" },
+			});
+			await expect(
+				outside.call({ scope: "session", action: "add", title: "Still usable" }),
+			).resolves.toMatchObject({ details: { tasks: [expect.objectContaining({ title: "Still usable" })] } });
+
+			execFileSync("git", ["init", "-q"], { cwd: child });
+			const config = join(child, ".git", "config");
+			const original = await readFile(config, "utf8");
+			await writeFile(config, "not a config\n");
+			const session = await startSession(child);
+			await expect(session.call({ scope: "project", action: "list" })).rejects.toMatchObject({
+				code: "UNAVAILABLE",
+				retryable: false,
+				details: { resolution: "repair-git-repository", gitExitCode: 128, gitTimedOut: false },
+			});
+			await writeFile(config, original);
+			await expect(
+				session.call({ scope: "project", action: "add", title: "Repaired below ceiling" }),
+			).resolves.toMatchObject({ details: { goal: { title: "Repaired below ceiling" } } });
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("recovers when the repository Git refused is repaired mid-session", async () => {
