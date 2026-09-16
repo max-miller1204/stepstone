@@ -19,6 +19,7 @@ import {
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { z } from "zod";
 import { WorklistApplicationService } from "./application-service.ts";
+import type { WorkspaceActivity } from "./claim-evidence.ts";
 import type {
 	DispatchGoalBacking,
 	DispatchGoalFile,
@@ -1153,6 +1154,44 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			record.gitdir,
 			record.marker,
 		);
+	}
+
+	async observeActivity(workspace: DispatchWorkspace, branch: string): Promise<WorkspaceActivity> {
+		await this.verify(workspace, branch);
+		const headRevision = (await runCommand("git", ["rev-parse", "HEAD"], workspace.path)).stdout.trim();
+		const status = await runCommand(
+			"git",
+			[
+				"--no-optional-locks",
+				"status",
+				"--porcelain=v1",
+				"-z",
+				"--untracked-files=all",
+				"--ignore-submodules=none",
+			],
+			workspace.path,
+		);
+		const reflog = await runCommand(
+			"git",
+			["reflog", "show", "-1", "--format=%gD", "--date=iso-strict", `refs/heads/${branch}`, "--"],
+			workspace.path,
+		);
+		const timestamp = /@\{([^}]+)\}$/.exec(reflog.stdout.trim())?.[1];
+		const activityTime = Date.parse(timestamp ?? "");
+		await this.verify(workspace, branch);
+		if ((await runCommand("git", ["rev-parse", "HEAD"], workspace.path)).stdout.trim() !== headRevision) {
+			throw new Error("Workspace branch changed during observation; inspect again.");
+		}
+		return {
+			path: workspace.path,
+			baseRevision: workspace.metadata.base,
+			headRevision,
+			branchChangedSincePreparation: headRevision !== workspace.metadata.base,
+			hasUncommittedChanges: status.stdout.length > 0,
+			...(Number.isFinite(activityTime)
+				? { lastBranchActivityAt: new Date(activityTime).toISOString() }
+				: {}),
+		};
 	}
 
 	async writeGoalFile(

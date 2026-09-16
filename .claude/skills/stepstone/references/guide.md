@@ -47,6 +47,7 @@ Flags:
 
 - `--goal <id>` - Authorize one goal for workspace start; repeat for the approved set; only for project workspace.
 - `--max-parallel <count>` - Limit workspace start to this many prepared claims (default 1); only for project workspace.
+- `--stale-after-hours <hours>` - Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace.
 - `--release` - Explicitly release the inspected claim with workspace recover; only for project workspace.
 - `--claim-updated-at <timestamp>` - Supply a verified claim token for workspace recover; only for project workspace.
 - `--force` - Explicitly discard work with workspace cleanup; requires a goal ID and preserves identity checks; only for project workspace.

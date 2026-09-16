@@ -70,8 +70,8 @@ This command does not need a Git repository. Restart the shell after it finishes
 | --- | --- |
 | `npx -y stepstone@latest project workspace start --goal <id>... [--max-parallel <count>] [--workspace-parent <path>]` | Prepare and claim approved goals |
 | `npx -y stepstone@latest project workspace resume <run-id>` | Reconcile merged work and refill preparation capacity |
-| `npx -y stepstone@latest project workspace status [run-id]` | Read persisted run status |
-| `npx -y stepstone@latest project workspace inspect <run-id> <goal-id>` | Read complete workspace custody |
+| `npx -y stepstone@latest project workspace status [run-id] [--stale-after-hours <hours>]` | Read run status and observable prepared-claim evidence |
+| `npx -y stepstone@latest project workspace inspect <run-id> <goal-id> [--stale-after-hours <hours>]` | Read complete workspace custody and fresh claim evidence before explicit recovery |
 | `npx -y stepstone@latest project workspace recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]` | Release an inspected claim and attempt cleanup |
 | `npx -y stepstone@latest project workspace cleanup <run-id> [goal-id] [--force]` | Remove verified completed or released workspaces |
 
@@ -83,6 +83,7 @@ See [workspace preparation, recovery, and cleanup](workspaces.md). Existing vers
 | --- | --- |
 | `--goal <id>` | Authorize one goal for workspace start; repeat for the approved set; only for project workspace |
 | `--max-parallel <count>` | Limit workspace start to this many prepared claims (default 1); only for project workspace |
+| `--stale-after-hours <hours>` | Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace |
 | `--release` | Explicitly release the inspected claim with workspace recover; only for project workspace |
 | `--claim-updated-at <timestamp>` | Supply a verified claim token for workspace recover; only for project workspace |
 | `--force` | Explicitly discard work with workspace cleanup; requires a goal ID and preserves identity checks; only for project workspace |

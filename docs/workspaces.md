@@ -104,7 +104,7 @@ A closed terminal, an exited agent, silence, or an unmerged pull request is neve
 
 ## Status and inspection
 
-These actions only read persisted state:
+These actions read persisted custody and fresh local evidence without changing claims or run state:
 
 ```sh
 npx -y stepstone@latest project workspace status --json
@@ -112,7 +112,25 @@ npx -y stepstone@latest project workspace status <run-id> --json
 npx -y stepstone@latest project workspace inspect <run-id> <goal-id> --json
 ```
 
-`status` summarizes paths and phases. `inspect` includes the complete persisted goal and workspace custody record.
+`status` summarizes paths and phases and adds `claimEvidence` for every entry still in `prepared` phase. `inspect` includes the complete persisted goal and workspace custody record, plus the selected prepared claim's fresh `claimEvidence`.
+
+The evidence includes the observation time, exact claim timestamp and age in hours, whether the canonical goal still carries that claim, the verified workspace's base and current commit, whether the branch differs from its preparation base, visible uncommitted changes, and the latest local branch reflog timestamp. Git status includes staged, unstaged, untracked, and submodule changes; ignored files (including the goal handoff) are outside this activity signal. Reads do not refresh the Git index or persist observations.
+
+The assessment is advisory:
+
+- `possibly-abandoned`: the exact canonical claim and latest local branch update are both at least 24 hours old, and Git reports no visible uncommitted changes;
+- `recent-claim`: the claim is younger than the threshold;
+- `activity-observed`: an older claim has uncommitted changes or a recent local branch update;
+- `needs-inspection`: the claim changed or disappeared, a workspace identity or read failed, required activity history is unavailable, or a timestamp is in the future.
+
+Both read commands accept a positive whole-hour threshold, for example:
+
+```sh
+npx -y stepstone@latest project workspace status --stale-after-hours 48 --json
+npx -y stepstone@latest project workspace inspect <run-id> <goal-id> --stale-after-hours 48 --json
+```
+
+This is a local snapshot, not proof that work has stopped. Reflog timestamps record local ref updates, not remote-only work or every file edit; reflogs may expire or be disabled. Uncommitted changes have no inferred age. A quiet branch may contain older valuable work. Stepstone never inspects agent processes or terminal liveness. Review the evidence and workspace before choosing recovery. Neither inspection nor exceeding the threshold releases a claim, and these observations do not change `resume` behavior.
 
 ## Recovery
 
