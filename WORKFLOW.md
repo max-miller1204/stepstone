@@ -27,7 +27,13 @@ agent:
   max_concurrent_agents: 1
   max_turns: 20
 codex:
-  command: env -u LINEAR_API_KEY codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=xhigh app-server
+  command: >-
+    env -i HOME="$HOME" PATH="$PATH" codex
+    --config shell_environment_policy.inherit=core
+    --config 'shell_environment_policy.include_only=["HOME","PATH"]'
+    --config allow_login_shell=false
+    --config features.shell_snapshot=false
+    --config model_reasoning_effort=xhigh app-server
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:

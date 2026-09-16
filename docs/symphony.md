@@ -44,6 +44,29 @@ http://localhost:4000
 The launcher reads `LINEAR_API_KEY` from the `Linear - Stepstone Symphony` item
 in the Personal vault. It does not write the credential to the repository.
 
+Codex starts with only `HOME` and `PATH` from the host environment. Its shell
+policy permits only those inherited variables. Login shells and shell snapshots
+are disabled so they do not reload the host shell environment. Host tokens,
+including `GH_TOKEN`, `NPM_TOKEN`, and AWS credentials, are not passed to Codex.
+
+GitHub commands use the existing macOS Keychain login through `gh`. No GitHub
+token is read from 1Password or added to the agent environment. Verify access
+without environment tokens:
+
+```sh
+env -i HOME="$HOME" PATH="$PATH" gh auth status
+env -i HOME="$HOME" PATH="$PATH" gh api user --jq 'has("login")'
+```
+
+The first command must report an active keyring login. The second must print
+`true`. Git HTTPS operations use the existing `osxkeychain` credential helper.
+Verify it with `git config --get-all credential.helper`. Stop if authentication
+fails; do not inject another token. `HOME` preserves the local Codex login and GitHub CLI
+configuration. `PATH` locates the installed tools.
+
+This environment policy prevents inherited-token exposure. It does not isolate
+host files or deny access to the user's Keychain.
+
 Symphony stores workspaces in:
 
 ```text
