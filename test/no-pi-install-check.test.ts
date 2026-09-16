@@ -100,7 +100,7 @@ async function expectSetupCalls() {
 	});
 }
 
-describe.skipIf(process.platform === "win32")("no-Pi check npm children", () => {
+describe("no-Pi check npm children", () => {
 	it("uses the parent npm entry with the current Node even when PATH shadows npm and node", async () => {
 		const result = runCheck(npmEntry);
 		expect(result.error).toBeUndefined();

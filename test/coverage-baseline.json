@@ -1,0 +1,206 @@
+{
+	"src/application-service.ts": {
+		"lines": 86.96,
+		"branches": 80.62,
+		"functions": 98.5,
+		"statements": 85.95
+	},
+	"src/bounded-text.ts": {
+		"lines": 95.45,
+		"branches": 75,
+		"functions": 100,
+		"statements": 91.66
+	},
+	"src/claim-evidence.ts": {
+		"lines": 100,
+		"branches": 89.09,
+		"functions": 100,
+		"statements": 97.87
+	},
+	"src/cli-contract.ts": {
+		"lines": 95.74,
+		"branches": 91.3,
+		"functions": 96.29,
+		"statements": 96.36
+	},
+	"src/cli.ts": {
+		"lines": 0,
+		"branches": 0,
+		"functions": 0,
+		"statements": 0
+	},
+	"src/completion-installer.ts": {
+		"lines": 97.05,
+		"branches": 86.95,
+		"functions": 100,
+		"statements": 92.85
+	},
+	"src/dependencies.ts": {
+		"lines": 100,
+		"branches": 97.36,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/dispatch-bindings.ts": {
+		"lines": 78.25,
+		"branches": 66.83,
+		"functions": 82.41,
+		"statements": 75.53
+	},
+	"src/dispatch-driver.ts": {
+		"lines": 80.29,
+		"branches": 73.57,
+		"functions": 95,
+		"statements": 77.95
+	},
+	"src/extension.ts": {
+		"lines": 63.94,
+		"branches": 56.68,
+		"functions": 59.09,
+		"statements": 61.37
+	},
+	"src/file-lock.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/format.ts": {
+		"lines": 94.44,
+		"branches": 68.29,
+		"functions": 91.3,
+		"statements": 86.76
+	},
+	"src/git.ts": {
+		"lines": 77.02,
+		"branches": 74.84,
+		"functions": 82.75,
+		"statements": 76.6
+	},
+	"src/goal-selection.ts": {
+		"lines": 98.07,
+		"branches": 100,
+		"functions": 100,
+		"statements": 98.59
+	},
+	"src/model-context.ts": {
+		"lines": 60,
+		"branches": 52.77,
+		"functions": 100,
+		"statements": 62.31
+	},
+	"src/project-list-projection.ts": {
+		"lines": 95.28,
+		"branches": 92.15,
+		"functions": 100,
+		"statements": 92.12
+	},
+	"src/project-mutations.ts": {
+		"lines": 95.2,
+		"branches": 88.29,
+		"functions": 100,
+		"statements": 91.19
+	},
+	"src/project-store.ts": {
+		"lines": 86.24,
+		"branches": 74.67,
+		"functions": 92.59,
+		"statements": 80.61
+	},
+	"src/result-envelope.ts": {
+		"lines": 40,
+		"branches": 0,
+		"functions": 50,
+		"statements": 28.57
+	},
+	"src/roadmap.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/schema.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/session-store.ts": {
+		"lines": 100,
+		"branches": 95.06,
+		"functions": 100,
+		"statements": 97.67
+	},
+	"src/shell-completions.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/tool.ts": {
+		"lines": 87.71,
+		"branches": 68.75,
+		"functions": 100,
+		"statements": 85.71
+	},
+	"src/tui/goal-board-runtime.ts": {
+		"lines": 93.75,
+		"branches": 75.47,
+		"functions": 88.88,
+		"statements": 91.7
+	},
+	"src/tui/goal-board.ts": {
+		"lines": 94.95,
+		"branches": 89.02,
+		"functions": 100,
+		"statements": 92.95
+	},
+	"src/tui/keys.ts": {
+		"lines": 98.11,
+		"branches": 86.76,
+		"functions": 100,
+		"statements": 97.45
+	},
+	"src/tui/style.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/tui/terminal.ts": {
+		"lines": 85.49,
+		"branches": 65.67,
+		"functions": 83.33,
+		"statements": 81.75
+	},
+	"src/tui/text.ts": {
+		"lines": 96.61,
+		"branches": 86.07,
+		"functions": 100,
+		"statements": 93
+	},
+	"src/types.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/ui.ts": {
+		"lines": 92.09,
+		"branches": 84.77,
+		"functions": 91.3,
+		"statements": 89.41
+	},
+	"src/workspace-cli.ts": {
+		"lines": 0,
+		"branches": 0,
+		"functions": 0,
+		"statements": 0
+	},
+	"total": {
+		"lines": 77.1,
+		"branches": 68.78,
+		"functions": 84.4,
+		"statements": 75.6
+	}
+}
