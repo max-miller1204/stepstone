@@ -1,4 +1,4 @@
-<!-- markdownlint-disable MD013 -->
+<!-- markdownlint-disable MD013 MD034 -->
 
 # stepstone
 
@@ -24,9 +24,9 @@ Install the Pi extension and run `/tasks` to open the Stepstone dashboard in Pi.
 
 The workspace dispatcher prepares and claims approved goals in isolated Git worktrees. It writes each goal handoff to `STEPSTONE_GOAL.md` without starting an agent.
 
-[![Watch the Stepstone workspace dispatcher prepare and inspect a goal workspace](docs/images/workspace-lifecycle-preview.png)](docs/videos/workspace-lifecycle.mp4)
+https://github.com/user-attachments/assets/8c88cfab-dc71-46a9-ae81-dcb13e51e606
 
-[Watch the workspace dispatcher demo](docs/videos/workspace-lifecycle.mp4), or read the [workspace guide](docs/workspaces.md).
+Read the [workspace guide](docs/workspaces.md) for commands and safety rules.
 
 ## Install
 
@@ -127,8 +127,9 @@ Session Tasks are documented and kept working, but they are not where the projec
 ```sh
 git clone https://github.com/max-miller1204/stepstone.git
 cd stepstone
-npm install
-npm run check
+mise install
+mise exec -- npm ci
+mise exec -- npm run check
 ```
 
 [docs/development.md](docs/development.md) covers the rest, including the generated files that must never be hand-edited.

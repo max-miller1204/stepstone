@@ -5,11 +5,14 @@
 ```sh
 git clone https://github.com/max-miller1204/stepstone.git
 cd stepstone
-npm install
-npm run check
-npm run pack:check
-npm run no-pi-install:check
+mise install
+mise exec -- npm ci
+mise exec -- npm run check
+mise exec -- npm run pack:check
+mise exec -- npm run no-pi-install:check
 ```
+
+The repository `mise.toml` pins Node and npm. Run commands in a mise-activated shell or use `mise exec -- <command>`. This prevents workstation Node and npm versions from changing local results.
 
 `npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
 The `node src/cli.ts` entry point needs Node 22.18 or newer for native type stripping.
