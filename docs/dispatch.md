@@ -139,7 +139,7 @@ A journaled completion outcome cannot be released through recovery. Use `resume`
 
 ## Cleanup
 
-Completed or exactly released entries are cleaned automatically. Retry a pending cleanup with:
+Completed or exactly released entries are cleaned automatically only when Git safety checks pass. Retry a pending cleanup with:
 
 ```sh
 npx -y -p stepstone@latest stepstone-dispatch cleanup <run-id> [goal-id] --json
@@ -147,11 +147,27 @@ npx -y -p stepstone@latest stepstone-dispatch cleanup <run-id> [goal-id] --json
 
 Without a goal ID, cleanup processes all eligible entries and removes the run record after every entry is `cleaned`. It refuses while an entry still owns a prepared claim.
 
-Workspace cleanup is identity guarded:
+Before deleting a workspace or its branch, cleanup verifies:
+
+- There are no staged, unstaged, untracked, or ignored changes. Only the unchanged goal handoff and backing file authenticated by the run's receipt are exempt. Submodule changes, in-progress Git operations, and index flags that hide changes also prevent cleanup.
+- Every commit on the branch is reachable from freshly advertised remote heads, including commits inherited from the acquisition base. Missing remotes or failed remote inspection refuse cleanup even for an unchanged workspace.
+- The workspace tip is an ancestor of the run's named target branch in the canonical repository. A missing target or an unmerged tip refuses cleanup. Squash or rebase merges that do not preserve this ancestry require explicit override after inspection.
+
+Cleanup preserves these identity guards even under override:
 
 - Git worktrees must still match the recorded repository, path, branch, Git directory, and ownership marker.
 - Branch deletion uses the exact journaled ref value so a reused branch name cannot be deleted accidentally.
 - A failed cleanup remains `cleanup-pending` and retains its workspace record for retry.
+
+Read the exact refusal reason in the entry's `message` through `cleanup`, `status`, or `inspect` (including `--json`). Cleanup never resets or scrubs changes to make a safety check pass. Interrupted cleanup retains the exact commit in detached HEAD and rechecks Git safety on retry.
+
+To intentionally discard an inspected workspace's uncommitted, unpushed, or unmerged work, explicitly name the goal and pass `--force`:
+
+```sh
+npx -y -p stepstone@latest stepstone-dispatch cleanup <run-id> <goal-id> --force --json
+```
+
+This override applies only to that invocation and goal. It is not accepted by `recover` or `resume`, cannot bypass a prepared claim or workspace identity checks, and is never persisted for an automatic retry. Successful forced cleanup records the override in the entry's message.
 
 ## State compatibility
 
