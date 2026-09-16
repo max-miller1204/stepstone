@@ -6,10 +6,10 @@
 git clone https://github.com/max-miller1204/stepstone.git
 cd stepstone
 mise install
-npm ci
-npm run check
-npm run pack:check
-npm run no-pi-install:check
+mise exec -- npm ci
+mise exec -- npm run check
+mise exec -- npm run pack:check
+mise exec -- npm run no-pi-install:check
 ```
 
 The repository `mise.toml` pins Node and npm. Run commands in a mise-activated shell or use `mise exec -- <command>`. This prevents workstation Node and npm versions from changing local results.
