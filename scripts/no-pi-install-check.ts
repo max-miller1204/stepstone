@@ -20,9 +20,19 @@
  */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import {
+	access,
+	constants,
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	realpath,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { CLI_COMMAND_CONTRACT, DISPATCH_BINARY } from "../src/cli-contract.ts";
 import { DISPATCH_GOAL_FILE } from "../src/dispatch-driver.ts";
@@ -84,9 +94,16 @@ async function run(command: string, args: string[], cwd: string): Promise<void> 
 	}
 }
 
+/** Reuse the invoking npm implementation without resolving its shell shim. */
+function runNpm(args: string[], cwd: string): Promise<void> {
+	const npmPath = process.env.npm_execpath;
+	if (npmPath === "") throw new Error("npm_execpath is set but empty; expected an npm entry point.");
+	return npmPath === undefined ? run("npm", args, cwd) : run(process.execPath, [npmPath, ...args], cwd);
+}
+
 /** Packs the tarball the way publishing does, prepack build included. */
 async function packTarball(destination: string): Promise<string> {
-	await run("npm", ["pack", "--pack-destination", destination], repoRoot);
+	await runNpm(["pack", "--pack-destination", destination], repoRoot);
 	const packed = (await readdir(destination)).filter((entry) => entry.endsWith(".tgz"));
 	assert.equal(packed.length, 1, `expected exactly one packed tarball, got ${packed.join(", ") || "none"}`);
 	return join(destination, packed[0] as string);
@@ -106,8 +123,7 @@ async function packTarball(destination: string): Promise<string> {
 async function installTarball(tarball: string, installDir: string): Promise<void> {
 	const manifest = { name: "no-pi-install-fixture", version: "0.0.0", private: true };
 	await writeFile(join(installDir, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-	await run(
-		"npm",
+	await runNpm(
 		[
 			"install",
 			tarball,
@@ -165,12 +181,18 @@ function cliRunner(binPath: string, cwd: string, env?: NodeJS.ProcessEnv) {
 	// The bin's own name, so a failure names the command that was actually run
 	// without spelling the published name here as a literal.
 	const command = basename(binPath);
+	// Exercise the installed shim by command name, including its PATH-selected
+	// interpreter. Running its JavaScript target with Node would bypass that proof.
+	const childEnv = { ...process.env, ...env };
+	childEnv.PATH = [dirname(binPath), childEnv.PATH].filter(Boolean).join(delimiter);
 	return async function runCli(args: string[]): Promise<CliResult> {
 		const invocation = `${command} ${args.join(" ")}`;
 		try {
-			const { stdout, stderr } = await execFileAsync(binPath, args, {
+			// A missing installed shim must not fall through to a global copy.
+			await access(binPath, constants.X_OK);
+			const { stdout, stderr } = await execFileAsync(command, args, {
 				cwd,
-				env,
+				env: childEnv,
 				maxBuffer: 32 * 1024 * 1024,
 				timeout: CLI_TIMEOUT_MS,
 			});
@@ -461,6 +483,15 @@ const BIN_EXERCISES: Record<string, BinExercise> = {
 	[binary]: exerciseCli,
 	[DISPATCH_BINARY]: exerciseDispatch,
 };
+
+if (process.platform === "win32") {
+	process.stderr.write(
+		"no-pi-install check does not support Windows: Node cannot spawn .bat and .cmd shims " +
+			"with execFile without a shell. This check must exercise the installed executable shims. " +
+			"Windows support requires a separate decision and Windows CI; the pre-push gate cannot skip this check.\n",
+	);
+	process.exit(1);
+}
 
 const scratch = await mkdtemp(join(tmpdir(), `${binary}-no-pi-install-`));
 const packDir = join(scratch, "pack");
