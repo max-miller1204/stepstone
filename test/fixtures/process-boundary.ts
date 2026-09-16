@@ -140,7 +140,9 @@ class ProcessBoundary {
 			join(this.directory, "gh/hosts.yml"),
 			"github.localhost:\n    user: fixture\n    git_protocol: https\n",
 		);
-		await writeFile(join(this.directory, "gh/config.yml"), "http_unix_socket: ../api.sock\n");
+		// Declare the current schema so gh does not try to migrate credentials
+		// through an OS keyring (Linux CI has no secret-service daemon).
+		await writeFile(join(this.directory, "gh/config.yml"), "version: 1\nhttp_unix_socket: ../api.sock\n");
 		// Relative socket paths avoid macOS's short Unix-socket path limit.
 		await new Promise<void>((accept, reject) => {
 			this.server.once("error", reject);
