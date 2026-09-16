@@ -28,6 +28,9 @@ The package ships TypeScript source directly because Pi loads extensions through
 | `npm run test:boundaries` | Real Git/gh preparation, reconciliation, recovery and cleanup boundaries |
 | `npm run test:e2e:fast` | Packed CLI initialization, approved plans, conflicts, and packed extension through real Pi RPC |
 | `npm run test:e2e` | Full deterministic published-surface tier, including storage, concurrent writers, roadmap generation, and workspace preparation |
+| `npm run videos:test` | VHS tape parser and scenario-selection regression tests |
+| `npm run videos:check -- <scenario>` | Replay the recorded shell commands and verify actual CLI behavior |
+| `npm run videos:render -- <scenario>` | Capture and verify a VHS scenario, then export its MP4 and evidence |
 | `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
 | `npm run quality:static` | Types, the import scan, Biome lint, and the generated documents, with no test run |
 | `npm run quality:pre-commit` | Biome checks the exact staged contents |
@@ -184,6 +187,14 @@ The `artifacts` directory is ignored by Git.
 For manual exploration, `npm run demo:screenshots` creates the same demo roadmap and Session Tasks.
 It creates `open-pi.sh` and `open-project-ui.sh` in `artifacts/stepstone-ui-demo`.
 These manual launchers use your normal environment and current date.
+
+## PR videos
+
+Use the named VHS scenarios in `scripts/videos/scenarios` for video evidence. Run `npm run videos:list` to see available scenarios. Run `videos:check` before `videos:render`, then watch the output in `artifacts/videos/<scenario>/`.
+
+The `PR video evidence` workflow verifies and renders scenarios when their tapes or shared tooling change. For product changes that use an unchanged scenario, dispatch the workflow on the PR branch. Its check summary links downloadable videos and verification logs. Attach an MP4 to the PR for inline playback. No workflow changes PR bodies or publishes videos automatically.
+
+See the [video workflow guide](../scripts/videos/README.md) for tool versions, fixture isolation, scenario authoring, reproduction limits, and PR evidence examples. Do not run capture beside another build or package check because both use `dist/`.
 
 ## Generated files
 
