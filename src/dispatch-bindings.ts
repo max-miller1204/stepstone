@@ -31,6 +31,7 @@ import type {
 	RoadmapBinding,
 	RoadmapSnapshot,
 	WorkspaceBinding,
+	WorkspaceCleanupOptions,
 } from "./dispatch-driver.ts";
 import { DISPATCH_GOAL_FILE, DispatchBoundaryError } from "./dispatch-driver.ts";
 import { acquireFileLock } from "./file-lock.ts";
@@ -44,11 +45,13 @@ interface CommandResult {
 }
 
 class CommandFailure extends Error {
+	readonly status: number | null;
 	constructor(command: string, status: number | null) {
 		super(
 			`${command} failed${status === null ? "" : ` with exit code ${status}`}; command arguments and stderr are redacted`,
 		);
 		this.name = "CommandFailure";
+		this.status = status;
 	}
 }
 
@@ -940,6 +943,145 @@ async function ensureGoalPathsAreLocalState(workspacePath: string, names: string
 	}
 }
 
+async function verifyCleanupContents(
+	workspace: DispatchWorkspace,
+	goalFile?: DispatchGoalFile,
+): Promise<void> {
+	const gitdir = await workspaceGitDirectory(workspace.path);
+	for (const operation of [
+		"MERGE_HEAD",
+		"CHERRY_PICK_HEAD",
+		"REVERT_HEAD",
+		"rebase-merge",
+		"rebase-apply",
+		"sequencer",
+		"BISECT_LOG",
+	]) {
+		try {
+			await lstat(join(gitdir, operation));
+		} catch (error) {
+			if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
+			throw error;
+		}
+		throw new Error(`Refusing cleanup because a Git operation is in progress (${operation})`);
+	}
+	const flags = (await runCommand("git", ["ls-files", "-v", "-z"], workspace.path)).stdout.split("\0");
+	if (flags.some((file) => /^[a-zS] /u.test(file))) {
+		throw new Error(
+			"Refusing cleanup because assume-unchanged or skip-worktree index flags prevent verifying local changes",
+		);
+	}
+	const status = (
+		await runCommand(
+			"git",
+			["status", "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=none"],
+			workspace.path,
+		)
+	).stdout;
+	if (status)
+		throw new Error(
+			"Refusing cleanup because the workspace has uncommitted tracked changes (including staged changes or submodule changes)",
+		);
+	const others = (await runCommand("git", ["ls-files", "--others", "-z"], workspace.path)).stdout
+		.split("\0")
+		.filter(Boolean);
+	const owned = new Set<string>();
+	if (goalFile?.backing) {
+		const names = [goalFile.path, goalFile.backing.name];
+		if (others.some((name) => names.includes(name))) {
+			try {
+				await ensureGoalPathsAreLocalState(workspace.path, names);
+				await authenticateGoalBacking(
+					join(workspace.path, goalFile.backing.name),
+					goalFile.backing,
+					goalFile.sha256,
+				);
+				await verifyPublishedGoalFileIdentity(join(workspace.path, goalFile.path), goalFile.backing);
+			} catch (error) {
+				throw new Error(
+					"Refusing cleanup because the ignored goal handoff has uncommitted changes or unverifiable ownership",
+					{ cause: error },
+				);
+			}
+			for (const name of names) owned.add(name);
+		}
+	}
+	const unowned = others.filter((name) => !owned.has(name));
+	if (unowned.length) {
+		throw new Error(
+			`Refusing cleanup because the workspace has uncommitted untracked or ignored files: ${unowned.map((name) => JSON.stringify(name)).join(", ")}`,
+		);
+	}
+}
+
+async function verifyCleanupHistory(
+	repositoryRoot: string,
+	branchTip: string,
+	base: string,
+	targetBranch: string,
+): Promise<void> {
+	// Commits already present at acquisition are not work produced by this checkout.
+	const added = (
+		await runCommand("git", ["rev-list", "--count", branchTip, `^${base}`], repositoryRoot)
+	).stdout.trim();
+	if (added !== "0") {
+		const remoteTips = new Set<string>();
+		try {
+			const remotes = (await runCommand("git", ["remote"], repositoryRoot)).stdout.trim();
+			for (const remote of remotes ? remotes.split("\n") : []) {
+				await runCommand("git", ["fetch", "--prune", "--no-tags", remote], repositoryRoot);
+				const advertised = (await runCommand("git", ["ls-remote", "--heads", remote], repositoryRoot)).stdout;
+				for (const line of advertised.trim().split("\n").filter(Boolean)) {
+					const tip = line.split("\t")[0];
+					if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(tip)) throw new Error("Invalid remote commit");
+					remoteTips.add(tip);
+				}
+			}
+		} catch (error) {
+			throw new Error(
+				"Refusing cleanup because pushed commits could not be verified: refreshing remote refs failed",
+				{ cause: error },
+			);
+		}
+		let unpushed: string;
+		try {
+			// Stale refs outside a remote's fetchspec are not proof that work was pushed.
+			unpushed = (
+				await runCommand(
+					"git",
+					["rev-list", "--count", branchTip, `^${base}`, ...[...remoteTips].map((tip) => `^${tip}`)],
+					repositoryRoot,
+				)
+			).stdout.trim();
+		} catch (error) {
+			throw new Error("Refusing cleanup because pushed commit reachability could not be verified", {
+				cause: error,
+			});
+		}
+		if (unpushed !== "0") {
+			throw new Error(
+				`Refusing cleanup because the branch has ${unpushed} unpushed commit(s) beyond its preparation base (not reachable from refreshed remote refs)`,
+			);
+		}
+	}
+	await runCommand("git", ["check-ref-format", `refs/heads/${targetBranch}`], repositoryRoot);
+	try {
+		await runCommand(
+			"git",
+			["merge-base", "--is-ancestor", branchTip, `refs/heads/${targetBranch}`],
+			repositoryRoot,
+		);
+	} catch (error) {
+		if (error instanceof CommandFailure && error.status === 1) {
+			throw new Error(`Refusing cleanup because the branch has not merged into target ${targetBranch}`);
+		}
+		throw new Error(
+			`Refusing cleanup because merge state against target ${targetBranch} could not be verified`,
+			{ cause: error },
+		);
+	}
+}
+
 async function verifyPublishedGoalFileIdentity(target: string, backing: DispatchGoalBacking): Promise<void> {
 	const finalDetails = await lstat(target, { bigint: true });
 	if (!finalDetails.isFile() || !matchesBacking(finalDetails, backing)) {
@@ -1167,7 +1309,11 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		}
 	}
 
-	async cleanup(workspace: DispatchWorkspace, branch: string): Promise<void> {
+	async cleanup(
+		workspace: DispatchWorkspace,
+		branch: string,
+		options: WorkspaceCleanupOptions,
+	): Promise<void> {
 		const expectedPath = join(this.workspaceParent, `stepstone-${branch.slice("stepstone/".length)}`);
 		if (
 			!branch.startsWith("stepstone/") ||
@@ -1190,21 +1336,37 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			this.repositoryRoot,
 			workspace.path,
 			branch,
-			undefined,
+			marker.record.removalBranchTip,
 			marker.record.gitdir,
 			marker.record.marker,
 		);
 		let removalRecord = marker.record;
-		let branchTip = await currentBranchTip(this.repositoryRoot, branch);
-		if (!removalRecord.removalBranchTip) {
-			await runCommand("git", ["reset", "--hard", "HEAD"], workspace.path);
-			await runCommand("git", ["clean", "-fdx"], workspace.path);
-			const { stdout } = await runCommand("git", ["status", "--porcelain"], workspace.path);
-			if (stdout.trim()) throw new Error(`Workspace ${workspace.path} is not clean after scrubbing`);
-			branchTip = await currentBranchTip(this.repositoryRoot, branch);
-			if (!branchTip) throw new Error("Owned worktree branch disappeared before cleanup intent");
-			removalRecord = await journalWorkspaceBranchRemoval(marker.path, removalRecord, branchTip);
+		const branchTip = await currentBranchTip(this.repositoryRoot, branch);
+		const removalTip = removalRecord.removalBranchTip ?? branchTip;
+		if (!removalTip) throw new Error("Owned worktree branch disappeared before cleanup intent");
+		const head = (await runCommand("git", ["rev-parse", "HEAD"], workspace.path)).stdout.trim();
+		if (head !== removalTip)
+			throw new Error("Refusing cleanup because the workspace HEAD changed after cleanup intent");
+		if (options.targetBranch === branch) throw new Error("Refusing cleanup of the dispatch target branch");
+		if (!options.force) {
+			await verifyCleanupContents(workspace, options.goalFile);
+			await verifyCleanupHistory(this.repositoryRoot, removalTip, base, options.targetBranch);
+			// Fetching may take time; inspect local contents again before destructive steps.
+			await verifyCleanupContents(workspace, options.goalFile);
 		}
+		await verifyRegisteredWorkspace(
+			this.repositoryRoot,
+			workspace.path,
+			branch,
+			marker.record.removalBranchTip,
+			marker.record.gitdir,
+			marker.record.marker,
+		);
+		if (!removalRecord.removalBranchTip) {
+			removalRecord = await journalWorkspaceBranchRemoval(marker.path, removalRecord, removalTip);
+		}
+		// Retain an inspectable HEAD if removal is interrupted after deleting the branch.
+		await runCommand("git", ["update-ref", "--no-deref", "HEAD", removalTip, removalTip], workspace.path);
 		removalRecord = await deleteJournaledWorkspaceBranch(
 			this.repositoryRoot,
 			marker.path,
@@ -1212,7 +1374,11 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			branch,
 			branchTip,
 		);
-		await runCommand("git", ["worktree", "remove", "--force", workspace.path], this.repositoryRoot);
+		await runCommand(
+			"git",
+			["worktree", "remove", ...(options.force ? ["--force"] : []), workspace.path],
+			this.repositoryRoot,
+		);
 		await markWorkspaceRemoved(marker.path, removalRecord);
 	}
 }

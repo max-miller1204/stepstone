@@ -33,7 +33,7 @@ Actions:
   status [run-id]
   inspect <run-id> <goal-id>
   recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]
-  cleanup <run-id> [goal-id]
+  cleanup <run-id> [goal-id] [--force]
 
 Preparation flags for start:
   --workspace-parent <path>            Worktree parent directory
@@ -43,6 +43,9 @@ Common flags:
   --cwd <repository>                   Default: current directory
   --json
   --help
+
+Cleanup --force requires a goal ID and explicitly discards uncommitted, unpushed,
+or unmerged work. Workspace identity checks always apply.
 
 Each prepared workspace contains an ignored ${DISPATCH_GOAL_FILE} handoff at its root.
 Stepstone prepares and claims workspaces. It never starts, prompts, or supervises an agent.
@@ -63,8 +66,8 @@ function parseArguments(argv: string[]): Invocation {
 			options.set("help", []);
 			continue;
 		}
-		if (token === "--release") {
-			options.set("release", []);
+		if (token === "--release" || token === "--force") {
+			options.set(token.slice(2), []);
 			continue;
 		}
 		if (token.startsWith("--")) {
@@ -209,6 +212,9 @@ async function main(): Promise<void> {
 		process.stdout.write(HELP);
 		return;
 	}
+	if (invocation.options.has("force") && invocation.action !== "cleanup") {
+		throw new Error("--force is only valid for cleanup");
+	}
 	const cwd = resolve(one(invocation, "cwd") ?? process.cwd());
 	const rootResult = resolveGitRoot(cwd);
 	if (!rootResult.root) throw new Error(rootResult.failure?.message ?? `${cwd} is not a Git repository`);
@@ -308,7 +314,11 @@ async function main(): Promise<void> {
 			const result = await store.withRunLock(runId, async () => {
 				const run = await store.load(runId);
 				assertRunRepository(run, repositoryRoot);
-				return createDriver(run, store).cleanup(run.id, invocation.positionals[1]);
+				return createDriver(run, store).cleanup(
+					run.id,
+					invocation.positionals[1],
+					invocation.options.has("force"),
+				);
 			});
 			if (result) printRun(result, invocation.json, false);
 			else print({ removedRunId: runId }, invocation.json);
