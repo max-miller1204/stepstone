@@ -762,11 +762,12 @@
 		{
 			"id": "remove-the-symphony-incorporation",
 			"title": "Remove the Symphony incorporation",
-			"description": "Remove everything introduced to operate this repository through Symphony. Delete WORKFLOW.md, the Symphony guide and launcher, and the Symphony-only commit, pull, push, land, and Linear skills. Remove README and package references. Keep the generated Stepstone product skill. Audit the full incorporation commit series so later Symphony policy changes do not survive under generic names. Document and complete the external cleanup for Symphony remote branches, labels, Linear configuration, the 1Password item, workspaces, and logs.",
+			"description": "Remove everything introduced to operate this repository through Symphony. Delete WORKFLOW.md, the Symphony guide and launcher, and the Symphony-only commit, pull, push, land, and Linear skills. Remove README and package references. Keep the generated Stepstone product skill. Audit the full incorporation commit series so later Symphony policy changes do not survive under generic names. Document and complete the external cleanup for Symphony remote branches, labels, Linear configuration, the 1Password item, workspaces, and logs.\n\nCleanup record: Deleted the chore/setup-symphony, chore/symphony-two-agents, and fix/symphony-git-access local and remote branches. Deleted the GitHub symphony label. Deleted the Stepstone Linear project and archived the Symphony-only In Review, Merging, Human Review, and Rework workflow states. Deleted the Linear - Stepstone Symphony item from the Personal 1Password vault. Deleted the Stepstone Symphony workspace and log directories.",
 			"group": "Release 0.12",
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-16T17:35:53.907Z",
+			"completedAt": "2026-09-16T17:35:53.907Z"
 		},
 		{
 			"id": "make-unit-test-evidence-hard-to-game",
@@ -919,5 +920,5 @@
 			"updatedAt": "2026-09-16T07:09:20.058Z"
 		}
 	],
-	"revision": 347
+	"revision": 350
 }

@@ -97,7 +97,6 @@ Run `npx -y stepstone@latest project ui` for a full-screen [terminal board](docs
 | [docs/goals.md](docs/goals.md) | The goal model: fields, statuses, IDs, order, groups, JSON plans |
 | [docs/dependencies.md](docs/dependencies.md) | Dependency edges and the sequencing reads behind `next`, `ready`, and `waves` |
 | [docs/workspaces.md](docs/workspaces.md) | Preparing and claiming approved goal workspaces without starting an agent harness |
-| [docs/symphony.md](docs/symphony.md) | Running autonomous Codex work from the repository's Linear project |
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
 | [docs/skill.md](docs/skill.md) | The standalone generated Agent Skill and how to install it |
