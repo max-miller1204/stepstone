@@ -34,8 +34,11 @@ description:
 7. If conflicts appear, resolve them (see conflict guidance below), then:
    - `git add <files>`
    - `git commit` (or `git merge --continue` if the merge is paused)
-8. Verify with project checks (follow repo policy in `AGENTS.md`).
-9. Summarize the merge:
+8. Run `npm ci --ignore-scripts` after synchronization and conflict resolution.
+   Stop if installation fails. This makes the installed dependencies match the
+   current issue branch before reproduction or validation.
+9. Verify with project checks (follow repo policy in `AGENTS.md`).
+10. Summarize the merge:
    - Call out the most challenging conflicts/files and how they were resolved.
    - Note any assumptions or follow-ups.
 

@@ -22,7 +22,6 @@ workspace:
 hooks:
   after_create: |
     git clone https://github.com/max-miller1204/stepstone.git .
-    npm ci --ignore-scripts
 agent:
   max_concurrent_agents: 1
   max_turns: 20
@@ -148,31 +147,28 @@ The agent must be able to talk to Linear through a configured Linear MCP server 
     - If not found, create one workpad comment and use it for all updates.
     - Persist the workpad comment ID and only write progress updates to that ID.
 2.  If arriving from `Todo`, do not delay on additional status transitions: the issue should already be `In Progress` before this step begins.
-3.  Immediately reconcile the workpad before new edits:
-    - Check off items that are already done.
-    - Expand/fix the plan so it is comprehensive for current scope.
-    - Ensure `Acceptance Criteria` and `Validation` are current and still make sense for the task.
-4.  Start work by writing/updating a hierarchical plan in the workpad comment.
-5.  Ensure the workpad includes a compact environment stamp at the top as a code fence line:
-    - Format: `<host>:<abs-workdir>@<short-sha>`
-    - Example: `devbox-01:/home/dev-user/.local/share/symphony/stepstone/workspaces/STE-12@7bdde33bc`
-    - Do not include metadata already inferable from Linear issue fields (`issue ID`, `status`, `branch`, `PR link`).
-6.  Add explicit acceptance criteria and TODOs in checklist form in the same comment.
-    - If changes are user-facing, include a UI walkthrough acceptance criterion that describes the end-to-end user path to validate.
-    - If changes touch app files or app behavior, add explicit app-specific flow checks to `Acceptance Criteria` in the workpad (for example: launch path, changed interaction path, and expected result path).
-    - If the ticket description/comment context includes `Validation`, `Test Plan`, or `Testing` sections, copy those requirements into the workpad `Acceptance Criteria` and `Validation` sections as required checkboxes (no optional downgrade).
-7.  Run a principal-style self-review of the plan and refine it in the comment.
-8.  Before implementing, capture a concrete reproduction signal and record it in the workpad `Notes` section (command/output, screenshot, or deterministic UI behavior).
-9.  Prepare the issue branch before any code edits:
+3.  Prepare the issue branch before repository-dependent planning or reproduction:
     - Read the issue's `branchName` from Linear. Stop with a blocker if it is empty or names `main`.
     - Fetch `origin`. Preserve an existing non-main branch for this issue on continuation or after closed-PR recovery.
     - For a new workspace on `main`, check out the issue branch if it exists locally. Otherwise, track `origin/<branchName>` if it exists, or create `<branchName>` from `origin/main`.
     - Confirm that the current branch is not `main`.
-10. Run the `pull` skill to sync with latest `origin/main` before any code edits, then record the pull/sync result in the workpad `Notes`.
-    - Include a `pull skill evidence` note with:
-      - merge source(s),
-      - result (`clean` or `conflicts resolved`),
-      - resulting `HEAD` short SHA.
+4.  Run the `pull` skill to synchronize the issue branch with `origin/main`. Complete its dependency refresh before repository-dependent planning or reproduction.
+    - Record the merge sources, merge result, resulting `HEAD` short SHA, and dependency refresh result in the workpad `Notes` as `pull skill evidence`.
+5.  Reconcile the workpad against the synchronized issue branch before new edits:
+    - Check off items that are already done.
+    - Expand/fix the plan so it is comprehensive for current scope.
+    - Ensure `Acceptance Criteria` and `Validation` are current and still make sense for the task.
+6.  Start work by writing/updating a hierarchical plan in the workpad comment.
+7.  Ensure the workpad includes a compact environment stamp at the top as a code fence line:
+    - Format: `<host>:<abs-workdir>@<short-sha>`
+    - Example: `devbox-01:/home/dev-user/.local/share/symphony/stepstone/workspaces/STE-12@7bdde33bc`
+    - Do not include metadata already inferable from Linear issue fields (`issue ID`, `status`, `branch`, `PR link`).
+8.  Add explicit acceptance criteria and TODOs in checklist form in the same comment.
+    - If changes are user-facing, include a UI walkthrough acceptance criterion that describes the end-to-end user path to validate.
+    - If changes touch app files or app behavior, add explicit app-specific flow checks to `Acceptance Criteria` in the workpad (for example: launch path, changed interaction path, and expected result path).
+    - If the ticket description/comment context includes `Validation`, `Test Plan`, or `Testing` sections, copy those requirements into the workpad `Acceptance Criteria` and `Validation` sections as required checkboxes (no optional downgrade).
+9.  Run a principal-style self-review of the plan and refine it in the comment.
+10. Before implementing, capture a concrete reproduction signal from the synchronized issue branch and record it in the workpad `Notes` section (command/output, screenshot, or deterministic UI behavior).
 11. Compact context and proceed to execution.
 
 ## PR feedback sweep protocol (required)
@@ -287,6 +283,7 @@ Use this only when completion is blocked by missing required tools, authenticati
 - Do not edit the issue body/description for planning or progress tracking.
 - Use exactly one persistent workpad comment (`## Codex Workpad`) per issue.
 - If comment editing is unavailable in-session, report the missing access as a blocker. Do not use an undocumented update script.
+- After any later checkout or merge changes `package.json` or `npm-shrinkwrap.json`, run `npm ci --ignore-scripts` before reproduction or validation. Also run it if `node_modules` is absent. Stop if installation fails.
 - Temporary proof edits are allowed only for local verification and must be reverted before commit.
 - If out-of-scope improvements are found, create a separate Backlog issue rather
   than expanding current scope, and include a clear
