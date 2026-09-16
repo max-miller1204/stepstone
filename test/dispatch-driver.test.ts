@@ -1060,12 +1060,14 @@ describe("Git workspace preparation", () => {
 			await expect(binding.verify(workspace, "stepstone/alpha")).resolves.toBeUndefined();
 			const tampered = structuredClone(workspace);
 			tampered.metadata.marker = "00000000-0000-4000-8000-000000000099";
-			await expect(binding.cleanup(tampered, "stepstone/alpha")).rejects.toThrow();
+			await expect(
+				binding.cleanup(tampered, "stepstone/alpha", { targetBranch: "main", force: true }),
+			).rejects.toThrow();
 			expect(
 				(await execFileAsync("git", ["branch", "--list", "stepstone/alpha"], { cwd: root })).stdout,
 			).toContain("stepstone/alpha");
 
-			await binding.cleanup(workspace, "stepstone/alpha");
+			await binding.cleanup(workspace, "stepstone/alpha", { targetBranch: "main", force: true });
 			await expect(readFile(goalFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(backing, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(legacyBacking, "utf8")).rejects.toMatchObject({ code: "ENOENT" });

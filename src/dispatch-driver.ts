@@ -125,7 +125,13 @@ export interface WorkspaceBinding {
 	): Promise<DispatchGoalBacking | undefined>;
 	writeGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
 	verifyGoalFile(workspace: DispatchWorkspace, receipt: DispatchGoalFile, content: string): Promise<void>;
-	cleanup(workspace: DispatchWorkspace, branch: string): Promise<void>;
+	cleanup(workspace: DispatchWorkspace, branch: string, options: WorkspaceCleanupOptions): Promise<void>;
+}
+
+export interface WorkspaceCleanupOptions {
+	targetBranch: string;
+	goalFile?: DispatchGoalFile;
+	force?: boolean;
 }
 
 export interface MergeEvidence {
@@ -352,13 +358,14 @@ export class DispatchDriver {
 		return run;
 	}
 
-	async cleanup(runId: string, goalId?: string): Promise<DispatchRun | undefined> {
+	async cleanup(runId: string, goalId?: string, force = false): Promise<DispatchRun | undefined> {
+		if (force && !goalId) throw new Error("Destructive cleanup requires an explicit goal ID");
 		const run = await this.dependencies.store.load(runId);
 		const entries = goalId ? [this.requireEntry(run, goalId)] : Object.values(run.entries);
 		for (const entry of entries) {
 			if (hasCanonicalCustody(entry))
 				throw new Error(`Goal ${entry.goal.id} still has custody; recover its claim first`);
-			if (needsCleanup(entry)) await this.cleanupEntry(run, entry);
+			if (needsCleanup(entry)) await this.cleanupEntry(run, entry, force);
 		}
 		if (!goalId && Object.values(run.entries).every((entry) => entry.phase === "cleaned")) {
 			await this.dependencies.store.remove(run.id);
@@ -750,12 +757,16 @@ export class DispatchDriver {
 		}
 	}
 
-	private async cleanupEntry(run: DispatchRun, entry: DispatchEntry): Promise<void> {
+	private async cleanupEntry(run: DispatchRun, entry: DispatchEntry, force = false): Promise<void> {
 		if (!needsCleanup(entry)) return;
 		try {
 			if (entry.workspace) {
 				const workspace = entry.workspace;
-				await this.dependencies.workspace.cleanup(workspace, entry.branch);
+				await this.dependencies.workspace.cleanup(workspace, entry.branch, {
+					targetBranch: run.targetBranch,
+					goalFile: entry.goalFile,
+					force,
+				});
 				entry.cleanupMarker = workspace.metadata.marker;
 			}
 		} catch (error) {
@@ -769,6 +780,7 @@ export class DispatchDriver {
 		entry.message = entry.mergedPr
 			? `Completed and cleaned after ${entry.mergedPr.url}.`
 			: "Released and cleaned.";
+		if (force) entry.message += " Explicit destructive cleanup override used.";
 		await this.persist(run, entry);
 	}
 
