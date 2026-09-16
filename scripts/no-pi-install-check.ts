@@ -34,7 +34,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { CLI_COMMAND_CONTRACT, DISPATCH_BINARY } from "../src/cli-contract.ts";
+import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
 import { DISPATCH_GOAL_FILE } from "../src/dispatch-driver.ts";
 
 const execFileAsync = promisify(execFile);
@@ -407,14 +407,19 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	const board = await runCli(["project", "ui"]);
 	assert.equal(board.code, 1);
 	assert.match(board.stderr, /needs an interactive terminal/);
+	const preparationRepository = join(dirname(workspace), `${basename(workspace)}-preparation`);
+	await mkdir(preparationRepository);
+	await run("git", ["init", "-q", "-b", "main"], preparationRepository);
+	await exerciseWorkspace(binPath, preparationRepository);
 }
 
-async function exerciseDispatch(binPath: string, workspace: string): Promise<void> {
-	const runDispatch = cliRunner(binPath, workspace);
-	const help = await runDispatch(["--help"]);
-	assert.equal(help.code, 0, "installed dispatch executable --help must succeed");
-	assert.match(help.stdout, /resume <run-id>/, "dispatch help must expose resumable operation");
-	assert.match(help.stdout, new RegExp(DISPATCH_GOAL_FILE), "dispatch help must name the goal handoff");
+async function exerciseWorkspace(binPath: string, workspace: string): Promise<void> {
+	const runCli = cliRunner(binPath, workspace);
+	const runWorkspace = (args: string[]) => runCli(["project", "workspace", ...args]);
+	const help = await runWorkspace(["--help"]);
+	assert.equal(help.code, 0, "installed project workspace command --help must succeed");
+	assert.match(help.stdout, /resume <run-id>/, "workspace help must expose resumable operation");
+	assert.match(help.stdout, new RegExp(DISPATCH_GOAL_FILE), "workspace help must name the goal handoff");
 
 	await run("git", ["config", "user.name", "Stepstone Check"], workspace);
 	await run("git", ["config", "user.email", "stepstone@example.test"], workspace);
@@ -447,7 +452,7 @@ async function exerciseDispatch(binPath: string, workspace: string): Promise<voi
 	const workspaceParent = join(dirname(workspace), `${basename(workspace)}-prepared`);
 	await mkdir(workspaceParent);
 	const canonicalWorkspaceParent = await realpath(workspaceParent);
-	const started = await runDispatch([
+	const started = await runWorkspace([
 		"start",
 		"--goal",
 		"prepared-goal",
@@ -455,7 +460,7 @@ async function exerciseDispatch(binPath: string, workspace: string): Promise<voi
 		canonicalWorkspaceParent,
 		"--json",
 	]);
-	assert.equal(started.code, 0, "installed dispatch executable must prepare a workspace");
+	assert.equal(started.code, 0, "installed project workspace command must prepare a workspace");
 	const envelope = JSON.parse(started.stdout) as {
 		ok?: unknown;
 		result?: { id?: string; entries?: Record<string, { phase?: string; goalFile?: string }> };
@@ -469,8 +474,8 @@ async function exerciseDispatch(binPath: string, workspace: string): Promise<voi
 	);
 	assert.match(await readFile(entry?.goalFile ?? "", "utf8"), /Prove the installed handoff\./);
 
-	const status = await runDispatch(["status", envelope.result?.id ?? "", "--json"]);
-	assert.equal(status.code, 0, "installed dispatch executable status must succeed");
+	const status = await runWorkspace(["status", envelope.result?.id ?? "", "--json"]);
+	assert.equal(status.code, 0, "installed project workspace command status must succeed");
 	assert.equal((JSON.parse(status.stdout) as { ok?: unknown }).ok, true);
 }
 /**
@@ -481,7 +486,6 @@ async function exerciseDispatch(binPath: string, workspace: string): Promise<voi
  */
 const BIN_EXERCISES: Record<string, BinExercise> = {
 	[binary]: exerciseCli,
-	[DISPATCH_BINARY]: exerciseDispatch,
 };
 
 if (process.platform === "win32") {

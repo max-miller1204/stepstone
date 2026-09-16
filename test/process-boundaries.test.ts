@@ -249,3 +249,107 @@ describe("real GitHub CLI reconciliation", () => {
 		},
 	);
 });
+
+describe("project workspace CLI", () => {
+	it("reads existing version 2 custody without rewriting it, refuses version 1, and recovers in place", async () => {
+		await withProcessBoundary(async (f) => {
+			// The unchanged driver writes the version 2 schema previously owned by the companion bin.
+			const prepared = await f.prepare();
+			const statePath = join(f.root, ".git/stepstone-dispatch", `${prepared.id}.json`);
+			const before = await readFile(statePath, "utf8");
+			const status = await f.workspaceCli("status", prepared.id);
+			expect(status).toMatchObject({
+				ok: true,
+				scope: "project",
+				action: "workspace status",
+				result: [
+					{
+						id: prepared.id,
+						entries: { alpha: { phase: "prepared", claimUpdatedAt: prepared.entries.alpha.claimUpdatedAt } },
+					},
+				],
+				meta: { cliVersion: expect.any(String) },
+			});
+			const inspection = await f.workspaceCli("inspect", prepared.id, "alpha");
+			expect(inspection.result).toMatchObject({ goal: prepared.entries.alpha });
+			expect(await readFile(statePath, "utf8")).toBe(before);
+			const legacy = JSON.stringify({ ...JSON.parse(before), version: 1, sessionBinding: "process" });
+			await writeFile(statePath, legacy);
+			await expect(f.workspaceCli("status", prepared.id)).rejects.toMatchObject({
+				code: 1,
+				stdout: "",
+				stderr: expect.stringContaining("expected 2"),
+			});
+			expect(await readFile(statePath, "utf8")).toBe(legacy);
+			await writeFile(statePath, before);
+			await expect(f.workspaceCli("recover", prepared.id, "alpha")).rejects.toMatchObject({
+				code: 2,
+				stderr: expect.stringContaining("--release"),
+			});
+			expect(await readFile(statePath, "utf8")).toBe(before);
+			const released = await f.workspaceCli("recover", prepared.id, "alpha", "--release");
+			expect(released.result).toMatchObject({ entries: { alpha: { phase: "cleaned" } } });
+			expect((await f.read()).goals[0].branch).toBeUndefined();
+			const removed = await f.workspaceCli("cleanup", prepared.id);
+			expect(removed.result).toEqual({ removedRunId: prepared.id });
+			expect((await f.workspaceCli("status")).result).toEqual([]);
+		});
+	});
+
+	it("prepares through the CLI and reconciles exact merged work through real Git and gh", async () => {
+		await withProcessBoundary(async (f) => {
+			const started = await f.workspaceCli(
+				"start",
+				"--goal",
+				"alpha",
+				"--workspace-parent",
+				f.directory,
+				"--max-parallel",
+				"1",
+			);
+			const summary = started.result as { id: string; entries: { alpha: { claimUpdatedAt: string } } };
+			expect(started.result).toMatchObject({
+				pass: { outcome: "prepared" },
+				entries: { alpha: { phase: "prepared" } },
+			});
+			const waiting = await f.workspaceCli("resume", summary.id);
+			expect(waiting.result).toMatchObject({
+				pass: { outcome: "capacity-full" },
+				entries: { alpha: { phase: "prepared", claimUpdatedAt: summary.entries.alpha.claimUpdatedAt } },
+			});
+			await writeFile(join(f.workspace, "result"), "merged CLI work\n");
+			await f.workGit("add", "result");
+			await f.workGit("commit", "-qm", "finish alpha");
+			const tip = await f.workGit("rev-parse", "HEAD");
+			await f.workGit("push", "origin", `${branch}:main`);
+			f.pullRequests = [f.pr(summary.entries.alpha.claimUpdatedAt, tip)];
+			const completed = await f.workspaceCli("resume", summary.id);
+			expect(completed.result).toMatchObject({
+				entries: { alpha: { phase: "cleaned", mergedPr: { mergeCommit: tip } } },
+			});
+			expect((await f.read()).goals[0].status).toBe("done");
+			expect(await f.git("rev-parse", "HEAD")).toBe(tip);
+			expect(await f.git("branch", "--list", branch)).toBe("");
+			expect((await f.workspaceCli("cleanup", summary.id)).result).toEqual({ removedRunId: summary.id });
+			expect(f.requests).toHaveLength(2);
+		});
+	});
+
+	it.each([
+		["status", "--goal", "alpha"],
+		["resume", "run", "--max-parallel", "2"],
+		["start", "--goal", "alpha", "--force"],
+		["status", "--file", "elsewhere.json"],
+		["start", "--goal", "alpha", "--max-parallel", "0"],
+		["start", "--goal", "alpha", "--max-parallel", "1", "--max-parallel", "2"],
+		["start", "--goal", "alpha", "--", "ignored prose"],
+		["unknown"],
+	])("refuses invalid workspace arguments without creating a run: %j", async (...args) => {
+		await withProcessBoundary(async (f) => {
+			await expect(f.workspaceCli(...args)).rejects.toMatchObject({ code: 2 });
+			expect((await f.workspaceCli("status")).result).toEqual([]);
+			expect((await f.read()).goals[0].branch).toBeUndefined();
+			expect(await f.git("branch", "--list", branch)).toBe("");
+		});
+	});
+});

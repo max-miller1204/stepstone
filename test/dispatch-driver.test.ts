@@ -1185,8 +1185,8 @@ describe("published preparation CLI", () => {
 			await execFileAsync("git", ["config", "user.email", "stepstone@example.test"], { cwd: root });
 			await execFileAsync("git", ["add", "."], { cwd: root });
 			await execFileAsync("git", ["commit", "-q", "-m", "seed"], { cwd: root });
-			const cli = join(import.meta.dirname, "..", "src", "dispatch.ts");
-			const help = await execFileAsync(process.execPath, [cli, "--help"], {
+			const cli = join(import.meta.dirname, "..", "src", "cli.ts");
+			const help = await execFileAsync(process.execPath, [cli, "project", "workspace", "--help"], {
 				cwd: join(import.meta.dirname, ".."),
 			});
 			expect(help.stdout).toContain("never starts, prompts, or supervises an agent");
@@ -1197,7 +1197,19 @@ describe("published preparation CLI", () => {
 
 			const started = await execFileAsync(
 				process.execPath,
-				[cli, "start", "--cwd", root, "--goal", "alpha", "--workspace-parent", workspaceParent, "--json"],
+				[
+					cli,
+					"project",
+					"workspace",
+					"start",
+					"--cwd",
+					root,
+					"--goal",
+					"alpha",
+					"--workspace-parent",
+					workspaceParent,
+					"--json",
+				],
 				{ cwd: join(import.meta.dirname, "..") },
 			);
 			const envelope = JSON.parse(started.stdout) as {
@@ -1223,7 +1235,7 @@ describe("published preparation CLI", () => {
 
 			const noWork = await execFileAsync(
 				process.execPath,
-				[cli, "start", "--cwd", root, "--goal", "alpha", "--json"],
+				[cli, "project", "workspace", "start", "--cwd", root, "--goal", "alpha", "--json"],
 				{ cwd: join(import.meta.dirname, "..") },
 			);
 			expect(JSON.parse(noWork.stdout)).toMatchObject({
@@ -1237,7 +1249,18 @@ describe("published preparation CLI", () => {
 			await writeFile(join(workspaceParent, "stepstone-beta"), "occupied");
 			const humanRefusal = await execFileAsync(
 				process.execPath,
-				[cli, "start", "--cwd", root, "--goal", "beta", "--workspace-parent", workspaceParent],
+				[
+					cli,
+					"project",
+					"workspace",
+					"start",
+					"--cwd",
+					root,
+					"--goal",
+					"beta",
+					"--workspace-parent",
+					workspaceParent,
+				],
 				{ cwd: join(import.meta.dirname, "..") },
 			);
 			expect(humanRefusal.stdout).toContain("Preparation refused: beta.");
@@ -1246,7 +1269,19 @@ describe("published preparation CLI", () => {
 			await writeFile(join(workspaceParent, "stepstone-gamma"), "occupied");
 			const jsonRefusal = await execFileAsync(
 				process.execPath,
-				[cli, "start", "--cwd", root, "--goal", "gamma", "--workspace-parent", workspaceParent, "--json"],
+				[
+					cli,
+					"project",
+					"workspace",
+					"start",
+					"--cwd",
+					root,
+					"--goal",
+					"gamma",
+					"--workspace-parent",
+					workspaceParent,
+					"--json",
+				],
 				{ cwd: join(import.meta.dirname, "..") },
 			);
 			const refusedEnvelope = JSON.parse(jsonRefusal.stdout) as {
@@ -1269,7 +1304,7 @@ describe("published preparation CLI", () => {
 			});
 			const refusedStatus = await execFileAsync(
 				process.execPath,
-				[cli, "status", refusedEnvelope.result.id, "--cwd", root, "--json"],
+				[cli, "project", "workspace", "status", refusedEnvelope.result.id, "--cwd", root, "--json"],
 				{ cwd: join(import.meta.dirname, "..") },
 			);
 			expect(JSON.parse(refusedStatus.stdout)).toMatchObject({
@@ -1286,7 +1321,7 @@ describe("published preparation CLI", () => {
 
 			const status = await execFileAsync(
 				process.execPath,
-				[cli, "status", envelope.result.id, "--cwd", root, "--json"],
+				[cli, "project", "workspace", "status", envelope.result.id, "--cwd", root, "--json"],
 				{ cwd: join(import.meta.dirname, "..") },
 			);
 			expect(JSON.parse(status.stdout)).toMatchObject({
@@ -1309,14 +1344,14 @@ describe("published preparation CLI", () => {
 			await execFileAsync("git", ["config", "user.email", "stepstone@example.test"], { cwd: root });
 			await execFileAsync("git", ["add", "."], { cwd: root });
 			await execFileAsync("git", ["commit", "-q", "-m", "seed"], { cwd: root });
-			const cli = join(import.meta.dirname, "..", "src", "dispatch.ts");
+			const cli = join(import.meta.dirname, "..", "src", "cli.ts");
 			const failure = await execFileAsync(
 				process.execPath,
-				[cli, "start", "--cwd", root, "--goal", "alpha", "--json"],
+				[cli, "project", "workspace", "start", "--cwd", root, "--goal", "alpha", "--json"],
 				{ cwd: join(import.meta.dirname, "..") },
-			).catch((error: unknown) => error as { stdout: string });
+			).catch((error: unknown) => error as { stderr: string });
 
-			expect(JSON.parse(failure.stdout)).toMatchObject({
+			expect(JSON.parse(failure.stderr)).toMatchObject({
 				ok: false,
 				error: { code: "PERSISTENCE_FAILED", retryable: false },
 			});
@@ -1326,16 +1361,20 @@ describe("published preparation CLI", () => {
 	});
 
 	it("rejects removed harness and workspace flags", async () => {
-		const cli = join(import.meta.dirname, "..", "src", "dispatch.ts");
+		const cli = join(import.meta.dirname, "..", "src", "cli.ts");
 		for (const removed of [
 			["--agent-command", "claude"],
 			["--session", "process"],
 			["--workspace", "treehouse"],
 		]) {
 			await expect(
-				execFileAsync(process.execPath, [cli, "start", "--goal", "alpha", ...removed], {
-					cwd: join(import.meta.dirname, ".."),
-				}),
+				execFileAsync(
+					process.execPath,
+					[cli, "project", "workspace", "start", "--goal", "alpha", ...removed],
+					{
+						cwd: join(import.meta.dirname, ".."),
+					},
+				),
 			).rejects.toMatchObject({ stderr: expect.stringContaining(`Unknown flag ${removed[0]}`) });
 		}
 	});

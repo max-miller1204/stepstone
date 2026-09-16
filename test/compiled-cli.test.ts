@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
 	CLI_COMMAND_CONTRACT,
-	DISPATCH_BINARY,
 	renderSkillMarkdown,
 	renderSkillReferenceMarkdown,
 	SKILL_PATH,
@@ -20,7 +19,6 @@ import { buildPackage, packedFilePaths } from "./npm-pack.ts";
 
 const execFileAsync = promisify(execFile);
 const compiledCliPath = resolve("dist/cli.js");
-const compiledDispatchPath = resolve("dist/dispatch.js");
 
 /**
  * Everything this checkout writes for itself rather than for an install.
@@ -90,7 +88,10 @@ describe("published stepstone package", () => {
 			expect(compiled).not.toMatch(/from "\.\/[^"]+\.ts"/);
 		}
 		expect(await readFile(compiledCliPath, "utf8")).toContain('from "./application-service.js"');
-		expect(await readFile(compiledDispatchPath, "utf8")).toContain('from "./dispatch-bindings.js"');
+		expect(await readFile(resolve("dist/workspace-cli.js"), "utf8")).toContain(
+			'from "./dispatch-bindings.js"',
+		);
+		expect(existsSync(resolve("dist/dispatch.js"))).toBe(false);
 	});
 
 	it("imports only declared dependencies, never a Pi peer", async () => {
@@ -357,8 +358,10 @@ describe("published stepstone package", () => {
 		expect(packageJson.name).toBe(CLI_COMMAND_CONTRACT.binary);
 		expect(packageJson.bin).toEqual({
 			[CLI_COMMAND_CONTRACT.binary]: "dist/cli.js",
-			[DISPATCH_BINARY]: "dist/dispatch.js",
 		});
+		expect(paths).not.toContain("src/dispatch.ts");
+		expect(paths).not.toContain("dist/dispatch.js");
+		expect(paths).not.toContain("docs/dispatch.md");
 		for (const entry of Object.values(packageJson.bin ?? {})) {
 			expect(paths).toContain(entry);
 		}

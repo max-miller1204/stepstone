@@ -302,7 +302,7 @@ describe("verified workspace cleanup", () => {
 describe("cleanup operator flow", () => {
 	let cli: string;
 	beforeAll(async () => {
-		cli = join(await compileWorkspaceFixture("cleanup-cli"), "src/dispatch.js");
+		cli = join(await compileWorkspaceFixture("cleanup-cli"), "src/cli.js");
 	});
 
 	it.each([false, true])(
@@ -318,7 +318,11 @@ describe("cleanup operator flow", () => {
 				JSON.stringify({ version: 1, revision: 0, goals: [goal], retiredIds: [] }),
 			);
 			const run = async (...args: string[]) =>
-				(await exec(process.execPath, [cli, ...args, "--cwd", f.root], { cwd: f.root })).stdout;
+				(
+					await exec(process.execPath, [cli, "project", "workspace", ...args, "--cwd", f.root], {
+						cwd: f.root,
+					})
+				).stdout;
 			const start = JSON.parse(
 				await run("start", "--goal", "alpha", "--workspace-parent", f.directory, "--json"),
 			).result;
@@ -339,9 +343,11 @@ describe("cleanup operator flow", () => {
 			expect(inspection.goal.message).toBe(release.entries.alpha.message);
 			await expect(run("cleanup", start.id, "--force")).rejects.toThrow("requires an explicit goal ID");
 			await expect(run("recover", start.id, "alpha", "--release", "--force")).rejects.toThrow(
-				"--force is only valid for cleanup",
+				"--force is not valid for project workspace recover",
 			);
-			await expect(run("resume", start.id, "--force")).rejects.toThrow("--force is only valid for cleanup");
+			await expect(run("resume", start.id, "--force")).rejects.toThrow(
+				"--force is not valid for project workspace resume",
+			);
 			if (!force) await writeFile(join(f.workspace.path, "seed"), "seed\n");
 			const cleaned = JSON.parse(
 				await run("cleanup", start.id, "alpha", ...(force ? ["--force"] : []), "--json"),

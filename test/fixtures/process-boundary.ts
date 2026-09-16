@@ -9,11 +9,14 @@ import { compileWorkspaceFixture } from "./compile-workspace.ts";
 const exec = promisify(execFile);
 const artifactRoot = resolve(import.meta.dirname, "../../artifacts/process-boundaries");
 let runner: string;
+let cli: string;
 
 // Node 20 cannot execute TypeScript. Compile the subprocess and its production
 // imports separately from dist/, which the package tests rebuild concurrently.
 export async function compileProcessBoundaryRunner(): Promise<void> {
-	runner = join(await compileWorkspaceFixture("process-boundary"), "test/fixtures/dispatch-boundary.js");
+	const compiled = await compileWorkspaceFixture("process-boundary");
+	runner = join(compiled, "test/fixtures/dispatch-boundary.js");
+	cli = join(compiled, "src/cli.js");
 }
 
 export const branch = "stepstone/alpha";
@@ -207,6 +210,14 @@ class ProcessBoundary {
 		return JSON.parse(
 			(await this.command(process.execPath, [runner, this.root, this.directory, action, value, token, fault]))
 				.stdout,
+		);
+	}
+
+	async workspaceCli(
+		...args: string[]
+	): Promise<{ ok: boolean; scope: string; action: string; result: unknown; meta: { cliVersion: string } }> {
+		return JSON.parse(
+			(await this.command(process.execPath, [cli, "project", "workspace", ...args, "--json"])).stdout,
 		);
 	}
 

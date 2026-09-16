@@ -16,6 +16,11 @@ Breaking means a surface the published package exposed stops working: a `bin` th
 Those are the releases that break a configuration someone already committed, and the version is the only signal a client resolving `@latest` reads before it upgrades.
 The workflow's generated release notes name the pull requests merged since the previous tag, so what was removed is described there; the bump is what makes a consumer notice before reading them.
 
+## Workspace CLI consolidation (0.12.0)
+
+The removal of the companion executable is staged at **0.12.0**, a minor release.
+After the reviewed change lands, tag that version on current `main` and push the tag to run the release workflow. Do not bump it again with `npm version patch`: the manifest and shrinkwrap already carry the intended minor version. The workspace guide documents the replacement commands and in-place state compatibility.
+
 ## Cutting a release
 
 Start from a clean, current `main` branch:
