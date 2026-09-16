@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-70 goals: 18 open, 48 done, 4 archived.
+86 goals: 19 open, 55 done, 12 archived.
 
 ## Orchestrator
 
@@ -252,7 +252,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `schema-fields-group-completedat-links` (done).
 
-- **[open]** project-stats: counts, throughput, and cycle time - `project-stats-counts-throughput-and`
+- **[archived]** project-stats: counts, throughput, and cycle time - `project-stats-counts-throughput-and`
 
   Add project stats: open, active, done, and archived counts plus throughput and completion timing from createdAt and completedAt. Note the distinction honestly: createdAt to completedAt is lead time including backlog wait, not cycle time; decide at implementation whether to add a startedAt stamp (recorded when the branch marker is first set) so cycle time can measure work-start to done.
 
@@ -299,23 +299,23 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `prepare-goal-workspaces-without` (done).
 
-- **[open]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
+- **[done]** Scrub a prepared workspace on verified Git state - `scrub-a-prepared-workspace-on-verified`
 
   Before Stepstone removes a prepared checkout, verify Git state that it can observe: no uncommitted changes, no unpushed commits, and no unmerged branch. Preserve existing workspace identity checks. Refuse cleanup when any check fails, report the exact reason, and require an explicit operator override for intentional destructive cleanup.
 
   Depends on `report-why-a-preparation-pass-refused` (done).
 
-- **[open, blocked]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
+- **[done]** Notice a claim nobody is working on - `notice-a-claim-nobody-is-working-on`
 
   After workspace preparation is consolidated into the project CLI, surface prepared claims that appear abandoned by using evidence Stepstone can observe, such as claim age and workspace or branch activity. Let an operator inspect the evidence and explicitly release an abandoned claim back to the ready frontier. Do not infer agent or terminal liveness.
 
-  Depends on `fold-workspace-preparation-into-the` (open).
+  Depends on `fold-workspace-preparation-into-the` (done).
 
-- **[open, blocked]** Prove workspace preparation on every supported platform - `prove-workspace-preparation-on-every`
+- **[done]** Prove workspace preparation on every supported platform - `prove-workspace-preparation-on-every`
 
   Exercise workspace preparation on Ubuntu and macOS in CI with real Git. Run the coverage on Node 20, the declared minimum, and on the current Node LTS release. Cover worktree creation, the ignored goal handoff, claim recovery, merged-work reconciliation, and safe cleanup. Do not claim support for another operating system until CI runs this behavior there and the repository scripts work there.
 
-  Depends on `verify-the-remaining-external` (open), `authoritative-pull-request-quality-gates` (open).
+  Depends on `verify-the-remaining-external` (done), `authoritative-pull-request-quality-gates` (archived).
 
 - **[done]** Report why a preparation pass refused or rolled back - `report-why-a-preparation-pass-refused`
 
@@ -323,21 +323,21 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `prepare-goal-workspaces-without` (done).
 
-- **[open, blocked]** Verify the remaining external boundaries against real tools - `verify-the-remaining-external`
+- **[done]** Verify the remaining external boundaries against real tools - `verify-the-remaining-external`
 
   Test the preparation workflow's remaining process boundaries through the real Git and GitHub CLI executables instead of injected fake executables. Cover preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup with retained failure evidence. This goal owns deep workspace-automation boundary cases. The Quality goal `exercise-stepstone-workflows-end-to-end` owns the broader packed CLI and Pi RPC workflow tier. Run this verification after safe cleanup behavior is settled so it protects the contract that will be consolidated into the project CLI.
 
-  Depends on `scrub-a-prepared-workspace-on-verified` (open).
+  Depends on `scrub-a-prepared-workspace-on-verified` (done).
 
-- **[open, blocked]** Fold workspace preparation into the project CLI - `fold-workspace-preparation-into-the`
+- **[done]** Fold workspace preparation into the project CLI - `fold-workspace-preparation-into-the`
 
   Move the preparation-only driver's remaining custody, recovery, reconciliation, and cleanup behavior into the project CLI after that behavior is complete and verified. Preserve or explicitly migrate persisted dispatch state. Then retire the second executable, its entry point, its documentation, and its packaging checks in a minor release because the executable is a published surface.
 
-  Depends on `hand-a-prepared-workspace-its-goal-as-a` (done), `start-a-goal-into-its-own-worktree-from` (done), `prove-workspace-preparation-on-every` (open).
+  Depends on `hand-a-prepared-workspace-its-goal-as-a` (done), `start-a-goal-into-its-own-worktree-from` (done), `prove-workspace-preparation-on-every` (done).
 
 ## Later
 
-- **[open]** context-surface: show the active goal inside each harness - `context-surface-show-the-active-goal`
+- **[archived]** context-surface: show the active goal inside each harness - `context-surface-show-the-active-goal`
 
   Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged.
 
@@ -345,7 +345,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `mcp-server-expose-the-worklist-over-mcp` (done).
 
-- **[open]** branch-scoped-active: per-worktree featured goal via links - `branch-scoped-active-per-worktree`
+- **[archived]** branch-scoped-active: per-worktree featured goal via links - `branch-scoped-active-per-worktree`
 
   In a worktree, derive the featured goal from the current Git branch matched against the stored branch field, falling back to the single active goal. Per-worktree focus without changing active semantics.
 
@@ -353,13 +353,13 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `schema-fields-group-completedat-links` (done), `project-start-mark-a-goal-in-flight-and` (done).
 
-- **[open]** goal-checklist: acceptance criteria items per goal - `goal-checklist-acceptance-criteria`
+- **[archived]** goal-checklist: acceptance criteria items per goal - `goal-checklist-acceptance-criteria`
 
   Optional checklist items (text plus done flag) per goal as acceptance criteria, with CRUD subcommands, TUI detail rendering, and contract docs. Gives agent sessions a concrete definition of done.
 
   Depends on `schema-fields-group-completedat-links` (done).
 
-- **[open]** merge-driver: structural git merge for worklist.json - `merge-driver-structural-git-merge-for`
+- **[archived]** merge-driver: structural git merge for worklist.json - `merge-driver-structural-git-merge-for`
 
   Custom Git merge driver registered via .gitattributes: union goals by ID; within a goal edited on both sides, union the array fields (dependsOn, links) and apply newest-updatedAt only to scalar fields, because goal-level last-writer-wins would drop a concurrent edit to a different aspect of the same goal; revision becomes max plus one.
 
@@ -375,17 +375,17 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `tui-polish-quick-readability-wins-in` (done), `tui-groups-collapsible-group-sections` (done).
 
-- **[open, blocked]** focus-mode: show only Session Tasks linked to the active goal - `focus-mode-show-only-session-tasks`
+- **[archived]** focus-mode: show only Session Tasks linked to the active goal - `focus-mode-show-only-session-tasks`
 
   Show only Session Tasks linked to the featured Project Goal through SessionTask.goalId, with a Pi dashboard and widget toggle that returns to all tasks. This is Pi-only work, so defer it until the cross-harness workspace preparation surface is consolidated into the project CLI.
 
-  Depends on `fold-workspace-preparation-into-the` (open).
+  Depends on `fold-workspace-preparation-into-the` (done).
 
-- **[open, blocked]** task-promotion: promote a Session Task into a Project Goal - `task-promotion-promote-a-session-task`
+- **[archived]** task-promotion: promote a Session Task into a Project Goal - `task-promotion-promote-a-session-task`
 
   Manually promote a Session Task into a Project Goal, carrying its title and recording promotedFrom provenance on the new goal. Implement this Pi-only workflow after focus mode because both change SessionTask goal linking and the Pi task surfaces, so automated work must not run them in parallel.
 
-  Depends on `slug-ids-human-readable-goal-ids-and` (done), `focus-mode-show-only-session-tasks` (open).
+  Depends on `slug-ids-human-readable-goal-ids-and` (done), `focus-mode-show-only-session-tasks` (archived).
 
 - **[archived]** archive-browsing: archived goals in the Pi dashboard - `archive-browsing-archived-goals-in-the`
 
@@ -429,19 +429,19 @@ A goal's description is a record of what was decided when it was written rather 
 
   Replace token-heavy default validation with a fast staged-content pre-commit gate and a comprehensive pre-push gate that validates the exact pushed SHA in a detached temporary worktree. Use Lefthook only as orchestration and keep canonical npm scripts as the single source of truth. Do not cache pre-commit results unless the cache key includes the staged tree or index hash; cache successful pre-push results by pushed commit SHA and all relevant toolchain, lockfile, and gate-definition inputs. Avoid network access and automatic fixes in hooks, and retain AI review only as an explicit targeted command.
 
-- **[open, blocked]** Authoritative pull request quality gates - `authoritative-pull-request-quality-gates`
+- **[archived]** Authoritative pull request quality gates - `authoritative-pull-request-quality-gates`
 
   Make GitHub the non-bypassable enforcement layer by reusing the canonical local gate in required checks, preserving Ubuntu and macOS coverage, testing the supported Node floor and current LTS, validating merge_group results through the merge queue, and clearly separating reproducible checks from network-backed policy checks. Retire no-mistakes from the default pre-PR workflow only after these protections cover the same deterministic behavior.
 
   Standardize pull request presentation with a repository-owned `.github/pull_request_template.md` using the same core headings as Colony: Summary, Why, Observable changes, Validation, Risk and rollback, Visual evidence, Reviewer notes, and Checklist. Keep headings stable, allow N/A for genuinely inapplicable sections, and do not treat template completion as semantic proof. Ensure both normal GitHub creation and any `gh`-based delivery command use the template instead of generating free-form agent prose.
 
-  Depends on `deterministic-local-quality-gates` (done), `exercise-stepstone-workflows-end-to-end` (open), `make-repository-script-child-processes` (open).
+  Depends on `deterministic-local-quality-gates` (done), `exercise-stepstone-workflows-end-to-end` (done), `make-repository-script-child-processes` (done).
 
-- **[open, blocked]** Harden repository supply chain - `harden-repository-supply-chain`
+- **[open]** Harden repository supply chain - `harden-repository-supply-chain`
 
   Catch secrets, unsafe workflows, dependency risks, dead package surfaces, and malformed published artifacts before merge. Add Gitleaks, actionlint, zizmor, CodeQL, GitHub dependency review, GitHub Actions dependency updates with full-SHA pins, Knip configured for every dynamic and executable entry point, and publint against the packed tarball; add TypeScript package-surface validation only where public typed exports warrant it.
 
-  Depends on `authoritative-pull-request-quality-gates` (open).
+  Depends on `authoritative-pull-request-quality-gates` (archived).
 
 - **[open, blocked]** Adversarial test quality program - `adversarial-test-quality-program`
 
@@ -449,7 +449,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `harden-repository-supply-chain` (open).
 
-- **[open]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
+- **[done]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
 
   Create a broad deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and a representative workspace-preparation path. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
 
@@ -457,7 +457,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `deterministic-local-quality-gates` (done).
 
-- **[open]** Make repository script child processes portable - `make-repository-script-child-processes`
+- **[done]** Make repository script child processes portable - `make-repository-script-child-processes`
 
   Route every npm invocation in scripts/no-pi-install-check.ts through process.execPath and npm_execpath, falling back to the bare npm command when that variable is unset, so no run depends on a shell resolving npm. This removes the largest class of the problem for free: under npm run the variable already names npm-cli.js, the spawn needs no shell and therefore no argument quoting, and the child npm is guaranteed to be the same npm that invoked the script.
 
@@ -465,12 +465,110 @@ A goal's description is a record of what was decided when it was written rather 
 
   Note the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.
 
-- **[open]** Audit the roadmap for goals the project has outgrown - `audit-the-roadmap-for-goals-the-project`
+- **[open]** Detect stale and overlapping roadmap goals during capture - `audit-the-roadmap-for-goals-the-project`
 
-  Every document in this repository is held to the spellings the command contract renders, and the generated roadmap page is the one deliberate exemption, because goal prose is data rather than authored documentation. That exemption is also a hole: a goal description is the only place a reference to something that no longer exists survives indefinitely. One shift in direction left four descriptions planning around a retired transport and naming an executable that had not existed for two releases, and one goal open whose work had already shipped.
+  Extend the generated Stepstone capture guidance so an agent reads related open and active goals before drafting a plan. Detect obsolete premises, references to removed commands or documentation, work that has already landed, overlapping outcomes, and stale sequencing assumptions. Require proposed plans to identify goals they replace and to record must-land-before edges for logical dependencies and shared implementation surfaces. After an approved batch lands, inspect dependency waves when sequencing matters and report unexpected ready or unreachable work. Keep this as capture guidance rather than an unattended validator because several forms of roadmap drift require product judgment.
 
-  Half of that is beyond any check. A dead executable name is greppable, but prose that plans around a retired transport names no dead token, and a goal the project has outgrown reads perfectly. So the audit is guidance an agent follows rather than a command that asserts, and it belongs in the one skill rather than a second one: its own rule block on the command contract beside the capture, dependency, and dispatch rules, reached through trigger text in the skill description exactly as the dispatch guidance already is. A second skill would add an install to onboarding that is deliberately being simplified, duplicate a capture rule that has to stand on its own anyway, and put two near-identical trigger descriptions in competition.
+## Release 0.12
 
-  Tell the agent what to look for: a description naming a command, flag, documentation page, or executable that resolves to nothing; a goal still open whose recorded branch has already merged; an edge that only ever meant waiting for a goal that is now done; a goal whose premise the project has since abandoned. Point the capture workflow at it as well, so a proposed batch is read against the goals it obsoletes at the moment it is proposed, which is when this drift is created rather than when it is discovered. That capture rule has to be self-contained, because guidance reaches a repository through whichever surface was installed. A skill runs only when asked, so anything that has to fail unattended stays a separate decision. Claim staleness belongs to the goal that owns claims; this one owns descriptions that stopped being true.
+- **[open]** Remove the Symphony incorporation - `remove-the-symphony-incorporation`
 
-  Extend the capture guidance so an agent reads related open and active goals before drafting a plan, identifies overlap and stale assumptions, and records must-land-before edges against both new and existing goals. After an approved plan lands, run project waves --json when sequencing matters and report unexpected Wave 1 work or unreachable goals instead of assuming the graph is correct.
+  Remove everything introduced to operate this repository through Symphony. Delete WORKFLOW.md, the Symphony guide and launcher, and the Symphony-only commit, pull, push, land, and Linear skills. Remove README and package references. Keep the generated Stepstone product skill. Audit the full incorporation commit series so later Symphony policy changes do not survive under generic names. Document and complete the external cleanup for Symphony remote branches, labels, Linear configuration, the 1Password item, workspaces, and logs.
+
+- **[open, blocked]** Make unit-test evidence hard to game - `make-unit-test-evidence-hard-to-game`
+
+  Establish an honest coverage baseline and drive reachable production code toward maximum line, branch, function, and statement coverage. Report coverage by file and enforce ratcheting thresholds that cannot decrease silently. Audit weak assertions, broad exclusions, implementation-only tests, and critical filesystem, locking, Git, migration, and dispatcher paths. Reject focused, skipped, todo, or empty tests in release gates. Use targeted mutation checks to prove important assertions detect defects. Keep the existing adversarial test program as the later property, stress, and broad mutation tier.
+
+  Depends on `remove-the-symphony-incorporation` (open).
+
+- **[open, blocked]** Show the workspace dispatcher in the README - `show-the-workspace-dispatcher-in-the`
+
+  Publish a deterministic, reusable video scenario that shows approved goals, workspace preparation, the generated branch and STEPSTONE_GOAL.md handoff, status inspection, and safe resume behavior. Make the capture readable at full and half size. Verify its behavior in CI. Add the final video to the README without committing transient recording state.
+
+  Depends on `remove-the-symphony-incorporation` (open).
+
+- **[open, blocked]** Release Stepstone 0.12.0 - `release-stepstone-0-12-0`
+
+  Release the staged workspace CLI consolidation from a clean and current main branch after Symphony removal, trustworthy test evidence, and the dispatcher video land. Run the documented verification and isolated package checks. Push the v0.12.0 tag through the CI release workflow. Verify the npm package, GitHub release, Pi installation, and package gallery. Do not publish from a maintainer machine.
+
+  Depends on `make-unit-test-evidence-hard-to-game` (open), `show-the-workspace-dispatcher-in-the` (open).
+
+## Dispatch
+
+- **[open, blocked]** Dispatch work from explicit base and target branches - `dispatch-work-from-explicit-base-and`
+
+  Let a workspace run select an explicit base ref and pull request target instead of depending on the canonical checkout branch. Resolve and persist the exact base revision. Define strict behavior for local branches, remote-tracking refs, integration branches, stacked work, rewritten refs, and branches already checked out in another worktree. Do not fetch or guess silently. Reconcile merged pull requests against the persisted target. Use team-safe branch names and preserve restart and cleanup guarantees.
+
+  Depends on `release-stepstone-0-12-0` (open).
+
+## Collaboration
+
+- **[open, blocked]** Prove the Stepstone collaboration protocol - `prove-the-stepstone-collaboration`
+
+  Write the collaboration architecture decision and prove it with one CLI client and one browser client. Define immutable project identity, actor identity, roles, versioned commands, idempotency, ordered events, snapshots, stale-write conflicts, and SSE resume behavior. Keep standalone file mode explicit. Treat repository paths, Git origins, branches, and worktrees as linked context rather than storage authority. Fail loudly when a configured collaboration service is unavailable.
+
+  Depends on `release-stepstone-0-12-0` (open).
+
+- **[open, blocked]** Run an authoritative Stepstone collaboration service - `run-an-authoritative-stepstone`
+
+  Build a self-hosted service with a hosted-ready protocol. Store canonical project state, an append-only per-project event sequence, idempotent command records, and current projections in PostgreSQL transactions. Route domain mutations through the same application and mutation services as standalone mode. Enforce project roles on commands, reads, and subscriptions. Support OIDC users and scoped service credentials. Package repeatable deployment, backup, restore, migration, retention, and health operations without requiring Git or a checked-out repository on the server.
+
+  Depends on `prove-the-stepstone-collaboration` (open).
+
+- **[open, blocked]** Move projects between standalone and collaborative modes - `move-projects-between-standalone-and`
+
+  Let a user explicitly create, link, import, export, and detach a collaborative project without automatic dual writes. Store only an optional project pointer in a repository. Preserve goal IDs, retired IDs, dependencies, timestamps, and integration metadata across supported moves. Detect divergent histories and require an explicit resolution. Treat exports as interchange, not as a complete service backup.
+
+  Depends on `run-an-authoritative-stepstone` (open).
+
+- **[open, blocked]** Collaborate on goals in real time - `collaborate-on-goals-in-real-time`
+
+  Make shared projects safe for teammates and agents. Add actor-aware claims, leases, heartbeats, explicit transfer and reclaim actions, live ordered updates, project membership, and durable audit history. Keep presence advisory. Separate shared goal ownership from machine-local workspace custody. Link claims to branches, remotes, pull requests, and dispatcher runs without making Git authoritative. Preserve the standalone claim evidence workflow.
+
+  Depends on `move-projects-between-standalone-and` (open), `dispatch-work-from-explicit-base-and` (open).
+
+- **[open, blocked]** Work offline against collaborative projects - `work-offline-against-collaborative`
+
+  Cache collaborative projections for the CLI and web client and queue commands in an explicit outbox. Replay commands in client order with stable command IDs and expected versions. Resume events from the last applied project sequence. Keep rejected commands visible until a user resolves or discards them. Do not replace conflicts with last-write-wins or silently fall back to standalone mode.
+
+  Depends on `integrate-jira-cloud` (open).
+
+## Interfaces
+
+- **[open, blocked]** Edit Stepstone projects in a local web application - `edit-stepstone-projects-in-a-local-web`
+
+  Add a local web application that can connect explicitly to standalone mode or a collaborative service. Support roadmap views, search, dependency planning, goal editing, ordering, lifecycle actions, team claims, audit history, and visible conflict handling. Use the same command contract and optimistic checks as the CLI. Receive collaborative updates through SSE. Bind local mode to loopback by default and never let browser code write the worklist file directly.
+
+  Depends on `collaborate-on-goals-in-real-time` (open).
+
+- **[open, blocked]** Consolidate human project views around the web application - `consolidate-human-project-views-around`
+
+  After the web application reaches functional parity, make the terminal project ui board read-only and remove the Project Goals pane from the Pi dashboard. Keep the model-facing Project Goal tool. Preserve the terminal board as a fast dependency, readiness, status, and detail view. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.
+
+  Depends on `work-offline-against-collaborative` (open).
+
+## Integrations
+
+- **[open, blocked]** Build a tracker integration framework - `build-a-tracker-integration-framework`
+
+  Create a provider adapter boundary for external project trackers. Store immutable external identities, mapping versions, field ownership, provider shadows, raw representations, and provenance. Process verified webhooks through a durable deduplicated inbox. Send changes through a durable per-connection outbox. Refetch before reconciliation, suppress echoes, respect rate limits, and run periodic repair for missed events and access changes. Expose dry runs, directional sync, visible conflicts, and per-field ownership. Never use timestamp-only last-write-wins.
+
+  Depends on `edit-stepstone-projects-in-a-local-web` (open).
+
+- **[open, blocked]** Integrate GitHub Issues - `integrate-github-issues`
+
+  Add a GitHub App adapter with repository-scoped installation permissions and webhook delivery. Link goals to issues using immutable GitHub IDs. Map a documented subset of title, body, status, assignee, labels, comments, sub-issues, and blocking dependencies while preserving provider-only state. Filter pull requests from issue reads. Connect pull request and branch context without making GitHub the Stepstone authority.
+
+  Depends on `build-a-tracker-integration-framework` (open).
+
+- **[open, blocked]** Integrate Linear - `integrate-linear`
+
+  Add a workspace-scoped Linear OAuth adapter with app actor attribution and webhook delivery. Map team-specific workflows, users, comments, relationships, and selected issue fields through explicit ownership rules. Preserve Linear IDs and exact workflow state. Handle rotating tokens, GraphQL complexity limits, retries, access changes, and lossy mappings without silent replacement.
+
+  Depends on `integrate-github-issues` (open).
+
+- **[open, blocked]** Integrate Jira Cloud - `integrate-jira-cloud`
+
+  Add a Jira Cloud adapter with an explicit OAuth or installed-app deployment contract. Map issues through tenant, project, issue-type, workflow, and link-type configuration. Use available transitions instead of assigning arbitrary statuses. Preserve Atlassian Document Format and provider-only fields. Renew expiring webhook registrations. Handle restricted comments, hidden identities, access loss, rate limits, and configurable dependency link types without silent data loss.
+
+  Depends on `integrate-linear` (open).
