@@ -58,7 +58,7 @@
 		"videos:list": "node ./scripts/videos/run.mjs list",
 		"videos:check": "node ./scripts/videos/run.mjs check",
 		"videos:render": "node ./scripts/videos/run.mjs render",
-		"videos:test": "node --test scripts/videos/contract.test.mjs",
+		"videos:test": "node --test scripts/videos/contract.test.mjs scripts/videos/run.test.mjs",
 		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
 		"docs": "node ./scripts/generate-docs.ts",
 		"docs:check": "node ./scripts/generate-docs.ts --check",

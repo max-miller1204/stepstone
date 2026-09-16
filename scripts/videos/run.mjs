@@ -142,6 +142,9 @@ if (action === "list") {
 				VIDEO_WORKSPACE: workspace,
 				VIDEO_COMMAND_LOG: log,
 			};
+			if (action === "render" && process.env.VHS_NO_SANDBOX !== undefined) {
+				env.VHS_NO_SANDBOX = process.env.VHS_NO_SANDBOX;
+			}
 			const quote = (text) => `'${text.replaceAll("'", "'\\''")}'`;
 			await writeFile(
 				join(workspace, "bin/stepstone"),
