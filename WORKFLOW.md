@@ -49,7 +49,7 @@ Follow-up context:
 - This is follow-up attempt #{{ attempt }}. It may be a normal continuation or a retry after a failure.
 - Resume from the current workspace state instead of restarting from scratch.
 - Do not repeat already-completed investigation or validation unless needed for new code changes.
-- Do not end the turn while the work item remains in an active state unless you are blocked by missing required access.
+- Do not end the turn while the work item remains in an active state unless the blocker handoff or missing-Linear-access exception applies.
   {% endif %}
 
 Issue context:
@@ -69,7 +69,7 @@ No description provided.
 Instructions:
 
 1. This is an unattended orchestration session. Do not ask a human to perform follow-up actions.
-2. Only stop early for a true external blocker (missing required tools, auth, permissions, or secrets). If blocked, record it in the workpad and move the issue according to the workflow.
+2. Only stop early for a verified blocker: missing required tools, authentication, permissions, secrets, or a required product decision that cannot be resolved from the ticket and repository. If blocked, record it in the workpad and move the issue according to the workflow.
 3. Final message must report completed actions and blockers only. Do not include "next steps for user".
 
 Work only in the provided repository copy. Do not touch any other path.
@@ -96,7 +96,7 @@ The agent must be able to talk to Linear through a configured Linear MCP server 
   the current issue.
 - Move status only when the matching quality bar is met.
 - Operate autonomously end-to-end unless blocked by missing requirements, secrets, or permissions.
-- Use the blocked-access escape hatch only for verified external blockers (missing required tools, authentication, or permissions).
+- Use the blocker handoff below only for verified missing required tools, authentication, permissions, or product decisions.
 
 ## Related skills
 
@@ -191,16 +191,17 @@ When a ticket has an attached PR, run this protocol before moving to `Human Revi
 5. Re-run validation after feedback-driven changes and push updates.
 6. Repeat this sweep until there are no outstanding actionable comments.
 
-## Blocked-access escape hatch (required behavior)
+## Blocker handoff (required behavior)
 
-Use this only when completion is blocked by missing required tools or missing auth/permissions that cannot be resolved in-session. If neither Linear interface is available, use the prerequisite's final-output-only route instead. The steps below require working Linear access.
+Use this only when completion is blocked by missing required tools, authentication, permissions, or a required product decision that cannot be resolved from the ticket and repository. If neither Linear interface is available, use the prerequisite's final-output-only route instead. The steps below require working Linear access.
 
 - Use the existing macOS Keychain authentication for GitHub. Do not inject a GitHub token or change remotes or authentication methods.
 - If `gh auth status` or a required GitHub operation confirms an authentication or permission failure, stop that operation. Move the issue to `Human Review` with the blocker brief below. Do not leave the issue active for repeated authentication attempts.
-- For any verified missing required tool, authentication, or permission, including GitHub, move the ticket to `Human Review` with a short blocker brief in the workpad that includes:
+- For any verified missing required tool, authentication, permission, or product decision, including GitHub access, move the ticket to `Human Review` with a short blocker brief in the workpad that includes:
   - what is missing,
   - why it blocks required acceptance/validation,
-  - exact human action needed to unblock.
+  - the exact human action or product decision needed to unblock.
+- For a missing product decision, state the specific question in the brief. Do not guess the answer or wait for an interactive response. Pause work in `Human Review` until the decision is recorded and the operator returns the issue to an active state.
 - Keep the brief concise and action-oriented; do not add extra top-level comments outside the workpad.
 
 ## Step 2: Execution phase (Todo -> In Progress -> Human Review)
@@ -242,7 +243,7 @@ Use this only when completion is blocked by missing required tools or missing au
     - Repeat this check-address-verify loop until no outstanding comments remain and checks are fully passing.
     - Re-open and refresh the workpad before state transition so `Plan`, `Acceptance Criteria`, and `Validation` exactly match completed work.
 12. Only then move issue to `Human Review`.
-    - Exception: if blocked by verified missing required tools, authentication, or permissions, including GitHub, move to `Human Review` with the blocker brief and explicit unblock actions.
+    - Exception: if blocked by verified missing required tools, authentication, permissions, or product decisions, move to `Human Review` with the blocker brief and exact action or decision needed.
 13. For `Todo` tickets that already had a PR attached at kickoff:
     - Ensure all existing PR feedback was reviewed and resolved, including inline review comments (code changes or explicit, justified pushback response).
     - Ensure branch was pushed with any required updates.
@@ -292,7 +293,7 @@ Use this only when completion is blocked by missing required tools or missing au
   title/description/acceptance criteria, same-project assignment, a `related`
   link to the current issue, and `blockedBy` when the follow-up depends on the
   current issue.
-- Do not move to `Human Review` unless the `Completion bar before Human Review` is satisfied or the blocked-access escape hatch applies.
+- Do not move to `Human Review` unless the `Completion bar before Human Review` is satisfied or the blocker handoff applies.
 - In `Human Review`, do not make changes; wait and poll.
 - If state is terminal (`Done`), do nothing and shut down.
 - Keep issue text concise, specific, and reviewer-oriented.

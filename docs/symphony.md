@@ -99,6 +99,11 @@ Start with one issue at a time. `WORKFLOW.md` sets
 ## Human review
 
 `Human Review` is not an active Symphony state. Symphony pauses work there.
+Codex also uses this state for verified access blockers or missing required
+product decisions. The workpad must contain a concise blocker brief with the
+exact action or decision needed. Record a missing decision before returning
+the issue to an active state.
+
 Move the issue to one of these states:
 
 - `Rework` to start a clean implementation attempt. Codex resets the branch and workpad once, then moves the issue to `In Progress`.
