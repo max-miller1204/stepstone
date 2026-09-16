@@ -25,6 +25,7 @@ The package ships TypeScript source directly because Pi loads extensions through
 | `npm run imports:check` | Nothing a compiled executable loads imports a Pi package |
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
 | `npm run no-pi-install:check` | Every packed and installed executable works with no Pi present |
+| `npm run test:boundaries` | Real Git/gh preparation, reconciliation, recovery and cleanup boundaries |
 | `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
 | `npm run quality:static` | Types, the import scan, Biome lint, and the generated documents, with no test run |
 | `npm run quality:pre-commit` | Biome checks the exact staged contents |
@@ -54,6 +55,23 @@ The test suite includes real Pi RPC load tests in temporary repositories, so it 
 
 `test/dispatch-driver.test.ts` exercises the resumable runtime through injected roadmap, workspace, merge-evidence, and state-store bindings, including journaled goal-file recovery, then drives the real preparation CLI and Git worktree boundary from temporary repositories.
 It verifies that a run reaches `prepared` without any harness configuration, that the preparation limit counts claimed workspaces, and that persisted version 1 session-hosting state is refused rather than silently downgraded.
+
+`npm run test:boundaries` runs the deep automation matrix in `test/process-boundaries.test.ts` and the existing `test/workspace-cleanup.test.ts` safety matrix.
+Both require real Git on `PATH`; the process-boundary matrix also requires the installed GitHub CLI (`gh`).
+Missing executables fail the suite rather than skipping coverage. CI runs it as part of `npm run check` on Linux and macOS.
+The process-boundary fixture records the Git and gh versions in its command transcript.
+
+Every operation in the new matrix starts a fresh Node process with the production application, Git worktree, GitHub merge-evidence, and file-state bindings.
+It covers preparation and acquisition collisions, an optimistic claim conflict, a process exiting after its canonical claim commits, exact-token recovery, interrupted worktree removal, and safe cleanup retries.
+Real `gh pr list` sends GraphQL requests to a local Unix-socket HTTP fixture through gh's `http_unix_socket` configuration; no GitHub login, token, live repository, or replacement executable is used.
+The isolated environment excludes inherited Git and gh configuration and credentials.
+The API cases cover mismatched/stale evidence, HTTP and GraphQL errors, malformed responses, invalid merge evidence, successful completion, and real Git fetch/reachability/fast-forward refusals against a local bare origin.
+These binding-level cases stay separate from the broader packed CLI and Pi RPC workflow tier owned by `exercise-stepstone-workflows-end-to-end`.
+
+Successful process-boundary fixtures are removed. On failure, the original error is rethrown and its stack, command stdout/stderr, Git trace events, HTTP request/response bodies, canonical goal file, dispatch journals, and Git repositories remain under `artifacts/process-boundaries/case-*`.
+The failure output prints the retained directory. CI uploads this directory, including hidden repository state, when the check job fails.
+Production command diagnostics remain redacted; original Git errors are available in the fixture's `git-trace.jsonl` and API failures in `http.jsonl`.
+The recovery case also asserts that the first preparation failure survives later refusal, release, and cleanup journals unchanged.
 
 `npm run imports:check` reads the merged module graph behind every entry in `executableEntryPoints` in `scripts/cli-import-graph.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
 That list is derived from the manifest's `bin` map rather than written by hand: each target is read back to the `src/` file the build emitted it from, and a target that resolves to no source file stops the check instead of being skipped.
