@@ -40,8 +40,11 @@ description:
    - Summary of key changes (what changed).
    - Rationale and trade-offs (why it changed).
    - Tests or validation run (or explicit note if not run).
-9. Append a `Co-authored-by` trailer for Codex using `Codex <codex@openai.com>`
-   unless the user explicitly requests a different identity.
+9. Use the repository user's Git identity as the sole commit author. Stop if
+   Git uses an agent identity. Do not credit Codex or another agent as an author,
+   co-author, contributor, or pull request author. This rule applies to commit
+   metadata, commit messages, and pull request text. Do not add `Co-authored-by`
+   or other agent-attribution trailers.
 10. Wrap body lines at 72 characters.
 11. Create the commit message with a here-doc or temp file and use
     `git commit -F <file>` so newlines are literal (avoid `-m` with `\n`).
@@ -70,6 +73,4 @@ Rationale:
 
 Tests:
 - <command or "not run (reason)">
-
-Co-authored-by: Codex <codex@openai.com>
 ```
