@@ -423,7 +423,14 @@ function validateCommit(sha: string): void {
 			timeoutMs: GATE_TIMEOUT_MS,
 		});
 	} finally {
-		removeWorktree(worktree);
+		const e2eArtifacts = join(worktree, "artifacts", "e2e");
+		if (existsSync(e2eArtifacts) && readdirSync(e2eArtifacts).length > 0) {
+			// Failed E2E fixtures contain worktrees with absolute Git paths. Keep
+			// their owning checkout in place so the saved repositories still work.
+			console.error(`quality:pre-push: retained failed E2E checkout at ${worktree}`);
+		} else {
+			removeWorktree(worktree);
+		}
 	}
 }
 
