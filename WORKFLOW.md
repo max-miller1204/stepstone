@@ -27,7 +27,7 @@ agent:
   max_concurrent_agents: 1
   max_turns: 20
 codex:
-  command: codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=xhigh app-server
+  command: env -u LINEAR_API_KEY codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=xhigh app-server
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:
@@ -157,12 +157,17 @@ The agent should be able to talk to Linear, either via a configured Linear MCP s
     - If the ticket description/comment context includes `Validation`, `Test Plan`, or `Testing` sections, copy those requirements into the workpad `Acceptance Criteria` and `Validation` sections as required checkboxes (no optional downgrade).
 7.  Run a principal-style self-review of the plan and refine it in the comment.
 8.  Before implementing, capture a concrete reproduction signal and record it in the workpad `Notes` section (command/output, screenshot, or deterministic UI behavior).
-9.  Run the `pull` skill to sync with latest `origin/main` before any code edits, then record the pull/sync result in the workpad `Notes`.
+9.  Prepare the issue branch before any code edits:
+    - Read the issue's `branchName` from Linear. Stop with a blocker if it is empty or names `main`.
+    - Fetch `origin`. Preserve an existing non-main branch for this issue on continuation or after closed-PR recovery.
+    - For a new workspace on `main`, check out the issue branch if it exists locally. Otherwise, track `origin/<branchName>` if it exists, or create `<branchName>` from `origin/main`.
+    - Confirm that the current branch is not `main`.
+10. Run the `pull` skill to sync with latest `origin/main` before any code edits, then record the pull/sync result in the workpad `Notes`.
     - Include a `pull skill evidence` note with:
       - merge source(s),
       - result (`clean` or `conflicts resolved`),
       - resulting `HEAD` short SHA.
-10. Compact context and proceed to execution.
+11. Compact context and proceed to execution.
 
 ## PR feedback sweep protocol (required)
 
