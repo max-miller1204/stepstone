@@ -1017,52 +1017,48 @@ async function verifyCleanupContents(
 async function verifyCleanupHistory(
 	repositoryRoot: string,
 	branchTip: string,
-	base: string,
 	targetBranch: string,
 ): Promise<void> {
-	// Commits already present at acquisition are not work produced by this checkout.
-	const added = (
-		await runCommand("git", ["rev-list", "--count", branchTip, `^${base}`], repositoryRoot)
-	).stdout.trim();
-	if (added !== "0") {
-		const remoteTips = new Set<string>();
-		try {
-			const remotes = (await runCommand("git", ["remote"], repositoryRoot)).stdout.trim();
-			for (const remote of remotes ? remotes.split("\n") : []) {
-				await runCommand("git", ["fetch", "--prune", "--no-tags", remote], repositoryRoot);
-				const advertised = (await runCommand("git", ["ls-remote", "--heads", remote], repositoryRoot)).stdout;
-				for (const line of advertised.trim().split("\n").filter(Boolean)) {
-					const tip = line.split("\t")[0];
-					if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(tip)) throw new Error("Invalid remote commit");
-					remoteTips.add(tip);
-				}
+	const remoteTips = new Set<string>();
+	const remotes = (await runCommand("git", ["remote"], repositoryRoot)).stdout.trim();
+	if (!remotes) {
+		throw new Error("Refusing cleanup because pushed commits cannot be verified: no configured Git remote");
+	}
+	try {
+		for (const remote of remotes.split("\n")) {
+			await runCommand("git", ["fetch", "--prune", "--no-tags", remote], repositoryRoot);
+			const advertised = (await runCommand("git", ["ls-remote", "--heads", remote], repositoryRoot)).stdout;
+			for (const line of advertised.trim().split("\n").filter(Boolean)) {
+				const tip = line.split("\t")[0];
+				if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(tip)) throw new Error("Invalid remote commit");
+				remoteTips.add(tip);
 			}
-		} catch (error) {
-			throw new Error(
-				"Refusing cleanup because pushed commits could not be verified: refreshing remote refs failed",
-				{ cause: error },
-			);
 		}
-		let unpushed: string;
-		try {
-			// Stale refs outside a remote's fetchspec are not proof that work was pushed.
-			unpushed = (
-				await runCommand(
-					"git",
-					["rev-list", "--count", branchTip, `^${base}`, ...[...remoteTips].map((tip) => `^${tip}`)],
-					repositoryRoot,
-				)
-			).stdout.trim();
-		} catch (error) {
-			throw new Error("Refusing cleanup because pushed commit reachability could not be verified", {
-				cause: error,
-			});
-		}
-		if (unpushed !== "0") {
-			throw new Error(
-				`Refusing cleanup because the branch has ${unpushed} unpushed commit(s) beyond its preparation base (not reachable from refreshed remote refs)`,
-			);
-		}
+	} catch (error) {
+		throw new Error(
+			"Refusing cleanup because pushed commits could not be verified: refreshing remote refs failed",
+			{ cause: error },
+		);
+	}
+	let unpushed: string;
+	try {
+		// Stale refs outside a remote's fetchspec are not proof that work was pushed.
+		unpushed = (
+			await runCommand(
+				"git",
+				["rev-list", "--count", branchTip, ...[...remoteTips].map((tip) => `^${tip}`)],
+				repositoryRoot,
+			)
+		).stdout.trim();
+	} catch (error) {
+		throw new Error("Refusing cleanup because pushed commit reachability could not be verified", {
+			cause: error,
+		});
+	}
+	if (unpushed !== "0") {
+		throw new Error(
+			`Refusing cleanup because the branch has ${unpushed} unpushed commit(s) (not reachable from refreshed remote refs)`,
+		);
 	}
 	await runCommand("git", ["check-ref-format", `refs/heads/${targetBranch}`], repositoryRoot);
 	try {
@@ -1350,7 +1346,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		if (options.targetBranch === branch) throw new Error("Refusing cleanup of the dispatch target branch");
 		if (!options.force) {
 			await verifyCleanupContents(workspace, options.goalFile);
-			await verifyCleanupHistory(this.repositoryRoot, removalTip, base, options.targetBranch);
+			await verifyCleanupHistory(this.repositoryRoot, removalTip, options.targetBranch);
 			// Fetching may take time; inspect local contents again before destructive steps.
 			await verifyCleanupContents(workspace, options.goalFile);
 		}

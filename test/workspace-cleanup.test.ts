@@ -21,7 +21,7 @@ const goal: ProjectGoal = {
 const branch = "stepstone/alpha";
 const options = { targetBranch: "main" };
 
-async function fixture(remote = false) {
+async function fixture(remote = false, unpushedBase = false) {
 	const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cleanup-")));
 	directories.push(directory);
 	const root = join(directory, "repo");
@@ -40,6 +40,7 @@ async function fixture(remote = false) {
 		await git("remote", "add", "origin", remotePath);
 		await git("push", "-u", "origin", "main");
 	}
+	if (unpushedBase) await git("commit", "--allow-empty", "-qm", "unpublished base");
 	const base = await git("rev-parse", "HEAD");
 	const binding = new GitWorktreeBinding(root, directory);
 	const workspace = await binding.acquire(goal, branch, base);
@@ -101,10 +102,16 @@ describe("verified workspace cleanup", () => {
 		expect(await f.workGit("rev-parse", "HEAD")).toBe(tip);
 	});
 
-	it("refuses new commits without any remote", async () => {
+	it("refuses cleanup without any remote evidence", async () => {
 		const f = await fixture();
-		await f.commit();
+		await expect(f.cleanup()).rejects.toThrow("no configured Git remote");
+	});
+
+	it("refuses unpushed commits inherited from the acquisition base", async () => {
+		const f = await fixture(true, true);
 		await expect(f.cleanup()).rejects.toThrow("1 unpushed commit(s)");
+		expect(await f.workGit("rev-parse", "HEAD")).toBe(f.base);
+		expect(await f.marker()).not.toHaveProperty("removalBranchTip");
 	});
 
 	it("refuses pushed work that has not merged into the recorded target", async () => {
@@ -147,7 +154,7 @@ describe("verified workspace cleanup", () => {
 	});
 
 	it("refuses an unavailable merge target", async () => {
-		const f = await fixture();
+		const f = await fixture(true);
 		await expect(f.binding.cleanup(f.workspace, branch, { targetBranch: "missing" })).rejects.toThrow(
 			"merge state against target missing could not be verified",
 		);
@@ -187,14 +194,14 @@ describe("verified workspace cleanup", () => {
 		await expect(f.cleanup()).resolves.toBeUndefined();
 	});
 
-	it("cleans an unchanged workspace without requiring a remote", async () => {
-		const f = await fixture();
+	it("cleans an unchanged workspace with verified pushed and merged history", async () => {
+		const f = await fixture(true);
 		await f.cleanup();
 		expect(await f.marker()).toHaveProperty("removedAt");
 	});
 
 	it("only exempts the authenticated and unchanged ignored handoff", async () => {
-		const f = await fixture();
+		const f = await fixture(true);
 		const content = "# Prepared goal\n";
 		const receipt: DispatchGoalFile = {
 			path: DISPATCH_GOAL_FILE,
@@ -245,7 +252,7 @@ describe("verified workspace cleanup", () => {
 	});
 
 	it("rechecks safety and resumes a safe interrupted branch deletion", async () => {
-		const f = await fixture();
+		const f = await fixture(true);
 		await f.git("worktree", "lock", f.workspace.path);
 		await expect(f.cleanup()).rejects.toThrow();
 		await f.git("worktree", "unlock", f.workspace.path);
@@ -269,7 +276,7 @@ describe("verified workspace cleanup", () => {
 	it.each(["owner", "branch", "path", "marker", "detached", "recreated"])(
 		"preserves %s identity checks under override",
 		async (kind) => {
-			const f = await fixture();
+			const f = await fixture(kind === "recreated");
 			if (kind === "owner")
 				await writeFile(
 					join(f.workspace.metadata.gitdir, "stepstone-dispatch-owner.json"),
@@ -296,7 +303,7 @@ describe("cleanup operator flow", () => {
 		"reports refusals and requires an explicit override (force=%s)",
 		{ timeout: 30_000 },
 		async (force) => {
-			const f = await fixture();
+			const f = await fixture(true);
 			// Start through the public CLI, which owns a separate workspace receipt.
 			await f.cleanup();
 			await mkdir(join(f.root, ".worklist"));

@@ -150,7 +150,7 @@ Without a goal ID, cleanup processes all eligible entries and removes the run re
 Before deleting a workspace or its branch, cleanup verifies:
 
 - There are no staged, unstaged, untracked, or ignored changes. Only the unchanged goal handoff and backing file authenticated by the run's receipt are exempt. Submodule changes, in-progress Git operations, and index flags that hide changes also prevent cleanup.
-- Every commit beyond the workspace's acquisition base is reachable from refreshed remote refs. Failed remote inspection refuses cleanup. An unchanged workspace needs no remote because it contains no new commits.
+- Every commit on the branch is reachable from freshly advertised remote heads, including commits inherited from the acquisition base. Missing remotes or failed remote inspection refuse cleanup even for an unchanged workspace.
 - The workspace tip is an ancestor of the run's named target branch in the canonical repository. A missing target or an unmerged tip refuses cleanup. Squash or rebase merges that do not preserve this ancestry require explicit override after inspection.
 
 Cleanup preserves these identity guards even under override:
