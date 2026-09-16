@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { delimiter, join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import {
 	createProjectRootLookup,
@@ -249,6 +249,127 @@ describe("git root", () => {
 		}
 		clock = 0;
 		expect(lookup().worklist?.path).toBe(join(root, ".worklist", "worklist.json"));
+	});
+});
+
+describe("git discovery ceilings", () => {
+	afterEach(() => vi.unstubAllEnvs());
+
+	async function fixture() {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-ceiling-")));
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		const ceiling = join(root, "ceiling");
+		const child = join(ceiling, "child");
+		await mkdir(child, { recursive: true });
+		vi.stubEnv("GIT_CEILING_DIRECTORIES", ceiling);
+		return { root, ceiling, child };
+	}
+
+	it.each(["above", "at"])("ignores repository metadata %s the ceiling", async (position) => {
+		const { ceiling, child } = await fixture();
+		if (position === "at") execFileSync("git", ["init", "-q"], { cwd: ceiling });
+		const result = resolveGitRoot(child);
+		expect(result).toMatchObject({
+			root: null,
+			failure: { kind: "not-a-repository", command: { exitCode: 128, timedOut: false } },
+		});
+
+		// An absent repository remains a settled answer for this session.
+		const lookup = createProjectRootLookup(child, { env: {} });
+		expect(lookup().failure?.kind).toBe("not-a-repository");
+		execFileSync("git", ["init", "-q"], { cwd: child });
+		expect(lookup().failure?.kind).toBe("not-a-repository");
+		expect(resolveGitRoot(child)).toEqual({ root: child });
+	});
+
+	it("resolves a repository below the ceiling from a nested directory", async () => {
+		const { child } = await fixture();
+		execFileSync("git", ["init", "-q"], { cwd: child });
+		const nested = join(child, "nested");
+		await mkdir(nested);
+		expect(resolveGitRoot(nested)).toEqual({ root: child });
+	});
+
+	it("canonicalizes ceiling and working-directory symlinks", async () => {
+		const { root, ceiling, child } = await fixture();
+		execFileSync("git", ["init", "-q"], { cwd: ceiling });
+		const link = join(root, "ceiling-link");
+		await symlink(ceiling, link);
+		vi.stubEnv("GIT_CEILING_DIRECTORIES", [root, `${link}/`].join(delimiter));
+		expect(resolveGitRoot(join(link, "child")).failure?.kind).toBe("not-a-repository");
+		expect(resolveGitRoot(child).failure?.kind).toBe("not-a-repository");
+	});
+
+	it("honors the empty-entry optimization without resolving later symlinks", async () => {
+		const { root, ceiling, child } = await fixture();
+		const link = join(root, "ceiling-link");
+		await symlink(ceiling, link);
+		await writeFile(join(root, ".git", "config"), "not a config\n");
+		vi.stubEnv("GIT_CEILING_DIRECTORIES", ["", link].join(delimiter));
+		expect(resolveGitRoot(child).failure?.kind).toBe("git-refused");
+		vi.stubEnv("GIT_CEILING_DIRECTORIES", ["", `${ceiling}/`].join(delimiter));
+		expect(resolveGitRoot(child).failure?.kind).toBe("not-a-repository");
+	});
+
+	it("ignores relative, unusable, and non-ancestor entries, including cwd itself", async () => {
+		const { root, ceiling, child } = await fixture();
+		const prefix = ceiling.slice(0, -1);
+		await mkdir(prefix);
+		await writeFile(join(root, ".git", "config"), "not a config\n");
+		vi.stubEnv("GIT_CEILING_DIRECTORIES", ["..", join(root, "missing"), prefix, child].join(delimiter));
+		expect(resolveGitRoot(child).failure?.kind).toBe("git-refused");
+	});
+
+	it("does not exclude a refused repository in cwd when cwd is a ceiling", async () => {
+		const { ceiling } = await fixture();
+		execFileSync("git", ["init", "-q"], { cwd: ceiling });
+		await writeFile(join(ceiling, ".git", "config"), "not a config\n");
+		expect(resolveGitRoot(ceiling).failure?.kind).toBe("git-refused");
+	});
+
+	it("does not apply discovery ceilings to an explicit Git directory", async () => {
+		const { root, child } = await fixture();
+		await writeFile(join(root, ".git", "config"), "not a config\n");
+		vi.stubEnv("GIT_DIR", join(root, ".git"));
+		expect(resolveGitRoot(child).failure?.kind).toBe("git-refused");
+	});
+
+	it("reports a malformed gitfile below the ceiling as a refusal", async () => {
+		const { child } = await fixture();
+		await writeFile(join(child, ".git"), "not a gitfile\n");
+		expect(resolveGitRoot(child)).toMatchObject({
+			root: null,
+			failure: { kind: "git-refused", command: { exitCode: 128, timedOut: false } },
+		});
+	});
+
+	it("recovers after malformed repository config below the ceiling is repaired", async () => {
+		const { child } = await fixture();
+		execFileSync("git", ["init", "-q"], { cwd: child });
+		const config = join(child, ".git", "config");
+		const original = await readFile(config, "utf8");
+		await writeFile(config, "not a config\n");
+		const lookup = createProjectRootLookup(child, { env: {} });
+		expect(lookup().failure).toMatchObject({
+			kind: "git-refused",
+			command: { exitCode: 128, timedOut: false },
+		});
+		await writeFile(config, original);
+		expect(lookup().worklist?.path).toBe(join(child, ".worklist", "worklist.json"));
+	});
+
+	it("preserves Git's untrusted-repository refusal below the ceiling", async () => {
+		const { child } = await fixture();
+		execFileSync("git", ["init", "-q"], { cwd: child });
+		vi.stubEnv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1");
+		vi.stubEnv("GIT_CONFIG_COUNT", "1");
+		vi.stubEnv("GIT_CONFIG_KEY_0", "safe.directory");
+		vi.stubEnv("GIT_CONFIG_VALUE_0", "");
+		const result = resolveGitRoot(child);
+		expect(result.failure).toMatchObject({
+			kind: "git-refused",
+			command: { exitCode: 128, timedOut: false, stderr: expect.stringContaining("dubious ownership") },
+		});
 	});
 });
 

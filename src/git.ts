@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	LEGACY_WORKLIST_DIRECTORY,
 	WORKLIST_DIRECTORY,
@@ -222,8 +222,31 @@ function unusableDirectory(cwd: string): GitRootFailure | undefined {
 	}
 }
 
+/** The directories Git will not enter while discovering a repository. */
+function gitDiscoveryCeilings(): Set<string> {
+	const ceilings = new Set<string>();
+	let canonicalize = true;
+	for (const entry of (process.env.GIT_CEILING_DIRECTORIES ?? "").split(delimiter)) {
+		// Git treats an empty entry as a promise that later entries need no
+		// symlink resolution, not as a path to the current directory.
+		if (!entry) {
+			canonicalize = false;
+			continue;
+		}
+		if (!isAbsolute(entry)) continue;
+		try {
+			const ceiling = canonicalize ? realpathSync(entry) : entry;
+			// Git accepts a trailing separator even for entries it does not resolve.
+			ceilings.add(ceiling.endsWith("/") && ceiling !== "/" ? ceiling.slice(0, -1) : ceiling);
+		} catch {
+			// Git ignores ceiling paths it cannot canonicalize.
+		}
+	}
+	return ceilings;
+}
+
 /**
- * Whether anything at `cwd` or above it claims to be a repository.
+ * Whether anything within Git's discovery ceiling claims to be a repository.
  *
  * Git refuses with the same status 128 for two unlike things: a directory that is
  * no repository, and a repository it will not work in until something is fixed - a
@@ -232,11 +255,16 @@ function unusableDirectory(cwd: string): GitRootFailure | undefined {
  * is what tells them apart without reading prose Git may have translated.
  */
 function hasRepositoryMarker(cwd: string): boolean {
-	let directory = resolve(cwd);
+	// An explicit Git directory bypasses discovery, including its ceilings.
+	if (process.env.GIT_DIR !== undefined) return true;
+	let directory = canonicalPath(cwd);
+	const ceilings = gitDiscoveryCeilings();
 	for (;;) {
 		if (existsSync(join(directory, GIT_MARKER))) return true;
 		const parent = dirname(directory);
-		if (parent === directory) return false;
+		// Check before entering the parent: a ceiling excludes itself, but one
+		// naming cwd never prevents Git from inspecting cwd or its ancestors.
+		if (parent === directory || ceilings.has(parent)) return false;
 		directory = parent;
 	}
 }
