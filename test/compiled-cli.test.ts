@@ -35,7 +35,6 @@ const DEVELOPMENT_ONLY_FILES: readonly string[] = [
 	ROADMAP_PATH,
 	"docs/development.md",
 	"docs/releasing.md",
-	"docs/symphony.md",
 ];
 
 interface CliResult {
