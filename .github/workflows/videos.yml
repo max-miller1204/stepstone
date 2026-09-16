@@ -47,6 +47,8 @@ jobs:
       - name: Verify actual commands without recording
         run: npm run videos:check -- "$VIDEO_SCENARIO"
       - name: Record and verify again
+        env:
+          VHS_NO_SANDBOX: '1'
         run: npm run videos:render -- "$VIDEO_SCENARIO"
       - uses: actions/upload-artifact@v4
         id: evidence
