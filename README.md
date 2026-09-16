@@ -127,8 +127,9 @@ Session Tasks are documented and kept working, but they are not where the projec
 ```sh
 git clone https://github.com/max-miller1204/stepstone.git
 cd stepstone
-npm install
-npm run check
+mise install
+mise exec -- npm ci
+mise exec -- npm run check
 ```
 
 [docs/development.md](docs/development.md) covers the rest, including the generated files that must never be hand-edited.
