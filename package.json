@@ -65,7 +65,7 @@
 		"hooks:install": "lefthook install",
 		"quality:pre-commit": "node ./scripts/quality-gates.ts pre-commit",
 		"quality:pre-push": "node ./scripts/quality-gates.ts pre-push",
-		"quality:push:worktree": "npm run check && npm run pack:check && npm run no-pi-install:check",
+		"quality:push:worktree": "npm run check && npm run pack:check && npm run no-pi-install:check && npm run test:e2e:fast",
 		"quality:static": "npm run typecheck && npm run imports:check && npm run lint:check && npm run docs:check",
 		"prepack": "npm run build",
 		"preversion": "npm run docs:check",
@@ -79,7 +79,9 @@
 		"lint:check": "biome lint .",
 		"check": "npm run typecheck && npm run imports:check && biome check . && npm run test",
 		"pack:check": "npm pack --dry-run",
-		"verify": "npm run check && npm run pack:check"
+		"verify": "npm run check && npm run pack:check",
+		"test:e2e": "node ./scripts/e2e-check.ts",
+		"test:e2e:fast": "node ./scripts/e2e-check.ts --fast"
 	},
 	"dependencies": {
 		"proper-lockfile": "^4.1.2",

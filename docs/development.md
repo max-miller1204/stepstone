@@ -26,6 +26,8 @@ The package ships TypeScript source directly because Pi loads extensions through
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
 | `npm run no-pi-install:check` | Every packed and installed executable works with no Pi present |
 | `npm run test:boundaries` | Real Git/gh preparation, reconciliation, recovery and cleanup boundaries |
+| `npm run test:e2e:fast` | Packed CLI initialization, approved plans, conflicts, and packed extension through real Pi RPC |
+| `npm run test:e2e` | Full deterministic published-surface tier, including storage, concurrent writers, roadmap generation, and workspace preparation |
 | `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
 | `npm run quality:static` | Types, the import scan, Biome lint, and the generated documents, with no test run |
 | `npm run quality:pre-commit` | Biome checks the exact staged contents |
@@ -38,7 +40,7 @@ The pre-commit gate materializes staged blobs in a temporary directory and never
 It hands every staged path to Biome and lets Biome decide which of them it can read, so a commit that touches only files Biome does not process passes rather than being refused.
 `biome.json` is materialized alongside those blobs and Biome is run from there, because the patterns in `files.includes` are relative and would otherwise match nothing.
 
-The pre-push gate installs from the pushed commit's shrinkwrap with npm's offline mode, then runs `check`, `pack:check`, and `no-pi-install:check` inside a detached temporary worktree.
+The pre-push gate installs from the pushed commit's shrinkwrap with npm's offline mode, then runs `check`, `pack:check`, `no-pi-install:check`, and `test:e2e:fast` inside a detached temporary worktree.
 Nothing on that path reaches the network: the isolated install inside `no-pi-install:check` is offline as well, which the tarball's bundled dependencies make possible.
 If the npm cache lacks a pinned package, run `npm ci` while online before retrying the push.
 
@@ -52,6 +54,28 @@ Run where no push is feeding it, `npm run quality:pre-push` validates HEAD, and 
 AI review remains an explicit targeted command rather than part of either default hook.
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
+
+### Published-surface end-to-end tier
+
+`scripts/e2e-check.ts` runs separately from Vitest so its real `npm pack` build cannot race the compiled-package tests.
+It installs one tarball offline with optional peers omitted, asserts that the install tree contains no Pi peers, and invokes the executable targets from the installed manifest with Node.
+The RPC scenarios launch the pinned development Pi executable with the **installed package** as its extension, with no provider credentials or model requests.
+The harness imports only Node APIs and its subprocess helpers; it never imports Stepstone application internals.
+
+`npm run test:e2e:fast` is the representative pre-PR subset: empty reads, first writes, approved-plan preview and application, all-or-nothing invalid plans, lifecycle confirmation, optimistic conflicts, both executable entry points, and Session Task/Project Goal changes through packed Pi RPC.
+`npm run test:e2e` adds legacy/current/environment/explicit location precedence, live Pi location changes, held-lock refusal, concurrent batch writers with atomic-file observations, linked-worktree read/no-op/preview/refusal behavior, generated-roadmap drift and regeneration, and dispatch preparation through persisted status and the goal handoff.
+Roadmap generation invokes the repository's real generator script in a disposable source copy because generated `docs/ROADMAP.md` is deliberately excluded from the published package.
+
+The full tier runs on Linux and macOS with Node 22 and 24 in the `published-e2e` CI matrix, on pushes, pull requests, and manual workflow dispatch.
+Run either npm command locally after `npm ci --ignore-scripts`, using a current Node version from that matrix that satisfies the pinned Pi engine requirement (`>=22.19.0`).
+The harness uses temporary Git repositories and isolated home, Git, npm, and Pi configuration under `artifacts/e2e/run-*`; it requires no GitHub authentication or provider secrets.
+Each subprocess has a deadline and its command, working directory, output streams, and exit status are recorded in numbered `logs/*.jsonl` files; RPC logs also record requests and responses.
+Successful runs delete their fixtures. Failures print the retained directory, which includes `failure.txt`, the tarball/install, Git repositories (including `.git`), and transcripts with Session Task snapshots.
+CI uploads that directory, including hidden files, for seven days. Git worktree pointers contain original absolute paths; the uploaded files remain inspectable, but relocate those pointers before rerunning Git commands from an extracted artifact.
+The pre-push gate preserves its detached checkout when E2E failure artifacts are present so its printed local paths and Git registrations remain usable.
+Remove a retained gate checkout with `git worktree remove --force <printed-checkout-path>` after inspecting it.
+
+This tier covers representative local published workflows. The deeper real Git/GitHub CLI matrix, remote failures, and platform-specific external-tool edge cases remain owned by `verify-the-remaining-external`.
 
 `test/dispatch-driver.test.ts` exercises the resumable runtime through injected roadmap, workspace, merge-evidence, and state-store bindings, including journaled goal-file recovery, then drives the real preparation CLI and Git worktree boundary from temporary repositories.
 It verifies that a run reaches `prepared` without any harness configuration, that the preparation limit counts claimed workspaces, and that persisted version 1 session-hosting state is refused rather than silently downgraded.
