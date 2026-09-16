@@ -387,9 +387,9 @@
 			"id": "project-stats-counts-throughput-and",
 			"title": "project-stats: counts, throughput, and cycle time",
 			"description": "Add project stats: open, active, done, and archived counts plus throughput and completion timing from createdAt and completedAt. Note the distinction honestly: createdAt to completedAt is lead time including backlog wait, not cycle time; decide at implementation whether to add a startedAt stamp (recorded when the branch marker is first set) so cycle time can measure work-start to done.",
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-04T02:37:54.068Z",
-			"updatedAt": "2026-08-05T05:02:33.810Z",
+			"updatedAt": "2026-09-16T07:28:26.980Z",
 			"previousIds": ["goal-mse1szkl-3b102594"],
 			"group": "Visibility",
 			"dependsOn": ["schema-fields-group-completedat-links"]
@@ -400,17 +400,17 @@
 			"description": "Pi sessions get the compact widget showing the active Project Goal and up to three unfinished Session Tasks, so a Pi user never has to ask what they are working on. Every other harness gets nothing, and the agent only learns the active goal if it thinks to run a command. That gap is the last place where Pi is structurally privileged.\n\nSurvey what each harness actually offers before building anything: some have a statusline or session-start hook, some read a persistent context file, and several have no equivalent surface at all. The answer is no longer a served resource, because the MCP server this goal was deferred behind has since been retired. The generated skill and AGENTS block tell the agent to read the active goal at session start, the CLI answers it on demand, and anything richer is a per-harness adapter shipped as an optional extra rather than core.",
 			"group": "Later",
 			"dependsOn": ["mcp-server-expose-the-worklist-over-mcp"],
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-08T23:53:23.024Z",
-			"updatedAt": "2026-08-18T21:45:59.621Z"
+			"updatedAt": "2026-09-16T07:21:44.290Z"
 		},
 		{
 			"id": "branch-scoped-active-per-worktree",
 			"title": "branch-scoped-active: per-worktree featured goal via links",
 			"description": "In a worktree, derive the featured goal from the current Git branch matched against the stored branch field, falling back to the single active goal. Per-worktree focus without changing active semantics.\n\nThis stops being a convenience once starting a goal creates its own worktree: somebody who moves into a prepared checkout should not have to state which goal it is, because the branch already answers. Resolve it once in shared code rather than per renderer, so the CLI, the goal board, and the Pi surfaces agree. It matters most in the CLI and the board, which is where work inside a prepared worktree actually happens.",
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-04T02:37:54.359Z",
-			"updatedAt": "2026-08-18T21:45:59.698Z",
+			"updatedAt": "2026-09-16T07:24:25.791Z",
 			"previousIds": ["goal-mse1szsn-91e2a9ee"],
 			"group": "Later",
 			"dependsOn": ["schema-fields-group-completedat-links", "project-start-mark-a-goal-in-flight-and"]
@@ -419,9 +419,9 @@
 			"id": "goal-checklist-acceptance-criteria",
 			"title": "goal-checklist: acceptance criteria items per goal",
 			"description": "Optional checklist items (text plus done flag) per goal as acceptance criteria, with CRUD subcommands, TUI detail rendering, and contract docs. Gives agent sessions a concrete definition of done.",
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-04T02:37:54.181Z",
-			"updatedAt": "2026-08-05T05:02:33.910Z",
+			"updatedAt": "2026-09-16T07:27:24.320Z",
 			"previousIds": ["goal-mse1sznp-3aa4937d"],
 			"group": "Later",
 			"dependsOn": ["schema-fields-group-completedat-links"]
@@ -430,9 +430,9 @@
 			"id": "merge-driver-structural-git-merge-for",
 			"title": "merge-driver: structural git merge for worklist.json",
 			"description": "Custom Git merge driver registered via .gitattributes: union goals by ID; within a goal edited on both sides, union the array fields (dependsOn, links) and apply newest-updatedAt only to scalar fields, because goal-level last-writer-wins would drop a concurrent edit to a different aspect of the same goal; revision becomes max plus one.\n\nStill conditional. It is only needed if work inside a prepared worktree ever writes the roadmap, and the convention that the root checkout owns the roadmap keeps merges conflict-free by construction. Preparation preserves that convention rather than weakening it, so this stays unbuilt until something breaks it.",
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-04T02:37:54.268Z",
-			"updatedAt": "2026-08-18T21:46:12.008Z",
+			"updatedAt": "2026-09-16T07:21:32.319Z",
 			"previousIds": ["goal-mse1szq4-b1647c8b"],
 			"group": "Later"
 		},
@@ -451,9 +451,9 @@
 			"id": "focus-mode-show-only-session-tasks",
 			"title": "focus-mode: show only Session Tasks linked to the active goal",
 			"description": "Show only Session Tasks linked to the featured Project Goal through SessionTask.goalId, with a Pi dashboard and widget toggle that returns to all tasks. This is Pi-only work, so defer it until the cross-harness workspace preparation surface is consolidated into the project CLI.",
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-04T02:37:40.036Z",
-			"updatedAt": "2026-09-10T14:10:09.362Z",
+			"updatedAt": "2026-09-16T07:21:37.022Z",
 			"previousIds": ["goal-mse1soqs-0290e80a"],
 			"group": "Pi",
 			"dependsOn": ["fold-workspace-preparation-into-the"]
@@ -462,9 +462,9 @@
 			"id": "task-promotion-promote-a-session-task",
 			"title": "task-promotion: promote a Session Task into a Project Goal",
 			"description": "Manually promote a Session Task into a Project Goal, carrying its title and recording promotedFrom provenance on the new goal. Implement this Pi-only workflow after focus mode because both change SessionTask goal linking and the Pi task surfaces, so automated work must not run them in parallel.",
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-04T02:37:40.130Z",
-			"updatedAt": "2026-09-10T14:10:16.225Z",
+			"updatedAt": "2026-09-16T07:21:40.742Z",
 			"previousIds": ["goal-mse1sote-aa25f4e1"],
 			"group": "Pi",
 			"dependsOn": ["slug-ids-human-readable-goal-ids-and", "focus-mode-show-only-session-tasks"]
@@ -603,9 +603,9 @@
 				"exercise-stepstone-workflows-end-to-end",
 				"make-repository-script-child-processes"
 			],
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-18T01:02:46.352Z",
-			"updatedAt": "2026-09-10T04:29:23.913Z"
+			"updatedAt": "2026-09-16T07:13:00.021Z"
 		},
 		{
 			"id": "harden-repository-supply-chain",
@@ -633,18 +633,20 @@
 			"description": "Create a broad deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and a representative workspace-preparation path. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.\n\nThis goal owns broad product workflows through published surfaces. The Automation goal `verify-the-remaining-external` owns the deep matrix for real Git and GitHub CLI process boundaries, preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup.",
 			"group": "Quality",
 			"dependsOn": ["deterministic-local-quality-gates"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T01:10:33.397Z",
-			"updatedAt": "2026-09-11T00:14:54.955Z"
+			"updatedAt": "2026-09-16T07:10:35.771Z",
+			"completedAt": "2026-09-16T07:10:35.771Z"
 		},
 		{
 			"id": "make-repository-script-child-processes",
 			"title": "Make repository script child processes portable",
 			"description": "Route every npm invocation in scripts/no-pi-install-check.ts through process.execPath and npm_execpath, falling back to the bare npm command when that variable is unset, so no run depends on a shell resolving npm. This removes the largest class of the problem for free: under npm run the variable already names npm-cli.js, the spawn needs no shell and therefore no argument quoting, and the child npm is guaranteed to be the same npm that invoked the script.\n\nDriving the installed executables is deliberately left alone. That spawn is what the check exists to prove, since resolving the package's dist entry and running it under node would still catch a leaked Pi import but would stop exercising the shim an install actually puts on PATH, which is the part most likely to differ per platform. Since Node refuses to spawn a .bat or .cmd directly after the fix for CVE-2024-27980, the check cannot drive those shims on Windows, so add an explicit refusal naming that reason rather than letting a spawn fail with EINVAL from inside a helper.\n\nNote the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.",
 			"group": "Quality",
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T10:24:48.362Z",
-			"updatedAt": "2026-08-18T10:24:48.362Z"
+			"updatedAt": "2026-09-16T07:10:27.889Z",
+			"completedAt": "2026-09-16T07:10:27.889Z"
 		},
 		{
 			"id": "prepare-goal-workspaces-without",
@@ -684,9 +686,10 @@
 			"description": "Before Stepstone removes a prepared checkout, verify Git state that it can observe: no uncommitted changes, no unpushed commits, and no unmerged branch. Preserve existing workspace identity checks. Refuse cleanup when any check fails, report the exact reason, and require an explicit operator override for intentional destructive cleanup.",
 			"group": "Automation",
 			"dependsOn": ["report-why-a-preparation-pass-refused"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-10T04:28:50.245Z"
+			"updatedAt": "2026-09-16T07:10:42.244Z",
+			"completedAt": "2026-09-16T07:10:42.244Z"
 		},
 		{
 			"id": "notice-a-claim-nobody-is-working-on",
@@ -694,9 +697,10 @@
 			"description": "After workspace preparation is consolidated into the project CLI, surface prepared claims that appear abandoned by using evidence Stepstone can observe, such as claim age and workspace or branch activity. Let an operator inspect the evidence and explicitly release an abandoned claim back to the ready frontier. Do not infer agent or terminal liveness.",
 			"group": "Automation",
 			"dependsOn": ["fold-workspace-preparation-into-the"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-11T00:14:43.455Z"
+			"updatedAt": "2026-09-16T07:10:47.564Z",
+			"completedAt": "2026-09-16T07:10:47.564Z"
 		},
 		{
 			"id": "prove-workspace-preparation-on-every",
@@ -704,9 +708,10 @@
 			"description": "Exercise workspace preparation on Ubuntu and macOS in CI with real Git. Run the coverage on Node 20, the declared minimum, and on the current Node LTS release. Cover worktree creation, the ignored goal handoff, claim recovery, merged-work reconciliation, and safe cleanup. Do not claim support for another operating system until CI runs this behavior there and the repository scripts work there.",
 			"group": "Automation",
 			"dependsOn": ["verify-the-remaining-external", "authoritative-pull-request-quality-gates"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-11T00:14:54.976Z"
+			"updatedAt": "2026-09-16T07:11:03.107Z",
+			"completedAt": "2026-09-16T07:11:03.107Z"
 		},
 		{
 			"id": "report-why-a-preparation-pass-refused",
@@ -725,9 +730,10 @@
 			"description": "Test the preparation workflow's remaining process boundaries through the real Git and GitHub CLI executables instead of injected fake executables. Cover preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup with retained failure evidence. This goal owns deep workspace-automation boundary cases. The Quality goal `exercise-stepstone-workflows-end-to-end` owns the broader packed CLI and Pi RPC workflow tier. Run this verification after safe cleanup behavior is settled so it protects the contract that will be consolidated into the project CLI.",
 			"group": "Automation",
 			"dependsOn": ["scrub-a-prepared-workspace-on-verified"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-11T00:14:33.667Z"
+			"updatedAt": "2026-09-16T07:11:10.368Z",
+			"completedAt": "2026-09-16T07:11:10.368Z"
 		},
 		{
 			"id": "fold-workspace-preparation-into-the",
@@ -739,19 +745,179 @@
 				"start-a-goal-into-its-own-worktree-from",
 				"prove-workspace-preparation-on-every"
 			],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T21:42:28.061Z",
-			"updatedAt": "2026-09-10T04:29:18.282Z"
+			"updatedAt": "2026-09-16T07:10:54.307Z",
+			"completedAt": "2026-09-16T07:10:54.307Z"
 		},
 		{
 			"id": "audit-the-roadmap-for-goals-the-project",
-			"title": "Audit the roadmap for goals the project has outgrown",
-			"description": "Every document in this repository is held to the spellings the command contract renders, and the generated roadmap page is the one deliberate exemption, because goal prose is data rather than authored documentation. That exemption is also a hole: a goal description is the only place a reference to something that no longer exists survives indefinitely. One shift in direction left four descriptions planning around a retired transport and naming an executable that had not existed for two releases, and one goal open whose work had already shipped.\n\nHalf of that is beyond any check. A dead executable name is greppable, but prose that plans around a retired transport names no dead token, and a goal the project has outgrown reads perfectly. So the audit is guidance an agent follows rather than a command that asserts, and it belongs in the one skill rather than a second one: its own rule block on the command contract beside the capture, dependency, and dispatch rules, reached through trigger text in the skill description exactly as the dispatch guidance already is. A second skill would add an install to onboarding that is deliberately being simplified, duplicate a capture rule that has to stand on its own anyway, and put two near-identical trigger descriptions in competition.\n\nTell the agent what to look for: a description naming a command, flag, documentation page, or executable that resolves to nothing; a goal still open whose recorded branch has already merged; an edge that only ever meant waiting for a goal that is now done; a goal whose premise the project has since abandoned. Point the capture workflow at it as well, so a proposed batch is read against the goals it obsoletes at the moment it is proposed, which is when this drift is created rather than when it is discovered. That capture rule has to be self-contained, because guidance reaches a repository through whichever surface was installed. A skill runs only when asked, so anything that has to fail unattended stays a separate decision. Claim staleness belongs to the goal that owns claims; this one owns descriptions that stopped being true.\n\nExtend the capture guidance so an agent reads related open and active goals before drafting a plan, identifies overlap and stale assumptions, and records must-land-before edges against both new and existing goals. After an approved plan lands, run project waves --json when sequencing matters and report unexpected Wave 1 work or unreachable goals instead of assuming the graph is correct.",
+			"title": "Detect stale and overlapping roadmap goals during capture",
+			"description": "Extend the generated Stepstone capture guidance so an agent reads related open and active goals before drafting a plan. Detect obsolete premises, references to removed commands or documentation, work that has already landed, overlapping outcomes, and stale sequencing assumptions. Require proposed plans to identify goals they replace and to record must-land-before edges for logical dependencies and shared implementation surfaces. After an approved batch lands, inspect dependency waves when sequencing matters and report unexpected ready or unreachable work. Keep this as capture guidance rather than an unattended validator because several forms of roadmap drift require product judgment.",
 			"group": "Quality",
 			"status": "open",
 			"createdAt": "2026-08-18T22:17:01.718Z",
-			"updatedAt": "2026-09-10T04:32:39.218Z"
+			"updatedAt": "2026-09-16T07:27:32.864Z"
+		},
+		{
+			"id": "remove-the-symphony-incorporation",
+			"title": "Remove the Symphony incorporation",
+			"description": "Remove everything introduced to operate this repository through Symphony. Delete WORKFLOW.md, the Symphony guide and launcher, and the Symphony-only commit, pull, push, land, and Linear skills. Remove README and package references. Keep the generated Stepstone product skill. Audit the full incorporation commit series so later Symphony policy changes do not survive under generic names. Document and complete the external cleanup for Symphony remote branches, labels, Linear configuration, the 1Password item, workspaces, and logs.",
+			"group": "Release 0.12",
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "make-unit-test-evidence-hard-to-game",
+			"title": "Make unit-test evidence hard to game",
+			"description": "Establish an honest coverage baseline and drive reachable production code toward maximum line, branch, function, and statement coverage. Report coverage by file and enforce ratcheting thresholds that cannot decrease silently. Audit weak assertions, broad exclusions, implementation-only tests, and critical filesystem, locking, Git, migration, and dispatcher paths. Reject focused, skipped, todo, or empty tests in release gates. Use targeted mutation checks to prove important assertions detect defects. Keep the existing adversarial test program as the later property, stress, and broad mutation tier.",
+			"group": "Release 0.12",
+			"dependsOn": ["remove-the-symphony-incorporation"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "show-the-workspace-dispatcher-in-the",
+			"title": "Show the workspace dispatcher in the README",
+			"description": "Publish a deterministic, reusable video scenario that shows approved goals, workspace preparation, the generated branch and STEPSTONE_GOAL.md handoff, status inspection, and safe resume behavior. Make the capture readable at full and half size. Verify its behavior in CI. Add the final video to the README without committing transient recording state.",
+			"group": "Release 0.12",
+			"dependsOn": ["remove-the-symphony-incorporation"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "release-stepstone-0-12-0",
+			"title": "Release Stepstone 0.12.0",
+			"description": "Release the staged workspace CLI consolidation from a clean and current main branch after Symphony removal, trustworthy test evidence, and the dispatcher video land. Run the documented verification and isolated package checks. Push the v0.12.0 tag through the CI release workflow. Verify the npm package, GitHub release, Pi installation, and package gallery. Do not publish from a maintainer machine.",
+			"group": "Release 0.12",
+			"dependsOn": ["make-unit-test-evidence-hard-to-game", "show-the-workspace-dispatcher-in-the"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "dispatch-work-from-explicit-base-and",
+			"title": "Dispatch work from explicit base and target branches",
+			"description": "Let a workspace run select an explicit base ref and pull request target instead of depending on the canonical checkout branch. Resolve and persist the exact base revision. Define strict behavior for local branches, remote-tracking refs, integration branches, stacked work, rewritten refs, and branches already checked out in another worktree. Do not fetch or guess silently. Reconcile merged pull requests against the persisted target. Use team-safe branch names and preserve restart and cleanup guarantees.",
+			"group": "Dispatch",
+			"dependsOn": ["release-stepstone-0-12-0"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "prove-the-stepstone-collaboration",
+			"title": "Prove the Stepstone collaboration protocol",
+			"description": "Write the collaboration architecture decision and prove it with one CLI client and one browser client. Define immutable project identity, actor identity, roles, versioned commands, idempotency, ordered events, snapshots, stale-write conflicts, and SSE resume behavior. Keep standalone file mode explicit. Treat repository paths, Git origins, branches, and worktrees as linked context rather than storage authority. Fail loudly when a configured collaboration service is unavailable.",
+			"group": "Collaboration",
+			"dependsOn": ["release-stepstone-0-12-0"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "run-an-authoritative-stepstone",
+			"title": "Run an authoritative Stepstone collaboration service",
+			"description": "Build a self-hosted service with a hosted-ready protocol. Store canonical project state, an append-only per-project event sequence, idempotent command records, and current projections in PostgreSQL transactions. Route domain mutations through the same application and mutation services as standalone mode. Enforce project roles on commands, reads, and subscriptions. Support OIDC users and scoped service credentials. Package repeatable deployment, backup, restore, migration, retention, and health operations without requiring Git or a checked-out repository on the server.",
+			"group": "Collaboration",
+			"dependsOn": ["prove-the-stepstone-collaboration"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "move-projects-between-standalone-and",
+			"title": "Move projects between standalone and collaborative modes",
+			"description": "Let a user explicitly create, link, import, export, and detach a collaborative project without automatic dual writes. Store only an optional project pointer in a repository. Preserve goal IDs, retired IDs, dependencies, timestamps, and integration metadata across supported moves. Detect divergent histories and require an explicit resolution. Treat exports as interchange, not as a complete service backup.",
+			"group": "Collaboration",
+			"dependsOn": ["run-an-authoritative-stepstone"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "collaborate-on-goals-in-real-time",
+			"title": "Collaborate on goals in real time",
+			"description": "Make shared projects safe for teammates and agents. Add actor-aware claims, leases, heartbeats, explicit transfer and reclaim actions, live ordered updates, project membership, and durable audit history. Keep presence advisory. Separate shared goal ownership from machine-local workspace custody. Link claims to branches, remotes, pull requests, and dispatcher runs without making Git authoritative. Preserve the standalone claim evidence workflow.",
+			"group": "Collaboration",
+			"dependsOn": ["move-projects-between-standalone-and", "dispatch-work-from-explicit-base-and"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "edit-stepstone-projects-in-a-local-web",
+			"title": "Edit Stepstone projects in a local web application",
+			"description": "Add a local web application that can connect explicitly to standalone mode or a collaborative service. Support roadmap views, search, dependency planning, goal editing, ordering, lifecycle actions, team claims, audit history, and visible conflict handling. Use the same command contract and optimistic checks as the CLI. Receive collaborative updates through SSE. Bind local mode to loopback by default and never let browser code write the worklist file directly.",
+			"group": "Interfaces",
+			"dependsOn": ["collaborate-on-goals-in-real-time"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "build-a-tracker-integration-framework",
+			"title": "Build a tracker integration framework",
+			"description": "Create a provider adapter boundary for external project trackers. Store immutable external identities, mapping versions, field ownership, provider shadows, raw representations, and provenance. Process verified webhooks through a durable deduplicated inbox. Send changes through a durable per-connection outbox. Refetch before reconciliation, suppress echoes, respect rate limits, and run periodic repair for missed events and access changes. Expose dry runs, directional sync, visible conflicts, and per-field ownership. Never use timestamp-only last-write-wins.",
+			"group": "Integrations",
+			"dependsOn": ["edit-stepstone-projects-in-a-local-web"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "integrate-github-issues",
+			"title": "Integrate GitHub Issues",
+			"description": "Add a GitHub App adapter with repository-scoped installation permissions and webhook delivery. Link goals to issues using immutable GitHub IDs. Map a documented subset of title, body, status, assignee, labels, comments, sub-issues, and blocking dependencies while preserving provider-only state. Filter pull requests from issue reads. Connect pull request and branch context without making GitHub the Stepstone authority.",
+			"group": "Integrations",
+			"dependsOn": ["build-a-tracker-integration-framework"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "integrate-linear",
+			"title": "Integrate Linear",
+			"description": "Add a workspace-scoped Linear OAuth adapter with app actor attribution and webhook delivery. Map team-specific workflows, users, comments, relationships, and selected issue fields through explicit ownership rules. Preserve Linear IDs and exact workflow state. Handle rotating tokens, GraphQL complexity limits, retries, access changes, and lossy mappings without silent replacement.",
+			"group": "Integrations",
+			"dependsOn": ["integrate-github-issues"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "integrate-jira-cloud",
+			"title": "Integrate Jira Cloud",
+			"description": "Add a Jira Cloud adapter with an explicit OAuth or installed-app deployment contract. Map issues through tenant, project, issue-type, workflow, and link-type configuration. Use available transitions instead of assigning arbitrary statuses. Preserve Atlassian Document Format and provider-only fields. Renew expiring webhook registrations. Handle restricted comments, hidden identities, access loss, rate limits, and configurable dependency link types without silent data loss.",
+			"group": "Integrations",
+			"dependsOn": ["integrate-linear"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "work-offline-against-collaborative",
+			"title": "Work offline against collaborative projects",
+			"description": "Cache collaborative projections for the CLI and web client and queue commands in an explicit outbox. Replay commands in client order with stable command IDs and expected versions. Resume events from the last applied project sequence. Keep rejected commands visible until a user resolves or discards them. Do not replace conflicts with last-write-wins or silently fall back to standalone mode.",
+			"group": "Collaboration",
+			"dependsOn": ["integrate-jira-cloud"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
+		},
+		{
+			"id": "consolidate-human-project-views-around",
+			"title": "Consolidate human project views around the web application",
+			"description": "After the web application reaches functional parity, make the terminal project ui board read-only and remove the Project Goals pane from the Pi dashboard. Keep the model-facing Project Goal tool. Preserve the terminal board as a fast dependency, readiness, status, and detail view. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.",
+			"group": "Interfaces",
+			"dependsOn": ["work-offline-against-collaborative"],
+			"status": "open",
+			"createdAt": "2026-09-16T07:09:20.058Z",
+			"updatedAt": "2026-09-16T07:09:20.058Z"
 		}
 	],
-	"revision": 330
+	"revision": 347
 }
