@@ -40,7 +40,11 @@ description:
    - Summary of key changes (what changed).
    - Rationale and trade-offs (why it changed).
    - Tests or validation run (or explicit note if not run).
-9. Do not add `Co-authored-by` or other agent-attribution trailers.
+9. Use the repository user's Git identity as the sole commit author. Stop if
+   Git uses an agent identity. Do not credit Codex or another agent as an author,
+   co-author, contributor, or pull request author. This rule applies to commit
+   metadata, commit messages, and pull request text. Do not add `Co-authored-by`
+   or other agent-attribution trailers.
 10. Wrap body lines at 72 characters.
 11. Create the commit message with a here-doc or temp file and use
     `git commit -F <file>` so newlines are literal (avoid `-m` with `\n`).
