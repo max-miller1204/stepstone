@@ -106,3 +106,14 @@ Move the issue to one of these states:
 
 Do not move an issue directly to `Done`. The workflow uses a confirmed GitHub
 merge as the completion gate.
+
+## Missing Linear access
+
+If neither Linear MCP nor the injected `linear_graphql` tool is available,
+Codex stops without trying to change Linear. Its final session output reports
+the issue identifier, missing access, and unchanged issue state. No workpad
+update or state transition is possible through the agent in this case.
+
+The operator must pause Symphony and move the issue to `Human Review` until
+Linear access returns. Restore access before resuming the service and returning
+the issue to an active state. Do not give the agent a raw Linear token.

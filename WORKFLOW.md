@@ -76,7 +76,7 @@ Work only in the provided repository copy. Do not touch any other path.
 
 ## Prerequisite: Linear MCP or `linear_graphql` tool is available
 
-The agent should be able to talk to Linear, either via a configured Linear MCP server or injected `linear_graphql` tool. If neither is present, treat that as blocked access: record it in the workpad and move the issue according to the workflow instead of asking a user to configure Linear.
+The agent must be able to talk to Linear through a configured Linear MCP server or the injected `linear_graphql` tool. If neither interface is available, stop immediately. Do not attempt Linear comments or state changes. Report the issue identifier, missing Linear access, and unchanged issue state in the final session output. This exception overrides instructions to update the workpad or move the issue. The operator must pause Symphony and move the issue to `Human Review` until Linear access returns. Do not obtain a raw token or create another access method.
 
 ## Default posture
 
@@ -193,7 +193,7 @@ When a ticket has an attached PR, run this protocol before moving to `Human Revi
 
 ## Blocked-access escape hatch (required behavior)
 
-Use this only when completion is blocked by missing required tools or missing auth/permissions that cannot be resolved in-session.
+Use this only when completion is blocked by missing required tools or missing auth/permissions that cannot be resolved in-session. If neither Linear interface is available, use the prerequisite's final-output-only route instead. The steps below require working Linear access.
 
 - Use the existing macOS Keychain authentication for GitHub. Do not inject a GitHub token or change remotes or authentication methods.
 - If `gh auth status` or a required GitHub operation confirms an authentication or permission failure, stop that operation. Move the issue to `Human Review` with the blocker brief below. Do not leave the issue active for repeated authentication attempts.
