@@ -777,7 +777,8 @@
 			"dependsOn": ["remove-the-symphony-incorporation"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-16T18:17:39.040Z",
+			"branch": "stepstone/make-unit-test-evidence-hard-to-game"
 		},
 		{
 			"id": "show-the-workspace-dispatcher-in-the",
@@ -787,7 +788,8 @@
 			"dependsOn": ["remove-the-symphony-incorporation"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-16T18:17:32.376Z",
+			"branch": "stepstone/show-the-workspace-dispatcher-in-the"
 		},
 		{
 			"id": "release-stepstone-0-12-0",
@@ -920,5 +922,5 @@
 			"updatedAt": "2026-09-16T07:09:20.058Z"
 		}
 	],
-	"revision": 350
+	"revision": 352
 }
