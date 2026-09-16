@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-86 goals: 18 open, 56 done, 12 archived.
+86 goals: 16 open, 58 done, 12 archived.
 
 ## Orchestrator
 
@@ -477,23 +477,23 @@ A goal's description is a record of what was decided when it was written rather 
 
   Cleanup record: Deleted the chore/setup-symphony, chore/symphony-two-agents, and fix/symphony-git-access local and remote branches. Deleted the GitHub symphony label. Deleted the Stepstone Linear project and archived the Symphony-only In Review, Merging, Human Review, and Rework workflow states. Deleted the Linear - Stepstone Symphony item from the Personal 1Password vault. Deleted the Stepstone Symphony workspace and log directories.
 
-- **[open]** Make unit-test evidence hard to game - `make-unit-test-evidence-hard-to-game`
+- **[done]** Make unit-test evidence hard to game - `make-unit-test-evidence-hard-to-game`
 
   Establish an honest coverage baseline and drive reachable production code toward maximum line, branch, function, and statement coverage. Report coverage by file and enforce ratcheting thresholds that cannot decrease silently. Audit weak assertions, broad exclusions, implementation-only tests, and critical filesystem, locking, Git, migration, and dispatcher paths. Reject focused, skipped, todo, or empty tests in release gates. Use targeted mutation checks to prove important assertions detect defects. Keep the existing adversarial test program as the later property, stress, and broad mutation tier.
 
   Depends on `remove-the-symphony-incorporation` (done).
 
-- **[open]** Show the workspace dispatcher in the README - `show-the-workspace-dispatcher-in-the`
+- **[done]** Show the workspace dispatcher in the README - `show-the-workspace-dispatcher-in-the`
 
   Publish a deterministic, reusable video scenario that shows approved goals, workspace preparation, the generated branch and STEPSTONE_GOAL.md handoff, status inspection, and safe resume behavior. Make the capture readable at full and half size. Verify its behavior in CI. Add the final video to the README without committing transient recording state.
 
   Depends on `remove-the-symphony-incorporation` (done).
 
-- **[open, blocked]** Release Stepstone 0.12.0 - `release-stepstone-0-12-0`
+- **[open]** Release Stepstone 0.12.0 - `release-stepstone-0-12-0`
 
   Release the staged workspace CLI consolidation from a clean and current main branch after Symphony removal, trustworthy test evidence, and the dispatcher video land. Run the documented verification and isolated package checks. Push the v0.12.0 tag through the CI release workflow. Verify the npm package, GitHub release, Pi installation, and package gallery. Do not publish from a maintainer machine.
 
-  Depends on `make-unit-test-evidence-hard-to-game` (open), `show-the-workspace-dispatcher-in-the` (open).
+  Depends on `make-unit-test-evidence-hard-to-game` (done), `show-the-workspace-dispatcher-in-the` (done).
 
 ## Dispatch
 

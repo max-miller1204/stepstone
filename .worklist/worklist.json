@@ -775,10 +775,10 @@
 			"description": "Establish an honest coverage baseline and drive reachable production code toward maximum line, branch, function, and statement coverage. Report coverage by file and enforce ratcheting thresholds that cannot decrease silently. Audit weak assertions, broad exclusions, implementation-only tests, and critical filesystem, locking, Git, migration, and dispatcher paths. Reject focused, skipped, todo, or empty tests in release gates. Use targeted mutation checks to prove important assertions detect defects. Keep the existing adversarial test program as the later property, stress, and broad mutation tier.",
 			"group": "Release 0.12",
 			"dependsOn": ["remove-the-symphony-incorporation"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T18:17:39.040Z",
-			"branch": "stepstone/make-unit-test-evidence-hard-to-game"
+			"updatedAt": "2026-09-16T18:39:41.790Z",
+			"completedAt": "2026-09-16T18:39:41.790Z"
 		},
 		{
 			"id": "show-the-workspace-dispatcher-in-the",
@@ -922,5 +922,5 @@
 			"updatedAt": "2026-09-16T07:09:20.058Z"
 		}
 	],
-	"revision": 353
+	"revision": 354
 }
