@@ -9,6 +9,7 @@
 			"!.pi",
 			"!.worklist",
 			"!artifacts",
+			"!coverage",
 			"!dist",
 			"!.no-mistakes"
 		]
