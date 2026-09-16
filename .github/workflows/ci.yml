@@ -38,6 +38,17 @@ jobs:
       - run: npm audit --omit=dev --omit=peer --audit-level=high
       - run: npm run pack:check
 
+  mutation-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: cp npm-shrinkwrap.json package-lock.json && npm ci --ignore-scripts && rm package-lock.json
+      - run: npm run test:mutation
+
   # Keep the declared minimum and current LTS covered independently of Pi's
   # newer development runtime requirement. These tests use real Git and gh;
   # their subprocess fixture is compiled before running on either Node version.

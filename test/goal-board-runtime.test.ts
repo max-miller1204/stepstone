@@ -327,6 +327,7 @@ describe("goal board runtime", () => {
 			() => board.output.text.includes("Added from another process"),
 			"the externally added goal to appear",
 		);
+		expect(board.output.text).toContain("Added from another process");
 
 		board.send("q");
 		await board.done;
@@ -341,6 +342,7 @@ describe("goal board runtime", () => {
 			() => board.output.text.includes("Created after the board opened"),
 			"the first externally added goal to appear",
 		);
+		expect(board.output.text).toContain("Created after the board opened");
 
 		board.send("q");
 		await board.done;
@@ -412,6 +414,7 @@ describe("goal board runtime", () => {
 			() => board.output.text.includes("Added with watches"),
 			"the externally added goal to appear without any watcher",
 		);
+		expect(board.output.text).toContain("Added with watches");
 
 		board.send("q");
 		await board.done;
@@ -429,6 +432,7 @@ describe("goal board runtime", () => {
 			() => board.output.text.includes("Added after the watcher"),
 			"the externally added goal to appear after the watcher failed",
 		);
+		expect(board.output.text).toContain("Added after the watcher");
 
 		board.send("q");
 		await board.done;
@@ -456,6 +460,7 @@ describe("goal board runtime", () => {
 		const board = await openBoard(root, { PATH: join(root, "empty") });
 		board.send("E");
 		await waitFor(() => board.output.text.includes("$EDITOR"), "the missing editor message");
+		expect(board.output.text).toContain("$EDITOR");
 		board.send("q");
 		await board.done;
 	});

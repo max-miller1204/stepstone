@@ -20,18 +20,21 @@ The package ships TypeScript source directly because Pi loads extensions through
 
 | Command | What it proves |
 | --- | --- |
-| `npm run check` | Types, the import scan, Biome lint and format, and the whole test suite |
+| `npm run check` | Types, the import scan, Biome lint and format, and the whole test suite with coverage |
 | `npm run docs:check` | The generated documents match the sources they are rendered from |
 | `npm run imports:check` | Nothing a compiled executable loads imports a Pi package |
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
 | `npm run no-pi-install:check` | Every packed and installed executable works with no Pi present |
 | `npm run test:boundaries` | Real Git/gh preparation, reconciliation, recovery and cleanup boundaries |
+| `npm run test:coverage` | Unit tests plus the committed per-file coverage ratchet |
+| `npm run test:coverage:update` | Raises per-file coverage baselines and adds new source files |
+| `npm run test:mutation` | Eight targeted dependency and claim-evidence mutants must be killed |
 | `npm run test:e2e:fast` | Packed CLI initialization, approved plans, conflicts, and packed extension through real Pi RPC |
 | `npm run test:e2e` | Full deterministic published-surface tier, including storage, concurrent writers, roadmap generation, and workspace preparation |
 | `npm run videos:test` | VHS tape parser and scenario-selection regression tests |
 | `npm run videos:check -- <scenario>` | Replay the recorded shell commands and verify actual CLI behavior |
 | `npm run videos:render -- <scenario>` | Capture and verify a VHS scenario, then export its MP4 and evidence |
-| `npm run verify` | `check` plus `pack:check`, the gate the release workflow re-runs |
+| `npm run verify` | `check`, `pack:check`, and targeted mutation checks, the gate the release workflow re-runs |
 | `npm run quality:static` | Types, the import scan, Biome lint, and the generated documents, with no test run |
 | `npm run quality:pre-commit` | Biome checks the exact staged contents |
 | `npm run quality:pre-push` | The exact pushed commit passes the comprehensive offline gate in a detached worktree |
@@ -55,6 +58,19 @@ A commit that defines no `quality:push:worktree`, which is every commit made bef
 Run where no push is feeding it, `npm run quality:pre-push` validates HEAD, and `npm run quality:pre-push -- <revision>...` validates the revisions named.
 
 AI review remains an explicit targeted command rather than part of either default hook.
+
+## Unit-test evidence
+
+`npm test` measures every file under `src/` with V8 coverage. It prints a file-level report and compares line, branch, function, and statement percentages with `test/coverage-baseline.json`.
+A new source file has no baseline and fails the gate. A lower percentage fails the gate. `npm run test:coverage:update` can add a file or raise a percentage, but it refuses to lower an existing baseline.
+The baseline includes executable entry points whose subprocess coverage cannot be merged into the Vitest process. Their zero values stay visible instead of being hidden by exclusions.
+
+Vitest refuses `.only` and requires each test to execute an assertion. The test policy reporter also refuses skipped tests, todo tests, and empty suites.
+Do not disable a test for one platform. Put the platform decision in production behavior and assert that behavior directly.
+
+`npm run test:mutation` makes eight fixed semantic changes in isolated temporary copies of `src/dependencies.ts` and `src/claim-evidence.ts`.
+The focused tests must fail for every change. CI runs this check for each push and pull request. The release workflow runs it again through `npm run verify`.
+The fixed set keeps this gate fast and deterministic. The later adversarial test tier owns broad mutation, property, and stress testing.
 
 The test suite includes real Pi RPC load tests in temporary repositories, so it exercises the extension against Pi rather than only against mocks.
 
