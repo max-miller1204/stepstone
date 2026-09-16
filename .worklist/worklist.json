@@ -799,7 +799,8 @@
 			"dependsOn": ["make-unit-test-evidence-hard-to-game", "show-the-workspace-dispatcher-in-the"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-16T20:32:44.901Z",
+			"branch": "main"
 		},
 		{
 			"id": "dispatch-work-from-explicit-base-and",
@@ -922,5 +923,5 @@
 			"updatedAt": "2026-09-16T07:09:20.058Z"
 		}
 	],
-	"revision": 354
+	"revision": 355
 }
