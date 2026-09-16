@@ -69,6 +69,12 @@ configuration. `PATH` locates the installed tools.
 This environment policy prevents inherited-token exposure. It does not isolate
 host files or deny access to the user's Keychain.
 
+Codex runs with `danger-full-access`. The narrower `workspace-write` sandbox
+blocks writes to `.git`, which prevents fetch, branch, commit, and push
+operations. Unrestricted access lets the agent complete the Git workflow. It
+also lets agent commands read or change any file available to the current user.
+Run Symphony only for trusted repositories and issues.
+
 Symphony stores workspaces in:
 
 ```text
