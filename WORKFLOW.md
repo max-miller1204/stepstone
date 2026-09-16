@@ -23,7 +23,7 @@ hooks:
   after_create: |
     git clone https://github.com/max-miller1204/stepstone.git .
 agent:
-  max_concurrent_agents: 1
+  max_concurrent_agents: 2
   max_turns: 20
 codex:
   command: >-
@@ -99,7 +99,7 @@ The agent must be able to talk to Linear through a configured Linear MCP server 
 ## Related skills
 
 - `linear`: interact with Linear.
-- `commit`: produce clean, logical commits during implementation.
+- `commit`: produce clean, logical commits during implementation. Do not add `Co-authored-by` or other agent-attribution trailers.
 - `push`: keep remote branch current and publish updates.
 - `pull`: keep branch updated with latest `origin/main` before handoff.
 - `land`: when ticket reaches `Merging`, explicitly open and follow `.agents/skills/land/SKILL.md`, which includes the `land` loop.
@@ -284,6 +284,7 @@ Use this only when completion is blocked by missing required tools, authenticati
 - If comment editing is unavailable in-session, report the missing access as a blocker. Do not use an undocumented update script.
 - After any later checkout or merge changes `package.json` or `npm-shrinkwrap.json`, run `npm ci --ignore-scripts` before reproduction or validation. Also run it if `node_modules` is absent. Stop if installation fails.
 - Temporary proof edits are allowed only for local verification and must be reverted before commit.
+- Do not credit Codex or another agent as a commit author, co-author, contributor, or pull request author.
 - If out-of-scope improvements are found, create a separate Backlog issue rather
   than expanding current scope, and include a clear
   title/description/acceptance criteria, same-project assignment, a `related`

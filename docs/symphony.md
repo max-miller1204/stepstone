@@ -75,6 +75,9 @@ operations. Unrestricted access lets the agent complete the Git workflow. It
 also lets agent commands read or change any file available to the current user.
 Run Symphony only for trusted repositories and issues.
 
+Agent commits use the repository user's Git identity. They do not add Codex or
+another agent as an author, co-author, contributor, or pull request author.
+
 Symphony stores workspaces in:
 
 ```text
@@ -99,8 +102,9 @@ they apply:
 Add Linear blocker relations before moving the issue to `Todo`. Symphony uses
 those relations to delay blocked work.
 
-Start with one issue at a time. `WORKFLOW.md` sets
-`agent.max_concurrent_agents` to `1`.
+`WORKFLOW.md` sets `agent.max_concurrent_agents` to `2`. Symphony can run two
+independent issues at the same time while blocker relations keep dependent
+issues queued.
 
 ## Human review
 
