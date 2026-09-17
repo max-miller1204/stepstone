@@ -1513,21 +1513,36 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 
 	async syncTarget(evidence: MergeEvidence): Promise<string> {
 		await runCommand("git", ["check-ref-format", "--branch", evidence.baseBranch], this.repositoryRoot);
-		await runCommand("git", ["fetch", "--no-tags", "origin", evidence.baseBranch], this.repositoryRoot);
-		const targetRevision = (
-			await runCommand("git", ["rev-parse", "--verify", "FETCH_HEAD^{commit}"], this.repositoryRoot)
-		).stdout.trim();
+		const targetRef = `refs/stepstone-dispatch/target/${randomUUID()}`;
 		try {
 			await runCommand(
 				"git",
-				["merge-base", "--is-ancestor", evidence.mergeCommit, targetRevision],
+				[
+					"fetch",
+					"--no-tags",
+					"--no-write-fetch-head",
+					"origin",
+					`refs/heads/${evidence.baseBranch}:${targetRef}`,
+				],
 				this.repositoryRoot,
 			);
-		} catch {
-			throw new Error(
-				`Merge commit ${evidence.mergeCommit} is not reachable from updated target ${evidence.baseBranch}`,
-			);
+			const targetRevision = (
+				await runCommand("git", ["rev-parse", "--verify", `${targetRef}^{commit}`], this.repositoryRoot)
+			).stdout.trim();
+			try {
+				await runCommand(
+					"git",
+					["merge-base", "--is-ancestor", evidence.mergeCommit, targetRevision],
+					this.repositoryRoot,
+				);
+			} catch {
+				throw new Error(
+					`Merge commit ${evidence.mergeCommit} is not reachable from updated target ${evidence.baseBranch}`,
+				);
+			}
+			return targetRevision;
+		} finally {
+			await runCommand("git", ["update-ref", "-d", targetRef], this.repositoryRoot);
 		}
-		return targetRevision;
 	}
 }
