@@ -73,6 +73,7 @@ export interface DispatchEntry {
 	cleanupMarker?: string;
 	claimUpdatedAt?: string;
 	mergedPr?: MergeEvidence;
+	completionTarget?: { ref: string; revision: string };
 	goalFile?: DispatchGoalFile;
 	message?: string;
 	updatedAt: string;
@@ -86,6 +87,7 @@ export interface DispatchRun {
 	maxParallel: number;
 	baseRef?: string;
 	baseRevision?: string;
+	baseCustodyRef?: string;
 	targetBranch: string;
 	targetRevision: string;
 	targetRef?: string;
@@ -115,7 +117,12 @@ export interface RoadmapBinding {
 export interface WorkspaceBinding {
 	readonly name: string;
 	verify(workspace: DispatchWorkspace, branch: string): Promise<void>;
-	acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace>;
+	acquire(
+		goal: ProjectGoal,
+		branch: string,
+		baseRevision: string,
+		baseCustodyRef?: string,
+	): Promise<DispatchWorkspace>;
 	createGoalFileBacking(
 		workspace: DispatchWorkspace,
 		receipt: DispatchGoalFile,
@@ -151,6 +158,11 @@ export interface MergeEvidence {
 export interface MergeEvidenceBinding {
 	findMerged(branch: string, targetBranch: string, claimedAt: string): Promise<MergeEvidence | undefined>;
 	syncTarget(evidence: MergeEvidence, runId: string): Promise<string>;
+	verifyTarget(
+		evidence: MergeEvidence,
+		custody: { ref: string; revision: string },
+		runId: string,
+	): Promise<void>;
 }
 
 export function dispatchTargetRefPrefix(runId: string): string {
@@ -161,6 +173,10 @@ export function dispatchTargetRefPrefix(runId: string): string {
 export function dispatchTargetRef(runId: string, revision: string): string {
 	if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(revision)) throw new Error("Invalid target revision");
 	return `${dispatchTargetRefPrefix(runId)}${revision}`;
+}
+
+export function dispatchBaseRef(runId: string, revision: string): string {
+	return dispatchTargetRef(runId, revision).replace("/targets/", "/bases/");
 }
 
 export interface DispatchStateStore {
@@ -296,6 +312,7 @@ export class DispatchDriver {
 			maxParallel: options.maxParallel,
 			baseRef: options.baseRef,
 			baseRevision: options.baseRevision,
+			baseCustodyRef: dispatchBaseRef(runId, options.baseRevision),
 			targetBranch: options.targetBranch,
 			targetRevision: options.baseRevision,
 			workspaceConfig: structuredClone(options.workspaceConfig),
@@ -428,11 +445,9 @@ export class DispatchDriver {
 			if (entry.claimUpdatedAt && (entry.phase === "prepared" || entry.phase === "ambiguous")) {
 				let evidence: MergeEvidence | undefined;
 				try {
-					evidence = await this.dependencies.merges.findMerged(
-						entry.branch,
-						run.targetBranch,
-						entry.claimUpdatedAt,
-					);
+					evidence = entry.completionTarget
+						? entry.mergedPr
+						: await this.dependencies.merges.findMerged(entry.branch, run.targetBranch, entry.claimUpdatedAt);
 				} catch (error) {
 					entry.phase = "ambiguous";
 					entry.message = `Merge inspection failed; prepared claim preserved: ${errorMessage(error)}`;
@@ -533,9 +548,6 @@ export class DispatchDriver {
 			) {
 				throw new Error("Merge evidence does not match this claim and dispatch target");
 			}
-			run.targetRevision = await this.dependencies.merges.syncTarget(evidence, run.id);
-			run.targetRef = dispatchTargetRef(run.id, run.targetRevision);
-			await this.persist(run);
 			if (
 				entry.mergedPr &&
 				(entry.mergedPr.url !== evidence.url ||
@@ -546,12 +558,19 @@ export class DispatchDriver {
 			) {
 				throw new Error("Merge evidence changed after completion intent was journaled");
 			}
+			if (entry.completionTarget) {
+				await this.dependencies.merges.verifyTarget(evidence, entry.completionTarget, run.id);
+			} else {
+				run.targetRevision = await this.dependencies.merges.syncTarget(evidence, run.id);
+				run.targetRef = dispatchTargetRef(run.id, run.targetRevision);
+				entry.completionTarget = { ref: run.targetRef, revision: run.targetRevision };
+			}
 			if (!entry.completionIntentAt) {
 				entry.completionIntentAt = this.now().toISOString();
 				entry.mergedPr = evidence;
 				entry.message = `Canonical completion intent journaled for ${evidence.url}.`;
-				await this.persist(run, entry);
 			}
+			await this.persist(run, entry);
 			const snapshot = await this.dependencies.roadmap.read();
 			const current = snapshot.goals.find((goal) => goal.id === entry.goal.id);
 			if (!current) throw new Error("Goal disappeared from the canonical roadmap");
@@ -615,6 +634,7 @@ export class DispatchDriver {
 				entry.goal,
 				entry.branch,
 				run.baseRevision ?? run.targetRevision,
+				run.baseCustodyRef,
 			);
 			await this.persist(run, entry);
 		} catch (error) {
@@ -791,8 +811,8 @@ export class DispatchDriver {
 				const workspace = entry.workspace;
 				await this.dependencies.workspace.cleanup(workspace, entry.branch, {
 					targetBranch: run.targetBranch,
-					targetRevision: run.targetRevision,
-					targetRef: run.targetRef,
+					targetRevision: entry.completionTarget?.revision ?? run.targetRevision,
+					targetRef: entry.completionTarget?.ref ?? run.targetRef ?? run.baseCustodyRef,
 					goalFile: entry.goalFile,
 					force,
 				});

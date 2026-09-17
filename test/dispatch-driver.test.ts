@@ -233,6 +233,11 @@ class FakeWorkspace implements WorkspaceBinding {
 class FakeMerges implements MergeEvidenceBinding {
 	readonly evidence = new Map<string, MergeEvidence>();
 	readonly synced: MergeEvidence[] = [];
+	readonly verified: MergeEvidence[] = [];
+
+	async verifyTarget(evidence: MergeEvidence): Promise<void> {
+		this.verified.push(evidence);
+	}
 	syncFailure?: Error;
 
 	async findMerged(branch: string): Promise<MergeEvidence | undefined> {
@@ -330,6 +335,7 @@ describe("workspace preparation driver", () => {
 		const run = await setup.create();
 		delete run.baseRef;
 		delete run.baseRevision;
+		delete run.baseCustodyRef;
 		await setup.store.save(run);
 
 		const resumed = await setup.makeDriver().advance(run.id);
@@ -729,10 +735,14 @@ describe("workspace preparation driver", () => {
 		await expect(setup.makeDriver().recoverRelease(run.id, "alpha")).rejects.toThrow("completion outcome");
 
 		setup.roadmap.completionResponseFailure = undefined;
+		setup.merges.evidence.clear();
+		setup.merges.syncFailure = new Error("remote target was rewritten");
 		const resumed = await setup.makeDriver().advance(run.id);
 		expect(resumed.entries.alpha.phase).toBe("cleaned");
 		expect(resumed.entries.alpha.completionUpdatedAt).toBe(setup.roadmap.snapshot.goals[0]?.updatedAt);
 		expect(setup.roadmap.completions).toHaveLength(1);
+		expect(setup.merges.synced).toHaveLength(1);
+		expect(setup.merges.verified).toEqual([merged()]);
 	});
 
 	it("fails closed around interrupted acquisition and claim persistence", async () => {

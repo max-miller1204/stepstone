@@ -20,7 +20,7 @@ npx -y stepstone@latest project workspace start \
   --json
 ```
 
-`--base` names a ref that already exists in the local repository. Stepstone resolves it to one exact commit and persists both values before it creates a workspace. It does not fetch the ref. A local branch can be checked out in another worktree. A remote-tracking ref, integration branch, stacked branch, tag, or commit is also valid when it resolves to one commit. Later ref rewrites do not change the persisted base revision.
+`--base` names a ref that already exists in the local repository. Stepstone resolves it to one exact commit and persists both values before it creates a workspace. It does not fetch the ref. A local branch can be checked out in another worktree. A remote-tracking ref, integration branch, stacked branch, tag, or commit is also valid when it resolves to one commit. Later ref rewrites do not change the persisted base revision. Each new run retains that commit under `refs/stepstone-dispatch/bases/<run-id>/<revision>`. Preparation verifies this custody before it creates each workspace. The ref remains until safe run removal, even after an earlier workspace is cleaned.
 
 `--target` names the exact pull request base branch. It does not need to match the canonical checkout branch. If you omit `--base`, Stepstone resolves `HEAD`. If you omit `--target`, Stepstone uses the current canonical checkout branch. A detached canonical checkout therefore requires `--target`. Stepstone never derives a pull request target from a remote-tracking base ref.
 
@@ -106,6 +106,8 @@ A resume pass:
 5. retains the fetched target in an immutable run-scoped Git ref, persists its exact revision and ref, and completes the exact claimed goal under the approved run's standing consent;
 6. cleans the completed workspace; and
 7. prepares newly ready allow-listed goals until the persisted preparation limit is full.
+
+Once a completion intent records its target ref and revision, restart validates that exact ref and the recorded merge ancestry. It reuses this evidence without another PR lookup or target fetch. A later target rewrite cannot replace that journaled evidence.
 
 A closed terminal, an exited agent, silence, or an unmerged pull request is never completion evidence. Stepstone has no session liveness to inspect.
 
@@ -198,7 +200,7 @@ This override applies only to that invocation and goal. It is not accepted by `r
 
 ## State compatibility
 
-Preparation-only runs use dispatch state version 2. Fetched target custody uses an additive `targetRef` field. Earlier runs without that field remain readable and keep their persisted revision behavior until the next merged-work reconciliation records custody. New runs persist `baseRef` and `baseRevision` as an additive pair. Runs created before this pair existed remain readable and continue to use their original persisted `targetRevision` as the workspace base. The goal-file receipt is also additive so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before inspecting merge evidence or making another canonical roadmap mutation for that prepared workspace.
+Preparation-only runs use dispatch state version 2. Base custody uses an additive `baseCustodyRef` field. Fetched target custody uses an additive `targetRef` field and a per-entry `completionTarget` receipt. Earlier runs without these fields remain readable and keep their persisted revision behavior. Their next merged-work reconciliation records target custody. New runs persist `baseRef` and `baseRevision` as an additive pair. Runs created before this pair existed remain readable and continue to use their original persisted `targetRevision` as the workspace base. The goal-file receipt is also additive so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before inspecting merge evidence or making another canonical roadmap mutation for that prepared workspace.
 
 Version 1 belonged to the removed session-hosting driver and may contain live process or pane custody. Current Stepstone refuses that state rather than silently dropping launch metadata or attempting to control somebody else's session. Inspect or recover a version 1 run with the Stepstone release that created it before upgrading.
 

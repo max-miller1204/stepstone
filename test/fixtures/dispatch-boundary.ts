@@ -11,7 +11,14 @@ import { DispatchDriver, type DispatchRun } from "../../src/dispatch-driver.ts";
 
 const [root, parent, action, value, token, fault] = process.argv.slice(2);
 if (!root || !parent || !action) throw new Error("root, workspace parent, and action are required");
-const roadmap = new ApplicationRoadmapBinding(root);
+class InterruptibleRoadmap extends ApplicationRoadmapBinding {
+	override async complete(goalId: string, expectedUpdatedAt: string) {
+		const result = await super.complete(goalId, expectedUpdatedAt);
+		if (fault === "lose-completion-response") process.exit(88);
+		return result;
+	}
+}
+const roadmap = new InterruptibleRoadmap(root);
 class InterruptibleStore extends FileDispatchStateStore {
 	override async save(run: DispatchRun): Promise<void> {
 		const entry = run.entries.alpha;
@@ -20,6 +27,8 @@ class InterruptibleStore extends FileDispatchStateStore {
 			process.exit(86);
 		}
 		await super.save(run);
+		if (fault === "after-completion-intent" && entry?.completionTarget && !entry.completionUpdatedAt)
+			process.exit(89);
 		if (fault === "after-completion" && entry?.phase === "completed") {
 			process.stderr.write("Boundary fixture exited after completion, before cleanup.\n");
 			process.exit(87);

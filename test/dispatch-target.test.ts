@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
-import { GitHubMergeEvidenceBinding } from "../src/dispatch-bindings.ts";
+import { GitHubMergeEvidenceBinding, GitWorktreeBinding } from "../src/dispatch-bindings.ts";
 
 const exec = promisify(execFile);
 
@@ -68,8 +68,38 @@ if (args[0] === "fetch") {
 		const custodyRef = `refs/stepstone-dispatch/targets/target-test/${base}`;
 		expect(await git("rev-parse", custodyRef)).toBe(base);
 		expect(await binding.syncTarget(evidence, "target-test")).toBe(base);
+		await binding.verifyTarget(evidence, { ref: custodyRef, revision: base }, "target-test");
+		await expect(
+			binding.verifyTarget(
+				{ ...evidence, mergeCommit: release },
+				{ ref: custodyRef, revision: base },
+				"target-test",
+			),
+		).rejects.toThrow();
+		await expect(
+			binding.verifyTarget(evidence, { ref: custodyRef, revision: base }, "other-run"),
+		).rejects.toThrow("Target ref custody changed");
 		await git("update-ref", custodyRef, release, base);
+		await expect(
+			binding.verifyTarget(evidence, { ref: custodyRef, revision: base }, "target-test"),
+		).rejects.toThrow("Target ref custody changed");
 		await expect(binding.syncTarget(evidence, "target-test")).rejects.toThrow("Target ref custody changed");
+		const workspaceBinding = new GitWorktreeBinding(root, directory);
+		await expect(
+			workspaceBinding.acquire(
+				{
+					id: "alpha",
+					title: "Alpha",
+					description: "",
+					status: "open",
+					createdAt: evidence.createdAt,
+					updatedAt: evidence.createdAt,
+				},
+				"stepstone/target-test/alpha",
+				base,
+				custodyRef,
+			),
+		).rejects.toThrow("Target ref custody changed");
 		expect(await git("branch", "--show-current")).toBe("release");
 		expect(await git("rev-parse", "HEAD")).toBe(release);
 	} finally {

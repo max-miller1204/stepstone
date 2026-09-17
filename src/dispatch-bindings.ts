@@ -37,6 +37,7 @@ import type {
 import {
 	DISPATCH_GOAL_FILE,
 	DispatchBoundaryError,
+	dispatchBaseRef,
 	dispatchTargetRef,
 	dispatchTargetRefPrefix,
 } from "./dispatch-driver.ts";
@@ -234,6 +235,13 @@ const entrySchema = z
 		releaseUpdatedAt: timestampSchema.optional(),
 		completionIntentAt: timestampSchema.optional(),
 		completionUpdatedAt: timestampSchema.optional(),
+		completionTarget: z
+			.object({
+				ref: safeString,
+				revision: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/),
+			})
+			.strict()
+			.optional(),
 		cleanupMarker: z.string().uuid().optional(),
 		mergedPr: z
 			.object({
@@ -281,6 +289,7 @@ const runSchema = z
 		approvedGoalIds: z.array(goalIdSchema).min(1),
 		maxParallel: z.number().int().positive().max(1024),
 		baseRef: safeString.optional(),
+		baseCustodyRef: safeString.optional(),
 		baseRevision: z
 			.string()
 			.regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/)
@@ -317,6 +326,16 @@ const runSchema = z
 			});
 		}
 
+		if (
+			run.baseCustodyRef &&
+			(!run.baseRevision || run.baseCustodyRef !== dispatchBaseRef(run.id, run.baseRevision))
+		) {
+			context.addIssue({
+				code: "custom",
+				path: ["baseCustodyRef"],
+				message: "base ref does not match run custody",
+			});
+		}
 		if (run.targetRef && run.targetRef !== dispatchTargetRef(run.id, run.targetRevision)) {
 			context.addIssue({
 				code: "custom",
@@ -451,6 +470,14 @@ const runSchema = z
 					message: "cleanup receipt belongs only to a cleaned phase",
 				});
 			}
+			if (
+				entry.completionTarget &&
+				(!entry.completionIntentAt ||
+					!entry.mergedPr ||
+					entry.completionTarget.ref !== dispatchTargetRef(run.id, entry.completionTarget.revision))
+			) {
+				context.addIssue({ code: "custom", path, message: "completion target custody is invalid" });
+			}
 			const hasAnyCompletionState = Boolean(
 				entry.mergedPr || entry.completionIntentAt || entry.completionUpdatedAt,
 			);
@@ -507,6 +534,21 @@ function validateRun(value: unknown, path: string): DispatchRun {
 	return result.data as DispatchRun;
 }
 
+async function verifyRevisionCustody(repositoryRoot: string, ref: string, revision: string): Promise<void> {
+	const actual = (
+		await runCommand("git", ["for-each-ref", "--format=%(objectname) %(symref)", ref], repositoryRoot)
+	).stdout.trim();
+	if (actual !== revision) throw new Error("Target ref custody changed");
+}
+
+async function retainRevision(repositoryRoot: string, ref: string, revision: string): Promise<void> {
+	const existing = (
+		await runCommand("git", ["for-each-ref", "--format=%(objectname) %(symref)", ref], repositoryRoot)
+	).stdout.trim();
+	if (existing && existing !== revision) throw new Error("Target ref custody changed");
+	await runCommand("git", ["update-ref", "--no-deref", ref, revision, existing], repositoryRoot);
+}
+
 export class FileDispatchStateStore implements DispatchStateStore {
 	readonly directory: string;
 	constructor(directory: string) {
@@ -520,8 +562,12 @@ export class FileDispatchStateStore implements DispatchStateStore {
 				await readFile(path, "utf8");
 				throw new Error(`Dispatch run ${run.id} already exists`);
 			} catch (error) {
-				if (error instanceof Error && "code" in error && error.code === "ENOENT") await this.write(run);
-				else throw error;
+				if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+					await this.write(run);
+					if (run.baseCustodyRef && run.baseRevision) {
+						await retainRevision(run.repositoryRoot, run.baseCustodyRef, run.baseRevision);
+					}
+				} else throw error;
 			}
 		});
 	}
@@ -556,13 +602,22 @@ export class FileDispatchStateStore implements DispatchStateStore {
 			const refs = (
 				await runCommand(
 					"git",
-					["for-each-ref", "--format=%(refname) %(objectname) %(symref)", prefix],
+					[
+						"for-each-ref",
+						"--format=%(refname) %(objectname) %(symref)",
+						prefix,
+						prefix.replace("/targets/", "/bases/"),
+					],
 					run.repositoryRoot,
 				)
 			).stdout.trim();
 			const receipts = refs ? refs.split("\n").map((line) => line.split(" ")) : [];
 			for (const [ref, revision, symbolic] of receipts) {
-				if (symbolic || ref !== dispatchTargetRef(run.id, revision))
+				if (
+					symbolic ||
+					(ref !== dispatchTargetRef(run.id, revision) &&
+						!(ref === run.baseCustodyRef && revision === run.baseRevision))
+				)
 					throw new Error("Target ref custody changed");
 			}
 			for (const [ref, revision] of receipts) {
@@ -1180,7 +1235,13 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		await this.afterGoalFileGitVerification(target);
 	}
 
-	async acquire(goal: ProjectGoal, branch: string, baseRevision: string): Promise<DispatchWorkspace> {
+	async acquire(
+		goal: ProjectGoal,
+		branch: string,
+		baseRevision: string,
+		baseCustodyRef?: string,
+	): Promise<DispatchWorkspace> {
+		if (baseCustodyRef) await verifyRevisionCustody(this.repositoryRoot, baseCustodyRef, baseRevision);
 		if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(baseRevision)) {
 			throw new Error("Dispatch base revision is invalid");
 		}
@@ -1446,14 +1507,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 			throw new Error("Refusing cleanup because the workspace HEAD changed after cleanup intent");
 		if (options.targetBranch === branch) throw new Error("Refusing cleanup of the dispatch target branch");
 		if (options.targetRef) {
-			const revision = (
-				await runCommand(
-					"git",
-					["for-each-ref", "--format=%(objectname) %(symref)", options.targetRef],
-					this.repositoryRoot,
-				)
-			).stdout.trim();
-			if (revision !== options.targetRevision) throw new Error("Target ref custody changed");
+			await verifyRevisionCustody(this.repositoryRoot, options.targetRef, options.targetRevision);
 		}
 		if (!options.force) {
 			await verifyCleanupContents(workspace, options.goalFile);
@@ -1554,6 +1608,21 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 		};
 	}
 
+	async verifyTarget(
+		evidence: MergeEvidence,
+		custody: { ref: string; revision: string },
+		runId: string,
+	): Promise<void> {
+		if (custody.ref !== dispatchTargetRef(runId, custody.revision))
+			throw new Error("Target ref custody changed");
+		await verifyRevisionCustody(this.repositoryRoot, custody.ref, custody.revision);
+		await runCommand(
+			"git",
+			["merge-base", "--is-ancestor", evidence.mergeCommit, custody.revision],
+			this.repositoryRoot,
+		);
+	}
+
 	async syncTarget(evidence: MergeEvidence, runId: string): Promise<string> {
 		dispatchTargetRefPrefix(runId);
 		await runCommand("git", ["check-ref-format", "--branch", evidence.baseBranch], this.repositoryRoot);
@@ -1586,19 +1655,7 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 			}
 			const custodyRef = dispatchTargetRef(runId, targetRevision);
 			// An immutable ref keeps each journaled revision alive across later target rewrites.
-			const existing = (
-				await runCommand(
-					"git",
-					["for-each-ref", "--format=%(objectname) %(symref)", custodyRef],
-					this.repositoryRoot,
-				)
-			).stdout.trim();
-			if (existing && existing !== targetRevision) throw new Error("Target ref custody changed");
-			await runCommand(
-				"git",
-				["update-ref", "--no-deref", custodyRef, targetRevision, existing],
-				this.repositoryRoot,
-			);
+			await retainRevision(this.repositoryRoot, custodyRef, targetRevision);
 			return targetRevision;
 		} finally {
 			await runCommand("git", ["update-ref", "--no-deref", "-d", targetRef], this.repositoryRoot);

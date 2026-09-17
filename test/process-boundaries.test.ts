@@ -245,6 +245,35 @@ describe("real GitHub CLI reconciliation", () => {
 		},
 	);
 
+	it.each(["lose-completion-response", "after-completion-intent"])(
+		"reuses journaled target custody after target rewrite and %s",
+		async (fault) => {
+			await withProcessBoundary(async (f) => {
+				const run = await f.prepare();
+				await f.workGit("commit", "--allow-empty", "-qm", "feature");
+				const tip = await f.workGit("rev-parse", "HEAD");
+				await f.git("push", "origin", `${tip}:refs/heads/main`, `${tip}:refs/heads/retained-feature`);
+				f.pullRequests = [f.pr(run.entries.alpha.claimUpdatedAt as string, tip)];
+				await expect(f.run("advance", run.id, "", fault)).rejects.toMatchObject({
+					code: fault === "lose-completion-response" ? 88 : 89,
+				});
+				const interrupted = await f.run("load", run.id);
+				expect(interrupted.entries.alpha.completionTarget?.revision).toBe(tip);
+				await f.command("git", ["update-ref", "refs/heads/main", f.base, tip], f.remote);
+				await f.git("reflog", "expire", "--expire=all", "--all");
+				await f.git("gc", "--prune=now");
+				f.apiFailure = "http";
+				const requests = f.requests.length;
+				const resumed = await f.run("advance", run.id);
+				expect(resumed.entries.alpha.phase).toBe("cleaned");
+				expect((await f.read()).goals[0].status).toBe("done");
+				expect(f.requests).toHaveLength(requests);
+				expect(resumed.entries.alpha.completionTarget?.revision).toBe(tip);
+				await f.run("cleanup", run.id);
+			});
+		},
+	);
+
 	it("retains exact target custody across restart and pruning until safe run removal", async () => {
 		await withProcessBoundary(async (f) => {
 			const run = await f.prepare();
@@ -309,6 +338,53 @@ describe("real GitHub CLI reconciliation", () => {
 });
 
 describe("project workspace CLI", () => {
+	it("retains an explicit base through ref deletion and pruning for later approved goals", async () => {
+		await withProcessBoundary(async (f) => {
+			const path = join(f.root, ".worklist", "worklist.json");
+			const document = JSON.parse(await readFile(path, "utf8"));
+			document.goals.push({ ...document.goals[0], id: "beta", title: "Beta" });
+			await writeFile(path, JSON.stringify(document));
+			const tree = await f.git("rev-parse", `${f.base}^{tree}`);
+			const base = await f.git("commit-tree", tree, "-p", f.base, "-m", "temporary base");
+			await f.git("update-ref", "refs/heads/temporary", base);
+			await f.git("push", "origin", "temporary:refs/heads/base-backup");
+			const started = await f.workspaceCli(
+				"start",
+				"--goal",
+				"alpha",
+				"--goal",
+				"beta",
+				"--base",
+				"temporary",
+				"--target",
+				"main",
+				"--workspace-parent",
+				f.directory,
+			);
+			const summary = started.result as { id: string };
+			const run = await f.run("load", summary.id);
+			expect(run.entries.alpha.phase).toBe("prepared");
+			const custodyRef = run.baseCustodyRef as string;
+			expect(custodyRef).toBe(`refs/stepstone-dispatch/bases/${run.id}/${base}`);
+			await f.workspaceCli("recover", run.id, "alpha", "--release");
+			await f.git("update-ref", "-d", "refs/heads/temporary");
+			await f.git("update-ref", "-d", "refs/remotes/origin/base-backup");
+			await f.git("reflog", "expire", "--expire=all", "--all");
+			await f.git("gc", "--prune=now");
+			expect(await f.git("rev-parse", `${custodyRef}^{commit}`)).toBe(base);
+			const resumed = await f.workspaceCli("resume", run.id);
+			expect(resumed.result).toMatchObject({ entries: { beta: { phase: "prepared" } } });
+			expect(
+				(await f.command("git", ["rev-parse", "HEAD"], join(f.directory, "stepstone-beta"))).stdout.trim(),
+			).toBe(base);
+			await f.workspaceCli("recover", run.id, "beta", "--release");
+			await f.git("update-ref", custodyRef, f.base, base);
+			await expect(f.workspaceCli("cleanup", run.id)).rejects.toMatchObject({ code: 1 });
+			await f.git("update-ref", custodyRef, base, f.base);
+			await f.workspaceCli("cleanup", run.id);
+			expect(await f.git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/")).toBe("");
+		});
+	});
 	it("reads existing version 2 custody without rewriting it, refuses version 1, and recovers in place", async () => {
 		await withProcessBoundary(async (f) => {
 			// The unchanged driver writes the version 2 schema previously owned by the companion bin.
