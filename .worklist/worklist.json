@@ -618,16 +618,6 @@
 			"updatedAt": "2026-09-17T22:00:20.274Z"
 		},
 		{
-			"id": "adversarial-test-quality-program",
-			"title": "Adversarial test quality program",
-			"description": "Strengthen confidence beyond example-based tests with fast-check properties for dependency ordering, ID migration, storage round trips, branch-aware behavior, and locking invariants; deterministic multi-process stress scenarios for mutation and path migration; and scheduled Stryker mutation testing that measures whether the suite detects plausible defects without slowing every push.",
-			"group": "Quality",
-			"dependsOn": ["harden-repository-supply-chain"],
-			"status": "open",
-			"createdAt": "2026-08-18T01:02:46.352Z",
-			"updatedAt": "2026-08-18T01:02:46.352Z"
-		},
-		{
 			"id": "exercise-stepstone-workflows-end-to-end",
 			"title": "Exercise Stepstone workflows end to end",
 			"description": "Create a broad deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and a representative workspace-preparation path. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.\n\nThis goal owns broad product workflows through published surfaces. The Automation goal `verify-the-remaining-external` owns the deep matrix for real Git and GitHub CLI process boundaries, preparation, claim mutation, merged-pull-request reconciliation, recovery, and cleanup.",
@@ -925,12 +915,12 @@
 		{
 			"id": "consolidate-human-project-views-around",
 			"title": "Consolidate human project views around the web application",
-			"description": "After the web application reaches functional parity, make the terminal project ui board read-only and remove the Project Goals pane from the Pi dashboard. Keep the model-facing Project Goal tool. Preserve the terminal board as a fast dependency, readiness, status, and detail view. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.",
+			"description": "After the web application reaches functional parity, make the terminal project ui board and the Project Goals pane in the Pi dashboard read-only. Keep the Project Goals pane in Pi. Preserve both views for fast access to dependencies, readiness, status, and goal details. Keep the model-facing Project Goal tool. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.",
 			"group": "Interfaces",
 			"dependsOn": ["prove-the-self-hosted-daily-workflow"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-17T21:40:04.784Z"
+			"updatedAt": "2026-09-17T23:04:58.561Z"
 		},
 		{
 			"id": "organize-tasks-and-milestones",
@@ -1023,5 +1013,6 @@
 			"updatedAt": "2026-09-17T21:38:33.048Z"
 		}
 	],
-	"revision": 390
+	"revision": 392,
+	"retiredIds": ["adversarial-test-quality-program"]
 }

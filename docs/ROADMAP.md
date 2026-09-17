@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-96 goals: 23 open, 60 done, 13 archived.
+95 goals: 22 open, 60 done, 13 archived.
 
 ## Orchestrator
 
@@ -443,12 +443,6 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `authoritative-pull-request-quality-gates` (archived).
 
-- **[open]** Adversarial test quality program - `adversarial-test-quality-program`
-
-  Strengthen confidence beyond example-based tests with fast-check properties for dependency ordering, ID migration, storage round trips, branch-aware behavior, and locking invariants; deterministic multi-process stress scenarios for mutation and path migration; and scheduled Stryker mutation testing that measures whether the suite detects plausible defects without slowing every push.
-
-  Depends on `harden-repository-supply-chain` (archived).
-
 - **[done]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
 
   Create a broad deterministic end-to-end tier that drives the real packed Stepstone executables and Pi RPC boundary from temporary Git repositories instead of importing application internals. Cover worklist initialization and location precedence, approved plan application, optimistic conflicts and atomic locking, linked-worktree refusal, generated roadmap consistency, installed operation without Pi peers, and a representative workspace-preparation path. Keep a fast representative subset in the pre-PR gate, run the broader cross-platform matrix in CI or manually, and retain command output and temporary-repository artifacts on failure.
@@ -549,7 +543,7 @@ A goal's description is a record of what was decided when it was written rather 
 
 - **[open, blocked]** Consolidate human project views around the web application - `consolidate-human-project-views-around`
 
-  After the web application reaches functional parity, make the terminal project ui board read-only and remove the Project Goals pane from the Pi dashboard. Keep the model-facing Project Goal tool. Preserve the terminal board as a fast dependency, readiness, status, and detail view. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.
+  After the web application reaches functional parity, make the terminal project ui board and the Project Goals pane in the Pi dashboard read-only. Keep the Project Goals pane in Pi. Preserve both views for fast access to dependencies, readiness, status, and goal details. Keep the model-facing Project Goal tool. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.
 
   Depends on `prove-the-self-hosted-daily-workflow` (open).
 
