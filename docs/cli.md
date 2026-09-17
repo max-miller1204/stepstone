@@ -134,11 +134,16 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 ## Capture brainstorms as approved goal plans
 
 1. Brainstorm broad outcomes for the roadmap rather than internal implementation steps.
-2. Draft the exact plain JSON array that represents the complete proposed goal batch.
-3. When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists.
-4. Present that exact JSON array to the user and wait for explicit approval before making any mutation.
-5. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step.
-6. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.
+2. Before drafting a plan, read related open and active goals. Use `list` or `find` to locate them, then use `show` to read their complete descriptions.
+3. Compare the related goals with the current repository. Look for obsolete premises, removed commands or documentation, work that has already landed, overlapping outcomes, and stale sequencing assumptions. Use product judgment rather than treating this audit as an unattended validator.
+4. Decide which related goals the proposal keeps, changes, or replaces. Do not silently duplicate an existing outcome.
+5. Draft the exact plain JSON array that represents the complete proposed goal batch.
+6. Add `dependsOn` edges for logical prerequisites and shared implementation surfaces. When a later, naturally ordered batch goal depends on an earlier batch goal, use the earlier goal's exact pre-collision slug.
+7. Present the exact JSON array with a short audit summary. Name every existing goal that the plan replaces by exact ID, or state that it replaces none. Report stale or overlapping goals that need a separate roadmap decision.
+8. Wait for explicit approval of that exact array before making any mutation.
+9. An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings. It is never approval and never replaces the explicit approval step.
+10. After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array. Never turn the batch into per-goal `add` calls.
+11. After the approved batch lands, run `waves` when sequencing matters. Report unexpected ready work or unreachable goals instead of silently accepting the projected order.
 
 ## Goal IDs
 

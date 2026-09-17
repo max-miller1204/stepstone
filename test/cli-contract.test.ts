@@ -357,6 +357,37 @@ describe("single CLI command contract", () => {
 		expect(renderCliGuide()).toContain(`## ${action.captureWorkflow.title}`);
 	});
 
+	it("requires a roadmap audit before capture and a sequencing check after apply", () => {
+		const action = CLI_COMMAND_CONTRACT.actions.find(({ name }) => name === "apply-plan");
+		if (!action?.captureWorkflow) throw new Error("apply-plan capture workflow is missing");
+		const guidance = action.captureWorkflow.steps.join("\n");
+
+		for (const requirement of [
+			"related open and active goals",
+			"obsolete premises",
+			"removed commands or documentation",
+			"work that has already landed",
+			"overlapping outcomes",
+			"stale sequencing assumptions",
+			"product judgment",
+			"logical prerequisites",
+			"shared implementation surfaces",
+			"replaces by exact ID",
+			"run `waves`",
+			"unexpected ready work or unreachable goals",
+		]) {
+			expect(guidance).toContain(requirement);
+		}
+
+		const audit = action.captureWorkflow.steps.findIndex((step) => step.includes("obsolete premises"));
+		const draft = action.captureWorkflow.steps.findIndex((step) => step.includes("Draft the exact"));
+		const apply = action.captureWorkflow.steps.findIndex((step) => step.includes("exactly one mutating"));
+		const waves = action.captureWorkflow.steps.findIndex((step) => step.includes("run `waves`"));
+		expect(audit).toBeGreaterThanOrEqual(0);
+		expect(audit).toBeLessThan(draft);
+		expect(apply).toBeLessThan(waves);
+	});
+
 	it("keeps the mutating capture action out of the unconditionally safe actions", () => {
 		// The skill's guardrails tell an agent which actions need no user approval,
 		// so the action that only runs against a plan the user approved must not be
