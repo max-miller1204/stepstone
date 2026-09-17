@@ -1919,7 +1919,13 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 				["merge-base", "--is-ancestor", evidence.mergeCommit, targetRevision],
 				this.repositoryRoot,
 			);
-		} catch {
+		} catch (error) {
+			if (!(error instanceof CommandFailure) || error.status !== 1) throw error;
+			await runCommand(
+				"git",
+				["update-ref", "--no-deref", "-d", selectionRef, targetRevision],
+				this.repositoryRoot,
+			);
 			throw new Error(
 				`Merge commit ${evidence.mergeCommit} is not reachable from updated target ${evidence.baseBranch}`,
 			);

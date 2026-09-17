@@ -318,6 +318,19 @@ describe("real GitHub CLI reconciliation", () => {
 				expect(await f.workGit("rev-parse", "HEAD")).toBe(tip);
 				if (failure === "unreachable") expect(refused.entries.alpha.message).toContain("not reachable");
 				else expect(refused.entries.alpha.message).toContain("git failed");
+				await expect(f.workspaceCli("recover", run.id, "alpha", "--release")).rejects.toMatchObject({
+					code: 1,
+				});
+				expect((await f.read()).goals[0]).toEqual(original);
+				if (failure === "fetch") await f.git("remote", "set-url", "origin", f.remote);
+				await f.workGit("push", "origin", `${branch}:main`);
+				const requests = f.requests.length;
+				f.apiFailure = "http";
+				const completed = await f.run("advance", run.id);
+				expect(completed.entries.alpha.phase).toBe("cleaned");
+				expect((await f.read()).goals[0].status).toBe("done");
+				expect(f.requests).toHaveLength(requests);
+				await f.run("cleanup", run.id);
 			});
 		},
 	);

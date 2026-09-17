@@ -67,10 +67,15 @@ if (args[0] === "fetch") {
 		await expect(
 			binding.syncTarget({ ...evidence, mergeCommit: release }, "target-test", selectionRef),
 		).rejects.toThrow("not reachable from updated target main");
+		expect(await git("for-each-ref", "--format=%(refname)", selectionRef)).toBe("");
 		expect(await git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/target/")).toBe("");
 		const custodyRef = `refs/stepstone-dispatch/targets/target-test/${base}`;
 		expect(await git("rev-parse", custodyRef)).toBe(base);
 		expect(await binding.syncTarget(evidence, "target-test", selectionRef)).toBe(base);
+		await expect(
+			binding.syncTarget({ ...evidence, mergeCommit: "f".repeat(40) }, "target-test", selectionRef),
+		).rejects.toThrow("git failed");
+		expect(await git("rev-parse", selectionRef)).toBe(base);
 		await binding.verifyTarget(evidence, { ref: custodyRef, revision: base }, "target-test");
 		await expect(
 			binding.verifyTarget(

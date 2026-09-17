@@ -107,7 +107,7 @@ A resume pass:
 6. cleans the completed workspace; and
 7. prepares newly ready allow-listed goals until the persisted preparation limit is full.
 
-Before fetching a target, Stepstone journals the matching PR evidence and a run-scoped selection ref. The fetch writes that selection ref without changing `FETCH_HEAD`. If the process stops before the completion receipt is saved, restart reads the selected revision from that ref. It does not repeat the PR lookup or replace an existing selection with another fetch. Once a completion intent records its target ref and revision, restart validates that exact ref and the recorded merge ancestry. A later target rewrite cannot replace this evidence.
+Before fetching a target, Stepstone journals the matching PR evidence and a run-scoped selection ref. The fetch writes that selection ref without changing `FETCH_HEAD`. If the process stops before the completion receipt is saved, restart reads the selected revision from that ref. It does not repeat the PR lookup or replace a valid selection with another fetch. If Git proves that a selected target does not contain the merge commit, Stepstone deletes only that exact selection ref. A later resume can fetch a corrected target. Other Git failures preserve the selection for inspection. Once a completion intent records its target ref and revision, restart validates that exact ref and the recorded merge ancestry. A later target rewrite cannot replace this evidence.
 
 A closed terminal, an exited agent, silence, or an unmerged pull request is never completion evidence. Stepstone has no session liveness to inspect.
 
@@ -164,7 +164,7 @@ npx -y stepstone@latest project workspace recover <run-id> <goal-id> \
 
 Recovery never checks or terminates a process or pane. Stepstone did not start one and carries no launch identity. Releasing is therefore an operator decision about the canonical claim and owned workspace, not a claim that a hosted session was closed.
 
-A journaled completion outcome cannot be released through recovery. Use `resume` so the exact merged result is reconciled instead.
+Journaled merged-PR or target-selection evidence cannot be released through recovery, including when target synchronization failed. Use `resume` so the exact merged result is reconciled instead.
 
 ## Cleanup
 

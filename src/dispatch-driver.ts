@@ -379,7 +379,7 @@ export class DispatchDriver {
 				`Goal ${goalId} is in terminal or non-claim phase ${entry.phase}; recovery is not allowed`,
 			);
 		}
-		if (entry.completionIntentAt || entry.completionUpdatedAt || entry.mergedPr) {
+		if (entry.completionIntentAt || entry.completionUpdatedAt || entry.mergedPr || entry.targetSelection) {
 			throw new Error(
 				`Goal ${goalId} has a journaled completion outcome; resume must reconcile it before release recovery`,
 			);

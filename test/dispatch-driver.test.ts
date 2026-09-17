@@ -821,6 +821,22 @@ describe("workspace preparation driver", () => {
 		expect(setup.roadmap.releases).toHaveLength(0);
 	});
 
+	it("refuses release after journaling target selection when synchronization fails", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		const run = await setup.create();
+		await setup.makeDriver().advance(run.id);
+		setup.merges.evidence.set(alphaBranch, merged());
+		setup.merges.syncFailure = new Error("target temporarily unavailable");
+		const interrupted = await setup.makeDriver().advance(run.id);
+		expect(interrupted.entries.alpha.targetSelection?.evidence).toEqual(merged());
+		expect(interrupted.entries.alpha.mergedPr).toBeUndefined();
+		await expect(setup.makeDriver().recoverRelease(run.id, "alpha")).rejects.toThrow("completion outcome");
+		expect(setup.roadmap.releases).toEqual([]);
+		setup.merges.syncFailure = undefined;
+		expect((await setup.makeDriver().advance(run.id)).entries.alpha.phase).toBe("cleaned");
+		expect(setup.roadmap.completions).toHaveLength(1);
+	});
+
 	it("rejects release recovery after a completion outcome exists", async () => {
 		const setup = fixture([goal("alpha")], 1);
 		const run = await setup.create();
