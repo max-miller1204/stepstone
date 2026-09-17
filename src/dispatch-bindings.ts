@@ -275,6 +275,11 @@ const runSchema = z
 		repositoryRoot: absoluteNormalizedPath,
 		approvedGoalIds: z.array(goalIdSchema).min(1),
 		maxParallel: z.number().int().positive().max(1024),
+		baseRef: safeString.optional(),
+		baseRevision: z
+			.string()
+			.regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/)
+			.optional(),
 		targetBranch: safeString,
 		targetRevision: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/),
 		workspaceConfig: workspaceConfigSchema,
@@ -296,6 +301,14 @@ const runSchema = z
 	.superRefine((run, context) => {
 		if (new Set(run.approvedGoalIds).size !== run.approvedGoalIds.length) {
 			context.addIssue({ code: "custom", path: ["approvedGoalIds"], message: "must be unique" });
+		}
+
+		if (Boolean(run.baseRef) !== Boolean(run.baseRevision)) {
+			context.addIssue({
+				code: "custom",
+				path: ["baseRef"],
+				message: "base ref and revision must be stored together",
+			});
 		}
 
 		const approved = new Set(run.approvedGoalIds);
@@ -352,7 +365,8 @@ const runSchema = z
 			if (entry.goal.id !== id || !approved.has(id)) {
 				context.addIssue({ code: "custom", path, message: "entry ID must be an approved goal ID" });
 			}
-			if (entry.branch !== `stepstone/${id}`) {
+			const expectedBranch = run.baseRevision ? `stepstone/${run.id}/${id}` : `stepstone/${id}`;
+			if (entry.branch !== expectedBranch) {
 				context.addIssue({
 					code: "custom",
 					path: [...path, "branch"],
@@ -825,14 +839,29 @@ export async function defaultDispatchStateDirectory(repositoryRoot: string): Pro
 	const { stdout } = await runCommand("git", ["rev-parse", "--git-common-dir"], repositoryRoot);
 	return resolve(repositoryRoot, stdout.trim(), "stepstone-dispatch");
 }
-export async function currentDispatchTarget(
+export async function resolveDispatchSelection(
 	repositoryRoot: string,
-): Promise<{ branch: string; revision: string }> {
-	const branch = (await runCommand("git", ["branch", "--show-current"], repositoryRoot)).stdout.trim();
-	if (!branch) throw new Error("Dispatch requires the canonical checkout to be on a branch");
-	await runCommand("git", ["check-ref-format", "--branch", branch], repositoryRoot);
-	const revision = (await runCommand("git", ["rev-parse", "HEAD"], repositoryRoot)).stdout.trim();
-	return { branch, revision };
+	options: { baseRef?: string; targetBranch?: string } = {},
+): Promise<{ baseRef: string; baseRevision: string; targetBranch: string }> {
+	const baseRef = options.baseRef ?? "HEAD";
+	if (!baseRef.trim() || baseRef.includes("\0")) throw new Error("Dispatch base ref is invalid");
+	const baseRevision = (
+		await runCommand(
+			"git",
+			["rev-parse", "--verify", "--end-of-options", `${baseRef}^{commit}`],
+			repositoryRoot,
+		)
+	).stdout.trim();
+	if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(baseRevision)) {
+		throw new Error("Dispatch base ref did not resolve to one exact commit");
+	}
+	const currentBranch = (await runCommand("git", ["branch", "--show-current"], repositoryRoot)).stdout.trim();
+	const targetBranch = options.targetBranch ?? currentBranch;
+	if (!targetBranch) {
+		throw new Error("Dispatch requires --target when the canonical checkout has detached HEAD");
+	}
+	await runCommand("git", ["check-ref-format", "--branch", targetBranch], repositoryRoot);
+	return { baseRef, baseRevision, targetBranch };
 }
 
 const goalFileExcludePatterns = [
@@ -1019,6 +1048,7 @@ async function verifyCleanupHistory(
 	repositoryRoot: string,
 	branchTip: string,
 	targetBranch: string,
+	targetRevision: string,
 ): Promise<void> {
 	const remoteTips = new Set<string>();
 	const remotes = (await runCommand("git", ["remote"], repositoryRoot)).stdout.trim();
@@ -1062,12 +1092,11 @@ async function verifyCleanupHistory(
 		);
 	}
 	await runCommand("git", ["check-ref-format", `refs/heads/${targetBranch}`], repositoryRoot);
+	if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(targetRevision)) {
+		throw new Error("Refusing cleanup because the persisted target revision is invalid");
+	}
 	try {
-		await runCommand(
-			"git",
-			["merge-base", "--is-ancestor", branchTip, `refs/heads/${targetBranch}`],
-			repositoryRoot,
-		);
+		await runCommand("git", ["merge-base", "--is-ancestor", branchTip, targetRevision], repositoryRoot);
 	} catch (error) {
 		if (error instanceof CommandFailure && error.status === 1) {
 			throw new Error(`Refusing cleanup because the branch has not merged into target ${targetBranch}`);
@@ -1349,7 +1378,7 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		branch: string,
 		options: WorkspaceCleanupOptions,
 	): Promise<void> {
-		const expectedPath = join(this.workspaceParent, `stepstone-${branch.slice("stepstone/".length)}`);
+		const expectedPath = join(this.workspaceParent, `stepstone-${branch.split("/").at(-1)}`);
 		if (
 			!branch.startsWith("stepstone/") ||
 			workspace.binding !== this.name ||
@@ -1385,7 +1414,12 @@ export class GitWorktreeBinding implements WorkspaceBinding {
 		if (options.targetBranch === branch) throw new Error("Refusing cleanup of the dispatch target branch");
 		if (!options.force) {
 			await verifyCleanupContents(workspace, options.goalFile);
-			await verifyCleanupHistory(this.repositoryRoot, removalTip, options.targetBranch);
+			await verifyCleanupHistory(
+				this.repositoryRoot,
+				removalTip,
+				options.targetBranch,
+				options.targetRevision,
+			);
 			// Fetching may take time; inspect local contents again before destructive steps.
 			await verifyCleanupContents(workspace, options.goalFile);
 		}
@@ -1479,20 +1513,14 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 
 	async syncTarget(evidence: MergeEvidence): Promise<string> {
 		await runCommand("git", ["check-ref-format", "--branch", evidence.baseBranch], this.repositoryRoot);
-		const currentBranch = (
-			await runCommand("git", ["branch", "--show-current"], this.repositoryRoot)
-		).stdout.trim();
-		if (currentBranch !== evidence.baseBranch) {
-			throw new Error(
-				`Dispatch target is ${evidence.baseBranch}, but the canonical checkout is on ${currentBranch || "detached HEAD"}`,
-			);
-		}
 		await runCommand("git", ["fetch", "--no-tags", "origin", evidence.baseBranch], this.repositoryRoot);
-		const remote = `refs/remotes/origin/${evidence.baseBranch}`;
+		const targetRevision = (
+			await runCommand("git", ["rev-parse", "--verify", "FETCH_HEAD^{commit}"], this.repositoryRoot)
+		).stdout.trim();
 		try {
 			await runCommand(
 				"git",
-				["merge-base", "--is-ancestor", evidence.mergeCommit, remote],
+				["merge-base", "--is-ancestor", evidence.mergeCommit, targetRevision],
 				this.repositoryRoot,
 			);
 		} catch {
@@ -1500,13 +1528,6 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 				`Merge commit ${evidence.mergeCommit} is not reachable from updated target ${evidence.baseBranch}`,
 			);
 		}
-		await runCommand("git", ["merge", "--ff-only", remote], this.repositoryRoot);
-		const revision = (await runCommand("git", ["rev-parse", "HEAD"], this.repositoryRoot)).stdout.trim();
-		const targetRevision = (
-			await runCommand("git", ["rev-parse", remote], this.repositoryRoot)
-		).stdout.trim();
-		if (revision !== targetRevision)
-			throw new Error("Canonical target checkout did not reach the fetched revision");
-		return revision;
+		return targetRevision;
 	}
 }

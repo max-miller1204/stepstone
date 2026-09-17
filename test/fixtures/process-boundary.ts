@@ -19,7 +19,7 @@ export async function compileProcessBoundaryRunner(): Promise<void> {
 	cli = join(compiled, "src/cli.js");
 }
 
-export const branch = "stepstone/alpha";
+export const branch = "stepstone/boundary-run/alpha";
 const goal = {
 	id: "alpha",
 	title: "Alpha boundary goal",
@@ -232,9 +232,9 @@ class ProcessBoundary {
 		return this.run("advance", run.id, "", fault);
 	}
 
-	pr(claimedAt: string, mergeCommit = this.base): PullRequest {
+	pr(claimedAt: string, mergeCommit = this.base, headBranch = branch): PullRequest {
 		return {
-			headRefName: branch,
+			headRefName: headBranch,
 			baseRefName: "main",
 			createdAt: claimedAt,
 			mergedAt: claimedAt,

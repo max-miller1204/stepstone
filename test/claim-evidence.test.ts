@@ -218,7 +218,7 @@ describe("real workspace observation and explicit release", () => {
 				hasUncommittedChanges: false,
 				lastBranchActivityAt: expect.any(String),
 			});
-			await f.git(["reflog", "expire", "--expire=all", "refs/heads/stepstone/alpha"]);
+			await f.git(["reflog", "expire", "--expire=all", `refs/heads/${run.entries.alpha.branch}`]);
 			expect((await observe()).alpha).toMatchObject({
 				assessment: "needs-inspection",
 				reason: "Local branch activity history is unavailable.",
@@ -261,8 +261,8 @@ describe("real workspace observation and explicit release", () => {
 			});
 			await f.cli("workspace", "recover", f.runId, "alpha", "--release");
 			expect((await f.cli("ready")).result.goals).toEqual([]);
-			expect((await f.roadmap.read()).goals[0].branch).toBe("stepstone/alpha");
 			const run = await f.store.load(f.runId);
+			expect((await f.roadmap.read()).goals[0].branch).toBe(run.entries.alpha.branch);
 			run.entries.alpha.phase = "prepared";
 			await rm(f.workspacePath, { recursive: true, force: true });
 			expect((await inspectPreparedClaims(run, f.roadmap, f.workspace)).alpha).toMatchObject({

@@ -16,7 +16,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { FileDispatchStateStore, GitWorktreeBinding } from "../src/dispatch-bindings.ts";
+import {
+	FileDispatchStateStore,
+	GitWorktreeBinding,
+	resolveDispatchSelection,
+} from "../src/dispatch-bindings.ts";
 import {
 	DISPATCH_GOAL_FILE,
 	DispatchBoundaryError,
@@ -241,10 +245,13 @@ class FakeMerges implements MergeEvidenceBinding {
 	}
 }
 
+const alphaBranch = "stepstone/run-1/alpha";
+const betaBranch = "stepstone/run-1/beta";
+
 function merged(overrides: Partial<MergeEvidence> = {}): MergeEvidence {
 	return {
 		url: "https://example.test/pull/2",
-		headBranch: "stepstone/alpha",
+		headBranch: alphaBranch,
 		baseBranch: "main",
 		createdAt: "2026-02-02T00:00:00.000Z",
 		mergedAt: "2026-02-03T00:00:00.000Z",
@@ -273,8 +280,9 @@ function fixture(goals: ProjectGoal[], maxParallel = 2) {
 			repositoryRoot: "/repo",
 			approvedGoalIds,
 			maxParallel,
+			baseRef: "main",
+			baseRevision: "0".repeat(40),
 			targetBranch: "main",
-			targetRevision: "0".repeat(40),
 			workspaceConfig: {},
 		});
 	return { roadmap, workspace, merges, store, makeDriver, create };
@@ -293,8 +301,8 @@ describe("workspace preparation driver", () => {
 
 		expect(setup.workspace.acquired).toEqual(["alpha", "beta"]);
 		expect(setup.roadmap.claims).toEqual([
-			{ id: "alpha", branch: "stepstone/alpha", token: "2026-01-01T00:00:00.000Z" },
-			{ id: "beta", branch: "stepstone/beta", token: "2026-01-01T00:00:00.000Z" },
+			{ id: "alpha", branch: alphaBranch, token: "2026-01-01T00:00:00.000Z" },
+			{ id: "beta", branch: betaBranch, token: "2026-01-01T00:00:00.000Z" },
 		]);
 		expect(Object.values(advanced.entries).map((entry) => entry.phase)).toEqual(["prepared", "prepared"]);
 		expect(advanced.entries.alpha.message).toContain("did not launch or prompt an agent");
@@ -307,8 +315,27 @@ describe("workspace preparation driver", () => {
 		expect(setup.workspace.goalFiles.get("/work/alpha/STEPSTONE_GOAL.md")).toContain(
 			"Complete alpha thoroughly",
 		);
+		expect(advanced).toMatchObject({
+			baseRef: "main",
+			baseRevision: "0".repeat(40),
+			targetBranch: "main",
+			targetRevision: "0".repeat(40),
+		});
 		expect(advanced).not.toHaveProperty("sessionBinding");
 		expect(advanced.workspaceConfig).toEqual({});
+	});
+
+	it("resumes a pre-base-ref run with its original branch and persisted base revision", async () => {
+		const setup = fixture([goal("alpha")], 1);
+		const run = await setup.create();
+		delete run.baseRef;
+		delete run.baseRevision;
+		await setup.store.save(run);
+
+		const resumed = await setup.makeDriver().advance(run.id);
+
+		expect(resumed.entries.alpha.branch).toBe("stepstone/alpha");
+		expect(setup.workspace.bases).toEqual([{ id: "alpha", revision: "0".repeat(40) }]);
 	});
 
 	it("reports no ready work separately from a refused preparation", async () => {
@@ -403,7 +430,7 @@ describe("workspace preparation driver", () => {
 		});
 		const run = await setup.create();
 		const first = await setup.makeDriver().advance(run.id);
-		expect(setup.roadmap.snapshot.goals[0]?.branch).toBe("stepstone/alpha");
+		expect(setup.roadmap.snapshot.goals[0]?.branch).toBe(alphaBranch);
 		expect(first.entries.alpha.preparationFailure).toMatchObject({
 			stage: "roadmap-claim",
 			classification: "ambiguous",
@@ -659,7 +686,7 @@ describe("workspace preparation driver", () => {
 		await setup.makeDriver().advance(run.id);
 		expect(setup.workspace.acquired).toEqual(["alpha"]);
 
-		setup.merges.evidence.set("stepstone/alpha", merged());
+		setup.merges.evidence.set(alphaBranch, merged());
 		const resumed = await setup.makeDriver().advance(run.id);
 
 		expect(setup.roadmap.completions).toHaveLength(1);
@@ -667,20 +694,20 @@ describe("workspace preparation driver", () => {
 		expect(resumed.entries.alpha.mergedPr?.url).toBe("https://example.test/pull/2");
 		expect(resumed.entries.beta.phase).toBe("prepared");
 		expect(setup.workspace.acquired).toEqual(["alpha", "beta"]);
-		expect(setup.workspace.bases.find((base) => base.id === "beta")?.revision).toBe("a".repeat(40));
+		expect(setup.workspace.bases.find((base) => base.id === "beta")?.revision).toBe("0".repeat(40));
 	});
 
 	it("preserves a claim when merge evidence or target synchronization is not exact", async () => {
 		const setup = fixture([goal("alpha")], 1);
 		const run = await setup.create();
 		await setup.makeDriver().advance(run.id);
-		setup.merges.evidence.set("stepstone/alpha", merged({ headBranch: "stepstone/other" }));
+		setup.merges.evidence.set(alphaBranch, merged({ headBranch: "stepstone/other" }));
 
 		const mismatched = await setup.makeDriver().advance(run.id);
 		expect(mismatched.entries.alpha.phase).toBe("ambiguous");
 		expect(setup.roadmap.completions).toHaveLength(0);
 
-		setup.merges.evidence.set("stepstone/alpha", merged());
+		setup.merges.evidence.set(alphaBranch, merged());
 		setup.merges.syncFailure = new Error("merge commit is not on the target");
 		const unsynced = await setup.makeDriver().advance(run.id);
 		expect(unsynced.entries.alpha.phase).toBe("ambiguous");
@@ -692,7 +719,7 @@ describe("workspace preparation driver", () => {
 		const setup = fixture([goal("alpha")], 1);
 		const run = await setup.create();
 		await setup.makeDriver().advance(run.id);
-		setup.merges.evidence.set("stepstone/alpha", merged());
+		setup.merges.evidence.set(alphaBranch, merged());
 		setup.roadmap.completionResponseFailure = new Error("response lost after commit");
 
 		const interrupted = await setup.makeDriver().advance(run.id);
@@ -895,6 +922,74 @@ describe("persisted preparation state", () => {
 	});
 });
 
+describe("dispatch ref selection", () => {
+	it("resolves local and remote-tracking bases without fetching or depending on checkout placement", async () => {
+		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-dispatch-refs-")));
+		const root = join(directory, "repo");
+		const remote = join(directory, "remote.git");
+		const integrationWorktree = join(directory, "integration-worktree");
+		try {
+			await mkdir(root);
+			await execFileAsync("git", ["init", "-q", "-b", "main"], { cwd: root });
+			await execFileAsync("git", ["config", "user.name", "Stepstone Test"], { cwd: root });
+			await execFileAsync("git", ["config", "user.email", "stepstone@example.test"], { cwd: root });
+			await writeFile(join(root, "seed"), "seed\n");
+			await execFileAsync("git", ["add", "seed"], { cwd: root });
+			await execFileAsync("git", ["commit", "-qm", "seed"], { cwd: root });
+			await execFileAsync("git", ["branch", "integration"], { cwd: root });
+			await execFileAsync("git", ["init", "--bare", "-q", remote], { cwd: root });
+			await execFileAsync("git", ["remote", "add", "origin", remote], { cwd: root });
+			await execFileAsync("git", ["push", "-u", "origin", "integration"], { cwd: root });
+			const remoteBase = (
+				await execFileAsync("git", ["rev-parse", "refs/remotes/origin/integration"], { cwd: root })
+			).stdout.trim();
+			await execFileAsync("git", ["worktree", "add", "-q", integrationWorktree, "integration"], {
+				cwd: root,
+			});
+
+			const local = await resolveDispatchSelection(root, {
+				baseRef: "integration",
+				targetBranch: "release",
+			});
+			const tracked = await resolveDispatchSelection(root, {
+				baseRef: "origin/integration",
+				targetBranch: "main",
+			});
+
+			expect(local).toEqual({
+				baseRef: "integration",
+				baseRevision: remoteBase,
+				targetBranch: "release",
+			});
+			expect(tracked).toEqual({
+				baseRef: "origin/integration",
+				baseRevision: remoteBase,
+				targetBranch: "main",
+			});
+			await execFileAsync("git", ["commit", "--allow-empty", "-qm", "rewrite source"], {
+				cwd: integrationWorktree,
+			});
+			const rewrittenTip = (
+				await execFileAsync("git", ["rev-parse", "integration"], { cwd: root })
+			).stdout.trim();
+			expect(rewrittenTip).not.toBe(local.baseRevision);
+			const binding = new GitWorktreeBinding(root, directory);
+			const workspace = await binding.acquire(
+				goal("stacked"),
+				"stepstone/ref-test/stacked",
+				local.baseRevision,
+			);
+			const preparedHead = (
+				await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: workspace.path })
+			).stdout.trim();
+			expect(preparedHead).toBe(remoteBase);
+			expect(tracked.baseRevision).toBe(remoteBase);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("Git workspace preparation", () => {
 	it("creates, authenticates, and cleans the exact worktree it owns", { timeout: 90_000 }, async () => {
 		const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-worktree-")));
@@ -1061,13 +1156,21 @@ describe("Git workspace preparation", () => {
 			const tampered = structuredClone(workspace);
 			tampered.metadata.marker = "00000000-0000-4000-8000-000000000099";
 			await expect(
-				binding.cleanup(tampered, "stepstone/alpha", { targetBranch: "main", force: true }),
+				binding.cleanup(tampered, "stepstone/alpha", {
+					targetBranch: "main",
+					targetRevision: base,
+					force: true,
+				}),
 			).rejects.toThrow();
 			expect(
 				(await execFileAsync("git", ["branch", "--list", "stepstone/alpha"], { cwd: root })).stdout,
 			).toContain("stepstone/alpha");
 
-			await binding.cleanup(workspace, "stepstone/alpha", { targetBranch: "main", force: true });
+			await binding.cleanup(workspace, "stepstone/alpha", {
+				targetBranch: "main",
+				targetRevision: base,
+				force: true,
+			});
 			await expect(readFile(goalFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(backing, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 			await expect(readFile(legacyBacking, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
@@ -1206,6 +1309,10 @@ describe("published preparation CLI", () => {
 					root,
 					"--goal",
 					"alpha",
+					"--base",
+					"HEAD",
+					"--target",
+					"review",
 					"--workspace-parent",
 					workspaceParent,
 					"--json",
@@ -1215,12 +1322,19 @@ describe("published preparation CLI", () => {
 			const envelope = JSON.parse(started.stdout) as {
 				result: {
 					id: string;
+					baseRef: string;
+					baseRevision: string;
+					targetBranch: string;
+					targetRevision: string;
 					entries: Record<string, { phase: string; workspace: string; goalFile: string }>;
 				};
 			};
 			const workspacePath = join(workspaceParent, "stepstone-alpha");
 			const goalFile = join(workspacePath, DISPATCH_GOAL_FILE);
 			expect(envelope.result).toMatchObject({
+				baseRef: "HEAD",
+				baseRevision: envelope.result.targetRevision,
+				targetBranch: "review",
 				pass: {
 					outcome: "prepared",
 					attemptedGoalIds: ["alpha"],
@@ -1232,6 +1346,7 @@ describe("published preparation CLI", () => {
 				},
 			});
 			expect(await readFile(goalFile, "utf8")).toContain("Complete alpha thoroughly");
+			expect(await readFile(goalFile, "utf8")).toContain("Pull request target: `review`");
 
 			const noWork = await execFileAsync(
 				process.execPath,

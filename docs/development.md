@@ -114,7 +114,7 @@ The process-boundary fixture records the Node, Git, and gh versions in its comma
 | --- | --- |
 | Worktree creation and ignored goal handoff | Exact branch/base, clean Git status, ignored `STEPSTONE_GOAL.md`, persisted claim and workspace |
 | Claim recovery | Process exit after canonical claim, missing/wrong token refusal, exact-token release |
-| Merged-work reconciliation | Real gh against an isolated local API, stale/mismatched evidence refusal, Git fetch and fast-forward, completion |
+| Merged-work reconciliation | Real gh against an isolated local API, stale/mismatched evidence refusal, exact target fetch, completion |
 | Safe cleanup | Dirty/ignored/unpushed/unmerged work and identity changes refused; interrupted removal retried; exact owned workspace removed |
 
 Workspace preparation is supported on Linux and macOS. Windows and other operating systems are not supported until their CI runs these behaviors and the repository scripts work there.
@@ -124,7 +124,7 @@ Every operation in the process-boundary suite starts a fresh Node process with t
 It covers preparation and acquisition collisions, an optimistic claim conflict, a process exiting after its canonical claim commits, exact-token recovery, interrupted worktree removal, and safe cleanup retries.
 Real `gh pr list` sends GraphQL requests to a local Unix-socket HTTP fixture through gh's `http_unix_socket` configuration; no GitHub login, token, live repository, or replacement executable is used.
 The isolated environment excludes inherited Git and gh configuration and credentials.
-The API cases cover mismatched/stale evidence, HTTP and GraphQL errors, malformed responses, invalid merge evidence, successful completion, and real Git fetch/reachability/fast-forward refusals against a local bare origin.
+The API cases cover mismatched/stale evidence, HTTP and GraphQL errors, malformed responses, invalid merge evidence, successful completion, and real Git fetch and reachability refusals against a local bare origin.
 These binding-level cases stay separate from the broader packed CLI and Pi RPC workflow tier owned by `exercise-stepstone-workflows-end-to-end`.
 
 Successful process-boundary fixtures are removed. On failure, the original error is rethrown and its stack, command stdout/stderr, Git trace events, HTTP request/response bodies, canonical goal file, dispatch journals, and Git repositories remain under `artifacts/process-boundaries/case-*`.

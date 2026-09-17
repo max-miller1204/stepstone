@@ -68,7 +68,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 
 | Command | Description |
 | --- | --- |
-| `npx -y stepstone@latest project workspace start --goal <id>... [--max-parallel <count>] [--workspace-parent <path>]` | Prepare and claim approved goals |
+| `npx -y stepstone@latest project workspace start --goal <id>... [--base <ref>] [--target <branch>] [--max-parallel <count>] [--workspace-parent <path>]` | Prepare and claim approved goals from an exact base for a pull request target |
 | `npx -y stepstone@latest project workspace resume <run-id>` | Reconcile merged work and refill preparation capacity |
 | `npx -y stepstone@latest project workspace status [run-id] [--stale-after-hours <hours>]` | Read run status and observable prepared-claim evidence |
 | `npx -y stepstone@latest project workspace inspect <run-id> <goal-id> [--stale-after-hours <hours>]` | Read complete workspace custody and fresh claim evidence before explicit recovery |
@@ -82,6 +82,8 @@ See [workspace preparation, recovery, and cleanup](workspaces.md). Existing vers
 | Flag | Description |
 | --- | --- |
 | `--goal <id>` | Authorize one goal for workspace start; repeat for the approved set; only for project workspace |
+| `--base <ref>` | Resolve this local Git ref to the exact workspace base without fetching; only for project workspace |
+| `--target <branch>` | Match and reconcile pull requests into this exact base branch; only for project workspace |
 | `--max-parallel <count>` | Limit workspace start to this many prepared claims (default 1); only for project workspace |
 | `--stale-after-hours <hours>` | Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace |
 | `--release` | Explicitly release the inspected claim with workspace recover; only for project workspace |

@@ -84,6 +84,8 @@ export interface DispatchRun {
 	repositoryRoot: string;
 	approvedGoalIds: string[];
 	maxParallel: number;
+	baseRef?: string;
+	baseRevision?: string;
 	targetBranch: string;
 	targetRevision: string;
 	workspaceConfig: DispatchWorkspaceConfig;
@@ -130,6 +132,7 @@ export interface WorkspaceBinding {
 
 export interface WorkspaceCleanupOptions {
 	targetBranch: string;
+	targetRevision: string;
 	goalFile?: DispatchGoalFile;
 	force?: boolean;
 }
@@ -187,7 +190,7 @@ function needsCleanup(entry: DispatchEntry): boolean {
 	return entry.phase === "released" || entry.phase === "completed" || entry.phase === "cleanup-pending";
 }
 
-function renderGoalFile(goal: ProjectGoal, branch: string): string {
+function renderGoalFile(run: DispatchRun, goal: ProjectGoal, branch: string): string {
 	const dependencies = goal.dependsOn?.length
 		? goal.dependsOn.map((dependency) => `- \`${dependency}\``)
 		: ["- None"];
@@ -200,6 +203,13 @@ function renderGoalFile(goal: ProjectGoal, branch: string): string {
 		"",
 		`- Goal ID: \`${goal.id}\``,
 		`- Branch: \`${branch}\``,
+		...(run.baseRef && run.baseRevision
+			? [
+					`- Base ref: \`${run.baseRef}\``,
+					`- Base revision: \`${run.baseRevision}\``,
+					`- Pull request target: \`${run.targetBranch}\``,
+				]
+			: []),
 		`- Status when prepared: \`${goal.status}\``,
 		`- Goal snapshot updated at: \`${goal.updatedAt}\``,
 		...(goal.group ? [`- Group: ${goal.group}`] : []),
@@ -250,8 +260,9 @@ export class DispatchDriver {
 		repositoryRoot: string;
 		approvedGoalIds: string[];
 		maxParallel: number;
+		baseRef: string;
+		baseRevision: string;
 		targetBranch: string;
-		targetRevision: string;
 		workspaceConfig: DispatchWorkspaceConfig;
 	}): Promise<DispatchRun> {
 		if (!Number.isSafeInteger(options.maxParallel) || options.maxParallel < 1) {
@@ -264,14 +275,17 @@ export class DispatchDriver {
 		const unknown = approvedGoalIds.filter((id) => !known.has(id));
 		if (unknown.length > 0) throw new Error(`Approved goal IDs were not found: ${unknown.join(", ")}`);
 		const timestamp = this.now().toISOString();
+		const runId = this.newId();
 		const run: DispatchRun = {
 			version: DISPATCH_STATE_VERSION,
-			id: this.newId(),
+			id: runId,
 			repositoryRoot: options.repositoryRoot,
 			approvedGoalIds,
 			maxParallel: options.maxParallel,
+			baseRef: options.baseRef,
+			baseRevision: options.baseRevision,
 			targetBranch: options.targetBranch,
-			targetRevision: options.targetRevision,
+			targetRevision: options.baseRevision,
 			workspaceConfig: structuredClone(options.workspaceConfig),
 			createdAt: timestamp,
 			updatedAt: timestamp,
@@ -570,7 +584,7 @@ export class DispatchDriver {
 	private async prepare(run: DispatchRun, goal: ProjectGoal): Promise<void> {
 		const entry: DispatchEntry = {
 			goal: structuredClone(goal),
-			branch: `stepstone/${goal.id}`,
+			branch: run.baseRevision ? `stepstone/${run.id}/${goal.id}` : `stepstone/${goal.id}`,
 			phase: "preparing",
 			updatedAt: this.now().toISOString(),
 		};
@@ -587,7 +601,7 @@ export class DispatchDriver {
 			entry.workspace = await this.dependencies.workspace.acquire(
 				entry.goal,
 				entry.branch,
-				run.targetRevision,
+				run.baseRevision ?? run.targetRevision,
 			);
 			await this.persist(run, entry);
 		} catch (error) {
@@ -613,7 +627,7 @@ export class DispatchDriver {
 			await this.dependencies.workspace.verifyGoalFile(
 				entry.workspace,
 				goalFile,
-				renderGoalFile(entry.goal, entry.branch),
+				renderGoalFile(run, entry.goal, entry.branch),
 			);
 		} catch (error) {
 			entry.phase = "ambiguous";
@@ -664,7 +678,7 @@ export class DispatchDriver {
 
 	private async ensureGoalFile(run: DispatchRun, entry: DispatchEntry): Promise<boolean> {
 		if (!entry.workspace) return false;
-		const content = renderGoalFile(entry.goal, entry.branch);
+		const content = renderGoalFile(run, entry.goal, entry.branch);
 		const expected: DispatchGoalFile = {
 			path: DISPATCH_GOAL_FILE,
 			sha256: sha256(content),
@@ -764,6 +778,7 @@ export class DispatchDriver {
 				const workspace = entry.workspace;
 				await this.dependencies.workspace.cleanup(workspace, entry.branch, {
 					targetBranch: run.targetBranch,
+					targetRevision: run.targetRevision,
 					goalFile: entry.goalFile,
 					force,
 				});

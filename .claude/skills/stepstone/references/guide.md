@@ -46,6 +46,8 @@ help
 Flags:
 
 - `--goal <id>` - Authorize one goal for workspace start; repeat for the approved set; only for project workspace.
+- `--base <ref>` - Resolve this local Git ref to the exact workspace base without fetching; only for project workspace.
+- `--target <branch>` - Match and reconcile pull requests into this exact base branch; only for project workspace.
 - `--max-parallel <count>` - Limit workspace start to this many prepared claims (default 1); only for project workspace.
 - `--stale-after-hours <hours>` - Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace.
 - `--release` - Explicitly release the inspected claim with workspace recover; only for project workspace.

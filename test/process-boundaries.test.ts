@@ -145,7 +145,7 @@ describe("real preparation process boundaries", () => {
 });
 
 describe("real GitHub CLI reconciliation", () => {
-	it("filters stale and mismatched PRs, then fetches, fast-forwards, completes and cleans an exact merge", async () => {
+	it("filters stale and mismatched PRs, then fetches, completes and cleans an exact merge", async () => {
 		await withProcessBoundary(async (f) => {
 			const run = await f.prepare();
 			const token = run.entries.alpha.claimUpdatedAt as string;
@@ -175,7 +175,7 @@ describe("real GitHub CLI reconciliation", () => {
 				status: "done",
 				updatedAt: completed.entries.alpha.completionUpdatedAt,
 			});
-			expect(await f.git("rev-parse", "HEAD")).toBe(tip);
+			expect(await f.git("rev-parse", "HEAD")).toBe(f.base);
 			expect(await f.git("branch", "--list", branch)).toBe("");
 			expect(f.requests).toHaveLength(2);
 			for (const request of f.requests) {
@@ -219,7 +219,7 @@ describe("real GitHub CLI reconciliation", () => {
 		},
 	);
 
-	it.each(["unreachable", "diverged", "fetch"])(
+	it.each(["unreachable", "fetch"])(
 		"refuses completion when real Git target synchronization is %s",
 		async (failure) => {
 			await withProcessBoundary(async (f) => {
@@ -228,10 +228,6 @@ describe("real GitHub CLI reconciliation", () => {
 				await f.workGit("commit", "--allow-empty", "-qm", "feature");
 				const tip = await f.workGit("rev-parse", "HEAD");
 				f.pullRequests = [f.pr(original.updatedAt, tip)];
-				if (failure === "diverged") {
-					await f.workGit("push", "origin", `${branch}:main`);
-					await f.git("commit", "--allow-empty", "-qm", "local divergence");
-				}
 				if (failure === "fetch") await f.git("remote", "set-url", "origin", join(f.directory, "missing.git"));
 				const before = await f.git("rev-parse", "HEAD");
 				const refused = await f.run("advance", run.id);
@@ -248,6 +244,27 @@ describe("real GitHub CLI reconciliation", () => {
 			});
 		},
 	);
+
+	it("reconciles the persisted target without changing an unrelated canonical checkout", async () => {
+		await withProcessBoundary(async (f) => {
+			const run = await f.prepare();
+			const original = (await f.read()).goals[0];
+			await f.workGit("commit", "--allow-empty", "-qm", "feature");
+			const tip = await f.workGit("rev-parse", "HEAD");
+			await f.workGit("push", "origin", `${branch}:main`);
+			await f.git("switch", "-qc", "integration");
+			await f.git("commit", "--allow-empty", "-qm", "unrelated integration work");
+			const canonicalTip = await f.git("rev-parse", "HEAD");
+			f.pullRequests = [f.pr(original.updatedAt, tip)];
+
+			const completed = await f.run("advance", run.id);
+
+			expect(completed.entries.alpha.phase).toBe("cleaned");
+			expect((await f.read()).goals[0].status).toBe("done");
+			expect(await f.git("branch", "--show-current")).toBe("integration");
+			expect(await f.git("rev-parse", "HEAD")).toBe(canonicalTip);
+		});
+	});
 });
 
 describe("project workspace CLI", () => {
@@ -307,7 +324,10 @@ describe("project workspace CLI", () => {
 				"--max-parallel",
 				"1",
 			);
-			const summary = started.result as { id: string; entries: { alpha: { claimUpdatedAt: string } } };
+			const summary = started.result as {
+				id: string;
+				entries: { alpha: { branch: string; claimUpdatedAt: string } };
+			};
 			expect(started.result).toMatchObject({
 				pass: { outcome: "prepared" },
 				entries: { alpha: { phase: "prepared" } },
@@ -321,17 +341,27 @@ describe("project workspace CLI", () => {
 			await f.workGit("add", "result");
 			await f.workGit("commit", "-qm", "finish alpha");
 			const tip = await f.workGit("rev-parse", "HEAD");
-			await f.workGit("push", "origin", `${branch}:main`);
-			f.pullRequests = [f.pr(summary.entries.alpha.claimUpdatedAt, tip)];
+			await f.workGit("push", "origin", `${summary.entries.alpha.branch}:main`);
+			f.pullRequests = [f.pr(summary.entries.alpha.claimUpdatedAt, tip, summary.entries.alpha.branch)];
 			const completed = await f.workspaceCli("resume", summary.id);
 			expect(completed.result).toMatchObject({
 				entries: { alpha: { phase: "cleaned", mergedPr: { mergeCommit: tip } } },
 			});
 			expect((await f.read()).goals[0].status).toBe("done");
-			expect(await f.git("rev-parse", "HEAD")).toBe(tip);
-			expect(await f.git("branch", "--list", branch)).toBe("");
+			expect(await f.git("rev-parse", "HEAD")).toBe(f.base);
+			expect(await f.git("branch", "--list", summary.entries.alpha.branch)).toBe("");
 			expect((await f.workspaceCli("cleanup", summary.id)).result).toEqual({ removedRunId: summary.id });
 			expect(f.requests).toHaveLength(2);
+		});
+	});
+
+	it("refuses an unavailable explicit base without fetching or creating a run", async () => {
+		await withProcessBoundary(async (f) => {
+			await expect(
+				f.workspaceCli("start", "--goal", "alpha", "--base", "origin/missing", "--target", "main"),
+			).rejects.toMatchObject({ code: 1 });
+			expect((await f.workspaceCli("status")).result).toEqual([]);
+			expect((await f.read()).goals[0].branch).toBeUndefined();
 		});
 	});
 
@@ -342,6 +372,8 @@ describe("project workspace CLI", () => {
 		["status", "--file", "elsewhere.json"],
 		["start", "--goal", "alpha", "--max-parallel", "0"],
 		["start", "--goal", "alpha", "--max-parallel", "1", "--max-parallel", "2"],
+		["start", "--goal", "alpha", "--base", "HEAD", "--base", "main"],
+		["start", "--goal", "alpha", "--target", "main", "--target", "release"],
 		["start", "--goal", "alpha", "--", "ignored prose"],
 		["unknown"],
 	])("refuses invalid workspace arguments without creating a run: %j", async (...args) => {

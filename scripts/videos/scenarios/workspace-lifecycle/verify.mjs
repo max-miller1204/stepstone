@@ -43,7 +43,7 @@ const repo = join(process.env.VIDEO_WORKSPACE, "repo");
 const worktrees = execFileSync("git", ["-C", repo, "worktree", "list", "--porcelain"], { encoding: "utf8" });
 assert.equal(worktrees.split("\n").filter((line) => line.startsWith("worktree ")).length, 1);
 assert.equal(
-	execFileSync("git", ["-C", repo, "branch", "--list", "stepstone/guide"], { encoding: "utf8" }),
+	execFileSync("git", ["-C", repo, "branch", "--list", "stepstone/*/guide"], { encoding: "utf8" }),
 	"",
 );
 console.log("Verified preparation, inspection, dirty-work refusal, release, cleanup, and run removal.");

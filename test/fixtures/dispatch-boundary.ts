@@ -31,6 +31,7 @@ const driver = new DispatchDriver({
 	workspace: new GitWorktreeBinding(root, parent),
 	merges: new GitHubMergeEvidenceBinding(root),
 	store,
+	id: () => "boundary-run",
 });
 
 let result: unknown;
@@ -40,8 +41,9 @@ switch (action) {
 			repositoryRoot: root,
 			approvedGoalIds: ["alpha"],
 			maxParallel: 1,
+			baseRef: "main",
+			baseRevision: value,
 			targetBranch: "main",
-			targetRevision: value,
 			workspaceConfig: { workspaceParent: parent },
 		});
 		break;

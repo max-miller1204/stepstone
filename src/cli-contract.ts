@@ -140,9 +140,10 @@ export const CLI_COMMAND_CONTRACT = {
 	workspaceActions: [
 		{
 			name: "start",
-			usage: "start --goal <id>... [--max-parallel <count>] [--workspace-parent <path>]",
-			summary: "Prepare and claim approved goals",
-			flags: ["--goal", "--max-parallel", "--workspace-parent"],
+			usage:
+				"start --goal <id>... [--base <ref>] [--target <branch>] [--max-parallel <count>] [--workspace-parent <path>]",
+			summary: "Prepare and claim approved goals from an exact base for a pull request target",
+			flags: ["--goal", "--base", "--target", "--max-parallel", "--workspace-parent"],
 		},
 		{
 			name: "resume",
@@ -318,6 +319,18 @@ export const CLI_COMMAND_CONTRACT = {
 			name: "--goal",
 			usage: "--goal <id>",
 			summary: "Authorize one goal for workspace start; repeat for the approved set",
+			actions: ["workspace"],
+		},
+		{
+			name: "--base",
+			usage: "--base <ref>",
+			summary: "Resolve this local Git ref to the exact workspace base without fetching",
+			actions: ["workspace"],
+		},
+		{
+			name: "--target",
+			usage: "--target <branch>",
+			summary: "Match and reconcile pull requests into this exact base branch",
 			actions: ["workspace"],
 		},
 		{

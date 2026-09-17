@@ -296,6 +296,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		flagsUsed.add(part);
 		switch (part) {
 			case "--goal":
+			case "--base":
+			case "--target":
 			case "--max-parallel":
 			case "--stale-after-hours":
 			case "--claim-updated-at": {

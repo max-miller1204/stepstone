@@ -14,9 +14,15 @@ Run the driver from the repository's main worktree:
 npx -y stepstone@latest project workspace start \
   --goal first-approved-goal \
   --goal second-approved-goal \
+  --base origin/integration \
+  --target main \
   --max-parallel 2 \
   --json
 ```
+
+`--base` names a ref that already exists in the local repository. Stepstone resolves it to one exact commit and persists both values before it creates a workspace. It does not fetch the ref. A local branch can be checked out in another worktree. A remote-tracking ref, integration branch, stacked branch, tag, or commit is also valid when it resolves to one commit. Later ref rewrites do not change the persisted base revision.
+
+`--target` names the exact pull request base branch. It does not need to match the canonical checkout branch. If you omit `--base`, Stepstone resolves `HEAD`. If you omit `--target`, Stepstone uses the current canonical checkout branch. A detached canonical checkout therefore requires `--target`. Stepstone never derives a pull request target from a remote-tracking base ref.
 
 Repeated `--goal` values are the immutable authorization allow-list. The driver still reads a fresh `project ready` frontier before every preparation pass, so an allow-listed goal is prepared only when its dependencies have landed and no other claim exists.
 
@@ -35,7 +41,8 @@ The summary also lists the attempted, prepared, and refused goal IDs. An empty r
 A successful entry reports:
 
 - `phase: "prepared"`
-- the deterministic `stepstone/<goal-id>` branch
+- the run-scoped `stepstone/<run-id>/<goal-id>` branch
+- the exact base ref, base revision, and pull request target
 - the exact claim token in `claimUpdatedAt`
 - the absolute workspace path
 - `goalFile`, the absolute path to the workspace's `STEPSTONE_GOAL.md` handoff
@@ -67,7 +74,7 @@ npx -y stepstone@latest project workspace start \
   --json
 ```
 
-Without `--workspace-parent`, the checkout is created beside the repository as `stepstone-<goal-id>`. The driver creates `stepstone/<goal-id>` from the run's recorded target revision and authenticates the exact worktree and Git administrative directory before claiming the goal. There is no provider or harness selector.
+Without `--workspace-parent`, the checkout is created beside the repository as `stepstone-<goal-id>`. The driver creates `stepstone/<run-id>/<goal-id>` from the run's immutable base revision and authenticates the exact worktree and Git administrative directory before claiming the goal. The run namespace prevents two team members from choosing the same remote branch name for the same goal. An existing branch, occupied path, or conflicting worktree causes preparation to stop without reusing or changing it. There is no provider or harness selector.
 
 ## Open the workspace yourself
 
@@ -95,8 +102,8 @@ A resume pass:
 1. reconciles interrupted workspace and claim mutations;
 2. verifies every persisted workspace it still owns;
 3. asks GitHub for a merged pull request whose head is the exact claimed branch, whose base is the run's target branch, and whose creation and merge both postdate the claim;
-4. fast-forwards the target to that merge commit;
-5. completes the exact claimed goal under the approved run's standing consent;
+4. fetches the named target from `origin` and verifies that it contains the merge commit without changing the canonical checkout branch;
+5. persists the fetched target revision and completes the exact claimed goal under the approved run's standing consent;
 6. cleans the completed workspace; and
 7. prepares newly ready allow-listed goals until the persisted preparation limit is full.
 
@@ -171,7 +178,7 @@ Before deleting a workspace or its branch, cleanup verifies:
 
 - There are no staged, unstaged, untracked, or ignored changes. Only the unchanged goal handoff and backing file authenticated by the run's receipt are exempt. Submodule changes, in-progress Git operations, and index flags that hide changes also prevent cleanup.
 - Every commit on the branch is reachable from freshly advertised remote heads, including commits inherited from the acquisition base. Missing remotes or failed remote inspection refuse cleanup even for an unchanged workspace.
-- The workspace tip is an ancestor of the run's named target branch in the canonical repository. A missing target or an unmerged tip refuses cleanup. Squash or rebase merges that do not preserve this ancestry require explicit override after inspection.
+- The workspace tip is an ancestor of the exact target revision persisted by the run. A missing commit or an unmerged tip refuses cleanup. Squash or rebase merges that do not preserve this ancestry require explicit override after inspection.
 
 Cleanup preserves these identity guards even under override:
 
@@ -191,7 +198,7 @@ This override applies only to that invocation and goal. It is not accepted by `r
 
 ## State compatibility
 
-Preparation-only runs use dispatch state version 2. The goal-file receipt is an additive optional field so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before inspecting merge evidence or making another canonical roadmap mutation for that prepared workspace.
+Preparation-only runs use dispatch state version 2. New runs persist `baseRef` and `baseRevision` as an additive pair. Runs created before this pair existed remain readable and continue to use their original persisted `targetRevision` as the workspace base. The goal-file receipt is also additive so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before inspecting merge evidence or making another canonical roadmap mutation for that prepared workspace.
 
 Version 1 belonged to the removed session-hosting driver and may contain live process or pane custody. Current Stepstone refuses that state rather than silently dropping launch metadata or attempting to control somebody else's session. Inspect or recover a version 1 run with the Stepstone release that created it before upgrading.
 

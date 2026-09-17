@@ -4,11 +4,11 @@ import { type ClaimEvidence, DEFAULT_STALE_AFTER_HOURS, inspectPreparedClaims } 
 import { CLI_COMMAND_CONTRACT, renderWorkspaceUsage } from "./cli-contract.ts";
 import {
 	ApplicationRoadmapBinding,
-	currentDispatchTarget,
 	defaultDispatchStateDirectory,
 	FileDispatchStateStore,
 	GitHubMergeEvidenceBinding,
 	GitWorktreeBinding,
+	resolveDispatchSelection,
 } from "./dispatch-bindings.ts";
 import { DispatchDriver, type DispatchRun, type DispatchWorkspaceConfig } from "./dispatch-driver.ts";
 import { resolveGitRoot, resolveWorktreePlacement } from "./git.ts";
@@ -72,6 +72,10 @@ function summarize(
 		repositoryRoot: run.repositoryRoot,
 		approvedGoalIds: run.approvedGoalIds,
 		maxParallel: run.maxParallel,
+		baseRef: run.baseRef,
+		baseRevision: run.baseRevision,
+		targetBranch: run.targetBranch,
+		targetRevision: run.targetRevision,
 		createdAt: run.createdAt,
 		updatedAt: run.updatedAt,
 		entries: Object.fromEntries(
@@ -230,15 +234,20 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 			const config: DispatchWorkspaceConfig = {
 				...(workspaceParent ? { workspaceParent: await realpath(resolve(workspaceParent)) } : {}),
 			};
-			const target = await currentDispatchTarget(repositoryRoot);
+			const selection = await resolveDispatchSelection(repositoryRoot, {
+				baseRef: one(invocation, "base"),
+				targetBranch: one(invocation, "target"),
+			});
 			const placeholder: DispatchRun = {
 				version: 2,
 				id: "pending",
 				repositoryRoot,
 				approvedGoalIds: [],
 				maxParallel: 1,
-				targetBranch: target.branch,
-				targetRevision: target.revision,
+				baseRef: selection.baseRef,
+				baseRevision: selection.baseRevision,
+				targetBranch: selection.targetBranch,
+				targetRevision: selection.baseRevision,
 				workspaceConfig: config,
 				createdAt: "",
 				updatedAt: "",
@@ -249,8 +258,9 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 				repositoryRoot,
 				approvedGoalIds: invocation.options.get("goal") ?? [],
 				maxParallel: positiveInteger(one(invocation, "max-parallel"), 1, "max-parallel"),
-				targetBranch: target.branch,
-				targetRevision: target.revision,
+				baseRef: selection.baseRef,
+				baseRevision: selection.baseRevision,
+				targetBranch: selection.targetBranch,
 				workspaceConfig: config,
 			});
 			const advanced = await store.withRunLock(run.id, () => driver.advance(run.id));

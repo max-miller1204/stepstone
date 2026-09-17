@@ -20,7 +20,6 @@ const goal: ProjectGoal = {
 	updatedAt: "2026-02-01T00:00:00.000Z",
 };
 const branch = "stepstone/alpha";
-const options = { targetBranch: "main" };
 
 async function fixture(remote = false, unpushedBase = false) {
 	const directory = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cleanup-")));
@@ -59,7 +58,12 @@ async function fixture(remote = false, unpushedBase = false) {
 		`${workspace.metadata.marker}.json`,
 	);
 	const marker = async () => JSON.parse(await readFile(markerPath, "utf8"));
-	const cleanup = (force = false) => binding.cleanup(workspace, branch, { ...options, force });
+	const cleanup = async (force = false) =>
+		binding.cleanup(workspace, branch, {
+			targetBranch: "main",
+			targetRevision: await git("rev-parse", "main"),
+			force,
+		});
 	return {
 		directory,
 		root,
@@ -156,9 +160,12 @@ describe("verified workspace cleanup", () => {
 
 	it("refuses an unavailable merge target", async () => {
 		const f = await fixture(true);
-		await expect(f.binding.cleanup(f.workspace, branch, { targetBranch: "missing" })).rejects.toThrow(
-			"merge state against target missing could not be verified",
-		);
+		await expect(
+			f.binding.cleanup(f.workspace, branch, {
+				targetBranch: "missing",
+				targetRevision: "f".repeat(40),
+			}),
+		).rejects.toThrow("merge state against target missing could not be verified");
 	});
 
 	it("rechecks workspace identity after remote verification", async () => {
@@ -213,11 +220,19 @@ describe("verified workspace cleanup", () => {
 		receipt.backing = await f.binding.createGoalFileBacking(f.workspace, receipt, content);
 		await f.binding.writeGoalFile(f.workspace, receipt, content);
 		await writeFile(join(f.workspace.path, receipt.path), "operator edits\n");
-		await expect(f.binding.cleanup(f.workspace, branch, { ...options, goalFile: receipt })).rejects.toThrow(
-			"handoff has uncommitted changes",
-		);
+		await expect(
+			f.binding.cleanup(f.workspace, branch, {
+				targetBranch: "main",
+				targetRevision: f.base,
+				goalFile: receipt,
+			}),
+		).rejects.toThrow("handoff has uncommitted changes");
 		await writeFile(join(f.workspace.path, receipt.path), content);
-		await f.binding.cleanup(f.workspace, branch, { ...options, goalFile: receipt });
+		await f.binding.cleanup(f.workspace, branch, {
+			targetBranch: "main",
+			targetRevision: f.base,
+			goalFile: receipt,
+		});
 		expect(await f.marker()).toHaveProperty("removedAt");
 	});
 
