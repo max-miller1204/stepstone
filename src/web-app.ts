@@ -14,8 +14,15 @@ import {
 	GitHubMergeEvidenceBinding,
 	GitWorktreeBinding,
 } from "./dispatch-bindings.ts";
-import { DispatchDriver, type DispatchRun } from "./dispatch-driver.ts";
+import {
+	DISPATCH_REPOSITORY_LOCK,
+	DispatchDriver,
+	type DispatchRun,
+	hasGoalDispatchCustody,
+	unavailableDispatchGoalIds,
+} from "./dispatch-driver.ts";
 import { createWorklistLocator, resolveWorktreePlacement } from "./git.ts";
+import { resolveGoalSelector } from "./goal-selection.ts";
 import { STEPSTONE_WEB_PAGE } from "./web-page.ts";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -206,7 +213,8 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 					waves.waves.flatMap((wave, index) => wave.map((goal) => [goal.id, index + 1])),
 				);
 				const runs = [];
-				for (const run of await store.list()) {
+				const storedRuns = await store.list();
+				for (const run of storedRuns) {
 					const evidence = await inspectPreparedClaims(
 						run,
 						new ApplicationRoadmapBinding(run.repositoryRoot),
@@ -222,6 +230,7 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 						readyGoalIds: readyGoals(goals, retiredIds).map((goal) => goal.id),
 						goals: goals.map((goal) => ({
 							...goal,
+							dispatchCustody: hasGoalDispatchCustody(goal, storedRuns),
 							blocked: isGoalBlocked(goals, goal, retiredIds),
 							blockedBy: goal.dependsOn?.filter((id) => {
 								const dependency = goals.find(
@@ -247,7 +256,27 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 					throw new HttpError(400, `Unsupported goal action ${action}.`);
 				}
 				const operation: WorklistOperation = { ...body, scope: "project", action } as WorklistOperation;
-				const result = await service.execute(operation, { source: "dashboard" });
+				const result = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, async () => {
+					if (action !== "add" && action !== "move" && typeof operation.id === "string") {
+						const snapshot = await service.readProjectSnapshot("web");
+						if (!snapshot.ok) throw new Error(snapshot.error.message);
+						const selected = resolveGoalSelector(
+							snapshot.result.goals ?? [],
+							operation.id,
+							snapshot.result.retiredIds ?? [],
+						);
+						if (selected.kind === "found") {
+							operation.id = selected.goal.id;
+							if (hasGoalDispatchCustody(selected.goal, await store.list())) {
+								throw new HttpError(
+									409,
+									`Goal ${selected.goal.id} has workspace custody. Release its claim or reconcile its run before editing its roadmap data.`,
+								);
+							}
+						}
+					}
+					return service.execute(operation, { source: "dashboard" });
+				});
 				json(response, result.ok ? 200 : result.error.code === "CONFLICT" ? 409 : 400, result);
 				return;
 			}
@@ -263,25 +292,19 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 				if (!Number.isSafeInteger(maxParallel) || (maxParallel as number) < 1) {
 					throw new HttpError(400, "maxParallel must be a positive integer.");
 				}
-				const advanced = await store.withRunLock("web-dispatch", async () => {
+				const advanced = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, async () => {
 					const snapshot = await service.readProjectSnapshot("web");
 					if (!snapshot.ok) throw new Error(snapshot.error.message);
-					const eligible = new Set(
-						(snapshot.result.goals ?? [])
-							.filter((goal) => (goal.status === "open" || goal.status === "active") && !goal.branch)
-							.map((goal) => goal.id),
+					const unavailable = unavailableDispatchGoalIds(
+						body.approvedGoalIds as string[],
+						snapshot.result.goals ?? [],
+						await store.list(),
 					);
-					const runs = await store.list();
-					for (const id of body.approvedGoalIds as string[]) {
-						if (
-							!eligible.has(id) ||
-							runs.some((run) => run.approvedGoalIds.includes(id) && run.entries[id]?.phase !== "cleaned")
-						) {
-							throw new HttpError(
-								409,
-								`Goal ${id} is not unfinished and unclaimed, or is reserved by an existing run. Refresh before approving goals.`,
-							);
-						}
+					if (unavailable.length) {
+						throw new HttpError(
+							409,
+							`Goals ${unavailable.join(", ")} are not unfinished and unclaimed, or are reserved by an existing run. Refresh before approving goals.`,
+						);
 					}
 					const target = await currentDispatchTarget(options.repositoryRoot);
 					const placeholder = {
@@ -315,7 +338,7 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 			if (!dispatchMatch) throw new HttpError(404, "Route not found.");
 			requireConfirmation(body);
 			const [, runId, action] = dispatchMatch;
-			const result = await store.withRunLock("web-dispatch", () =>
+			const result = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, () =>
 				store.withRunLock(runId, async () => {
 					const run = await store.load(runId);
 					if (run.repositoryRoot !== options.repositoryRoot)

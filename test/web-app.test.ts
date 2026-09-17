@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
@@ -219,6 +220,40 @@ describe("Stepstone web application", () => {
 		};
 		expect(state.result.readyGoalIds).toEqual([]);
 		expect(state.result.runs).toEqual([expect.objectContaining({ id: result.result.id })]);
+		const before = (await (await fetch(`${app.url}/api/state`)).json()) as {
+			result: { revision: string; goals: unknown[] };
+		};
+		for (const action of ["update", "complete", "archive", "delete", "reopen"]) {
+			const refused = await post(app, token, {
+				action,
+				id: created.result.goal.id,
+				title: "Changed claim",
+				confirm: true,
+			});
+			expect(refused.status).toBe(409);
+			expect(await refused.json()).toMatchObject({
+				error: { message: expect.stringContaining("workspace custody") },
+			});
+		}
+		expect(
+			(
+				await post(app, token, {
+					action: "update",
+					id: created.result.goal.id.slice(0, 12),
+					title: "Prefix edit",
+				})
+			).status,
+		).toBe(409);
+		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({
+			result: { revision: before.result.revision, goals: before.result.goals },
+		});
+		expect(before).toMatchObject({ result: { goals: [{ dispatchCustody: true }] } });
+		expect((await post(app, token, { action: "add", title: "Other goal" })).status).toBe(200);
+		expect(
+			(await post(app, token, { action: "move", id: created.result.goal.id, direction: "down" })).status,
+		).toBe(200);
+		const moved = (await (await fetch(`${app.url}/api/state`)).json()) as { result: { goals: unknown[] } };
+		expect(moved.result.goals[1]).toEqual(before.result.goals[0]);
 		const cleanup = await postPath(app, token, `/api/dispatch/${result.result.id}/cleanup`, {
 			confirm: true,
 		});
@@ -328,6 +363,52 @@ describe("Stepstone web application", () => {
 			if (workspace) workspacePaths.push(workspace);
 		}
 		expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+		expect(state.result.runs).toHaveLength(1);
+		expect(state.result.runs[0].entries[goalId].phase).toBe("prepared");
+	});
+
+	it("shares reservation between a web start and a real CLI start", async () => {
+		const root = await repository();
+		const app = await startStepstoneWebApp({ repositoryRoot: root });
+		apps.push(app);
+		const token = (await (await fetch(app.url)).text()).match(
+			/name="stepstone-token" content="([^"]+)"/,
+		)?.[1];
+		if (!token) throw new Error("Missing token");
+		const created = (await (
+			await post(app, token, { action: "add", title: `Shared start ${randomUUID()}` })
+		).json()) as { result: { goal: { id: string } } };
+		const goalId = created.result.goal.id;
+		const outcomes = await Promise.allSettled([
+			postPath(app, token, "/api/dispatch/start", {
+				confirm: true,
+				approvedGoalIds: [goalId],
+				maxParallel: 1,
+			}).then(async (response) => ({ ok: response.ok, body: await response.json() })),
+			execFileAsync(
+				process.execPath,
+				[
+					fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
+					"project",
+					"workspace",
+					"start",
+					"--goal",
+					goalId,
+					"--cwd",
+					root,
+					"--json",
+				],
+				{ timeout: 30000 },
+			).then(({ stdout }) => ({ ok: true, body: JSON.parse(stdout) })),
+		]);
+		const state = (await (await fetch(`${app.url}/api/state`)).json()) as {
+			result: { runs: Array<{ entries: Record<string, { phase: string; workspace?: string }> }> };
+		};
+		for (const run of state.result.runs) {
+			const path = run.entries[goalId]?.workspace;
+			if (path) workspacePaths.push(path);
+		}
+		expect(outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value.ok)).toHaveLength(1);
 		expect(state.result.runs).toHaveLength(1);
 		expect(state.result.runs[0].entries[goalId].phase).toBe("prepared");
 	});

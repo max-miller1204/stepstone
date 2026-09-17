@@ -10,7 +10,13 @@ import {
 	GitHubMergeEvidenceBinding,
 	GitWorktreeBinding,
 } from "./dispatch-bindings.ts";
-import { DispatchDriver, type DispatchRun, type DispatchWorkspaceConfig } from "./dispatch-driver.ts";
+import {
+	DISPATCH_REPOSITORY_LOCK,
+	DispatchDriver,
+	type DispatchRun,
+	type DispatchWorkspaceConfig,
+	unavailableDispatchGoalIds,
+} from "./dispatch-driver.ts";
 import { resolveGitRoot, resolveWorktreePlacement } from "./git.ts";
 
 interface Invocation {
@@ -230,30 +236,39 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 			const config: DispatchWorkspaceConfig = {
 				...(workspaceParent ? { workspaceParent: await realpath(resolve(workspaceParent)) } : {}),
 			};
-			const target = await currentDispatchTarget(repositoryRoot);
-			const placeholder: DispatchRun = {
-				version: 2,
-				id: "pending",
-				repositoryRoot,
-				approvedGoalIds: [],
-				maxParallel: 1,
-				targetBranch: target.branch,
-				targetRevision: target.revision,
-				workspaceConfig: config,
-				createdAt: "",
-				updatedAt: "",
-				entries: {},
-			};
-			const driver = createDriver(placeholder, store);
-			const run = await driver.create({
-				repositoryRoot,
-				approvedGoalIds: invocation.options.get("goal") ?? [],
-				maxParallel: positiveInteger(one(invocation, "max-parallel"), 1, "max-parallel"),
-				targetBranch: target.branch,
-				targetRevision: target.revision,
-				workspaceConfig: config,
+			const advanced = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, async () => {
+				const approvedGoalIds = invocation.options.get("goal") ?? [];
+				const snapshot = await new ApplicationRoadmapBinding(repositoryRoot).read();
+				const unavailable = unavailableDispatchGoalIds(approvedGoalIds, snapshot.goals, await store.list());
+				if (unavailable.length)
+					throw new Error(
+						`Goals ${unavailable.join(", ")} are not unfinished and unclaimed, or are reserved by an existing run.`,
+					);
+				const target = await currentDispatchTarget(repositoryRoot);
+				const placeholder: DispatchRun = {
+					version: 2,
+					id: "pending",
+					repositoryRoot,
+					approvedGoalIds: [],
+					maxParallel: 1,
+					targetBranch: target.branch,
+					targetRevision: target.revision,
+					workspaceConfig: config,
+					createdAt: "",
+					updatedAt: "",
+					entries: {},
+				};
+				const driver = createDriver(placeholder, store);
+				const run = await driver.create({
+					repositoryRoot,
+					approvedGoalIds,
+					maxParallel: positiveInteger(one(invocation, "max-parallel"), 1, "max-parallel"),
+					targetBranch: target.branch,
+					targetRevision: target.revision,
+					workspaceConfig: config,
+				});
+				return store.withRunLock(run.id, () => driver.advance(run.id));
 			});
-			const advanced = await store.withRunLock(run.id, () => driver.advance(run.id));
 			printRun(advanced, output, true);
 			return;
 		}
@@ -261,11 +276,13 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 			if (invocation.positionals.length !== 1)
 				throw new WorkspaceUsageError("resume requires exactly one run ID");
 			const runId = invocation.positionals[0];
-			const advanced = await store.withRunLock(runId, async () => {
-				const run = await store.load(runId);
-				assertRunRepository(run, repositoryRoot);
-				return createDriver(run, store).advance(run.id);
-			});
+			const advanced = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, () =>
+				store.withRunLock(runId, async () => {
+					const run = await store.load(runId);
+					assertRunRepository(run, repositoryRoot);
+					return createDriver(run, store).advance(run.id);
+				}),
+			);
 			printRun(advanced, output, true);
 			return;
 		}
@@ -306,15 +323,17 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 				throw new WorkspaceUsageError("recover requires a run ID, goal ID, and --release");
 			}
 			const runId = invocation.positionals[0];
-			const recovered = await store.withRunLock(runId, async () => {
-				const run = await store.load(runId);
-				assertRunRepository(run, repositoryRoot);
-				return createDriver(run, store).recoverRelease(
-					run.id,
-					invocation.positionals[1],
-					one(invocation, "claim-updated-at"),
-				);
-			});
+			const recovered = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, () =>
+				store.withRunLock(runId, async () => {
+					const run = await store.load(runId);
+					assertRunRepository(run, repositoryRoot);
+					return createDriver(run, store).recoverRelease(
+						run.id,
+						invocation.positionals[1],
+						one(invocation, "claim-updated-at"),
+					);
+				}),
+			);
 			printRun(recovered, output, false);
 			return;
 		}
@@ -323,15 +342,17 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 				throw new WorkspaceUsageError("cleanup requires a run ID and optional goal ID");
 			}
 			const runId = invocation.positionals[0];
-			const result = await store.withRunLock(runId, async () => {
-				const run = await store.load(runId);
-				assertRunRepository(run, repositoryRoot);
-				return createDriver(run, store).cleanup(
-					run.id,
-					invocation.positionals[1],
-					invocation.options.has("force"),
-				);
-			});
+			const result = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, () =>
+				store.withRunLock(runId, async () => {
+					const run = await store.load(runId);
+					assertRunRepository(run, repositoryRoot);
+					return createDriver(run, store).cleanup(
+						run.id,
+						invocation.positionals[1],
+						invocation.options.has("force"),
+					);
+				}),
+			);
 			if (result) printRun(result, output, false);
 			else print({ removedRunId: runId }, output);
 			return;

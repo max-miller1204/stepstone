@@ -1233,18 +1233,23 @@ describe("published preparation CLI", () => {
 			});
 			expect(await readFile(goalFile, "utf8")).toContain("Complete alpha thoroughly");
 
-			const noWork = await execFileAsync(
-				process.execPath,
-				[cli, "project", "workspace", "start", "--cwd", root, "--goal", "alpha", "--json"],
-				{ cwd: join(import.meta.dirname, "..") },
-			);
-			expect(JSON.parse(noWork.stdout)).toMatchObject({
-				ok: true,
-				result: {
-					pass: { outcome: "no-ready-work", attemptedGoalIds: [] },
-					entries: {},
-				},
-			});
+			await expect(
+				execFileAsync(
+					process.execPath,
+					[cli, "project", "workspace", "start", "--cwd", root, "--goal", "alpha", "--json"],
+					{ cwd: join(import.meta.dirname, "..") },
+				),
+			).rejects.toMatchObject({ stderr: expect.stringContaining("reserved by an existing run") });
+			const afterRejectedStart = await execFileAsync(process.execPath, [
+				cli,
+				"project",
+				"workspace",
+				"status",
+				"--cwd",
+				root,
+				"--json",
+			]);
+			expect(JSON.parse(afterRejectedStart.stdout).result).toHaveLength(1);
 
 			await writeFile(join(workspaceParent, "stepstone-beta"), "occupied");
 			const humanRefusal = await execFileAsync(

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readyGoals } from "./dependencies.ts";
+import { findGoalByStoredId } from "./goal-selection.ts";
 import type { WorklistError } from "./result-envelope.ts";
 import type { ProjectGoal } from "./types.ts";
 
@@ -179,8 +180,39 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+export const DISPATCH_REPOSITORY_LOCK = "web-dispatch";
+
 function hasCanonicalCustody(entry: DispatchEntry): boolean {
 	return ["preparing", "acquiring", "claiming", "prepared", "ambiguous", "releasing"].includes(entry.phase);
+}
+
+export function hasGoalDispatchCustody(goal: ProjectGoal, runs: DispatchRun[]): boolean {
+	return runs.some((run) =>
+		Object.values(run.entries).some(
+			(entry) => hasCanonicalCustody(entry) && findGoalByStoredId([goal], entry.goal.id) !== undefined,
+		),
+	);
+}
+
+export function unavailableDispatchGoalIds(
+	approvedGoalIds: string[],
+	goals: ProjectGoal[],
+	runs: DispatchRun[],
+): string[] {
+	return approvedGoalIds.filter((id) => {
+		const goal = goals.find((candidate) => candidate.id === id.trim());
+		return (
+			!goal ||
+			!["open", "active"].includes(goal.status) ||
+			Boolean(goal.branch) ||
+			runs.some((run) =>
+				run.approvedGoalIds.some(
+					(storedId) =>
+						findGoalByStoredId([goal], storedId) !== undefined && run.entries[storedId]?.phase !== "cleaned",
+				),
+			)
+		);
+	});
 }
 
 function needsCleanup(entry: DispatchEntry): boolean {
