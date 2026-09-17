@@ -49,7 +49,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `npx -y stepstone@latest project ready` | List every unblocked, unclaimed open goal: the whole parallel frontier |
 | `npx -y stepstone@latest project waves` | Print unfinished goals in dependency layers, earliest first |
 | `npx -y stepstone@latest project ui` | Open the interactive goal board for a human at the keyboard. Requires a terminal; not for scripts or agents |
-| `npx -y stepstone@latest project web [--port <number>] [--no-open]` | Open the local roadmap and workspace application (canonical roadmap only; no path overrides). Requires a terminal; not for scripts or agents |
+| `npx -y stepstone@latest project web [--port <number>] [--no-open]` | Open the local goal editor (canonical roadmap only; no path overrides). Requires a terminal; not for scripts or agents |
 | `npx -y stepstone@latest project add <title...> [--description <text> \| -- <description...>]` | Add an open goal |
 | `npx -y stepstone@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
 | `npx -y stepstone@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |

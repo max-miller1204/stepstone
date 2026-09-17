@@ -12,7 +12,7 @@ Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to sta
 
 ## Interfaces
 
-Run `npx -y stepstone@latest project web` from the main worktree to open the local web application. Use it to manage the roadmap and prepare approved goal workspaces.
+Run `npx -y stepstone@latest project web` from the main worktree to open the local web application. Use it to manage goals, dependencies, and roadmap order.
 
 Run `npx -y stepstone@latest project ui` to open the Project Goal board. This view uses dependency order.
 

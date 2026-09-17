@@ -215,7 +215,7 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "web",
 			usage: "web [--port <number>] [--no-open]",
-			summary: "Open the local roadmap and workspace application (canonical roadmap only; no path overrides)",
+			summary: "Open the local goal editor (canonical roadmap only; no path overrides)",
 			interactive: true,
 		},
 		{

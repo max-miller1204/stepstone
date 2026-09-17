@@ -187,14 +187,6 @@ function hasCanonicalCustody(entry: DispatchEntry): boolean {
 	return ["preparing", "acquiring", "claiming", "prepared", "ambiguous", "releasing"].includes(entry.phase);
 }
 
-export function hasGoalDispatchCustody(goal: ProjectGoal, runs: DispatchRun[]): boolean {
-	return runs.some((run) =>
-		Object.values(run.entries).some(
-			(entry) => hasCanonicalCustody(entry) && findGoalByStoredId([goal], entry.goal.id) !== undefined,
-		),
-	);
-}
-
 export function unavailableDispatchGoalIds(
 	approvedGoalIds: string[],
 	goals: ProjectGoal[],
