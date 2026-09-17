@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { glob, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { glob, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -92,6 +92,28 @@ describe("published stepstone package", () => {
 		);
 		expect(existsSync(resolve("dist/dispatch.js"))).toBe(false);
 	});
+
+	it("preserves the public Git retry hold export in the packed package", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-packed-export-"));
+		try {
+			await execFileAsync("npm", ["pack", "--ignore-scripts", "--pack-destination", root], {
+				cwd: resolve("."),
+			});
+			const archives = (await readdir(root)).filter((file) => file.endsWith(".tgz"));
+			expect(archives).toHaveLength(1);
+			await execFileAsync("tar", ["-xzf", join(root, archives[0]), "-C", root]);
+			// Use package self-reference resolution outside node_modules so Node can strip TypeScript.
+			const consumer = join(root, "package", "consumer.mjs");
+			await writeFile(
+				consumer,
+				'import { GIT_RETRY_HOLD_MS } from "stepstone/src/git.ts"; console.log(JSON.stringify({ holdMs: GIT_RETRY_HOLD_MS }));\n',
+			);
+			const { stdout } = await execFileAsync(process.execPath, [consumer]);
+			expect(JSON.parse(stdout)).toEqual({ holdMs: 10000 });
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}, 60_000);
 
 	it("imports only declared dependencies, never a Pi peer", async () => {
 		// `npx -y stepstone@latest` installs the package's own dependencies and nothing

@@ -89,6 +89,11 @@
 		"test:e2e:fast": "node ./scripts/e2e-check.ts --fast"
 	},
 	"knip": {
+		"ignoreIssues": {
+			"src/git.ts": [
+				"duplicates"
+			]
+		},
 		"entry": [
 			"src/extension.ts",
 			"src/cli.ts",

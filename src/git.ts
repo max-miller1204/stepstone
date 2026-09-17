@@ -789,8 +789,9 @@ export interface ProjectRootLookup {
  * spend, and asking again would spend it again, so the answer stands for that long
  * rather than for a measured interval that depends on what else the machine was
  * doing.
+ * @public
  */
-const GIT_RETRY_HOLD_MS = GIT_COMMAND_TIMEOUT_MS;
+export const GIT_RETRY_HOLD_MS = GIT_COMMAND_TIMEOUT_MS;
 
 export interface ProjectRootLookupOptions extends WorklistLocationOptions {
 	/** The clock the hold is measured on. Defaults to the wall clock. */
