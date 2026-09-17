@@ -12,6 +12,8 @@ The following interfaces have been removed:
 
 Removed commands and flags fail with a usage error. Replace scripts that call them with Git or external workspace tools. The browser has no dispatch controls or endpoints.
 
+![Removed workspace commands fail with usage errors](images/stepstone-retired-commands.png)
+
 ## Preserved resources
 
 Upgrading leaves existing branches, worktrees, handoff files, ownership markers, and dispatch journals untouched. Stepstone does not read, migrate, resume, or clean these resources.
@@ -40,6 +42,8 @@ git -C /absolute/worktree/path reflog -10
 
 Read existing handoff files and journals with your file viewer. Use Git, your editor, or an external workspace tool to create, open, move, or remove worktrees and branches. Stepstone no longer verifies ownership or cleanup safety for these operations.
 
+![Git resources and existing files remain available](images/stepstone-preserved-resources.png)
+
 ## Continue tracking
 
 Record a branch claim from the main worktree after you create the branch with your chosen tool:
@@ -58,3 +62,5 @@ npx -y stepstone@latest project complete <id> --confirm
 ```
 
 The application service requires explicit confirmation for lifecycle changes. Read [the CLI reference](cli.md) for optimistic checks and other lifecycle commands.
+
+![Completion requires confirmation and releases the next dependency](images/stepstone-explicit-completion.png)

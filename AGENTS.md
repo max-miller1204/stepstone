@@ -24,14 +24,6 @@ See `docs/storage.md`, `docs/dependencies.md`, and `docs/pi.md`.
 - Use the generated images as PR evidence. Captures are in `artifacts/screenshots`.
 - See `docs/development.md` for screenshot requirements and verification steps.
 
-## PR videos
-
-- Use reusable VHS scenarios in `scripts/videos/scenarios` for video evidence.
-- Run `npm run videos:check -- <scenario>`, then run `npm run videos:render -- <scenario>` locally.
-- Inspect the MP4 at full and half size. Passing behavior checks does not prove legibility.
-- Attach the reviewed MP4 in the PR Evidence section when video evidence is useful. Use the CI artifact only for verification logs.
-- See `scripts/videos/README.md` for scenario rules and the CI workflow.
-
 ## Published package
 
 - Keep published executable graphs free of runtime Pi imports.

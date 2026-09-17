@@ -32,9 +32,6 @@ The package ships TypeScript source directly because Pi loads extensions through
 | `npm run test:mutation` | Four targeted dependency mutants must be killed |
 | `npm run test:e2e:fast` | Packed CLI initialization, approved plans, conflicts, and packed extension through real Pi RPC |
 | `npm run test:e2e` | Full deterministic published-surface tier, including storage, concurrent writers, roadmap generation, and linked-worktree boundaries |
-| `npm run videos:test` | VHS tape parser and scenario-selection regression tests |
-| `npm run videos:check -- <scenario>` | Replay the recorded shell commands and verify actual CLI behavior |
-| `npm run videos:render -- <scenario>` | Capture and verify a VHS scenario, then export its MP4 and evidence |
 | `npm run verify` | `check`, `pack:check`, and targeted mutation checks, the gate the release workflow re-runs |
 | `npm run quality:static` | Types, the import scan, Biome lint, and the generated documents, with no test run |
 | `npm run quality:pre-commit` | Biome checks the exact staged contents |
@@ -97,7 +94,7 @@ Remove a retained gate checkout with `git worktree remove --force <printed-check
 
 This tier covers representative local published workflows. The deeper real Git/GitHub CLI matrix, remote failures, and platform-specific external-tool edge cases remain owned by `verify-the-remaining-external`.
 
-Shared storage, cross-process locking, and repository-discovery checks remain required after workspace management removal. The CLI unit suite and `tracker-retirement` video scenario prove that removed interfaces fail without changing existing Git resources or dispatch files.
+Shared storage, cross-process locking, and repository-discovery checks remain required after workspace management removal. The CLI unit suite proves that removed interfaces fail without changing existing Git resources or dispatch files.
 
 `npm run imports:check` reads the merged module graph behind every entry in `executableEntryPoints` in `scripts/cli-import-graph.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
 That list is derived from the manifest's `bin` map rather than written by hand: each target is read back to the `src/` file the build emitted it from, and a target that resolves to no source file stops the check instead of being skipped.
@@ -174,15 +171,9 @@ For manual exploration, `npm run demo:screenshots` creates the same demo roadmap
 It creates `open-pi.sh` and `open-project-ui.sh` in `artifacts/stepstone-ui-demo`.
 These manual launchers use your normal environment and current date.
 
-## PR videos
+## PR evidence
 
-Use the named VHS scenarios in `scripts/videos/scenarios` for video evidence. Run `npm run videos:list` to see available scenarios. Run `videos:check` before `videos:render`, then watch the output in `artifacts/videos/<scenario>/`.
-
-The `PR video verification` workflow checks scenarios when their tapes or shared tooling change. It does not run VHS or render videos. For product changes that use an unchanged scenario, dispatch the workflow on the PR branch. Its check summary links verification logs. Render and review the MP4 locally, then attach it to the PR for inline playback. No workflow changes PR bodies or publishes videos automatically.
-
-The `tracker-retirement` scenario verifies removed command failures, preserved resources, an existing branch claim, explicit completion, and dependency readiness.
-
-See the [video workflow guide](../scripts/videos/README.md) for tool versions, fixture isolation, scenario authoring, reproduction limits, and PR evidence examples. Do not run capture beside another build or package check because both use `dist/`.
+Use screenshots for visual evidence. Capture actual application output and inspect each image before attaching it to the PR Evidence section. Keep behavior assertions in the unit and end-to-end suites.
 
 ## Generated files
 
