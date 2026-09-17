@@ -308,6 +308,23 @@ describe("workspace preparation driver", () => {
 		await expect(retired.create(["historical"])).rejects.toThrow("Approved goal IDs were not found");
 	});
 
+	it("closes a prepared claim after an identity-only ID migration", async () => {
+		const oldId = "goal-mse1rzxb-8213cc2a";
+		const setup = fixture([goal(oldId, { title: "Support goal templates" })], 1);
+		const run = await setup.create();
+		const prepared = await setup.makeDriver().advance(run.id);
+		const claimToken = prepared.entries[oldId].claimUpdatedAt;
+		const current = setup.roadmap.snapshot.goals[0];
+		current.id = "support-goal-templates";
+		current.previousIds = [oldId];
+		setup.merges.evidence.set(`stepstone/${oldId}`, merged({ headBranch: `stepstone/${oldId}` }));
+
+		const resumed = await setup.makeDriver().advance(run.id);
+
+		expect(setup.roadmap.completions).toEqual([{ id: "support-goal-templates", token: claimToken }]);
+		expect(resumed.entries[oldId].phase).toBe("cleaned");
+	});
+
 	it("prepares and claims only approved ready goals up to the configured limit", async () => {
 		const blocked = goal("blocked", { dependsOn: ["dependency"] });
 		const setup = fixture(

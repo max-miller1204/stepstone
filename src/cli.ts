@@ -1355,6 +1355,9 @@ async function runInteractiveBoard(
 async function runWebApplication(invocation: CliInvocation, location: ProjectLocation): Promise<void> {
 	if (invocation.json) fail(`project web cannot be combined with --json\n\n${USAGE}`, 2);
 	if (invocation.rest.length > 0) fail(`project web takes no positional arguments\n\n${USAGE}`, 2);
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		fail("project web needs an interactive terminal. Run it from a terminal to keep the server open.", 1);
+	}
 	const app = await startStepstoneWebApp({
 		repositoryRoot: location.root,
 		worklistOverride: invocation.file,

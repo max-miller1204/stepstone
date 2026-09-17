@@ -165,6 +165,17 @@ async function editGoalByHand(root: string, id: string, changes: Partial<Project
 }
 
 describe("project goal CLI", () => {
+	it("refuses the web server without an interactive terminal", async () => {
+		const root = await tempGitRepo();
+
+		const result = await runCli(root, ["project", "web", "--no-open"]);
+
+		expect(result.code).toBe(1);
+		expect(diagnostic(result.stderr).trimEnd()).toBe(
+			"project web needs an interactive terminal. Run it from a terminal to keep the server open.",
+		);
+	});
+
 	it("adds, lists, updates, and activates goals through the shared store", async () => {
 		const root = await tempGitRepo();
 
