@@ -12,6 +12,8 @@ Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to sta
 
 ## Interfaces
 
+Run `npx -y stepstone@latest project web` from the main worktree to open the local web application. Use it to manage the roadmap and prepare approved goal workspaces.
+
 Run `npx -y stepstone@latest project ui` to open the Project Goal board. This view uses dependency order.
 
 ![Stepstone Project Goal board in dependency order](docs/images/stepstone-project-ui.png)
@@ -105,6 +107,7 @@ Run `npx -y stepstone@latest project ui` for a full-screen [terminal board](docs
 | [docs/goals.md](docs/goals.md) | The goal model: fields, statuses, IDs, order, groups, JSON plans |
 | [docs/dependencies.md](docs/dependencies.md) | Dependency edges and the sequencing reads behind `next`, `ready`, and `waves` |
 | [docs/workspaces.md](docs/workspaces.md) | Preparing and claiming approved goal workspaces without starting an agent harness |
+| [docs/web.md](docs/web.md) | The loopback web application, its workflows, and its security boundary |
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |
 | [docs/skill.md](docs/skill.md) | The standalone generated Agent Skill and how to install it |

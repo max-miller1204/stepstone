@@ -1,0 +1,244 @@
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { afterEach, describe, expect, it } from "vitest";
+import { type StepstoneWebApp, startStepstoneWebApp } from "../src/web-app.ts";
+
+const execFileAsync = promisify(execFile);
+const roots: string[] = [];
+const workspacePaths: string[] = [];
+const apps: StepstoneWebApp[] = [];
+
+async function repository(): Promise<string> {
+	const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-web-")));
+	roots.push(root);
+	await execFileAsync("git", ["init", "-b", "main"], { cwd: root });
+	await execFileAsync("git", ["config", "user.name", "Stepstone Test"], { cwd: root });
+	await execFileAsync("git", ["config", "user.email", "stepstone@example.test"], { cwd: root });
+	await execFileAsync("git", ["commit", "--allow-empty", "-m", "initial"], { cwd: root });
+	return root;
+}
+
+async function openApp(): Promise<{ app: StepstoneWebApp; token: string }> {
+	const app = await startStepstoneWebApp({ repositoryRoot: await repository(), port: 0 });
+	apps.push(app);
+	const page = await fetch(app.url);
+	const html = await page.text();
+	const token = html.match(/name="stepstone-token" content="([^"]+)"/)?.[1];
+	if (!token) throw new Error("Web page did not contain the mutation token");
+	return { app, token };
+}
+
+async function postPath(app: StepstoneWebApp, token: string, path: string, body: object, origin = app.url) {
+	return fetch(`${app.url}${path}`, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			origin,
+			"x-stepstone-token": token,
+		},
+		body: JSON.stringify(body),
+	});
+}
+
+function post(app: StepstoneWebApp, token: string, body: object, origin = app.url) {
+	return postPath(app, token, "/api/goals", body, origin);
+}
+
+afterEach(async () => {
+	await Promise.all(apps.splice(0).map((app) => app.close()));
+	await Promise.all(workspacePaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("Stepstone web application", () => {
+	it("serves the application from loopback and projects roadmap state", async () => {
+		const { app, token } = await openApp();
+		expect(new URL(app.url).hostname).toBe("127.0.0.1");
+		const created = await post(app, token, {
+			action: "add",
+			title: "Ship local roadmap",
+			description: "Manage goals in the browser.",
+			group: "Interfaces",
+			dependsOn: [],
+			links: [],
+		});
+		expect(created.status).toBe(200);
+		const state = (await (await fetch(`${app.url}/api/state`)).json()) as { result: unknown };
+		expect(state).toMatchObject({
+			ok: true,
+			result: {
+				readyGoalIds: ["ship-local-roadmap"],
+				goals: [
+					{
+						id: "ship-local-roadmap",
+						blocked: false,
+						wave: 1,
+					},
+				],
+			},
+		});
+	});
+
+	it("rejects cross-origin and tokenless mutations without writing", async () => {
+		const { app, token } = await openApp();
+		expect(
+			(await post(app, token, { action: "add", title: "Cross site" }, "https://attacker.test")).status,
+		).toBe(403);
+		const tokenless = await fetch(`${app.url}/api/goals`, {
+			method: "POST",
+			headers: { "content-type": "application/json", origin: app.url },
+			body: JSON.stringify({ action: "add", title: "No token" }),
+		});
+		expect(tokenless.status).toBe(403);
+		const state = (await (await fetch(`${app.url}/api/state`)).json()) as {
+			result: { goals: unknown[] };
+		};
+		expect(state.result.goals).toEqual([]);
+	});
+
+	it("requires explicit lifecycle confirmation and reports optimistic conflicts", async () => {
+		const { app, token } = await openApp();
+		const createResponse = await post(app, token, { action: "add", title: "Guarded goal" });
+		const created = (await createResponse.json()) as {
+			result: { goal: { id: string; updatedAt: string } };
+		};
+		const goal = created.result.goal;
+		const unconfirmed = await post(app, token, {
+			action: "complete",
+			id: goal.id,
+			expectedUpdatedAt: goal.updatedAt,
+		});
+		expect(unconfirmed.status).toBe(400);
+		expect((await unconfirmed.json()) as { error: { code: string } }).toMatchObject({
+			error: { code: "APPROVAL_REQUIRED" },
+		});
+
+		const updated = await post(app, token, {
+			action: "update",
+			id: goal.id,
+			title: "Changed goal",
+			expectedUpdatedAt: goal.updatedAt,
+		});
+		expect(updated.status).toBe(200);
+		const stale = await post(app, token, {
+			action: "complete",
+			id: goal.id,
+			expectedUpdatedAt: goal.updatedAt,
+			confirm: true,
+		});
+		expect(stale.status).toBe(409);
+		expect((await stale.json()) as { error: { code: string } }).toMatchObject({
+			error: { code: "CONFLICT" },
+		});
+	});
+
+	it("validates request routes, content, actions, and lifecycle confirmation", async () => {
+		const { app, token } = await openApp();
+		const headers = { origin: app.url, "x-stepstone-token": token };
+		expect((await fetch(`${app.url}/missing`)).status).toBe(404);
+		expect((await fetch(`${app.url}/api/goals`, { method: "PUT" })).status).toBe(404);
+		expect(
+			(
+				await fetch(`${app.url}/api/goals`, {
+					method: "POST",
+					headers,
+					body: "{}",
+				})
+			).status,
+		).toBe(415);
+		expect(
+			(
+				await fetch(`${app.url}/api/goals`, {
+					method: "POST",
+					headers: { ...headers, "content-type": "application/json" },
+					body: "{",
+				})
+			).status,
+		).toBe(400);
+		expect((await post(app, token, { action: "migrate_ids" })).status).toBe(400);
+
+		const created = (await (await post(app, token, { action: "add", title: "Lifecycle goal" })).json()) as {
+			result: { goal: { id: string; updatedAt: string } };
+		};
+		const completed = await post(app, token, {
+			action: "complete",
+			id: created.result.goal.id,
+			expectedUpdatedAt: created.result.goal.updatedAt,
+			confirm: true,
+		});
+		expect(completed.status).toBe(200);
+		expect(await completed.json()).toMatchObject({ result: { goal: { status: "done" } } });
+	});
+
+	it("prepares an explicitly approved ready goal and exposes its shell-quoted command", async () => {
+		const { app, token } = await openApp();
+		const created = (await (
+			await post(app, token, { action: "add", title: `Prepare browser ${randomUUID()}` })
+		).json()) as {
+			result: { goal: { id: string } };
+		};
+		expect(
+			(await postPath(app, token, "/api/dispatch/start", { approvedGoalIds: [created.result.goal.id] }))
+				.status,
+		).toBe(403);
+		expect(
+			(
+				await postPath(app, token, "/api/dispatch/start", {
+					confirm: true,
+					approvedGoalIds: "not-an-array",
+					maxParallel: 1,
+				})
+			).status,
+		).toBe(400);
+		const prepared = await postPath(app, token, "/api/dispatch/start", {
+			confirm: true,
+			approvedGoalIds: [created.result.goal.id],
+			maxParallel: 1,
+		});
+		expect(prepared.status).toBe(200);
+		const result = (await prepared.json()) as {
+			result: {
+				id: string;
+				entries: Record<string, { phase: string; workspace: string; cdCommand: string }>;
+			};
+		};
+		const entry = result.result.entries[created.result.goal.id];
+		workspacePaths.push(entry.workspace);
+		expect(entry.phase).toBe("prepared");
+		expect(entry.cdCommand).toBe(`cd '${entry.workspace}'`);
+		expect((await postPath(app, token, `/api/dispatch/${result.result.id}/continue`, {})).status).toBe(403);
+
+		const state = (await (await fetch(`${app.url}/api/state`)).json()) as {
+			result: { readyGoalIds: string[]; runs: Array<{ id: string }> };
+		};
+		expect(state.result.readyGoalIds).toEqual([]);
+		expect(state.result.runs).toEqual([expect.objectContaining({ id: result.result.id })]);
+	});
+
+	it("refuses invalid ports and linked-worktree hosting", async () => {
+		const root = await repository();
+		await expect(startStepstoneWebApp({ repositoryRoot: root, port: -1 })).rejects.toThrow(
+			"port must be an integer",
+		);
+		const linked = `${root}-linked`;
+		workspacePaths.push(linked);
+		await execFileAsync("git", ["worktree", "add", "-b", "linked", linked], { cwd: root });
+		await expect(startStepstoneWebApp({ repositoryRoot: linked })).rejects.toThrow("main worktree");
+	});
+
+	it("does not write the goal file outside the application service", async () => {
+		const root = await repository();
+		const app = await startStepstoneWebApp({ repositoryRoot: root });
+		apps.push(app);
+		const page = await fetch(app.url);
+		const token = (await page.text()).match(/name="stepstone-token" content="([^"]+)"/)?.[1];
+		if (!token) throw new Error("Missing token");
+		await post(app, token, { action: "add", title: "Atomic goal" });
+		const stored = JSON.parse(await readFile(join(root, ".worklist", "worklist.json"), "utf8"));
+		expect(stored).toMatchObject({ revision: 1, goals: [{ id: "atomic-goal" }] });
+	});
+});

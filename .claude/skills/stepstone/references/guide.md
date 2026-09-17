@@ -27,6 +27,7 @@ next
 ready
 waves
 ui
+web [--port <number>] [--no-open]
 add <title...> [--description <text> | -- <description...>]
 apply-plan <plan.json>
 update <id> [title...] [--description <text> | -- <description...>]
@@ -45,6 +46,8 @@ help
 
 Flags:
 
+- `--port <number>` - Bind the local web application to this loopback port; only for project web.
+- `--no-open` - Start the local web application without opening a browser; only for project web.
 - `--goal <id>` - Authorize one goal for workspace start; repeat for the approved set; only for project workspace.
 - `--max-parallel <count>` - Limit workspace start to this many prepared claims (default 1); only for project workspace.
 - `--stale-after-hours <hours>` - Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace.
@@ -224,7 +227,7 @@ Git workspace preparation, recovery, and cleanup rules are documented in the pac
 - `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, `start`, and `set_active` are safe to run whenever they serve the user's request.
 - `workspace status` and `workspace inspect` are reads; `workspace start` needs the approved goal set, `resume` keeps that authorization, and recovery or destructive cleanup needs explicit operator intent.
 - `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.
-- `ui` opens a full-screen board for the human at the keyboard, not for you.
+- `ui` and `web` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.
   Suggest `npx -y stepstone@latest project ui` when the user wants to browse or edit goals themselves; read state with `list` and `show` instead.
 - Session Tasks are a Pi extension feature that lives inside a Pi session, so the CLI rejects `session` scope.

@@ -1,9 +1,9 @@
 {
 	"src/application-service.ts": {
-		"lines": 86.96,
-		"branches": 80.62,
+		"lines": 87.76,
+		"branches": 80.89,
 		"functions": 98.5,
-		"statements": 85.95
+		"statements": 86.68
 	},
 	"src/bounded-text.ts": {
 		"lines": 95.45,
@@ -42,16 +42,16 @@
 		"statements": 100
 	},
 	"src/dispatch-bindings.ts": {
-		"lines": 78.25,
-		"branches": 66.83,
-		"functions": 82.41,
-		"statements": 75.53
+		"lines": 83.3,
+		"branches": 69.13,
+		"functions": 94.5,
+		"statements": 80.71
 	},
 	"src/dispatch-driver.ts": {
 		"lines": 80.29,
-		"branches": 73.57,
-		"functions": 95,
-		"statements": 77.95
+		"branches": 74.39,
+		"functions": 97.5,
+		"statements": 78.22
 	},
 	"src/extension.ts": {
 		"lines": 63.94,
@@ -73,7 +73,7 @@
 	},
 	"src/git.ts": {
 		"lines": 77.02,
-		"branches": 74.84,
+		"branches": 75.47,
 		"functions": 82.75,
 		"statements": 76.6
 	},
@@ -96,10 +96,10 @@
 		"statements": 92.12
 	},
 	"src/project-mutations.ts": {
-		"lines": 95.2,
-		"branches": 88.29,
+		"lines": 95.54,
+		"branches": 88.96,
 		"functions": 100,
-		"statements": 91.19
+		"statements": 91.47
 	},
 	"src/project-store.ts": {
 		"lines": 86.24,
@@ -191,6 +191,18 @@
 		"functions": 91.3,
 		"statements": 89.41
 	},
+	"src/web-app.ts": {
+		"lines": 78.98,
+		"branches": 65.83,
+		"functions": 80.64,
+		"statements": 75.97
+	},
+	"src/web-page.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
 	"src/workspace-cli.ts": {
 		"lines": 0,
 		"branches": 0,
@@ -198,9 +210,9 @@
 		"statements": 0
 	},
 	"total": {
-		"lines": 77.1,
-		"branches": 68.78,
-		"functions": 84.4,
-		"statements": 75.6
+		"lines": 77.5,
+		"branches": 68.85,
+		"functions": 85.41,
+		"statements": 75.95
 	}
 }

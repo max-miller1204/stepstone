@@ -213,6 +213,12 @@ export const CLI_COMMAND_CONTRACT = {
 			interactive: true,
 		},
 		{
+			name: "web",
+			usage: "web [--port <number>] [--no-open]",
+			summary: "Open the local roadmap and workspace application",
+			interactive: true,
+		},
+		{
 			name: "add",
 			usage: "add <title...> [--description <text> | -- <description...>]",
 			summary: "Add an open goal",
@@ -314,6 +320,18 @@ export const CLI_COMMAND_CONTRACT = {
 		},
 	] satisfies CliActionContract[],
 	flags: [
+		{
+			name: "--port",
+			usage: "--port <number>",
+			summary: "Bind the local web application to this loopback port",
+			actions: ["web"],
+		},
+		{
+			name: "--no-open",
+			usage: "--no-open",
+			summary: "Start the local web application without opening a browser",
+			actions: ["web"],
+		},
 		{
 			name: "--goal",
 			usage: "--goal <id>",

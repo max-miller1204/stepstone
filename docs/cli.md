@@ -49,6 +49,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `npx -y stepstone@latest project ready` | List every unblocked, unclaimed open goal: the whole parallel frontier |
 | `npx -y stepstone@latest project waves` | Print unfinished goals in dependency layers, earliest first |
 | `npx -y stepstone@latest project ui` | Open the interactive goal board for a human at the keyboard. Requires a terminal; not for scripts or agents |
+| `npx -y stepstone@latest project web [--port <number>] [--no-open]` | Open the local roadmap and workspace application. Requires a terminal; not for scripts or agents |
 | `npx -y stepstone@latest project add <title...> [--description <text> \| -- <description...>]` | Add an open goal |
 | `npx -y stepstone@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
 | `npx -y stepstone@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |
@@ -81,6 +82,8 @@ See [workspace preparation, recovery, and cleanup](workspaces.md). Existing vers
 
 | Flag | Description |
 | --- | --- |
+| `--port <number>` | Bind the local web application to this loopback port; only for project web |
+| `--no-open` | Start the local web application without opening a browser; only for project web |
 | `--goal <id>` | Authorize one goal for workspace start; repeat for the approved set; only for project workspace |
 | `--max-parallel <count>` | Limit workspace start to this many prepared claims (default 1); only for project workspace |
 | `--stale-after-hours <hours>` | Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace |

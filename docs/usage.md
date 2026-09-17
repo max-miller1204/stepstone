@@ -107,6 +107,8 @@ Worktree creation must run from the main checkout. A stale goal baseline creates
 A claimed goal drops out of `ready` and `next`, which is the point - see [docs/dependencies.md](dependencies.md#sequencing-reads) - so every claim needs a release: `start <id> --clear` un-claims an abandoned dispatch and `complete` clears the branch on its way to done.
 A settled goal refuses a new claim, though `--clear` still releases one it is already holding; see [docs/goals.md](goals.md#statuses).
 The published `project workspace` command family prepares and claims approved goal workspaces, writes each goal into an ignored root `STEPSTONE_GOAL.md`, persists workspace custody for restart, and exposes resume, status, inspection, recovery, and cleanup operations without starting or prompting an agent; see [docs/workspaces.md](workspaces.md).
+
+Run `npx -y stepstone@latest project web` from the main worktree to manage goals and approved workspace runs in a local browser. The server binds to loopback and requires same-origin mutation authorization. Use `--no-open` to print the URL without opening a browser. See [docs/web.md](web.md).
 `apply-plan` adds an approved batch of goals through one locked mutation; the plan schema is in [docs/goals.md](goals.md#json-goal-plans).
 A `--dry-run` is a preview rather than the user's approval, and the brainstorm-to-approved-plan workflow an agent runs before that single mutating call is in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
 

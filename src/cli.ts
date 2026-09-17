@@ -64,6 +64,7 @@ import type {
 	ProjectPlanWarning,
 	WorklistOperationResult,
 } from "./types.ts";
+import { startStepstoneWebApp } from "./web-app.ts";
 import { runWorkspace, WorkspaceUsageError } from "./workspace-cli.ts";
 
 /**
@@ -129,6 +130,10 @@ interface CliInvocation {
 	cwd: string;
 	/** An explicit goal file from --file, which outranks every other resolution rule. */
 	file?: string;
+	/** Loopback port for the local web application. */
+	port?: number;
+	/** Start the local web application without opening a browser. */
+	noOpen: boolean;
 	/** Flag names as written, so action-scoped flags can be refused where they would be ignored. */
 	flagsUsed: ReadonlySet<string>;
 	/** Positionals written after the --description value, which a title must not be built from. */
@@ -264,6 +269,8 @@ interface ParsedCliHead {
 	confirm: boolean;
 	cwd: string;
 	file?: string;
+	port?: number;
+	noOpen: boolean;
 }
 
 function parseCliHead(head: readonly string[]): ParsedCliHead {
@@ -286,6 +293,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	let expectedUpdatedAt: string | undefined;
 	let cwd = process.cwd();
 	let file: string | undefined;
+	let port: number | undefined;
+	let noOpen = false;
 	const positionalsBeforeFlag = new Map<string, number>();
 	for (let index = 0; index < head.length; index++) {
 		const part = head[index];
@@ -311,6 +320,18 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 			case "--force":
 			case "--help":
 				workspaceOptions.set(part.slice(2), []);
+				break;
+			case "--port": {
+				const value = Number(readFlagValue(head, index, part, "an integer from 0 through 65535"));
+				if (!Number.isSafeInteger(value) || value < 0 || value > 65535) {
+					fail(`--port must be an integer from 0 through 65535\n\n${USAGE}`, 2);
+				}
+				port = value;
+				index++;
+				break;
+			}
+			case "--no-open":
+				noOpen = true;
 				break;
 			case "--json":
 				json = true;
@@ -419,6 +440,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		confirm,
 		cwd,
 		file,
+		port,
+		noOpen,
 	};
 }
 
@@ -1329,6 +1352,18 @@ async function runInteractiveBoard(
 	});
 }
 
+async function runWebApplication(invocation: CliInvocation, location: ProjectLocation): Promise<void> {
+	if (invocation.json) fail(`project web cannot be combined with --json\n\n${USAGE}`, 2);
+	if (invocation.rest.length > 0) fail(`project web takes no positional arguments\n\n${USAGE}`, 2);
+	const app = await startStepstoneWebApp({
+		repositoryRoot: location.root,
+		worklistOverride: invocation.file,
+		port: invocation.port,
+		openBrowser: !invocation.noOpen,
+	});
+	process.stdout.write(`Stepstone web app: ${app.url}\nPress Ctrl-C to stop.\n`);
+}
+
 async function runCompletionInstall(invocation: CliInvocation): Promise<void> {
 	if (invocation.action !== "install") {
 		fail(`Unknown completion action ${invocation.action}\n\n${USAGE}`, 2);
@@ -1373,6 +1408,9 @@ async function run(invocation: CliInvocation): Promise<void> {
 	const service = new WorklistApplicationService({ projectPath: location.worklist.path });
 
 	switch (invocation.action) {
+		case "web":
+			await runWebApplication(invocation, location);
+			return;
 		case "ui":
 			await runInteractiveBoard(invocation, service, location);
 			return;
