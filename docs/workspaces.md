@@ -86,6 +86,8 @@ What happens next is outside Stepstone. A terminal, editor, multiplexer, or codi
 
 Runtime state is stored under the repository's Git common directory at `stepstone-dispatch/<run-id>.json`. It is outside the canonical roadmap and shared by the main checkout across restarts.
 
+A run keeps its approved Goal IDs after ID migration. Resume resolves those stored IDs through the current roadmap and historical IDs. The entry keys, branches, and workspace paths keep the run's original approved identity.
+
 Resume after a restart or after prepared work lands:
 
 ```sh

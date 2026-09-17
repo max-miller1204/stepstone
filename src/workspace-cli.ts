@@ -239,7 +239,12 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 			const advanced = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, async () => {
 				const approvedGoalIds = invocation.options.get("goal") ?? [];
 				const snapshot = await new ApplicationRoadmapBinding(repositoryRoot).read();
-				const unavailable = unavailableDispatchGoalIds(approvedGoalIds, snapshot.goals, await store.list());
+				const unavailable = unavailableDispatchGoalIds(
+					approvedGoalIds,
+					snapshot.goals,
+					await store.list(),
+					snapshot.retiredIds,
+				);
 				if (unavailable.length)
 					throw new Error(
 						`Goals ${unavailable.join(", ")} are not unfinished and unclaimed, or are reserved by an existing run.`,

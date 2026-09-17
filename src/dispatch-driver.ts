@@ -198,9 +198,10 @@ export function unavailableDispatchGoalIds(
 	approvedGoalIds: string[],
 	goals: ProjectGoal[],
 	runs: DispatchRun[],
+	retiredIds: readonly string[] = [],
 ): string[] {
 	return approvedGoalIds.filter((id) => {
-		const goal = goals.find((candidate) => candidate.id === id.trim());
+		const goal = findGoalByStoredId(goals, id.trim(), retiredIds);
 		return (
 			!goal ||
 			!["open", "active"].includes(goal.status) ||
@@ -292,8 +293,9 @@ export class DispatchDriver {
 		const approvedGoalIds = [...new Set(options.approvedGoalIds.map((id) => id.trim()).filter(Boolean))];
 		if (approvedGoalIds.length === 0) throw new Error("At least one approved goal ID is required");
 		const snapshot = await this.dependencies.roadmap.read();
-		const known = new Set(snapshot.goals.map((goal) => goal.id));
-		const unknown = approvedGoalIds.filter((id) => !known.has(id));
+		const unknown = approvedGoalIds.filter(
+			(id) => !findGoalByStoredId(snapshot.goals, id, snapshot.retiredIds),
+		);
 		if (unknown.length > 0) throw new Error(`Approved goal IDs were not found: ${unknown.join(", ")}`);
 		const timestamp = this.now().toISOString();
 		const run: DispatchRun = {
@@ -331,16 +333,26 @@ export class DispatchDriver {
 			return run;
 		}
 		const snapshot = await this.dependencies.roadmap.read();
-		const approved = new Set(run.approvedGoalIds);
-		const ready = readyGoals(snapshot.goals, snapshot.retiredIds).filter(
-			(goal) => approved.has(goal.id) && !run.entries[goal.id],
+		const approved = new Map<string, string>();
+		for (const storedId of run.approvedGoalIds) {
+			const current = findGoalByStoredId(snapshot.goals, storedId, snapshot.retiredIds);
+			if (current && !approved.has(current.id)) approved.set(current.id, storedId);
+		}
+		const represented = new Set(
+			Object.values(run.entries).map(
+				(entry) => findGoalByStoredId(snapshot.goals, entry.goal.id, snapshot.retiredIds)?.id,
+			),
 		);
-		const attempted = ready.slice(0, slots);
-		for (const goal of attempted) await this.prepare(run, goal);
-		for (const goal of attempted) {
-			attemptedGoalIds.push(goal.id);
-			if (run.entries[goal.id]?.phase === "prepared") preparedGoalIds.push(goal.id);
-			else refusedGoalIds.push(goal.id);
+		const ready = readyGoals(snapshot.goals, snapshot.retiredIds).filter(
+			(goal) => approved.has(goal.id) && !represented.has(goal.id),
+		);
+		for (const goal of ready.slice(0, slots)) {
+			const storedId = approved.get(goal.id);
+			if (!storedId) throw new Error(`Goal ${goal.id} has no stored approval`);
+			await this.prepare(run, goal, storedId);
+			attemptedGoalIds.push(storedId);
+			if (run.entries[storedId]?.phase === "prepared") preparedGoalIds.push(storedId);
+			else refusedGoalIds.push(storedId);
 		}
 		await this.recordPassFromAttempts(
 			run,
@@ -367,7 +379,7 @@ export class DispatchDriver {
 		}
 		if (!entry.claimUpdatedAt && explicitClaimUpdatedAt) {
 			const snapshot = await this.dependencies.roadmap.read();
-			const current = snapshot.goals.find((goal) => goal.id === entry.goal.id);
+			const current = findGoalByStoredId(snapshot.goals, entry.goal.id, snapshot.retiredIds);
 			if (
 				!current ||
 				current.branch !== entry.branch ||
@@ -472,7 +484,7 @@ export class DispatchDriver {
 		if (!(await this.verifyPersistedWorkspace(run, entry))) return;
 		if (!(await this.ensureGoalFile(run, entry))) return;
 		const snapshot = await this.dependencies.roadmap.read();
-		const current = snapshot.goals.find((goal) => goal.id === entry.goal.id);
+		const current = findGoalByStoredId(snapshot.goals, entry.goal.id, snapshot.retiredIds);
 		if (!current) {
 			const wasClaiming = entry.phase === "claiming";
 			entry.phase = "ambiguous";
@@ -558,7 +570,7 @@ export class DispatchDriver {
 				await this.persist(run, entry);
 			}
 			const snapshot = await this.dependencies.roadmap.read();
-			const current = snapshot.goals.find((goal) => goal.id === entry.goal.id);
+			const current = findGoalByStoredId(snapshot.goals, entry.goal.id, snapshot.retiredIds);
 			if (!current) throw new Error("Goal disappeared from the canonical roadmap");
 			if (current.status === "done") {
 				if (entry.completionUpdatedAt) {
@@ -599,14 +611,18 @@ export class DispatchDriver {
 		}
 	}
 
-	private async prepare(run: DispatchRun, goal: ProjectGoal): Promise<void> {
+	private async prepare(run: DispatchRun, goal: ProjectGoal, storedId: string): Promise<void> {
+		const snapshot = structuredClone(goal);
+		// Freeze the approved identity in the existing run and workspace schema.
+		snapshot.id = storedId;
+		delete snapshot.previousIds;
 		const entry: DispatchEntry = {
-			goal: structuredClone(goal),
-			branch: `stepstone/${goal.id}`,
+			goal: snapshot,
+			branch: `stepstone/${storedId}`,
 			phase: "preparing",
 			updatedAt: this.now().toISOString(),
 		};
-		run.entries[goal.id] = entry;
+		run.entries[storedId] = entry;
 		await this.persist(run, entry);
 		await this.acquireWorkspace(run, entry);
 	}
@@ -656,7 +672,10 @@ export class DispatchDriver {
 		}
 		let claimed: ProjectGoal;
 		try {
-			claimed = await this.dependencies.roadmap.claim(entry.goal.id, entry.branch, entry.goal.updatedAt);
+			const snapshot = await this.dependencies.roadmap.read();
+			const current = findGoalByStoredId(snapshot.goals, entry.goal.id, snapshot.retiredIds);
+			if (!current) throw new Error("Goal disappeared from the canonical roadmap");
+			claimed = await this.dependencies.roadmap.claim(current.id, entry.branch, entry.goal.updatedAt);
 		} catch (error) {
 			this.recordPreparationFailure(
 				entry,
@@ -778,7 +797,10 @@ export class DispatchDriver {
 		entry.message = message;
 		await this.persist(run, entry);
 		try {
-			const released = await this.dependencies.roadmap.release(entry.goal.id, entry.claimUpdatedAt);
+			const snapshot = await this.dependencies.roadmap.read();
+			const current = findGoalByStoredId(snapshot.goals, entry.goal.id, snapshot.retiredIds);
+			if (!current) throw new Error("Goal disappeared from the canonical roadmap");
+			const released = await this.dependencies.roadmap.release(current.id, entry.claimUpdatedAt);
 			entry.releaseUpdatedAt = released.updatedAt;
 			entry.phase = "released";
 			await this.persist(run, entry);

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -325,6 +325,130 @@ describe("Stepstone web application", () => {
 		const entry = advanced.result.entries[dependent.result.goal.id];
 		workspacePaths.push(entry.workspace);
 		expect(entry.phase).toBe("prepared");
+	});
+
+	it("continues a stored blocked approval after CLI ID migration without changing run references", async () => {
+		const root = await repository();
+		const prerequisiteId = `goal-review-${randomUUID().slice(0, 8)}`;
+		const approvedId = `goal-review-${randomUUID().slice(0, 8)}`;
+		const timestamp = new Date().toISOString();
+		await mkdir(join(root, ".worklist"));
+		await writeFile(
+			join(root, ".worklist", "worklist.json"),
+			JSON.stringify({
+				version: 1,
+				revision: 0,
+				retiredIds: [],
+				goals: [
+					{
+						id: prerequisiteId,
+						title: "Migration prerequisite",
+						status: "open",
+						createdAt: timestamp,
+						updatedAt: timestamp,
+					},
+					{
+						id: approvedId,
+						title: "Migrated dependent",
+						status: "open",
+						createdAt: timestamp,
+						updatedAt: timestamp,
+						dependsOn: [prerequisiteId],
+					},
+				],
+			}),
+		);
+		const app = await startStepstoneWebApp({ repositoryRoot: root });
+		apps.push(app);
+		const token = (await (await fetch(app.url)).text()).match(
+			/name="stepstone-token" content="([^"]+)"/,
+		)?.[1];
+		if (!token) throw new Error("Missing token");
+		const started = await postPath(app, token, "/api/dispatch/start", {
+			confirm: true,
+			approvedGoalIds: [approvedId],
+			maxParallel: 1,
+		});
+		expect(started.status).toBe(200);
+		const run = (await started.json()) as { result: { id: string; entries: object } };
+		expect(run.result.entries).toEqual({});
+		await execFileAsync(process.execPath, [
+			fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
+			"project",
+			"migrate_ids",
+			"--confirm",
+			"--cwd",
+			root,
+			"--json",
+		]);
+		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({
+			result: {
+				goals: expect.arrayContaining([
+					expect.objectContaining({
+						id: "migrated-dependent",
+						previousIds: [approvedId],
+						dispatchEligible: false,
+					}),
+				]),
+			},
+		});
+		expect(
+			(
+				await postPath(app, token, "/api/dispatch/start", {
+					confirm: true,
+					approvedGoalIds: [approvedId],
+					maxParallel: 1,
+				})
+			).status,
+		).toBe(409);
+		expect((await post(app, token, { action: "complete", id: prerequisiteId, confirm: true })).status).toBe(
+			200,
+		);
+		const continued = await postPath(app, token, `/api/dispatch/${run.result.id}/continue`, {
+			confirm: true,
+		});
+		expect(continued.status).toBe(200);
+		const advanced = (await continued.json()) as {
+			result: {
+				approvedGoalIds: string[];
+				entries: Record<string, { phase: string; workspace: string; branch: string }>;
+			};
+		};
+		const entry = advanced.result.entries[approvedId];
+		if (entry?.workspace) workspacePaths.push(entry.workspace);
+		expect(entry?.phase).toBe("prepared");
+		expect(entry.branch).toBe(`stepstone/${approvedId}`);
+		expect(advanced.result.approvedGoalIds).toEqual([approvedId]);
+		expect(Object.keys(advanced.result.entries)).toEqual([approvedId]);
+		const state = await (await fetch(`${app.url}/api/state`)).json();
+		expect(state).toMatchObject({
+			result: {
+				goals: expect.arrayContaining([
+					expect.objectContaining({
+						id: "migrated-dependent",
+						previousIds: [approvedId],
+						branch: entry.branch,
+						dispatchCustody: true,
+					}),
+				]),
+			},
+		});
+		expect(
+			(
+				await postPath(app, token, `/api/dispatch/${run.result.id}/recover`, {
+					confirm: true,
+					goalId: approvedId,
+				})
+			).status,
+		).toBe(200);
+		const resumed = await postPath(app, token, `/api/dispatch/${run.result.id}/continue`, { confirm: true });
+		expect(resumed.status).toBe(200);
+		const resumedRun = (await resumed.json()) as {
+			result: { approvedGoalIds: string[]; entries: Record<string, { phase: string }> };
+		};
+		expect(resumedRun.result.approvedGoalIds).toEqual([approvedId]);
+		expect(Object.keys(resumedRun.result.entries)).toEqual([approvedId]);
+		expect(resumedRun.result.entries[approvedId].phase).toBe("cleanup-pending");
 	});
 
 	it("allows only one concurrent web start to reserve the same goal", async () => {

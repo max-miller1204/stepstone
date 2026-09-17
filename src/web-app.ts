@@ -231,6 +231,8 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 						goals: goals.map((goal) => ({
 							...goal,
 							dispatchCustody: hasGoalDispatchCustody(goal, storedRuns),
+							dispatchEligible:
+								unavailableDispatchGoalIds([goal.id], goals, storedRuns, retiredIds).length === 0,
 							blocked: isGoalBlocked(goals, goal, retiredIds),
 							blockedBy: goal.dependsOn?.filter((id) => {
 								const dependency = goals.find(
@@ -299,6 +301,7 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 						body.approvedGoalIds as string[],
 						snapshot.result.goals ?? [],
 						await store.list(),
+						snapshot.result.retiredIds ?? [],
 					);
 					if (unavailable.length) {
 						throw new HttpError(

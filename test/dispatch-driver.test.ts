@@ -281,6 +281,24 @@ function fixture(goals: ProjectGoal[], maxParallel = 2) {
 }
 
 describe("workspace preparation driver", () => {
+	it("resolves historical approvals once and preserves their workspace identity", async () => {
+		const setup = fixture([goal("current", { previousIds: ["historical"] })]);
+		const run = await setup.create(["historical", "current"]);
+		const prepared = await setup.makeDriver().advance(run.id);
+		expect(prepared.approvedGoalIds).toEqual(["historical", "current"]);
+		expect(Object.keys(prepared.entries)).toEqual(["historical"]);
+		expect(setup.workspace.acquired).toEqual(["historical"]);
+		expect(setup.roadmap.claims[0]).toMatchObject({ id: "current", branch: "stepstone/historical" });
+		expect(prepared.entries.historical.goal).not.toHaveProperty("previousIds");
+		await setup.makeDriver().recoverRelease(run.id, "historical");
+		expect(setup.roadmap.releases[0]).toMatchObject({ id: "current" });
+		await setup.makeDriver().advance(run.id);
+		expect(setup.workspace.acquired).toEqual(["historical"]);
+		const retired = fixture([goal("current", { previousIds: ["historical"] })]);
+		retired.roadmap.snapshot.retiredIds.push("historical");
+		await expect(retired.create(["historical"])).rejects.toThrow("Approved goal IDs were not found");
+	});
+
 	it("prepares and claims only approved ready goals up to the configured limit", async () => {
 		const blocked = goal("blocked", { dependsOn: ["dependency"] });
 		const setup = fixture(
