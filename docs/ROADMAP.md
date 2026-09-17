@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-86 goals: 16 open, 58 done, 12 archived.
+86 goals: 15 open, 59 done, 12 archived.
 
 ## Orchestrator
 
@@ -489,7 +489,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `remove-the-symphony-incorporation` (done).
 
-- **[open]** Release Stepstone 0.12.0 - `release-stepstone-0-12-0`
+- **[done]** Release Stepstone 0.12.0 - `release-stepstone-0-12-0`
 
   Release the staged workspace CLI consolidation from a clean and current main branch after Symphony removal, trustworthy test evidence, and the dispatcher video land. Run the documented verification and isolated package checks. Push the v0.12.0 tag through the CI release workflow. Verify the npm package, GitHub release, Pi installation, and package gallery. Do not publish from a maintainer machine.
 
@@ -497,19 +497,19 @@ A goal's description is a record of what was decided when it was written rather 
 
 ## Dispatch
 
-- **[open, blocked]** Dispatch work from explicit base and target branches - `dispatch-work-from-explicit-base-and`
+- **[open]** Dispatch work from explicit base and target branches - `dispatch-work-from-explicit-base-and`
 
   Let a workspace run select an explicit base ref and pull request target instead of depending on the canonical checkout branch. Resolve and persist the exact base revision. Define strict behavior for local branches, remote-tracking refs, integration branches, stacked work, rewritten refs, and branches already checked out in another worktree. Do not fetch or guess silently. Reconcile merged pull requests against the persisted target. Use team-safe branch names and preserve restart and cleanup guarantees.
 
-  Depends on `release-stepstone-0-12-0` (open).
+  Depends on `release-stepstone-0-12-0` (done).
 
 ## Collaboration
 
-- **[open, blocked]** Prove the Stepstone collaboration protocol - `prove-the-stepstone-collaboration`
+- **[open]** Prove the Stepstone collaboration protocol - `prove-the-stepstone-collaboration`
 
   Write the collaboration architecture decision and prove it with one CLI client and one browser client. Define immutable project identity, actor identity, roles, versioned commands, idempotency, ordered events, snapshots, stale-write conflicts, and SSE resume behavior. Keep standalone file mode explicit. Treat repository paths, Git origins, branches, and worktrees as linked context rather than storage authority. Fail loudly when a configured collaboration service is unavailable.
 
-  Depends on `release-stepstone-0-12-0` (open).
+  Depends on `release-stepstone-0-12-0` (done).
 
 - **[open, blocked]** Run an authoritative Stepstone collaboration service - `run-an-authoritative-stepstone`
 

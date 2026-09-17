@@ -797,10 +797,10 @@
 			"description": "Release the staged workspace CLI consolidation from a clean and current main branch after Symphony removal, trustworthy test evidence, and the dispatcher video land. Run the documented verification and isolated package checks. Push the v0.12.0 tag through the CI release workflow. Verify the npm package, GitHub release, Pi installation, and package gallery. Do not publish from a maintainer machine.",
 			"group": "Release 0.12",
 			"dependsOn": ["make-unit-test-evidence-hard-to-game", "show-the-workspace-dispatcher-in-the"],
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T20:32:44.901Z",
-			"branch": "main"
+			"updatedAt": "2026-09-17T00:59:44.892Z",
+			"completedAt": "2026-09-17T00:59:44.892Z"
 		},
 		{
 			"id": "dispatch-work-from-explicit-base-and",
@@ -923,5 +923,5 @@
 			"updatedAt": "2026-09-16T07:09:20.058Z"
 		}
 	],
-	"revision": 355
+	"revision": 356
 }
