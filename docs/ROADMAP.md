@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-96 goals: 25 open, 59 done, 12 archived.
+96 goals: 23 open, 60 done, 13 archived.
 
 ## Orchestrator
 
@@ -437,17 +437,17 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `deterministic-local-quality-gates` (done), `exercise-stepstone-workflows-end-to-end` (done), `make-repository-script-child-processes` (done).
 
-- **[open]** Harden repository supply chain - `harden-repository-supply-chain`
+- **[archived]** Harden repository supply chain - `harden-repository-supply-chain`
 
   Catch secrets, unsafe workflows, dependency risks, dead package surfaces, and malformed published artifacts before merge. Add Gitleaks, actionlint, zizmor, CodeQL, GitHub dependency review, GitHub Actions dependency updates with full-SHA pins, Knip configured for every dynamic and executable entry point, and publint against the packed tarball; add TypeScript package-surface validation only where public typed exports warrant it.
 
   Depends on `authoritative-pull-request-quality-gates` (archived).
 
-- **[open, blocked]** Adversarial test quality program - `adversarial-test-quality-program`
+- **[open]** Adversarial test quality program - `adversarial-test-quality-program`
 
   Strengthen confidence beyond example-based tests with fast-check properties for dependency ordering, ID migration, storage round trips, branch-aware behavior, and locking invariants; deterministic multi-process stress scenarios for mutation and path migration; and scheduled Stryker mutation testing that measures whether the suite detects plausible defects without slowing every push.
 
-  Depends on `harden-repository-supply-chain` (open).
+  Depends on `harden-repository-supply-chain` (archived).
 
 - **[done]** Exercise Stepstone workflows end to end - `exercise-stepstone-workflows-end-to-end`
 
@@ -465,7 +465,7 @@ A goal's description is a record of what was decided when it was written rather 
 
   Note the consequence and accept it: quality:push:worktree runs this check, so a Windows contributor's pre-push gate fails rather than silently skipping a step. Real Windows support is a separate decision that needs a Windows CI job to exist first, because correct cmd.exe argument quoting cannot be verified without a Windows runner; that belongs with the required-checks matrix in authoritative-pull-request-quality-gates.
 
-- **[open]** Detect stale and overlapping roadmap goals during capture - `audit-the-roadmap-for-goals-the-project`
+- **[done]** Detect stale and overlapping roadmap goals during capture - `audit-the-roadmap-for-goals-the-project`
 
   Extend the generated Stepstone capture guidance so an agent reads related open and active goals before drafting a plan. Detect obsolete premises, references to removed commands or documentation, work that has already landed, overlapping outcomes, and stale sequencing assumptions. Require proposed plans to identify goals they replace and to record must-land-before edges for logical dependencies and shared implementation surfaces. After an approved batch lands, inspect dependency waves when sequencing matters and report unexpected ready or unreachable work. Keep this as capture guidance rather than an unattended validator because several forms of roadmap drift require product judgment.
 
