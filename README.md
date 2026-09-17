@@ -22,13 +22,11 @@ Install the Pi extension and run `/tasks` to open the Stepstone dashboard in Pi.
 
 ![Stepstone dashboard in Pi](docs/images/stepstone-pi-ui.png)
 
-### Workspace dispatcher
+### Branch claims
 
-The workspace dispatcher prepares and claims approved goals in isolated Git worktrees. It writes each goal handoff to `STEPSTONE_GOAL.md` without starting an agent.
+Stepstone tracks goals, dependencies, branch claims, and pull request links. Create and manage worktrees with Git or external tools. Complete goals through an explicitly confirmed lifecycle command.
 
-https://github.com/user-attachments/assets/8c88cfab-dc71-46a9-ae81-dcb13e51e606
-
-Read the [workspace guide](docs/workspaces.md) for commands and safety rules.
+Workspace commands have been removed. Read the [migration guide](docs/workspaces.md) to inspect preserved resources and update existing scripts.
 
 ## Install
 
@@ -106,7 +104,7 @@ Run `npx -y stepstone@latest project ui` for a full-screen [terminal board](docs
 | [docs/cli.md](docs/cli.md) | Generated `project` command reference: every action, flag, and rule |
 | [docs/goals.md](docs/goals.md) | The goal model: fields, statuses, IDs, order, groups, JSON plans |
 | [docs/dependencies.md](docs/dependencies.md) | Dependency edges and the sequencing reads behind `next`, `ready`, and `waves` |
-| [docs/workspaces.md](docs/workspaces.md) | Preparing and claiming approved goal workspaces without starting an agent harness |
+| [docs/workspaces.md](docs/workspaces.md) | Migrating from removed workspace commands and inspecting preserved resources |
 | [docs/web.md](docs/web.md) | The loopback web application, its workflows, and its security boundary |
 | [docs/storage.md](docs/storage.md) | Where the goal file lives, its schema, locking, revisions, and migrations |
 | [docs/board.md](docs/board.md) | The terminal goal board and its key map |

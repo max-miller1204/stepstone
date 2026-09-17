@@ -78,10 +78,15 @@ async function installed(): Promise<void> {
 		files.filter((path) => /(^|[/\\])(@earendil-works|typebox)([/\\]|$)/.test(path)),
 		[],
 	);
-	// Both project command families must start even in the fast subset. The CLI's
-	// top-level help is a usage error, so exercise its normal JSON read instead.
+	// Exercise the installed tracker and verify retired commands fail clearly.
 	assert.deepEqual(await ids(await h.repository("installed-bin")), []);
-	await h.checked(process.execPath, [bins[binary] as string, "project", "workspace", "--help"], install);
+	const removed = await h.run(
+		process.execPath,
+		[bins[binary] as string, "project", "workspace", "--help"],
+		install,
+	);
+	assert.equal(removed.code, 2);
+	assert.match(removed.stderr, /removed|retired|no longer/i);
 }
 
 async function plansAndConflicts(): Promise<void> {
@@ -286,60 +291,6 @@ async function roadmap(): Promise<void> {
 	assert.equal(await readFile(join(cwd, "docs/ROADMAP.md"), "utf8"), current);
 }
 
-async function workspacePreparation(): Promise<void> {
-	const cwd = await h.repository("dispatch");
-	await ok(cwd, ["add", "Prepared goal", "--description", "Verify installed workspace handoff."]);
-	await h.checked("git", ["add", ".worklist"], cwd);
-	await h.checked("git", ["commit", "-qm", "Seed"], cwd);
-	const parent = join(h.root, "prepared-workspaces");
-	await mkdir(parent);
-	const result = await h.checked(
-		process.execPath,
-		[
-			bins[binary] as string,
-			"project",
-			"workspace",
-			"start",
-			"--goal",
-			"prepared-goal",
-			"--workspace-parent",
-			parent,
-			"--json",
-		],
-		cwd,
-	);
-	const receipt = JSON.parse(result) as {
-		ok: boolean;
-		result: { id: string; entries: Record<string, { phase: string; goalFile: string }> };
-	};
-	assert.equal(receipt.ok, true);
-	const entry = receipt.result.entries["prepared-goal"];
-	assert.equal(entry?.phase, "prepared");
-	assert.equal(entry?.goalFile, join(parent, "stepstone-prepared-goal", "STEPSTONE_GOAL.md"));
-	assert.match(await readFile(entry.goalFile, "utf8"), /Verify installed workspace handoff/);
-	const workspace = dirname(entry.goalFile);
-	assert.equal(
-		(await h.checked("git", ["branch", "--show-current"], workspace)).trim(),
-		"stepstone/prepared-goal",
-	);
-	assert.equal((await readWorklist(cwd)).goals[0]?.branch, "stepstone/prepared-goal");
-	assert.equal(
-		(await h.checked("git", ["check-ignore", "STEPSTONE_GOAL.md"], workspace)).trim(),
-		"STEPSTONE_GOAL.md",
-	);
-	const status = JSON.parse(
-		await h.checked(
-			process.execPath,
-			[bins[binary] as string, "project", "workspace", "status", receipt.result.id, "--json"],
-			cwd,
-		),
-	);
-	assert.equal(status.ok, true);
-	assert.equal(status.result.length, 1);
-	assert.equal(status.result[0].id, receipt.result.id);
-	assert.equal(status.result[0].entries["prepared-goal"].phase, "prepared");
-}
-
 async function piRpc(): Promise<void> {
 	const cwd = await h.repository("pi-rpc");
 	await withRpc(h, cwd, packagePath, async (request) => {
@@ -398,7 +349,7 @@ try {
 		installed,
 		plansAndConflicts,
 		piRpc,
-		...(fast ? [] : [locations, locking, linkedWorktree, roadmap, workspacePreparation]),
+		...(fast ? [] : [locations, locking, linkedWorktree, roadmap]),
 	];
 	for (const scenario of scenarios) {
 		console.log(`e2e ${fast ? "fast" : "full"}: ${scenario.name}`);

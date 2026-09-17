@@ -14,26 +14,22 @@ test("preview timestamps stay inside short videos and cap long videos at ten sec
 	}
 });
 
-const tape = await readFile(new URL("./scenarios/workspace-lifecycle/demo.tape", import.meta.url), "utf8");
+const tape = await readFile(new URL("./scenarios/tracker-retirement/demo.tape", import.meta.url), "utf8");
 
 test("the scenario extracts complete shell commands and render dimensions", () => {
 	const result = parseTape(tape);
 	assert.equal(result.width, 1600);
 	assert.equal(result.height, 1000);
 	assert.equal(result.fps, 30);
-	assert.ok(result.commands.join("\n").includes('inspect "$run" guide --json \\\n  | jq'));
-	assert.ok(
-		result.commands.includes(
-			'test "$(cat ../workspaces/stepstone-guide/draft.md)" = "Unfinished release notes"',
-		),
-	);
+	assert.ok(result.commands.join("\n").includes("show guide --json \\\n  | jq"));
+	assert.ok(result.commands.includes('cmp .worklist/worklist.json "$VIDEO_WORKSPACE/before.json"'));
 });
 
 test("scenario selection refuses unknown names and path traversal", () => {
-	assert.deepEqual(selectScenarios(["workspace-lifecycle"], "all"), ["workspace-lifecycle"]);
-	assert.deepEqual(selectScenarios(["workspace-lifecycle"], "workspace-lifecycle"), ["workspace-lifecycle"]);
-	for (const name of ["missing", "../workspace-lifecycle", "foo/bar", "--help"]) {
-		assert.throws(() => selectScenarios(["workspace-lifecycle"], name));
+	assert.deepEqual(selectScenarios(["tracker-retirement"], "all"), ["tracker-retirement"]);
+	assert.deepEqual(selectScenarios(["tracker-retirement"], "tracker-retirement"), ["tracker-retirement"]);
+	for (const name of ["missing", "../tracker-retirement", "foo/bar", "--help"]) {
+		assert.throws(() => selectScenarios(["tracker-retirement"], name));
 	}
 });
 

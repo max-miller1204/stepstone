@@ -11,12 +11,6 @@
 		"functions": 100,
 		"statements": 91.66
 	},
-	"src/claim-evidence.ts": {
-		"lines": 100,
-		"branches": 89.09,
-		"functions": 100,
-		"statements": 97.87
-	},
 	"src/cli-contract.ts": {
 		"lines": 95.74,
 		"branches": 91.3,
@@ -40,18 +34,6 @@
 		"branches": 97.36,
 		"functions": 100,
 		"statements": 100
-	},
-	"src/dispatch-bindings.ts": {
-		"lines": 83.3,
-		"branches": 69.13,
-		"functions": 94.5,
-		"statements": 80.71
-	},
-	"src/dispatch-driver.ts": {
-		"lines": 80.29,
-		"branches": 74.39,
-		"functions": 97.5,
-		"statements": 78.22
 	},
 	"src/extension.ts": {
 		"lines": 63.94,
@@ -202,12 +184,6 @@
 		"branches": 100,
 		"functions": 100,
 		"statements": 100
-	},
-	"src/workspace-cli.ts": {
-		"lines": 0,
-		"branches": 0,
-		"functions": 0,
-		"statements": 0
 	},
 	"total": {
 		"lines": 77.5,

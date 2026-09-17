@@ -12,39 +12,6 @@ import { singleLine } from "./tui/text.ts";
 /** Default time limit for Git lookups. */
 export const GIT_COMMAND_TIMEOUT_MS = 10000;
 
-/** Create a linked checkout without dispatch custody records. Preserve all state on failure. */
-export function createGoalWorktree(root: string, path: string, branch: string, revision: string): void {
-	const run = (args: string[]): string => {
-		try {
-			return execFileSync("git", args, {
-				cwd: root,
-				encoding: "utf8",
-				stdio: ["ignore", "pipe", "pipe"],
-				timeout: 30000,
-				killSignal: "SIGKILL",
-			});
-		} catch (error) {
-			const failure = describeCommandFailure(error);
-			throw new Error(
-				`${gitCommandDiagnostic(failure)}${failure.timedOut ? " (the command timed out)" : ""}`,
-			);
-		}
-	};
-	run(["worktree", "add", "-b", branch, path, revision]);
-	const records = run(["worktree", "list", "--porcelain", "-z"]).split("\0\0");
-	const matching = records.filter((record) => record.split("\0").includes(`worktree ${path}`));
-	const fields = matching[0]?.split("\0");
-	if (
-		matching.length !== 1 ||
-		!fields?.includes(`HEAD ${revision}`) ||
-		!fields.includes(`branch refs/heads/${branch}`) ||
-		fields.includes("bare") ||
-		fields.includes("detached")
-	) {
-		throw new Error("Git did not register the expected worktree, branch, and revision");
-	}
-}
-
 /** The errno a run killed for outliving its time limit is reported with. */
 const TIMED_OUT_CODE = "ETIMEDOUT";
 
@@ -119,7 +86,7 @@ export function isTransientGitFailure(failure: GitCommandFailure): boolean {
 }
 
 /**
- * What a Git failure was, on one line a person reads and a dispatcher can log.
+ * What a Git failure was, on one line a person reads and a caller can log.
  *
  * Whatever Git wrote to stderr comes first, then how the run ended, because a
  * killed run leaves a bare "Command failed" that says nothing about the kill.
@@ -136,7 +103,7 @@ export function describeGitFailure(failure: GitCommandFailure): string {
 
 /**
  * The evidence every interface reports about a Git command that failed, so one
- * dispatcher parser reads a failed branch lookup, a Git that never ran, and a
+ * caller reads a failed branch lookup, a Git that never ran, and a
  * directory Git refused.
  */
 export function gitFailureDetails(resolution: string, failure?: GitCommandFailure): Record<string, unknown> {
@@ -612,13 +579,6 @@ export interface CurrentGitBranchResult {
 	error?: GitCommandFailure;
 }
 
-export interface CurrentGitRevisionResult {
-	/** The exact commit checked out at HEAD. */
-	revision: string | null;
-	/** Why Git could not resolve HEAD. */
-	error?: GitCommandFailure;
-}
-
 /**
  * The branch checked out in `cwd`, keeping detached HEAD distinct from a Git
  * command that failed.
@@ -643,21 +603,6 @@ export function currentGitBranch(cwd: string, options: GitCommandOptions = {}): 
 		return { branch: raw.trim() || null };
 	} catch (error) {
 		return { branch: null, error: describeCommandFailure(error) };
-	}
-}
-
-/** Resolve the exact commit at HEAD without requiring HEAD to name a branch. */
-export function currentGitRevision(cwd: string, options: GitCommandOptions = {}): CurrentGitRevisionResult {
-	try {
-		const raw = execFileSync("git", ["rev-parse", "--verify", "HEAD^{commit}"], {
-			cwd,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: options.timeoutMs ?? GIT_COMMAND_TIMEOUT_MS,
-		});
-		return { revision: raw.trim() || null };
-	} catch (error) {
-		return { revision: null, error: describeCommandFailure(error) };
 	}
 }
 

@@ -9,8 +9,8 @@ Run from the repository root after `npm ci`:
 ```sh
 npm run videos:list
 npm run videos:test
-npm run videos:check -- workspace-lifecycle
-npm run videos:render -- workspace-lifecycle
+npm run videos:check -- tracker-retirement
+npm run videos:render -- tracker-retirement
 ```
 
 Omit the scenario name, or pass `all`, to run every scenario. Unknown names fail before a build or fixture change.
@@ -58,7 +58,7 @@ Use shell continuations for long commands. Do not add standalone key presses or 
 
 Use visible `jq` expressions when you need shorter JSON output. Do not replace product output with printed summary panels. Keep critical file-preservation checks in the tape immediately after the operation, before any fixture cleanup.
 
-The current `workspace-lifecycle` scenario records preparation, an ignored goal handoff, fresh claim evidence, dirty-work cleanup refusal, preserved file content, explicit cleanup, and run removal. It does not simulate old claims or demonstrate GitHub merge reconciliation.
+The `tracker-retirement` scenario records rejected workspace commands, preserved Git worktrees and files, an existing tracker claim, explicit completion, and dependency readiness. Setup creates a disposable legacy journal and ownership marker to verify byte preservation.
 
 ## Reproducibility limits
 
@@ -81,7 +81,7 @@ The `PR video verification` workflow runs on pull requests that change a scenari
 For a product-code PR that uses an unchanged scenario, run the workflow manually on that branch:
 
 ```sh
-gh workflow run videos.yml --ref <branch> -f scenario=workspace-lifecycle
+gh workflow run videos.yml --ref <branch> -f scenario=tracker-retirement
 ```
 
 The check summary links verification logs. Artifacts expire after 14 days and may require a GitHub login. Attach the locally reviewed MP4 to the PR for inline playback. The workflow has read-only repository permissions and does not post comments or change PR bodies.
@@ -90,9 +90,9 @@ Example PR evidence:
 
 ```md
 ## Testing
-- `npm run videos:check -- workspace-lifecycle`
+- `npm run videos:check -- tracker-retirement`
 
 ## Evidence
-- Workspace lifecycle recording: <uploaded-video-or-artifact-link>
+- Tracker retirement recording: <uploaded-video-or-artifact-link>
 - Recorded revision and tools: metadata.json in the video artifact.
 ```

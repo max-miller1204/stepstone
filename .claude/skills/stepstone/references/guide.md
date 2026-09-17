@@ -32,7 +32,7 @@ add <title...> [--description <text> | -- <description...>]
 apply-plan <plan.json>
 update <id> [title...] [--description <text> | -- <description...>]
 move <id> up|down|before <id>|after <id>
-start <id> [--branch <name> | --worktree | --clear] [worktree options]
+start <id> [--branch <name> | --clear]
 set_active <id>
 complete <id> --confirm
 reopen <id> --confirm
@@ -40,7 +40,6 @@ archive <id> --confirm
 delete <id> --confirm
 migrate_ids --confirm
 migrate_path --confirm
-workspace <action> [arguments] [flags]
 help
 ```
 
@@ -48,13 +47,6 @@ Flags:
 
 - `--port <number>` - Bind the local web application to this loopback port; only for project web.
 - `--no-open` - Start the local web application without opening a browser; only for project web.
-- `--goal <id>` - Authorize one goal for workspace start; repeat for the approved set; only for project workspace.
-- `--max-parallel <count>` - Limit workspace start to this many prepared claims (default 1); only for project workspace.
-- `--stale-after-hours <hours>` - Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace.
-- `--release` - Explicitly release the inspected claim with workspace recover; only for project workspace.
-- `--claim-updated-at <timestamp>` - Supply a verified claim token for workspace recover; only for project workspace.
-- `--force` - Explicitly discard work with workspace cleanup; requires a goal ID and preserves identity checks; only for project workspace.
-- `--help` - Show workspace command help; only for project workspace.
 - `--json` - Print the deterministic result envelope as JSON (stdout on success, stderr on failure).
 - `--confirm` - Acknowledge an action that requires confirmation; pass it only for an explicit user request.
 - `--cwd <dir>` - Resolve the git root from this directory instead of the working directory.
@@ -66,8 +58,6 @@ Flags:
 - `--depends-on <id>` - Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update.
 - `--link <url>` - Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update.
 - `--branch <name>` - Record the branch working on a goal; project start defaults to the current Git branch; only for project start.
-- `--worktree` - Create and claim the deterministic `stepstone/<goal-id>` branch in a linked Git worktree beside the main checkout; only for project start.
-- `--workspace-parent <path>` - Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode; only for project start and workspace.
 - `--clear` - Release the branch claim on a goal; only for project start.
 - `--expect-updated-at <timestamp>` - Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete.
 - `--dry-run` - Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path.
@@ -200,29 +190,11 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - `waves --json` reports the layers as `result.waves`, an array of goal arrays whose position is the wave number, and adds `result.unreachableGoals` only when some goal is unreachable, so an absent field means every unfinished goal found a layer.
 - All three are reads derived from the stored edges the same way `blocked` is, so nothing is cached and no command has to be re-run to refresh them.
 
-## Dispatching approved plans
-
-- Start an approved preparation run with `npx -y stepstone@latest project workspace start --goal <id>...`; repeated goal IDs are the immutable authorization allow-list.
-- The workspace command selects only allow-listed goals returned by a fresh ready frontier, prepares an isolated workspace, claims each exact `updatedAt`, and limits how many prepared claims it may hold at once.
-- Read the `pass` result from `start` and `resume`: `no-ready-work` means no allow-listed goal can start, while `refused` or `mixed` names work that reached a preparation boundary and did not prepare.
-- Each refused entry keeps its original structured `preparationFailure` after release and cleanup; read it through `status --json` or `inspect --json` instead of relying on the latest lifecycle message.
-- Each newly prepared workspace contains an ignored `STEPSTONE_GOAL.md` at its root with the goal ID, title, description, snapshot time, prepared branch, dependencies, links, and linked-worktree boundary; read that file before starting work.
-- Stepstone never starts, prompts, or supervises an agent; after preparation, open the reported workspace with whichever harness or terminal you choose.
-- The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; work inside an isolated workspace must not mutate the worklist.
-- Only a merged PR whose head exactly matches the stored claimed branch is completion evidence; a closed terminal, silence, or an unmerged green PR never proves the goal landed.
-- Starting a preparation run for an explicitly approved plan grants standing consent to complete only an allow-listed goal after its matching PR merged.
-- Local runtime state under the Git common directory preserves claim tokens, workspace custody, configuration, and outcomes across `resume`, while canonical roadmap state remains harness-neutral.
-- Ambiguous workspace or claim outcomes preserve custody until inspection and explicit `recover <run-id> <goal-id> --release`.
-- Use `status` and `inspect` without mutation, `resume` to reconcile merges and refill preparation capacity, and `cleanup` only after completion or exact release.
-
-Git workspace preparation, recovery, and cleanup rules are documented in the package's `docs/workspaces.md`.
-
 ## Guardrails
 
 - `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` are reserved for explicit user intent.
   Pass `--confirm` only for the exact action the user requested and, when the action names a goal, only for that exact goal.
   Never pass it because a goal merely looks finished or stale.
-  A dispatch loop the user approved is the one narrow exception, and only for completing a goal of that plan once its matching PR merged.
 - `migrate_ids` names no goal and rewrites every generated ID in the repository at once, so it needs an explicit request of its own.
   `--dry-run` reports the rewrites it would make without writing them and without `--confirm`; prefer it when you are showing the user what would change.
 - `migrate_path` names no goal either and moves the whole repository's goal file, so it needs its own explicit request and has the same `--dry-run`.
@@ -230,7 +202,6 @@ Git workspace preparation, recovery, and cleanup rules are documented in the pac
 - Exit code 4 (conflict) means a concurrent change conflicted with yours; re-read current state with `list` or `show` before retrying.
   A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.
 - `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, `start`, and `set_active` are safe to run whenever they serve the user's request.
-- `workspace status` and `workspace inspect` are reads; `workspace start` needs the approved goal set, `resume` keeps that authorization, and recovery or destructive cleanup needs explicit operator intent.
 - `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.
 - `ui` and `web` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.

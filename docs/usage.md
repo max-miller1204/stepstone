@@ -89,8 +89,6 @@ npx -y stepstone@latest project move <id> before <anchor-id>
 npx -y stepstone@latest project set_active <id>
 npx -y stepstone@latest project start <id>
 npx -y stepstone@latest project start <id> --branch feat/parser
-npx -y stepstone@latest project start <id> --worktree
-npx -y stepstone@latest project start <id> --worktree --workspace-parent ../worktrees
 npx -y stepstone@latest project start <id> --clear
 npx -y stepstone@latest project apply-plan plan.json --dry-run --json
 npx -y stepstone@latest project apply-plan plan.json --json
@@ -100,15 +98,14 @@ npx -y stepstone@latest project apply-plan plan.json --json
 `--group <name>` files a goal under a free-form section and `--group ''` clears it; a group exists exactly when some goal names it, so there is no separate list to keep in step.
 `--depends-on <id>` records a goal that must land first and may be repeated, `--depends-on ''` alone clears every edge, and an update replaces the stored set rather than adding to it.
 `--link <url>` stores an informational absolute HTTP or HTTPS URL such as the issue or design a goal came from, behaves the same way - repeatable, replaced whole by an update, cleared by `--link ''` alone - and rejects anything that is not an absolute HTTP or HTTPS URL, so the field never accumulates text a reader cannot follow.
-`start` records which branch is working on a goal, as a dispatch claim rather than a status change: the goal keeps whatever status it had, and `--branch <name>` names the branch while an omitted flag uses the current Git branch, which is read and never created, so a run on a detached HEAD asks for `--branch` instead of guessing.
-`start <id> --worktree` instead creates the deterministic `stepstone/<goal-id>` branch at the main checkout's current `HEAD`, checks it out in `stepstone-<goal-id>` beside the main checkout, and claims the goal only after Git creates the linked checkout. `--workspace-parent <path>` selects another existing parent directory. The JSON result reports the absolute path as `result.worktreePath`.
-Worktree creation must run from the main checkout. A stale goal baseline creates nothing. If the later claim fails after Git creates the checkout, Stepstone preserves the worktree and reports its path for inspection instead of deleting Git state whose outcome it cannot prove.
+`start` records which branch is working on a goal, as a branch claim rather than a status change: the goal keeps whatever status it had, and `--branch <name>` names the branch while an omitted flag uses the current Git branch, which is read and never created, so a run on a detached HEAD asks for `--branch` instead of guessing.
+Create and manage branches and worktrees with Git or external tools. Stepstone records the branch claim without creating Git resources.
 `--json` keeps the two reasons a plain claim has no branch apart: a detached HEAD is a `VALIDATION_FAILED` envelope naming the `branch` field, while a Git that could not answer the lookup at all is an `UNAVAILABLE` envelope carrying Git's own diagnostic, marked retryable only when the command was killed rather than refused.
-A claimed goal drops out of `ready` and `next`, which is the point - see [docs/dependencies.md](dependencies.md#sequencing-reads) - so every claim needs a release: `start <id> --clear` un-claims an abandoned dispatch and `complete` clears the branch on its way to done.
+A claimed goal drops out of `ready` and `next`, which is the point - see [docs/dependencies.md](dependencies.md#sequencing-reads) - so every claim needs a release: `start <id> --clear` releases a branch claim and `complete` clears the branch on its way to done.
 A settled goal refuses a new claim, though `--clear` still releases one it is already holding; see [docs/goals.md](goals.md#statuses).
-The published `project workspace` command family prepares and claims approved goal workspaces, writes each goal into an ignored root `STEPSTONE_GOAL.md`, persists workspace custody for restart, and exposes resume, status, inspection, recovery, and cleanup operations without starting or prompting an agent; see [docs/workspaces.md](workspaces.md).
+`project workspace` and worktree creation flags have been removed. Existing branches, worktrees, handoffs, markers, and dispatch journals remain untouched. See [the migration guide](workspaces.md). A merged PR never completes a goal automatically. Completion requires explicit authorization through the CLI or API.
 
-Run `npx -y stepstone@latest project web` from the main worktree to manage goals and approved workspace runs in a local browser. The server binds to loopback and requires same-origin mutation authorization. Use `--no-open` to print the URL without opening a browser. See [docs/web.md](web.md).
+Run `npx -y stepstone@latest project web` from the main worktree to manage goals in a local browser. The server binds to loopback and requires same-origin mutation authorization. Use `--no-open` to print the URL without opening a browser. See [docs/web.md](web.md).
 `apply-plan` adds an approved batch of goals through one locked mutation; the plan schema is in [docs/goals.md](goals.md#json-goal-plans).
 A `--dry-run` is a preview rather than the user's approval, and the brainstorm-to-approved-plan workflow an agent runs before that single mutating call is in [docs/cli.md](cli.md#capture-brainstorms-as-approved-goal-plans).
 

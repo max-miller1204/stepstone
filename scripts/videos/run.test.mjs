@@ -18,7 +18,7 @@ for (const setting of [undefined, "1"]) {
 				await cp(new URL(file, import.meta.url), join(scripts, file));
 			}
 			await cp(
-				new URL("scenarios/workspace-lifecycle/demo.tape", import.meta.url),
+				new URL("scenarios/tracker-retirement/demo.tape", import.meta.url),
 				join(scenario, "demo.tape"),
 			);
 			await writeFile(join(scenario, "setup.sh"), "");

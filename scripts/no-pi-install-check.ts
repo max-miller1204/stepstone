@@ -20,22 +20,11 @@
  */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import {
-	access,
-	constants,
-	mkdir,
-	mkdtemp,
-	readdir,
-	readFile,
-	realpath,
-	rm,
-	writeFile,
-} from "node:fs/promises";
+import { access, constants, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { CLI_COMMAND_CONTRACT } from "../src/cli-contract.ts";
-import { DISPATCH_GOAL_FILE } from "../src/dispatch-driver.ts";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -304,34 +293,24 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 		"beta-goal",
 	]);
 
-	step("  create and claim one Git worktree");
-	await run("git", ["config", "user.name", "Stepstone Check"], workspace);
-	await run("git", ["config", "user.email", "stepstone@example.test"], workspace);
-	await run("git", ["add", ".worklist/worklist.json"], workspace);
-	await run("git", ["commit", "-q", "-m", "seed CLI worktree fixture"], workspace);
-	const worktreeParent = join(dirname(workspace), `${basename(workspace)}-worktrees`);
-	await mkdir(worktreeParent);
-	const canonicalWorktreeParent = await realpath(worktreeParent);
-	const worktreePath = join(canonicalWorktreeParent, "stepstone-beta-goal");
-	const prepared = okEnvelope(
-		await runCli([
-			"project",
-			"start",
-			"beta-goal",
-			"--worktree",
-			"--workspace-parent",
-			canonicalWorktreeParent,
-			"--json",
-		]),
+	step("  record and clear a tracker claim");
+	const claimed = okEnvelope(
+		await runCli(["project", "start", "beta-goal", "--branch", "feature/beta", "--json"]),
 		"start",
 		version,
 	);
-	assert.equal(prepared.result.worktreePath, worktreePath);
-	assert.equal((prepared.result.goal as { branch?: string }).branch, "stepstone/beta-goal");
-	assert.match(await readFile(join(worktreePath, ".git"), "utf8"), /gitdir:/);
+	assert.equal((claimed.result.goal as { branch?: string }).branch, "feature/beta");
 	okEnvelope(await runCli(["project", "start", "beta-goal", "--clear", "--json"]), "start", version);
-	await run("git", ["worktree", "remove", "--force", worktreePath], workspace);
-	await run("git", ["branch", "-D", "stepstone/beta-goal"], workspace);
+
+	step("  reject retired workspace commands");
+	for (const args of [
+		["project", "workspace", "status"],
+		["project", "start", "beta-goal", "--worktree"],
+	]) {
+		const refused = await runCli(args);
+		assert.equal(refused.code, 2);
+		assert.match(refused.stderr, /removed|retired|no longer/i);
+	}
 
 	const shown = okEnvelope(await runCli(["project", "show", "alpha", "--json"]), "show", version);
 	assert.equal((shown.result.goal as { description: string }).description, "First goal");
@@ -407,76 +386,6 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
 	const board = await runCli(["project", "ui"]);
 	assert.equal(board.code, 1);
 	assert.match(board.stderr, /needs an interactive terminal/);
-	const preparationRepository = join(dirname(workspace), `${basename(workspace)}-preparation`);
-	await mkdir(preparationRepository);
-	await run("git", ["init", "-q", "-b", "main"], preparationRepository);
-	await exerciseWorkspace(binPath, preparationRepository);
-}
-
-async function exerciseWorkspace(binPath: string, workspace: string): Promise<void> {
-	const runCli = cliRunner(binPath, workspace);
-	const runWorkspace = (args: string[]) => runCli(["project", "workspace", ...args]);
-	const help = await runWorkspace(["--help"]);
-	assert.equal(help.code, 0, "installed project workspace command --help must succeed");
-	assert.match(help.stdout, /resume <run-id>/, "workspace help must expose resumable operation");
-	assert.match(help.stdout, new RegExp(DISPATCH_GOAL_FILE), "workspace help must name the goal handoff");
-
-	await run("git", ["config", "user.name", "Stepstone Check"], workspace);
-	await run("git", ["config", "user.email", "stepstone@example.test"], workspace);
-	await mkdir(join(workspace, ".worklist"));
-	await writeFile(
-		join(workspace, ".worklist", "worklist.json"),
-		`${JSON.stringify(
-			{
-				version: 1,
-				revision: 0,
-				goals: [
-					{
-						id: "prepared-goal",
-						title: "Prepared goal",
-						description: "Prove the installed handoff.",
-						status: "open",
-						createdAt: "2026-01-01T00:00:00.000Z",
-						updatedAt: "2026-01-01T00:00:00.000Z",
-					},
-				],
-				retiredIds: [],
-			},
-			null,
-			2,
-		)}\n`,
-		"utf8",
-	);
-	await run("git", ["add", ".worklist/worklist.json"], workspace);
-	await run("git", ["commit", "-q", "-m", "seed dispatch fixture"], workspace);
-	const workspaceParent = join(dirname(workspace), `${basename(workspace)}-prepared`);
-	await mkdir(workspaceParent);
-	const canonicalWorkspaceParent = await realpath(workspaceParent);
-	const started = await runWorkspace([
-		"start",
-		"--goal",
-		"prepared-goal",
-		"--workspace-parent",
-		canonicalWorkspaceParent,
-		"--json",
-	]);
-	assert.equal(started.code, 0, "installed project workspace command must prepare a workspace");
-	const envelope = JSON.parse(started.stdout) as {
-		ok?: unknown;
-		result?: { id?: string; entries?: Record<string, { phase?: string; goalFile?: string }> };
-	};
-	assert.equal(envelope.ok, true);
-	const entry = envelope.result?.entries?.["prepared-goal"];
-	assert.equal(entry?.phase, "prepared");
-	assert.equal(
-		entry?.goalFile,
-		join(canonicalWorkspaceParent, "stepstone-prepared-goal", DISPATCH_GOAL_FILE),
-	);
-	assert.match(await readFile(entry?.goalFile ?? "", "utf8"), /Prove the installed handoff\./);
-
-	const status = await runWorkspace(["status", envelope.result?.id ?? "", "--json"]);
-	assert.equal(status.code, 0, "installed project workspace command status must succeed");
-	assert.equal((JSON.parse(status.stdout) as { ok?: unknown }).ok, true);
 }
 /**
  * How each published executable is driven once it is installed, keyed by the

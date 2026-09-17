@@ -71,7 +71,6 @@
 		"prepack": "npm run build",
 		"preversion": "npm run docs:check",
 		"test": "npm run test:coverage",
-		"test:boundaries": "vitest run test/process-boundaries.test.ts test/workspace-cleanup.test.ts",
 		"test:coverage": "vitest run --coverage && node ./scripts/coverage-ratchet.ts",
 		"test:coverage:update": "vitest run --coverage && node ./scripts/coverage-ratchet.ts --update",
 		"test:mutation": "node ./scripts/mutation-check.ts",

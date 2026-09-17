@@ -10,8 +10,6 @@ export interface CliActionContract {
 	name: string;
 	usage: string;
 	summary: string;
-	/** Contains operations limited to an explicitly approved plan or recovery. */
-	approvalScoped?: boolean;
 	/** Requires --confirm and an explicit user request. */
 	confirmRequired?: boolean;
 	/** Takes over the terminal until the user quits; agents must never run it. */
@@ -61,7 +59,7 @@ const BINARY = "stepstone";
 
 /**
  * Directory holding the goal file, and later whatever local state grows beside
- * it: dispatch claims, per-worktree focus, ephemeral board state.
+ * it: branch claims, per-worktree focus, ephemeral board state.
  *
  * A directory rather than a bare dotfile precisely so those have somewhere to
  * live that is not the committed goal file.
@@ -100,16 +98,6 @@ export const GENERATOR_PATH = "scripts/generate-docs.ts";
 export const DOCS_PATH = "docs/cli.md";
 
 /**
- * Repository-relative path of the authored workspace recipe the skill points at.
- *
- * Named here so the skill renders the same qualified path it renders for the
- * command reference: an agent reading the installed skill from a consumer
- * repository resolves a bare `docs/` path against that repository, where the
- * page does not exist.
- */
-export const WORKSPACE_DOCS_PATH = "docs/workspaces.md";
-
-/**
  * Repository-relative path of the generated agent skill.
  *
  * The directory name is the name agents load the skill by, so it tracks the
@@ -130,51 +118,13 @@ export const CLI_COMMAND_CONTRACT = {
 	 * repository-neutral: one skill file serves every checkout, so it must never
 	 * assume it was installed alongside this source tree.
 	 */
-	skillDescription: `Manage ${BINARY} Project Goals and the repository roadmap. Use to read or change goals, capture brainstorms as approved plans, choose next or parallel work, inspect dependencies, migrate goal IDs or storage, and prepare or manage approved workspaces.`,
+	skillDescription: `Manage ${BINARY} Project Goals and the repository roadmap. Use to read or change goals, capture brainstorms as approved plans, choose next or parallel work, inspect dependencies, migrate goal IDs or storage, and track branch claims.`,
 	runtime: {
 		/** Node floor for the published compiled bin. Asserted against package.json engines.node. */
 		binaryNodeFloor: "20",
 		/** Node floor for running src/cli.ts directly, which relies on native type stripping. */
 		sourceNodeFloor: "22.18",
 	},
-	workspaceActions: [
-		{
-			name: "start",
-			usage: "start --goal <id>... [--max-parallel <count>] [--workspace-parent <path>]",
-			summary: "Prepare and claim approved goals",
-			flags: ["--goal", "--max-parallel", "--workspace-parent"],
-		},
-		{
-			name: "resume",
-			usage: "resume <run-id>",
-			summary: "Reconcile merged work and refill preparation capacity",
-			flags: [],
-		},
-		{
-			name: "status",
-			usage: "status [run-id] [--stale-after-hours <hours>]",
-			summary: "Read run status and observable prepared-claim evidence",
-			flags: ["--stale-after-hours"],
-		},
-		{
-			name: "inspect",
-			usage: "inspect <run-id> <goal-id> [--stale-after-hours <hours>]",
-			summary: "Read complete workspace custody and fresh claim evidence before explicit recovery",
-			flags: ["--stale-after-hours"],
-		},
-		{
-			name: "recover",
-			usage: "recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]",
-			summary: "Release an inspected claim and attempt cleanup",
-			flags: ["--release", "--claim-updated-at"],
-		},
-		{
-			name: "cleanup",
-			usage: "cleanup <run-id> [goal-id] [--force]",
-			summary: "Remove verified completed or released workspaces",
-			flags: ["--force"],
-		},
-	],
 	actions: [
 		{
 			name: "list",
@@ -267,8 +217,8 @@ export const CLI_COMMAND_CONTRACT = {
 		},
 		{
 			name: "start",
-			usage: "start <id> [--branch <name> | --worktree | --clear] [worktree options]",
-			summary: "Claim a goal on a branch, create its Git worktree, or release its branch claim",
+			usage: "start <id> [--branch <name> | --clear]",
+			summary: "Claim a goal on a branch or release its branch claim",
 		},
 		{
 			name: "set_active",
@@ -312,13 +262,6 @@ export const CLI_COMMAND_CONTRACT = {
 			confirmRequired: true,
 		},
 		{
-			name: "workspace",
-			approvalScoped: true,
-			usage: "workspace <action> [arguments] [flags]",
-			summary:
-				"Prepare, inspect, reconcile, recover, and clean up approved goal workspaces; workspace help lists actions",
-		},
-		{
 			name: "help",
 			usage: "help",
 			summary: "Print this help",
@@ -337,45 +280,6 @@ export const CLI_COMMAND_CONTRACT = {
 			summary: "Start the local web application without opening a browser",
 			actions: ["web"],
 		},
-		{
-			name: "--goal",
-			usage: "--goal <id>",
-			summary: "Authorize one goal for workspace start; repeat for the approved set",
-			actions: ["workspace"],
-		},
-		{
-			name: "--max-parallel",
-			usage: "--max-parallel <count>",
-			summary: "Limit workspace start to this many prepared claims (default 1)",
-			actions: ["workspace"],
-		},
-		{
-			name: "--stale-after-hours",
-			usage: "--stale-after-hours <hours>",
-			summary:
-				"Set the claim and local branch inactivity threshold for workspace status/inspect (default 24)",
-			actions: ["workspace"],
-		},
-		{
-			name: "--release",
-			usage: "--release",
-			summary: "Explicitly release the inspected claim with workspace recover",
-			actions: ["workspace"],
-		},
-		{
-			name: "--claim-updated-at",
-			usage: "--claim-updated-at <timestamp>",
-			summary: "Supply a verified claim token for workspace recover",
-			actions: ["workspace"],
-		},
-		{
-			name: "--force",
-			usage: "--force",
-			summary:
-				"Explicitly discard work with workspace cleanup; requires a goal ID and preserves identity checks",
-			actions: ["workspace"],
-		},
-		{ name: "--help", usage: "--help", summary: "Show workspace command help", actions: ["workspace"] },
 		{
 			name: "--json",
 			usage: "--json",
@@ -443,20 +347,6 @@ export const CLI_COMMAND_CONTRACT = {
 			usage: "--branch <name>",
 			summary: "Record the branch working on a goal; project start defaults to the current Git branch",
 			actions: ["start"],
-		},
-		{
-			name: "--worktree",
-			usage: "--worktree",
-			summary:
-				"Create and claim the deterministic `stepstone/<goal-id>` branch in a linked Git worktree beside the main checkout",
-			actions: ["start"],
-		},
-		{
-			name: "--workspace-parent",
-			usage: "--workspace-parent <path>",
-			summary:
-				"Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode",
-			actions: ["start", "workspace"],
 		},
 		{
 			name: "--clear",
@@ -581,7 +471,7 @@ export const CLI_COMMAND_CONTRACT = {
 	 *
 	 * Stated on every surface because a driver that picks its own goal off `list`
 	 * will hand out work someone is already doing: the frontier is the part of the
-	 * graph that has to be read the same way by everyone dispatching from it.
+	 * graph that has to be read the same way by everyone selecting work from it.
 	 */
 	sequencingRules: [
 		"`ready` lists every open goal whose dependencies have all landed and that nobody has claimed, in canonical file order, so the whole parallel frontier is visible at once.",
@@ -593,20 +483,6 @@ export const CLI_COMMAND_CONTRACT = {
 		"A goal whose dependencies can never all land, through a hand-edited cycle or an edge naming no goal, is reported as unreachable instead of being dropped from the layers.",
 		"`waves --json` reports the layers as `result.waves`, an array of goal arrays whose position is the wave number, and adds `result.unreachableGoals` only when some goal is unreachable, so an absent field means every unfinished goal found a layer.",
 		"All three are reads derived from the stored edges the same way `blocked` is, so nothing is cached and no command has to be re-run to refresh them.",
-	],
-	dispatchRules: [
-		`Start an approved preparation run with \`npx -y ${BINARY}@latest project workspace start --goal <id>...\`; repeated goal IDs are the immutable authorization allow-list.`,
-		"The workspace command selects only allow-listed goals returned by a fresh ready frontier, prepares an isolated workspace, claims each exact `updatedAt`, and limits how many prepared claims it may hold at once.",
-		"Read the `pass` result from `start` and `resume`: `no-ready-work` means no allow-listed goal can start, while `refused` or `mixed` names work that reached a preparation boundary and did not prepare.",
-		"Each refused entry keeps its original structured `preparationFailure` after release and cleanup; read it through `status --json` or `inspect --json` instead of relying on the latest lifecycle message.",
-		"Each newly prepared workspace contains an ignored `STEPSTONE_GOAL.md` at its root with the goal ID, title, description, snapshot time, prepared branch, dependencies, links, and linked-worktree boundary; read that file before starting work.",
-		"Stepstone never starts, prompts, or supervises an agent; after preparation, open the reported workspace with whichever harness or terminal you choose.",
-		"The root session is the sole roadmap writer and runs every mutation from the repository's main worktree; work inside an isolated workspace must not mutate the worklist.",
-		"Only a merged PR whose head exactly matches the stored claimed branch is completion evidence; a closed terminal, silence, or an unmerged green PR never proves the goal landed.",
-		"Starting a preparation run for an explicitly approved plan grants standing consent to complete only an allow-listed goal after its matching PR merged.",
-		"Local runtime state under the Git common directory preserves claim tokens, workspace custody, configuration, and outcomes across `resume`, while canonical roadmap state remains harness-neutral.",
-		"Ambiguous workspace or claim outcomes preserve custody until inspection and explicit `recover <run-id> <goal-id> --release`.",
-		"Use `status` and `inspect` without mutation, `resume` to reconcile merges and refill preparation capacity, and `cleanup` only after completion or exact release.",
 	],
 	exitCodes: [
 		{ code: 0, meaning: "success" },
@@ -621,15 +497,14 @@ export const CLI_COMMAND_CONTRACT = {
 		"Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
 		"Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.",
-		"Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action; an approved dispatch plan is standing consent only to complete one of its goals after its matching PR merges.",
+		"Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.",
 		"Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.",
 		"Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.",
 		"Use list for orientation, `find <text>` to locate a goal by wording, and `show <id>` when you need a goal's complete description.",
 		"Ask next for the goal to start, ready for everything that could run in parallel, and waves for how the rest of the roadmap is layered; never pick a goal off list yourself, because list cannot tell you what is blocked or already claimed.",
 		"Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.",
 		"Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.",
-		"Use `start <id> --worktree` to create and claim the deterministic `stepstone/<goal-id>` branch in a linked checkout; read `result.worktreePath` instead of guessing where it was created.",
-		"A failed worktree claim preserves the created checkout for inspection and reports its path; never assume a failed command removed Git state whose outcome it could not prove.",
+		"Use `start <id> --branch <name>` to record a branch claim. Create and manage branches and worktrees with Git or external tools.",
 		"Run migrate_ids only when the user explicitly asks for it; it rewrites stored IDs, though every old ID keeps resolving afterwards.",
 		`Leave the goal file where it is unless the user asks to move it: a repository still on \`${LEGACY_WORKLIST_RELATIVE_PATH}\` works untouched, and migrate_path is theirs to request.`,
 		`Report the two-worklist warning to the user rather than working around it; only ${BINARY} reads the file it names, and merging them is a decision about which goals survive.`,
@@ -819,12 +694,10 @@ export function renderSkillMarkdown(): string {
 		"",
 		"Read [the plan reference](references/guide.md#json-plans) before drafting the JSON array.",
 		"",
-		"## Prepare approved work",
+		"## Track approved work",
 		"",
-		"Read [the dispatch reference](references/guide.md#dispatching-approved-plans) before starting, resuming, recovering, or cleaning up a dispatch run.",
-		"The root session is the sole roadmap writer. Read `STEPSTONE_GOAL.md` inside each prepared workspace before work.",
-		"Stepstone prepares and claims workspaces. It does not launch or supervise agents.",
-		"An explicitly approved dispatch run grants standing consent to complete only its allow-listed goals after their matching PRs merge. The PR head must match the stored claimed branch.",
+		"Record a branch claim with `project start <id> --branch <name>`. Manage branches and worktrees with Git or external tools.",
+		"Complete a goal only after explicit authorization for that goal. A merged pull request does not authorize completion.",
 		"",
 		"## Errors and details",
 		"",
@@ -848,8 +721,7 @@ export function renderSkillReferenceMarkdown(): string {
 			!action.confirmRequired &&
 			!action.interactive &&
 			action.name !== "help" &&
-			action.captureWorkflow === undefined &&
-			!action.approvalScoped,
+			action.captureWorkflow === undefined,
 	);
 	const interactiveActions = contract.actions.filter((action) => action.interactive);
 	const captureWorkflow = captureWorkflowAction(contract.actions).captureWorkflow;
@@ -961,18 +833,11 @@ export function renderSkillReferenceMarkdown(): string {
 		"",
 		...contract.sequencingRules.map((rule) => `- ${rule}`),
 		"",
-		"## Dispatching approved plans",
-		"",
-		...contract.dispatchRules.map((rule) => `- ${rule}`),
-		"",
-		`Git workspace preparation, recovery, and cleanup rules are documented in the package's \`${WORKSPACE_DOCS_PATH}\`.`,
-		"",
 		"## Guardrails",
 		"",
 		`- ${actionNameList(lifecycleActions)} are reserved for explicit user intent.`,
 		"  Pass `--confirm` only for the exact action the user requested and, when the action names a goal, only for that exact goal.",
 		"  Never pass it because a goal merely looks finished or stale.",
-		"  A dispatch loop the user approved is the one narrow exception, and only for completing a goal of that plan once its matching PR merged.",
 		"- `migrate_ids` names no goal and rewrites every generated ID in the repository at once, so it needs an explicit request of its own.",
 		"  `--dry-run` reports the rewrites it would make without writing them and without `--confirm`; prefer it when you are showing the user what would change.",
 		"- `migrate_path` names no goal either and moves the whole repository's goal file, so it needs its own explicit request and has the same `--dry-run`.",
@@ -980,7 +845,6 @@ export function renderSkillReferenceMarkdown(): string {
 		`- Exit code 4 (${exitCodeMeaning(4)}) means a concurrent change conflicted with yours; re-read current state with \`list\` or \`show\` before retrying.`,
 		"  A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.",
 		`- ${actionNameList(safeActions)} are safe to run whenever they serve the user's request.`,
-		"- `workspace status` and `workspace inspect` are reads; `workspace start` needs the approved goal set, `resume` keeps that authorization, and recovery or destructive cleanup needs explicit operator intent.",
 		"- `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.",
 		`- ${actionNameList(interactiveActions)} opens a full-screen board for the human at the keyboard, not for you.`,
 		"  Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.",
@@ -1051,17 +915,9 @@ export function renderCliGuide(): string {
 		"",
 		...markdownTable(["Command", "Description"], actionRows),
 		"",
-		"## Workspace commands",
+		"## Removed workspace commands",
 		"",
-		...markdownTable(
-			["Command", "Description"],
-			contract.workspaceActions.map((action) => [
-				`\`npx -y ${publishedBinary} project workspace ${action.usage}\``,
-				action.summary,
-			]),
-		),
-		"",
-		`See [workspace preparation, recovery, and cleanup](workspaces.md). Existing version 2 dispatch state is read in place; no migration is needed.`,
+		"`project workspace`, `project start --worktree`, and workspace-specific flags have been removed. Stepstone leaves existing resources untouched. See [the migration guide](workspaces.md) for Git inspection and external management.",
 		"",
 		"## Flags",
 		"",
@@ -1107,23 +963,6 @@ export function renderCliGuide(): string {
 		"## Agent guidance",
 		"",
 		...guidelineLines,
-		"",
-	].join("\n");
-}
-
-/** Help for the project CLI's resumable workspace command family. */
-export function renderWorkspaceUsage(): string {
-	return [
-		`Usage: ${CLI_COMMAND_CONTRACT.binary} project workspace <action> [arguments] [flags]`,
-		"",
-		"Workspace actions:",
-		...CLI_COMMAND_CONTRACT.workspaceActions.map((action) => `  ${action.usage}\n    ${action.summary}`),
-		"",
-		"Use --cwd <repository> to select the main worktree; --json emits a result envelope.",
-		"Each prepared workspace contains an ignored STEPSTONE_GOAL.md handoff at its root.",
-		"Stepstone prepares and claims workspaces. It never starts, prompts, or supervises an agent.",
-		"Cleanup --force requires a goal ID and explicitly discards uncommitted, unpushed,",
-		"or unmerged work. Workspace identity checks always apply.",
 		"",
 	].join("\n");
 }

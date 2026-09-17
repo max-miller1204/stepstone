@@ -54,7 +54,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `npx -y stepstone@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
 | `npx -y stepstone@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |
 | `npx -y stepstone@latest project move <id> up\|down\|before <id>\|after <id>` | Reorder a goal in the roadmap's canonical file order |
-| `npx -y stepstone@latest project start <id> [--branch <name> \| --worktree \| --clear] [worktree options]` | Claim a goal on a branch, create its Git worktree, or release its branch claim |
+| `npx -y stepstone@latest project start <id> [--branch <name> \| --clear]` | Claim a goal on a branch or release its branch claim |
 | `npx -y stepstone@latest project set_active <id>` | Make a goal the single active goal |
 | `npx -y stepstone@latest project complete <id> --confirm` | Mark a goal done. Requires explicit user confirmation |
 | `npx -y stepstone@latest project reopen <id> --confirm` | Reopen a done or archived goal. Requires explicit user confirmation |
@@ -62,21 +62,11 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `npx -y stepstone@latest project delete <id> --confirm` | Delete a goal permanently. Requires explicit user confirmation |
 | `npx -y stepstone@latest project migrate_ids --confirm` | Rewrite randomly generated goal IDs as title-derived ones. Requires explicit user confirmation |
 | `npx -y stepstone@latest project migrate_path --confirm` | Move the goal file from the legacy path to .worklist/worklist.json. Requires explicit user confirmation |
-| `npx -y stepstone@latest project workspace <action> [arguments] [flags]` | Prepare, inspect, reconcile, recover, and clean up approved goal workspaces; workspace help lists actions |
 | `npx -y stepstone@latest project help` | Print this help |
 
-## Workspace commands
+## Removed workspace commands
 
-| Command | Description |
-| --- | --- |
-| `npx -y stepstone@latest project workspace start --goal <id>... [--max-parallel <count>] [--workspace-parent <path>]` | Prepare and claim approved goals |
-| `npx -y stepstone@latest project workspace resume <run-id>` | Reconcile merged work and refill preparation capacity |
-| `npx -y stepstone@latest project workspace status [run-id] [--stale-after-hours <hours>]` | Read run status and observable prepared-claim evidence |
-| `npx -y stepstone@latest project workspace inspect <run-id> <goal-id> [--stale-after-hours <hours>]` | Read complete workspace custody and fresh claim evidence before explicit recovery |
-| `npx -y stepstone@latest project workspace recover <run-id> <goal-id> --release [--claim-updated-at <timestamp>]` | Release an inspected claim and attempt cleanup |
-| `npx -y stepstone@latest project workspace cleanup <run-id> [goal-id] [--force]` | Remove verified completed or released workspaces |
-
-See [workspace preparation, recovery, and cleanup](workspaces.md). Existing version 2 dispatch state is read in place; no migration is needed.
+`project workspace`, `project start --worktree`, and workspace-specific flags have been removed. Stepstone leaves existing resources untouched. See [the migration guide](workspaces.md) for Git inspection and external management.
 
 ## Flags
 
@@ -84,13 +74,6 @@ See [workspace preparation, recovery, and cleanup](workspaces.md). Existing vers
 | --- | --- |
 | `--port <number>` | Bind the local web application to this loopback port; only for project web |
 | `--no-open` | Start the local web application without opening a browser; only for project web |
-| `--goal <id>` | Authorize one goal for workspace start; repeat for the approved set; only for project workspace |
-| `--max-parallel <count>` | Limit workspace start to this many prepared claims (default 1); only for project workspace |
-| `--stale-after-hours <hours>` | Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace |
-| `--release` | Explicitly release the inspected claim with workspace recover; only for project workspace |
-| `--claim-updated-at <timestamp>` | Supply a verified claim token for workspace recover; only for project workspace |
-| `--force` | Explicitly discard work with workspace cleanup; requires a goal ID and preserves identity checks; only for project workspace |
-| `--help` | Show workspace command help; only for project workspace |
 | `--json` | Print the deterministic result envelope as JSON (stdout on success, stderr on failure) |
 | `--confirm` | Acknowledge an action that requires confirmation; pass it only for an explicit user request |
 | `--cwd <dir>` | Resolve the git root from this directory instead of the working directory |
@@ -102,8 +85,6 @@ See [workspace preparation, recovery, and cleanup](workspaces.md). Existing vers
 | `--depends-on <id>` | Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update |
 | `--link <url>` | Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update |
 | `--branch <name>` | Record the branch working on a goal; project start defaults to the current Git branch; only for project start |
-| `--worktree` | Create and claim the deterministic `stepstone/<goal-id>` branch in a linked Git worktree beside the main checkout; only for project start |
-| `--workspace-parent <path>` | Put a new goal worktree under this existing directory instead of beside the main checkout; requires worktree creation mode; only for project start and workspace |
 | `--clear` | Release the branch claim on a goal; only for project start |
 | `--expect-updated-at <timestamp>` | Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete |
 | `--dry-run` | Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path |
@@ -210,15 +191,14 @@ Programmatic callers clear a description with `--description ''`; the interactiv
 - Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.
 - Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.
 - Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.
-- Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action; an approved dispatch plan is standing consent only to complete one of its goals after its matching PR merges.
+- Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.
 - Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.
 - Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.
 - Use list for orientation, `find <text>` to locate a goal by wording, and `show <id>` when you need a goal's complete description.
 - Ask next for the goal to start, ready for everything that could run in parallel, and waves for how the rest of the roadmap is layered; never pick a goal off list yourself, because list cannot tell you what is blocked or already claimed.
 - Treat an empty next or ready as nothing to start rather than an error: it exits 0, so read result.goal or result.goals instead of the exit code.
 - Pass a full ID or a prefix long enough to be unique; an ambiguous prefix is refused with candidates rather than resolved by guesswork.
-- Use `start <id> --worktree` to create and claim the deterministic `stepstone/<goal-id>` branch in a linked checkout; read `result.worktreePath` instead of guessing where it was created.
-- A failed worktree claim preserves the created checkout for inspection and reports its path; never assume a failed command removed Git state whose outcome it could not prove.
+- Use `start <id> --branch <name>` to record a branch claim. Create and manage branches and worktrees with Git or external tools.
 - Run migrate_ids only when the user explicitly asks for it; it rewrites stored IDs, though every old ID keeps resolving afterwards.
 - Leave the goal file where it is unless the user asks to move it: a repository still on `.pi/worklist.json` works untouched, and migrate_path is theirs to request.
 - Report the two-worklist warning to the user rather than working around it; only stepstone reads the file it names, and merging them is a decision about which goals survive.

@@ -113,34 +113,33 @@ describe("shell completion installation", () => {
 		await expect(execFileAsync("zsh", ["-n", paths.zsh])).resolves.toBeDefined();
 	});
 
-	it("completes workspace actions and only their accepted flags in Bash and Zsh", async () => {
-		const dataHome = await mkdtemp(join(tmpdir(), "stepstone-workspace-completion-"));
+	it("omits retired workspace commands and flags from both shells", async () => {
+		const dataHome = await mkdtemp(join(tmpdir(), "stepstone-retired-completion-"));
 		await installShellCompletions({ XDG_DATA_HOME: dataHome });
-		const paths = installedCompletionPaths({ ...process.env, XDG_DATA_HOME: dataHome });
+		const paths = installedCompletionPaths({ XDG_DATA_HOME: dataHome });
 		for (const complete of [
 			(words: string[]) => runBashCompletion(paths.bash, words),
 			(words: string[]) => runZshCompletion(paths.zsh, words, dataHome),
 		]) {
-			expect(await complete([CLI_COMMAND_CONTRACT.binary, "project", "workspace", ""])).toEqual(
-				expect.arrayContaining(["start", "resume", "status", "inspect", "recover", "cleanup"]),
+			const actions = (await complete([CLI_COMMAND_CONTRACT.binary, "project", ""])).map(
+				(action) => action.split(":")[0],
 			);
-			const common = await complete([CLI_COMMAND_CONTRACT.binary, "project", "workspace", "--"]);
-			expect(common).toEqual(expect.arrayContaining(["--cwd", "--json", "--help"]));
-			expect(common).not.toContain("--file");
-			const start = await complete([CLI_COMMAND_CONTRACT.binary, "project", "workspace", "start", "--"]);
-			expect(start).toContain("--goal");
-			expect(start).not.toContain("--force");
-			expect(start).not.toContain("--file");
-			const cleanup = await complete([
-				CLI_COMMAND_CONTRACT.binary,
-				"project",
-				"workspace",
-				"cleanup",
-				"run",
-				"--",
-			]);
-			expect(cleanup).toContain("--force");
-			expect(cleanup).not.toContain("--goal");
+			expect(actions).toContain("start");
+			expect(actions).not.toContain("workspace");
+			const flags = await complete([CLI_COMMAND_CONTRACT.binary, "project", "start", "--"]);
+			expect(flags).toContain("--branch");
+			for (const removed of [
+				"--worktree",
+				"--workspace-parent",
+				"--goal",
+				"--max-parallel",
+				"--stale-after-hours",
+				"--release",
+				"--claim-updated-at",
+				"--force",
+			]) {
+				expect(flags).not.toContain(removed);
+			}
 		}
 	});
 

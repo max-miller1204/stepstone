@@ -178,7 +178,7 @@ export function formatDependencyCycle(cycle: readonly string[]): string {
  * Whether someone has already taken a goal on.
  *
  * Activation and a recorded branch are the two ways a goal is spoken for: one
- * says a human named it the goal in flight, the other is the dispatch marker
+ * says a human named it the goal in flight, the other is the branch claim
  * written when work actually starts. Both are read from dedicated fields rather
  * than inferred from prose, so a goal is claimed only when somebody said so.
  */
@@ -191,8 +191,7 @@ export function isGoalClaimed(goal: ProjectGoal): boolean {
  *
  * This is the parallel frontier: every one of them has had its dependencies
  * land, and none of them is already spoken for, so they may all run at once.
- * Claimed goals are left out because handing the same work to a second driver
- * is the one mistake a dispatch read exists to prevent.
+ * Claimed goals are left out to prevent duplicate work.
  */
 export function readyGoals(goals: readonly ProjectGoal[], retiredIds: readonly string[] = []): ProjectGoal[] {
 	return goals.filter(

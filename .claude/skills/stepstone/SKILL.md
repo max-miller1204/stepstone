@@ -1,6 +1,6 @@
 ---
 name: stepstone
-description: "Manage stepstone Project Goals and the repository roadmap. Use to read or change goals, capture brainstorms as approved plans, choose next or parallel work, inspect dependencies, migrate goal IDs or storage, and prepare or manage approved workspaces."
+description: "Manage stepstone Project Goals and the repository roadmap. Use to read or change goals, capture brainstorms as approved plans, choose next or parallel work, inspect dependencies, migrate goal IDs or storage, and track branch claims."
 ---
 
 <!-- Generated from src/cli-contract.ts by scripts/generate-docs.ts. Do not edit manually. -->
@@ -72,12 +72,10 @@ npx -y stepstone@latest project update <id> --expect-updated-at <updatedAt> --ap
 
 Read [the plan reference](references/guide.md#json-plans) before drafting the JSON array.
 
-## Prepare approved work
+## Track approved work
 
-Read [the dispatch reference](references/guide.md#dispatching-approved-plans) before starting, resuming, recovering, or cleaning up a dispatch run.
-The root session is the sole roadmap writer. Read `STEPSTONE_GOAL.md` inside each prepared workspace before work.
-Stepstone prepares and claims workspaces. It does not launch or supervise agents.
-An explicitly approved dispatch run grants standing consent to complete only its allow-listed goals after their matching PRs merge. The PR head must match the stored claimed branch.
+Record a branch claim with `project start <id> --branch <name>`. Manage branches and worktrees with Git or external tools.
+Complete a goal only after explicit authorization for that goal. A merged pull request does not authorize completion.
 
 ## Errors and details
 

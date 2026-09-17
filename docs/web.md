@@ -20,11 +20,11 @@ Use the editor to:
 - Change the canonical goal order.
 - Complete, reopen, archive, or delete a goal after confirmation.
 
-Claimed goals remain editable. Editing roadmap data can change the claim timestamp. Before further workspace operations, use the CLI to inspect the claim and resolve any conflict. A browser lifecycle action does not reconcile or clean a workspace.
+Claimed goals remain editable. Editing roadmap data can change the claim timestamp. Read the current goal before a later change. A browser lifecycle action does not change Git resources.
 
 The header identifies the repository and roadmap revision. Use Refresh to read changes made by another agent or terminal. Stale edits and stale ordering requests fail with a conflict. Refresh before you retry.
 
-Workspace preparation, dispatch runs, recovery, reconciliation, and cleanup belong to the [workspace CLI](workspaces.md). The editor has no workspace controls or endpoints. Loading the board does not read dispatch journals or inspect workspaces.
+Workspace management has been removed. See [the migration guide](workspaces.md) to inspect preserved resources. The editor has no workspace controls or endpoints. Loading the board does not read dispatch journals or inspect workspaces.
 
 ![Goal editor with ready, claimed, and blocked goals](images/stepstone-web-ui.png)
 

@@ -97,7 +97,7 @@ export interface ProjectGoal {
 	 */
 	links?: string[];
 	/**
-	 * The branch this goal is being worked on, written when a goal is dispatched.
+	 * The branch recorded when someone claims this goal.
 	 *
 	 * State markers get a dedicated field rather than being encoded into `links`,
 	 * so reading whether a goal is in flight never becomes a string heuristic
@@ -160,8 +160,6 @@ export interface WorklistOperationResult {
 	tasks?: SessionTask[];
 	/** The one goal a single-goal read or mutation returns. */
 	goal?: ProjectGoal;
-	/** Absolute linked checkout created by project start --worktree. */
-	worktreePath?: string;
 	/** Goal collections returned only by operations that explicitly read a complete collection. */
 	goals?: ProjectGoal[];
 	/** Bounded Project Goal page returned to a Pi model or direct Pi command. */

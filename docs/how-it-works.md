@@ -24,12 +24,12 @@ Optional preconditions use a file-wide revision or one goal's `updatedAt` value.
 They report a stale read as a conflict instead of silently overwriting newer work.
 
 The published executable graphs do not import a Pi package at runtime.
-The CLI and workspace-preparation driver therefore run without Pi installed.
-A prepared checkout carries its goal in an ignored root `STEPSTONE_GOAL.md` file.
-This lets a person or harness continue the work without Stepstone launching it or transporting a prompt.
+The CLI therefore runs without Pi installed.
+Stepstone records branch claims and pull request links. Git and external tools manage workspaces.
+A merged pull request does not complete a goal automatically.
 Source-level import scans and a CI job enforce this rule by installing the packed package and running every executable without Pi.
 
 See [goals.md](goals.md) for the goal model.
 See [dependencies.md](dependencies.md) for dependency sequencing.
 See [storage.md](storage.md) for persistence and concurrency.
-See [workspaces.md](workspaces.md) for prepared workspaces.
+See [workspaces.md](workspaces.md) to migrate from removed workspace commands.

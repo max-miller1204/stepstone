@@ -5,14 +5,14 @@
 The Agent Skill is the primary Stepstone setup for harnesses that support skills.
 A skill in `.claude/skills/stepstone/` teaches coding agents to drive the CLI under the same guardrails, so a session manages goals correctly without being walked through it each time.
 The main skill contains common reads, safe mutation rules, the approved-plan workflow, and error handling.
-It keeps confirmation, concurrency, and dispatch authorization rules in the initial context.
+It keeps confirmation and concurrency rules in the initial context.
 It does not list every action or flag.
 
 The installed `references/guide.md` contains the full command and workflow reference.
-The skill links to its plan and dispatch sections for requests that need those details.
+The skill links to its plan and lifecycle sections for requests that need those details.
 Reference paths resolve from the skill directory, not the target repository.
 Agents can also run `project help` to check command syntax.
-Stepstone prepares workspaces but never launches or supervises agents.
+Stepstone tracks branch claims. Git and external tools manage workspaces.
 
 ## Install
 
@@ -26,7 +26,7 @@ The [`skills` CLI](https://github.com/vercel-labs/skills) reads `.claude/skills/
 Installing the npm package does not install the skill.
 The tarball carries `.claude/skills/stepstone/SKILL.md` so the published package stays self-describing, but `node_modules` is not a directory agents scan for skills.
 
-The skill installs no code and pins no version: it invokes the published CLI as `npx -y stepstone@latest` including workspace preparation as `npx -y stepstone@latest project workspace`, so an agent that loads it is always driving the current release.
+The skill installs no code and pins no version: it invokes the published CLI as `npx -y stepstone@latest`, so an agent that loads it is always driving the current release.
 
 ## How it is produced
 

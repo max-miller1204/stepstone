@@ -40,34 +40,6 @@ const MUTATIONS: readonly Mutation[] = [
 		to: 'goal.status !== "open" && !isGoalClaimed(goal)',
 		test: "test/dependencies.test.ts",
 	},
-	{
-		name: "trust a mismatched canonical claim",
-		file: "src/claim-evidence.ts",
-		from: 'evidence.canonical.state !== "matches"',
-		to: 'evidence.canonical.state === "matches"',
-		test: "test/claim-evidence.test.ts",
-	},
-	{
-		name: "treat the stale threshold as recent",
-		file: "src/claim-evidence.ts",
-		from: "evidence.claimAgeHours < evidence.staleAfterHours",
-		to: "evidence.claimAgeHours <= evidence.staleAfterHours",
-		test: "test/claim-evidence.test.ts",
-	},
-	{
-		name: "inspect entries that are not prepared",
-		file: "src/claim-evidence.ts",
-		from: 'entry.phase === "prepared"',
-		to: 'entry.phase !== "prepared"',
-		test: "test/claim-evidence.test.ts",
-	},
-	{
-		name: "accept the wrong claimed branch",
-		file: "src/claim-evidence.ts",
-		from: "goal.branch === entry.branch",
-		to: "goal.branch !== entry.branch",
-		test: "test/claim-evidence.test.ts",
-	},
 ];
 
 const root = process.cwd();

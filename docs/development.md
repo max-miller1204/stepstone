@@ -16,7 +16,6 @@ The repository `mise.toml` pins Node and npm. Run commands in a mise-activated s
 
 `npm run worklist` runs this checkout's CLI, and `node src/cli.ts project <action>` is the same thing spelled out.
 The `node src/cli.ts` entry point needs Node 22.18 or newer for native type stripping.
-`node src/cli.ts project workspace <action>` manages resumable workspace preparation under that same requirement; [docs/workspaces.md](workspaces.md) documents preparation, custody, recovery, reconciliation, and cleanup.
 The package ships TypeScript source directly because Pi loads extensions through jiti, and compiles to `dist/` only for published executables, which Node refuses to type-strip under `node_modules`.
 
 ## Checks
@@ -28,12 +27,11 @@ The package ships TypeScript source directly because Pi loads extensions through
 | `npm run imports:check` | Nothing a compiled executable loads imports a Pi package |
 | `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
 | `npm run no-pi-install:check` | Every packed and installed executable works with no Pi present |
-| `npm run test:boundaries` | Real Git/gh preparation, reconciliation, recovery and cleanup boundaries |
 | `npm run test:coverage` | Unit tests plus the committed per-file coverage ratchet |
 | `npm run test:coverage:update` | Raises per-file coverage baselines and adds new source files |
-| `npm run test:mutation` | Eight targeted dependency and claim-evidence mutants must be killed |
+| `npm run test:mutation` | Four targeted dependency mutants must be killed |
 | `npm run test:e2e:fast` | Packed CLI initialization, approved plans, conflicts, and packed extension through real Pi RPC |
-| `npm run test:e2e` | Full deterministic published-surface tier, including storage, concurrent writers, roadmap generation, and workspace preparation |
+| `npm run test:e2e` | Full deterministic published-surface tier, including storage, concurrent writers, roadmap generation, and linked-worktree boundaries |
 | `npm run videos:test` | VHS tape parser and scenario-selection regression tests |
 | `npm run videos:check -- <scenario>` | Replay the recorded shell commands and verify actual CLI behavior |
 | `npm run videos:render -- <scenario>` | Capture and verify a VHS scenario, then export its MP4 and evidence |
@@ -71,7 +69,7 @@ The baseline includes executable entry points whose subprocess coverage cannot b
 Vitest refuses `.only` and requires each test to execute an assertion. The test policy reporter also refuses skipped tests, todo tests, and empty suites.
 Do not disable a test for one platform. Put the platform decision in production behavior and assert that behavior directly.
 
-`npm run test:mutation` makes eight fixed semantic changes in isolated temporary copies of `src/dependencies.ts` and `src/claim-evidence.ts`.
+`npm run test:mutation` makes four fixed semantic changes in isolated temporary copies of `src/dependencies.ts`.
 The focused tests must fail for every change. CI runs this check for each push and pull request. The release workflow runs it again through `npm run verify`.
 The fixed set keeps this gate fast and deterministic. The later adversarial test tier owns broad mutation, property, and stress testing.
 
@@ -84,8 +82,8 @@ It installs one tarball offline with optional peers omitted, asserts that the in
 The RPC scenarios launch the pinned development Pi executable with the **installed package** as its extension, with no provider credentials or model requests.
 The harness imports only Node APIs and its subprocess helpers; it never imports Stepstone application internals.
 
-`npm run test:e2e:fast` is the representative pre-PR subset: empty reads, first writes, approved-plan preview and application, all-or-nothing invalid plans, lifecycle confirmation, optimistic conflicts, workspace command help, and Session Task/Project Goal changes through packed Pi RPC.
-`npm run test:e2e` adds legacy/current/environment/explicit location precedence, live Pi location changes, held-lock refusal, concurrent batch writers with atomic-file observations, linked-worktree read/no-op/preview/refusal behavior, generated-roadmap drift and regeneration, and dispatch preparation through persisted status and the goal handoff.
+`npm run test:e2e:fast` is the representative pre-PR subset: empty reads, first writes, approved-plan preview and application, all-or-nothing invalid plans, lifecycle confirmation, optimistic conflicts, removed workspace command rejection, and Session Task/Project Goal changes through packed Pi RPC.
+`npm run test:e2e` adds legacy/current/environment/explicit location precedence, live Pi location changes, held-lock refusal, concurrent batch writers with atomic-file observations, linked-worktree read/no-op/preview/refusal behavior, and generated-roadmap drift and regeneration.
 Roadmap generation invokes the repository's real generator script in a disposable source copy because generated `docs/ROADMAP.md` is deliberately excluded from the published package.
 
 The full tier runs on Linux and macOS with Node 22 and 24 in the `published-e2e` CI matrix, on pushes, pull requests, and manual workflow dispatch.
@@ -99,38 +97,7 @@ Remove a retained gate checkout with `git worktree remove --force <printed-check
 
 This tier covers representative local published workflows. The deeper real Git/GitHub CLI matrix, remote failures, and platform-specific external-tool edge cases remain owned by `verify-the-remaining-external`.
 
-`test/dispatch-driver.test.ts` exercises the resumable runtime through injected roadmap, workspace, merge-evidence, and state-store bindings, including journaled goal-file recovery, then drives the real preparation CLI and Git worktree boundary from temporary repositories.
-It verifies that a run reaches `prepared` without any harness configuration, that the preparation limit counts claimed workspaces, and that persisted version 1 session-hosting state is refused rather than silently downgraded.
-
-`npm run test:boundaries` runs the deep automation matrix in `test/process-boundaries.test.ts` and the existing `test/workspace-cleanup.test.ts` safety matrix.
-Both require real Git on `PATH`; the process-boundary matrix also requires the installed GitHub CLI (`gh`).
-Missing executables fail the suite rather than skipping coverage. The `workspace-preparation` CI matrix runs this command on Ubuntu and macOS with Node 20 (the declared package minimum) and Node 24 (the current LTS), with all four combinations required to pass before review.
-It also runs as part of `npm run check` on Linux and macOS with Node 24.
-The subprocess fixture, cleanup CLI, and their production imports are compiled through `test/fixtures/tsconfig.json` into separate `artifacts/process-boundaries/compiled-*` directories before their tests start, so Node 20 executes JavaScript without a TypeScript loader or Pi runtime.
-Each suite owns its output directory, separate from `dist/`, to avoid racing another compiler or the package tests' rebuild.
-The process-boundary fixture records the Node, Git, and gh versions in its command transcript.
-
-| Workspace acceptance case | Real-tool proof in `test:boundaries` |
-| --- | --- |
-| Worktree creation and ignored goal handoff | Exact branch/base, clean Git status, ignored `STEPSTONE_GOAL.md`, persisted claim and workspace |
-| Claim recovery | Process exit after canonical claim, missing/wrong token refusal, exact-token release |
-| Merged-work reconciliation | Real gh against an isolated local API, stale/mismatched evidence refusal, Git fetch and fast-forward, completion |
-| Safe cleanup | Dirty/ignored/unpushed/unmerged work and identity changes refused; interrupted removal retried; exact owned workspace removed |
-
-Workspace preparation is supported on Linux and macOS. Windows and other operating systems are not supported until their CI runs these behaviors and the repository scripts work there.
-Node 20 support here covers the compiled workspace runtime; source scripts and Pi RPC tests retain the newer development runtime requirements above.
-
-Every operation in the process-boundary suite starts a fresh Node process with the production application, Git worktree, GitHub merge-evidence, and file-state bindings.
-It covers preparation and acquisition collisions, an optimistic claim conflict, a process exiting after its canonical claim commits, exact-token recovery, interrupted worktree removal, and safe cleanup retries.
-Real `gh pr list` sends GraphQL requests to a local Unix-socket HTTP fixture through gh's `http_unix_socket` configuration; no GitHub login, token, live repository, or replacement executable is used.
-The isolated environment excludes inherited Git and gh configuration and credentials.
-The API cases cover mismatched/stale evidence, HTTP and GraphQL errors, malformed responses, invalid merge evidence, successful completion, and real Git fetch/reachability/fast-forward refusals against a local bare origin.
-These binding-level cases stay separate from the broader packed CLI and Pi RPC workflow tier owned by `exercise-stepstone-workflows-end-to-end`.
-
-Successful process-boundary fixtures are removed. On failure, the original error is rethrown and its stack, command stdout/stderr, Git trace events, HTTP request/response bodies, canonical goal file, dispatch journals, and Git repositories remain under `artifacts/process-boundaries/case-*`.
-The failure output prints the retained directory. CI uploads this directory, including hidden repository state, when a check or workspace-preparation job fails; matrix artifacts identify the operating system and Node version.
-Production command diagnostics remain redacted; original Git errors are available in the fixture's `git-trace.jsonl` and API failures in `http.jsonl`.
-The recovery case also asserts that the first preparation failure survives later refusal, release, and cleanup journals unchanged.
+Shared storage, cross-process locking, and repository-discovery checks remain required after workspace management removal. The CLI unit suite and `tracker-retirement` video scenario prove that removed interfaces fail without changing existing Git resources or dispatch files.
 
 `npm run imports:check` reads the merged module graph behind every entry in `executableEntryPoints` in `scripts/cli-import-graph.ts` and refuses any runtime import outside Node's builtins and the package's own `dependencies`.
 That list is derived from the manifest's `bin` map rather than written by hand: each target is read back to the `src/` file the build emitted it from, and a target that resolves to no source file stops the check instead of being skipped.
@@ -141,7 +108,7 @@ That is why a Pi type belongs in an `import type` statement rather than an inlin
 It packs the publishable tarball, installs it with no dev dependencies and no Pi packages present, and drives every published executable through the behavior-specific function named in `BIN_EXERCISES`.
 The manifest's `bin` map is compared against that exercise map before packing, so a new executable cannot ship without being started from the isolated install.
 The project CLI exercise asserts exit codes and `--json` envelopes across `list`, `add`, `show`, `find`, `next`, `ready`, `waves`, `apply-plan --dry-run`, and a guarded mutation.
-The project CLI exercise also runs `project workspace start`, prepares a real worktree, and reads its ignored `STEPSTONE_GOAL.md` handoff before checking persisted status through `project workspace status`; the preparation-only contract needs no agent executable.
+The project CLI exercise also verifies that removed workspace commands and flags fail.
 The check runs as its own CI job and again before publishing, because this checkout installs every Pi peer as a devDependency and therefore cannot see the failure on its own.
 
 The check launches npm with the current Node executable and `npm_execpath`, preserving the npm implementation that started it without resolving an npm shell shim.
@@ -212,6 +179,8 @@ These manual launchers use your normal environment and current date.
 Use the named VHS scenarios in `scripts/videos/scenarios` for video evidence. Run `npm run videos:list` to see available scenarios. Run `videos:check` before `videos:render`, then watch the output in `artifacts/videos/<scenario>/`.
 
 The `PR video verification` workflow checks scenarios when their tapes or shared tooling change. It does not run VHS or render videos. For product changes that use an unchanged scenario, dispatch the workflow on the PR branch. Its check summary links verification logs. Render and review the MP4 locally, then attach it to the PR for inline playback. No workflow changes PR bodies or publishes videos automatically.
+
+The `tracker-retirement` scenario verifies removed command failures, preserved resources, an existing branch claim, explicit completion, and dependency readiness.
 
 See the [video workflow guide](../scripts/videos/README.md) for tool versions, fixture isolation, scenario authoring, reproduction limits, and PR evidence examples. Do not run capture beside another build or package check because both use `dist/`.
 
