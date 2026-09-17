@@ -613,10 +613,9 @@
 			"description": "Catch secrets, unsafe workflows, dependency risks, dead package surfaces, and malformed published artifacts before merge. Add Gitleaks, actionlint, zizmor, CodeQL, GitHub dependency review, GitHub Actions dependency updates with full-SHA pins, Knip configured for every dynamic and executable entry point, and publint against the packed tarball; add TypeScript package-surface validation only where public typed exports warrant it.",
 			"group": "Quality",
 			"dependsOn": ["authoritative-pull-request-quality-gates"],
-			"status": "open",
+			"status": "archived",
 			"createdAt": "2026-08-18T01:02:46.352Z",
-			"updatedAt": "2026-09-17T05:48:43.670Z",
-			"branch": "stepstone/harden-repository-supply-chain"
+			"updatedAt": "2026-09-17T22:00:20.274Z"
 		},
 		{
 			"id": "adversarial-test-quality-program",
@@ -756,10 +755,10 @@
 			"title": "Detect stale and overlapping roadmap goals during capture",
 			"description": "Extend the generated Stepstone capture guidance so an agent reads related open and active goals before drafting a plan. Detect obsolete premises, references to removed commands or documentation, work that has already landed, overlapping outcomes, and stale sequencing assumptions. Require proposed plans to identify goals they replace and to record must-land-before edges for logical dependencies and shared implementation surfaces. After an approved batch lands, inspect dependency waves when sequencing matters and report unexpected ready or unreachable work. Keep this as capture guidance rather than an unattended validator because several forms of roadmap drift require product judgment.",
 			"group": "Quality",
-			"status": "open",
+			"status": "done",
 			"createdAt": "2026-08-18T22:17:01.718Z",
-			"updatedAt": "2026-09-17T05:48:44.136Z",
-			"branch": "stepstone/audit-the-roadmap-for-goals-the-project"
+			"updatedAt": "2026-09-17T21:59:39.598Z",
+			"completedAt": "2026-09-17T21:59:39.598Z"
 		},
 		{
 			"id": "remove-the-symphony-incorporation",
@@ -812,8 +811,7 @@
 			"dependsOn": ["release-stepstone-0-12-0", "manage-local-goals-and-workspaces-in-a"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-17T21:40:01.033Z",
-			"branch": "stepstone/dispatch-work-from-explicit-base-and"
+			"updatedAt": "2026-09-17T22:00:20.606Z"
 		},
 		{
 			"id": "prove-the-stepstone-collaboration",
@@ -862,8 +860,7 @@
 			"group": "Interfaces",
 			"status": "open",
 			"createdAt": "2026-09-17T05:40:49.562Z",
-			"updatedAt": "2026-09-17T21:40:00.700Z",
-			"branch": "stepstone/manage-local-goals-and-workspaces-in-a"
+			"updatedAt": "2026-09-17T21:59:40.245Z"
 		},
 		{
 			"id": "edit-stepstone-projects-in-a-local-web",
@@ -1026,5 +1023,5 @@
 			"updatedAt": "2026-09-17T21:38:33.048Z"
 		}
 	],
-	"revision": 385
+	"revision": 390
 }
