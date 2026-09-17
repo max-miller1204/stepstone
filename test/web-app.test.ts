@@ -252,6 +252,46 @@ describe("Stepstone web application", () => {
 		});
 	});
 
+	it("retains blocked approval and prepares it on continue after its dependency settles", async () => {
+		const { app, token } = await openApp();
+		const prerequisite = (await (
+			await post(app, token, { action: "add", title: "Prerequisite" })
+		).json()) as {
+			result: { goal: { id: string } };
+		};
+		const dependent = (await (
+			await post(app, token, {
+				action: "add",
+				title: `Dependent ${randomUUID()}`,
+				dependsOn: [prerequisite.result.goal.id],
+			})
+		).json()) as { result: { goal: { id: string } } };
+		const started = await postPath(app, token, "/api/dispatch/start", {
+			confirm: true,
+			approvedGoalIds: [dependent.result.goal.id],
+			maxParallel: 1,
+		});
+		expect(started.status).toBe(200);
+		const run = (await started.json()) as {
+			result: { id: string; approvedGoalIds: string[]; entries: object };
+		};
+		expect(run.result.approvedGoalIds).toEqual([dependent.result.goal.id]);
+		expect(run.result.entries).toEqual({});
+		expect(
+			(await post(app, token, { action: "complete", id: prerequisite.result.goal.id, confirm: true })).status,
+		).toBe(200);
+		const continued = await postPath(app, token, `/api/dispatch/${run.result.id}/continue`, {
+			confirm: true,
+		});
+		expect(continued.status).toBe(200);
+		const advanced = (await continued.json()) as {
+			result: { entries: Record<string, { phase: string; workspace: string }> };
+		};
+		const entry = advanced.result.entries[dependent.result.goal.id];
+		workspacePaths.push(entry.workspace);
+		expect(entry.phase).toBe("prepared");
+	});
+
 	it("allows only one concurrent web start to reserve the same goal", async () => {
 		const root = await repository();
 		const servers = await Promise.all(

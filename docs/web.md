@@ -16,7 +16,8 @@ The application provides these local workflows:
 - Change the canonical goal order.
 - Complete, reopen, archive, or delete a goal after confirmation.
 - View ready, blocked, active, claimed, and settled goals.
-- Approve ready goals for workspace preparation.
+- Approve ready goals for immediate workspace preparation.
+- Include blocked goals in the approved run. Continue the run after their dependencies settle.
 - Copy shell-quoted `cd` commands for prepared workspaces.
 - Continue an approved run after dependencies land.
 - Reconcile merged pull requests through the existing workspace driver.

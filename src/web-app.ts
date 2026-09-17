@@ -266,18 +266,20 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 				const advanced = await store.withRunLock("web-dispatch", async () => {
 					const snapshot = await service.readProjectSnapshot("web");
 					if (!snapshot.ok) throw new Error(snapshot.error.message);
-					const ready = new Set(
-						readyGoals(snapshot.result.goals ?? [], snapshot.result.retiredIds ?? []).map((goal) => goal.id),
+					const eligible = new Set(
+						(snapshot.result.goals ?? [])
+							.filter((goal) => (goal.status === "open" || goal.status === "active") && !goal.branch)
+							.map((goal) => goal.id),
 					);
 					const runs = await store.list();
 					for (const id of body.approvedGoalIds as string[]) {
 						if (
-							!ready.has(id) ||
+							!eligible.has(id) ||
 							runs.some((run) => run.approvedGoalIds.includes(id) && run.entries[id]?.phase !== "cleaned")
 						) {
 							throw new HttpError(
 								409,
-								`Goal ${id} is not ready or is reserved by an existing run. Refresh before preparing goals.`,
+								`Goal ${id} is not unfinished and unclaimed, or is reserved by an existing run. Refresh before approving goals.`,
 							);
 						}
 					}
