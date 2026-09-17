@@ -8,6 +8,10 @@ npx -y stepstone@latest project web
 
 Stepstone opens the application in your default browser. Use `--no-open` to print the URL without opening a browser. Use `--port <number>` to select a loopback port. Port `0` selects an available port.
 
+The roadmap opens as a Kanban board of unfinished goals, with Ready, In progress, and Blocked columns. The status filter also exposes Completed and Archived columns. Counts summarize the full roadmap, while search and filters narrow the cards. Expand a card’s description to read its details. On small screens, scroll horizontally between columns. Active and claimed goals appear in In progress. Workspace run activity appears below the board, and claimed cards link to their run. The header identifies the repository and roadmap revision. Use Refresh to read changes made by another agent or terminal.
+
+Choose **Prepare workspaces** above the board to open the guided preparation dialog. Select ready goals for immediate preparation, or expand **Include goals for later** to approve blocked goals. Set the maximum number of prepared workspaces for this run, then review the selected titles and how many can be prepared now. Extra or blocked goals wait for a later **Continue run**. Preparation creates and claims a branch and working folder for each ready goal; open that folder in your coding agent to begin. Selections persist while searching or filtering the board, and unavailable goals are removed from the selection on refresh.
+
 The application provides these local workflows:
 
 - View, filter, and search the roadmap.

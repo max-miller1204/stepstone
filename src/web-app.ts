@@ -5,7 +5,14 @@ import { promisify } from "node:util";
 import { WorklistApplicationService, type WorklistOperation } from "./application-service.ts";
 import { type ClaimEvidence, inspectPreparedClaims } from "./claim-evidence.ts";
 import { WORKLIST_PATH_ENV } from "./cli-contract.ts";
-import { dependencyWaves, isGoalBlocked, readyGoals } from "./dependencies.ts";
+import {
+	dependencyWaves,
+	dependentGoals,
+	isDependencySatisfied,
+	isGoalBlocked,
+	readyGoals,
+	unsatisfiedDependencies,
+} from "./dependencies.ts";
 import {
 	ApplicationRoadmapBinding,
 	currentDispatchTarget,
@@ -247,12 +254,14 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 							dispatchEligible:
 								unavailableDispatchGoalIds([goal.id], goals, storedRuns, retiredIds).length === 0,
 							blocked: isGoalBlocked(goals, goal, retiredIds),
-							blockedBy: goal.dependsOn?.filter((id) => {
-								const dependency = goals.find(
-									(candidate) => candidate.id === id || candidate.previousIds?.includes(id),
-								);
-								return !dependency || (dependency.status !== "done" && dependency.status !== "archived");
-							}),
+							blockedBy: isDependencySatisfied(goal)
+								? []
+								: unsatisfiedDependencies(goals, goal, retiredIds).map((entry) => entry.goal?.id ?? entry.id),
+							blocking: isDependencySatisfied(goal)
+								? []
+								: dependentGoals(goals, goal, retiredIds)
+										.filter((dependent) => !isDependencySatisfied(dependent))
+										.map((dependent) => dependent.id),
 							wave: waveById.get(goal.id),
 						})),
 						runs,

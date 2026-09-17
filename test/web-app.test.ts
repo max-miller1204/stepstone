@@ -86,6 +86,32 @@ describe("Stepstone web application", () => {
 		});
 	});
 
+	it("projects both dependency directions and clears them when a prerequisite settles", async () => {
+		const { app, token } = await openApp();
+		await post(app, token, { action: "add", title: "Prerequisite" });
+		await post(app, token, { action: "add", title: "Dependent", dependsOn: ["prerequisite"] });
+		const before = (await (await fetch(`${app.url}/api/state`)).json()) as { result: { goals: unknown[] } };
+		expect(before.result.goals).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: "prerequisite", blockedBy: [], blocking: ["dependent"] }),
+				expect.objectContaining({
+					id: "dependent",
+					blockedBy: ["prerequisite"],
+					blocking: [],
+					blocked: true,
+				}),
+			]),
+		);
+		await post(app, token, { action: "complete", id: "prerequisite", confirm: true });
+		const after = (await (await fetch(`${app.url}/api/state`)).json()) as { result: { goals: unknown[] } };
+		expect(after.result.goals).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: "prerequisite", blockedBy: [], blocking: [] }),
+				expect.objectContaining({ id: "dependent", blockedBy: [], blocking: [], blocked: false }),
+			]),
+		);
+	});
+
 	it("rejects cross-origin and tokenless mutations without writing", async () => {
 		const { app, token } = await openApp();
 		expect(
