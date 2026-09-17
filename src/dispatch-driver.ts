@@ -74,6 +74,7 @@ export interface DispatchEntry {
 	claimUpdatedAt?: string;
 	mergedPr?: MergeEvidence;
 	completionTarget?: { ref: string; revision: string };
+	targetSelection?: { ref: string; evidence: MergeEvidence };
 	goalFile?: DispatchGoalFile;
 	message?: string;
 	updatedAt: string;
@@ -91,6 +92,7 @@ export interface DispatchRun {
 	targetBranch: string;
 	targetRevision: string;
 	targetRef?: string;
+	custodyRemoval?: { ref: string; revision: string; refs: Array<{ ref: string; revision: string }> };
 	workspaceConfig: DispatchWorkspaceConfig;
 	createdAt: string;
 	updatedAt: string;
@@ -157,7 +159,7 @@ export interface MergeEvidence {
 
 export interface MergeEvidenceBinding {
 	findMerged(branch: string, targetBranch: string, claimedAt: string): Promise<MergeEvidence | undefined>;
-	syncTarget(evidence: MergeEvidence, runId: string): Promise<string>;
+	syncTarget(evidence: MergeEvidence, runId: string, selectionRef: string): Promise<string>;
 	verifyTarget(
 		evidence: MergeEvidence,
 		custody: { ref: string; revision: string },
@@ -177,6 +179,11 @@ export function dispatchTargetRef(runId: string, revision: string): string {
 
 export function dispatchBaseRef(runId: string, revision: string): string {
 	return dispatchTargetRef(runId, revision).replace("/targets/", "/bases/");
+}
+
+export function dispatchSelectionRef(runId: string, goalId: string): string {
+	if (!/^[a-z0-9][a-z0-9-]*$/.test(goalId)) throw new Error("Invalid selection goal ID");
+	return `${dispatchTargetRefPrefix(runId).replace("/targets/", "/selections/")}${goalId}`;
 }
 
 export interface DispatchStateStore {
@@ -326,6 +333,7 @@ export class DispatchDriver {
 
 	async advance(runId: string): Promise<DispatchRun> {
 		const run = await this.dependencies.store.load(runId);
+		if (run.custodyRemoval) throw new Error("Run removal has started; retry workspace cleanup");
 		const reconciled = await this.reconcile(run);
 		const preparedGoalIds = [...reconciled].filter(([, prepared]) => prepared).map(([id]) => id);
 		const refusedGoalIds = [...reconciled].filter(([, prepared]) => !prepared).map(([id]) => id);
@@ -404,6 +412,11 @@ export class DispatchDriver {
 	async cleanup(runId: string, goalId?: string, force = false): Promise<DispatchRun | undefined> {
 		if (force && !goalId) throw new Error("Destructive cleanup requires an explicit goal ID");
 		const run = await this.dependencies.store.load(runId);
+		if (run.custodyRemoval) {
+			if (goalId) throw new Error("Run removal has started; retry cleanup without a goal ID");
+			await this.dependencies.store.remove(run.id);
+			return undefined;
+		}
 		const entries = goalId ? [this.requireEntry(run, goalId)] : Object.values(run.entries);
 		for (const entry of entries) {
 			if (hasCanonicalCustody(entry))
@@ -445,9 +458,15 @@ export class DispatchDriver {
 			if (entry.claimUpdatedAt && (entry.phase === "prepared" || entry.phase === "ambiguous")) {
 				let evidence: MergeEvidence | undefined;
 				try {
-					evidence = entry.completionTarget
-						? entry.mergedPr
-						: await this.dependencies.merges.findMerged(entry.branch, run.targetBranch, entry.claimUpdatedAt);
+					evidence = entry.targetSelection
+						? entry.targetSelection.evidence
+						: entry.completionTarget
+							? entry.mergedPr
+							: await this.dependencies.merges.findMerged(
+									entry.branch,
+									run.targetBranch,
+									entry.claimUpdatedAt,
+								);
 				} catch (error) {
 					entry.phase = "ambiguous";
 					entry.message = `Merge inspection failed; prepared claim preserved: ${errorMessage(error)}`;
@@ -561,7 +580,15 @@ export class DispatchDriver {
 			if (entry.completionTarget) {
 				await this.dependencies.merges.verifyTarget(evidence, entry.completionTarget, run.id);
 			} else {
-				run.targetRevision = await this.dependencies.merges.syncTarget(evidence, run.id);
+				if (!entry.targetSelection) {
+					entry.targetSelection = { ref: dispatchSelectionRef(run.id, entry.goal.id), evidence };
+					await this.persist(run, entry);
+				}
+				run.targetRevision = await this.dependencies.merges.syncTarget(
+					evidence,
+					run.id,
+					entry.targetSelection.ref,
+				);
 				run.targetRef = dispatchTargetRef(run.id, run.targetRevision);
 				entry.completionTarget = { ref: run.targetRef, revision: run.targetRevision };
 			}

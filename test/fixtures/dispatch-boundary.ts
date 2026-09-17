@@ -20,6 +20,17 @@ class InterruptibleRoadmap extends ApplicationRoadmapBinding {
 }
 const roadmap = new InterruptibleRoadmap(root);
 class InterruptibleStore extends FileDispatchStateStore {
+	override async write(run: DispatchRun): Promise<void> {
+		if (fault === "creation-before-state" && Object.keys(run.entries).length === 0) process.exit(90);
+		await super.write(run);
+		if (fault === "creation-after-state" && Object.keys(run.entries).length === 0) process.exit(91);
+		if (fault === "removal-intent" && run.custodyRemoval) process.exit(92);
+	}
+	override async removeRunFile(run: DispatchRun): Promise<void> {
+		if (fault === "removal-refs") process.exit(93);
+		await super.removeRunFile(run);
+		if (fault === "removal-file") process.exit(94);
+	}
 	override async save(run: DispatchRun): Promise<void> {
 		const entry = run.entries.alpha;
 		if (fault === "lose-claim-response" && entry?.phase === "prepared") {
@@ -38,11 +49,18 @@ class InterruptibleStore extends FileDispatchStateStore {
 		}
 	}
 }
-const store = new InterruptibleStore(await defaultDispatchStateDirectory(root));
+class InterruptibleMerges extends GitHubMergeEvidenceBinding {
+	override async syncTarget(...args: Parameters<GitHubMergeEvidenceBinding["syncTarget"]>): Promise<string> {
+		const revision = await super.syncTarget(...args);
+		if (fault === "target-before-receipt") process.exit(95);
+		return revision;
+	}
+}
+const store = new InterruptibleStore(await defaultDispatchStateDirectory(root), root);
 const driver = new DispatchDriver({
 	roadmap,
 	workspace: new GitWorktreeBinding(root, parent),
-	merges: new GitHubMergeEvidenceBinding(root),
+	merges: new InterruptibleMerges(root),
 	store,
 	id: () => "boundary-run",
 });

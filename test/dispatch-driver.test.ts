@@ -294,6 +294,21 @@ function fixture(goals: ProjectGoal[], maxParallel = 2) {
 }
 
 describe("workspace preparation driver", () => {
+	it("allows only whole-run cleanup while a removal journal is pending", async () => {
+		const setup = fixture([goal("alpha")]);
+		const run = await setup.create();
+		run.custodyRemoval = {
+			ref: `refs/stepstone-dispatch/removals/${run.id}`,
+			revision: "a".repeat(40),
+			refs: [],
+		};
+		await setup.store.save(run);
+		await expect(setup.makeDriver().advance(run.id)).rejects.toThrow("Run removal has started");
+		await expect(setup.makeDriver().cleanup(run.id, "alpha")).rejects.toThrow("without a goal ID");
+		expect(setup.workspace.acquired).toEqual([]);
+		expect(await setup.makeDriver().cleanup(run.id)).toBeUndefined();
+		expect(await setup.store.list()).toEqual([]);
+	});
 	it("prepares and claims only approved ready goals up to the configured limit", async () => {
 		const blocked = goal("blocked", { dependsOn: ["dependency"] });
 		const setup = fixture(
@@ -864,7 +879,7 @@ describe("persisted preparation state", () => {
 			},
 		};
 		try {
-			const store = new FileDispatchStateStore(directory);
+			const store = new FileDispatchStateStore(directory, run.repositoryRoot);
 			await store.create(run);
 			expect(await store.load(run.id)).toEqual(run);
 
@@ -922,7 +937,7 @@ describe("persisted preparation state", () => {
 			await execFileAsync("git", ["init", "-q"], { cwd: directory });
 			await mkdir(join(directory, "workspaces"));
 			await writeFile(markerPath, "verified removal");
-			const store = new FileDispatchStateStore(directory);
+			const store = new FileDispatchStateStore(directory, run.repositoryRoot);
 			await store.create(run);
 			await store.remove(run.id);
 			await expect(readFile(markerPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });

@@ -38,6 +38,7 @@ import {
 	DISPATCH_GOAL_FILE,
 	DispatchBoundaryError,
 	dispatchBaseRef,
+	dispatchSelectionRef,
 	dispatchTargetRef,
 	dispatchTargetRefPrefix,
 } from "./dispatch-driver.ts";
@@ -62,11 +63,21 @@ class CommandFailure extends Error {
 	}
 }
 
-async function runCommand(command: string, args: string[], cwd: string): Promise<CommandResult> {
+async function runCommand(
+	command: string,
+	args: string[],
+	cwd: string,
+	input?: string,
+): Promise<CommandResult> {
 	const child = spawn(command, args, {
 		cwd,
-		stdio: ["ignore", "pipe", "pipe"],
+		stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
 	});
+	if (input !== undefined) {
+		if (!child.stdin) throw new Error(`Failed to open input pipe for ${command}`);
+		child.stdin.on("error", () => child.kill());
+		child.stdin.end(input);
+	}
 	const stdoutPipe = child.stdout;
 	const stderrPipe = child.stderr;
 	if (!stdoutPipe || !stderrPipe) {
@@ -235,6 +246,22 @@ const entrySchema = z
 		releaseUpdatedAt: timestampSchema.optional(),
 		completionIntentAt: timestampSchema.optional(),
 		completionUpdatedAt: timestampSchema.optional(),
+		targetSelection: z
+			.object({
+				ref: safeString,
+				evidence: z
+					.object({
+						url: z.string().url(),
+						headBranch: safeString,
+						baseBranch: safeString,
+						createdAt: timestampSchema,
+						mergedAt: timestampSchema,
+						mergeCommit: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/),
+					})
+					.strict(),
+			})
+			.strict()
+			.optional(),
 		completionTarget: z
 			.object({
 				ref: safeString,
@@ -297,6 +324,18 @@ const runSchema = z
 		targetBranch: safeString,
 		targetRevision: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/),
 		targetRef: safeString.optional(),
+		custodyRemoval: z
+			.object({
+				ref: safeString,
+				revision: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/),
+				refs: z.array(
+					z
+						.object({ ref: safeString, revision: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/) })
+						.strict(),
+				),
+			})
+			.strict()
+			.optional(),
 		workspaceConfig: workspaceConfigSchema,
 		createdAt: timestampSchema,
 		updatedAt: timestampSchema,
@@ -344,6 +383,43 @@ const runSchema = z
 			});
 		}
 
+		if (
+			run.custodyRemoval &&
+			(run.custodyRemoval.ref !== `refs/stepstone-dispatch/removals/${run.id}` ||
+				Object.values(run.entries).some((entry) => entry.phase !== "cleaned"))
+		) {
+			context.addIssue({ code: "custom", path: ["custodyRemoval"], message: "invalid run removal journal" });
+		}
+		if (run.custodyRemoval) {
+			const receipts = new Map(run.custodyRemoval.refs.map((receipt) => [receipt.ref, receipt.revision]));
+			const valid = run.custodyRemoval.refs.every(
+				({ ref, revision }) =>
+					ref === dispatchTargetRef(run.id, revision) ||
+					(ref === run.baseCustodyRef && revision === run.baseRevision) ||
+					ref === `refs/stepstone-dispatch/creations/${run.id}` ||
+					Object.values(run.entries).some(
+						(entry) =>
+							entry.targetSelection?.ref === ref &&
+							(!entry.completionTarget || entry.completionTarget.revision === revision),
+					),
+			);
+			const complete =
+				(!run.baseCustodyRef || receipts.get(run.baseCustodyRef) === run.baseRevision) &&
+				(!run.targetRef || receipts.get(run.targetRef) === run.targetRevision) &&
+				Object.values(run.entries).every(
+					(entry) =>
+						!entry.completionTarget ||
+						(receipts.get(entry.completionTarget.ref) === entry.completionTarget.revision &&
+							(!entry.targetSelection ||
+								receipts.get(entry.targetSelection.ref) === entry.completionTarget.revision)),
+				);
+			if (!valid || !complete || receipts.size !== run.custodyRemoval.refs.length)
+				context.addIssue({
+					code: "custom",
+					path: ["custodyRemoval"],
+					message: "invalid custody removal receipts",
+				});
+		}
 		const approved = new Set(run.approvedGoalIds);
 		if (run.lastPass) {
 			const attempted = new Set(run.lastPass.attemptedGoalIds);
@@ -471,6 +547,14 @@ const runSchema = z
 				});
 			}
 			if (
+				entry.targetSelection &&
+				(entry.targetSelection.ref !== dispatchSelectionRef(run.id, id) ||
+					entry.targetSelection.evidence.headBranch !== entry.branch ||
+					entry.targetSelection.evidence.baseBranch !== run.targetBranch)
+			) {
+				context.addIssue({ code: "custom", path, message: "invalid target selection intent" });
+			}
+			if (
 				entry.completionTarget &&
 				(!entry.completionIntentAt ||
 					!entry.mergedPr ||
@@ -534,6 +618,36 @@ function validateRun(value: unknown, path: string): DispatchRun {
 	return result.data as DispatchRun;
 }
 
+async function readDirectRef(repositoryRoot: string, ref: string): Promise<string | undefined> {
+	const output = (
+		await runCommand(
+			"git",
+			["for-each-ref", "--format=%(refname) %(objectname) %(symref)", ref],
+			repositoryRoot,
+		)
+	).stdout.trim();
+	if (!output) return undefined;
+	const [actualRef, revision, symbolic] = output.split(" ");
+	if (actualRef !== ref || symbolic || !/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(revision))
+		throw new Error("Git ref custody changed");
+	return revision;
+}
+
+async function refTransaction(repositoryRoot: string, commands: string[]): Promise<void> {
+	await runCommand(
+		"git",
+		["update-ref", "--no-deref", "--stdin"],
+		repositoryRoot,
+		`start\n${commands.join("\n")}\nprepare\ncommit\n`,
+	);
+}
+
+async function journalBlob(repositoryRoot: string, value: unknown): Promise<string> {
+	return (
+		await runCommand("git", ["hash-object", "-w", "--stdin"], repositoryRoot, JSON.stringify(value))
+	).stdout.trim();
+}
+
 async function verifyRevisionCustody(repositoryRoot: string, ref: string, revision: string): Promise<void> {
 	const actual = (
 		await runCommand("git", ["for-each-ref", "--format=%(objectname) %(symref)", ref], repositoryRoot)
@@ -551,8 +665,10 @@ async function retainRevision(repositoryRoot: string, ref: string, revision: str
 
 export class FileDispatchStateStore implements DispatchStateStore {
 	readonly directory: string;
-	constructor(directory: string) {
+	readonly repositoryRoot: string;
+	constructor(directory: string, repositoryRoot: string) {
 		this.directory = directory;
+		this.repositoryRoot = repositoryRoot;
 	}
 
 	async create(run: DispatchRun): Promise<void> {
@@ -563,10 +679,16 @@ export class FileDispatchStateStore implements DispatchStateStore {
 				throw new Error(`Dispatch run ${run.id} already exists`);
 			} catch (error) {
 				if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-					await this.write(run);
+					validateRun(run, path);
 					if (run.baseCustodyRef && run.baseRevision) {
-						await retainRevision(run.repositoryRoot, run.baseCustodyRef, run.baseRevision);
+						const journal = await journalBlob(this.repositoryRoot, run);
+						await refTransaction(this.repositoryRoot, [
+							`create refs/stepstone-dispatch/creations/${run.id} ${journal}`,
+							`create ${run.baseCustodyRef} ${run.baseRevision}`,
+						]);
 					}
+					await this.write(run);
+					await this.finishCreation(run);
 				} else throw error;
 			}
 		});
@@ -581,14 +703,33 @@ export class FileDispatchStateStore implements DispatchStateStore {
 			const current = await this.read(run.id);
 			if (current.repositoryRoot !== run.repositoryRoot)
 				throw new Error(`Dispatch run ${run.id} changed repository roots`);
+			if (current.custodyRemoval) throw new Error("Run removal has started; retry cleanup");
 			await this.write(run);
+			await this.finishCreation(run);
 		});
 	}
 
 	async list(): Promise<DispatchRun[]> {
 		return this.withLock(async () => {
-			const names = (await readdir(this.directory)).filter((name) => name.endsWith(".json"));
-			return Promise.all(names.map((name) => this.read(name.slice(0, -5))));
+			const ids = new Set(
+				(await readdir(this.directory))
+					.filter((name) => name.endsWith(".json"))
+					.map((name) => name.slice(0, -5)),
+			);
+			const journals = (
+				await runCommand(
+					"git",
+					[
+						"for-each-ref",
+						"--format=%(refname)",
+						"refs/stepstone-dispatch/creations/",
+						"refs/stepstone-dispatch/removals/",
+					],
+					this.repositoryRoot,
+				)
+			).stdout.trim();
+			for (const ref of journals.split("\n").filter(Boolean)) ids.add(ref.slice(ref.lastIndexOf("/") + 1));
+			return Promise.all([...ids].map((id) => this.read(id)));
 		});
 	}
 
@@ -598,39 +739,139 @@ export class FileDispatchStateStore implements DispatchStateStore {
 			if (Object.values(run.entries).some((entry) => entry.phase !== "cleaned")) {
 				throw new Error("Cannot remove a dispatch run before safe workspace cleanup");
 			}
-			const prefix = dispatchTargetRefPrefix(run.id);
-			const refs = (
-				await runCommand(
-					"git",
-					[
-						"for-each-ref",
-						"--format=%(refname) %(objectname) %(symref)",
-						prefix,
-						prefix.replace("/targets/", "/bases/"),
-					],
-					run.repositoryRoot,
-				)
-			).stdout.trim();
-			const receipts = refs ? refs.split("\n").map((line) => line.split(" ")) : [];
-			for (const [ref, revision, symbolic] of receipts) {
-				if (
-					symbolic ||
-					(ref !== dispatchTargetRef(run.id, revision) &&
-						!(ref === run.baseCustodyRef && revision === run.baseRevision))
-				)
-					throw new Error("Target ref custody changed");
+			if (!run.custodyRemoval) {
+				const refs = await this.removalRefs(run);
+				const revision = await journalBlob(this.repositoryRoot, { run, refs });
+				run.custodyRemoval = { ref: `refs/stepstone-dispatch/removals/${run.id}`, revision, refs };
+				await this.write(run);
 			}
-			for (const [ref, revision] of receipts) {
-				await runCommand("git", ["update-ref", "--no-deref", "-d", ref, revision], run.repositoryRoot);
-			}
-			for (const entry of Object.values(run.entries)) {
-				if (entry.cleanupMarker) {
-					await rm(join(this.directory, "workspaces", `${entry.cleanupMarker}.json`), { force: true });
+			const journal = run.custodyRemoval;
+			const snapshot = structuredClone(run);
+			delete snapshot.custodyRemoval;
+			const revision = await journalBlob(this.repositoryRoot, { run: snapshot, refs: journal.refs });
+			if (revision !== journal.revision) throw new Error("Run removal journal changed");
+			const committed = await readDirectRef(this.repositoryRoot, journal.ref);
+			if (committed) {
+				if (committed !== revision) throw new Error("Run removal receipt changed");
+				for (const receipt of journal.refs) {
+					if (await readDirectRef(this.repositoryRoot, receipt.ref))
+						throw new Error("Removed custody ref reappeared");
 				}
+				const prefix = dispatchTargetRefPrefix(run.id);
+				const remaining = (
+					await runCommand(
+						"git",
+						[
+							"for-each-ref",
+							"--format=%(refname)",
+							prefix,
+							prefix.replace("/targets/", "/bases/"),
+							prefix.replace("/targets/", "/selections/"),
+							`refs/stepstone-dispatch/creations/${run.id}`,
+						],
+						this.repositoryRoot,
+					)
+				).stdout.trim();
+				if (remaining) throw new Error("New custody refs appeared during run removal");
+			} else {
+				const current = await this.removalRefs(snapshot);
+				if (JSON.stringify(current) !== JSON.stringify(journal.refs))
+					throw new Error("Run removal custody changed");
+				await refTransaction(this.repositoryRoot, [
+					...journal.refs.map((receipt) => `delete ${receipt.ref} ${receipt.revision}`),
+					`create ${journal.ref} ${revision}`,
+				]);
 			}
-			await rm(this.path(runId), { force: true });
+			await this.removeRunFile(run);
+			await runCommand("git", ["update-ref", "--no-deref", "-d", journal.ref, revision], this.repositoryRoot);
 		});
 	}
+	private async finishCreation(run: DispatchRun): Promise<void> {
+		if (!run.baseCustodyRef) return;
+		const ref = `refs/stepstone-dispatch/creations/${run.id}`;
+		const revision = await readDirectRef(this.repositoryRoot, ref);
+		if (!revision) return;
+		const original = validateRun(
+			JSON.parse((await runCommand("git", ["cat-file", "blob", revision], this.repositoryRoot)).stdout),
+			ref,
+		);
+		if (
+			original.id !== run.id ||
+			original.repositoryRoot !== run.repositoryRoot ||
+			original.baseCustodyRef !== run.baseCustodyRef ||
+			original.baseRevision !== run.baseRevision
+		)
+			throw new Error("Run creation journal changed");
+		await verifyRevisionCustody(this.repositoryRoot, run.baseCustodyRef, run.baseRevision as string);
+		await runCommand("git", ["update-ref", "--no-deref", "-d", ref, revision], this.repositoryRoot);
+	}
+
+	private async removalRefs(run: DispatchRun): Promise<Array<{ ref: string; revision: string }>> {
+		const expected = new Map<string, string>();
+		if (run.baseCustodyRef && run.baseRevision) expected.set(run.baseCustodyRef, run.baseRevision);
+		if (run.targetRef) expected.set(run.targetRef, run.targetRevision);
+		for (const entry of Object.values(run.entries)) {
+			if (entry.completionTarget) expected.set(entry.completionTarget.ref, entry.completionTarget.revision);
+			if (entry.targetSelection) {
+				const revision =
+					entry.completionTarget?.revision ??
+					(await readDirectRef(this.repositoryRoot, entry.targetSelection.ref));
+				if (revision) {
+					await runCommand(
+						"git",
+						["merge-base", "--is-ancestor", entry.targetSelection.evidence.mergeCommit, revision],
+						this.repositoryRoot,
+					);
+					expected.set(entry.targetSelection.ref, revision);
+				}
+			}
+		}
+		for (const [ref, revision] of expected) await verifyRevisionCustody(this.repositoryRoot, ref, revision);
+		const prefix = dispatchTargetRefPrefix(run.id);
+		const names = (
+			await runCommand(
+				"git",
+				[
+					"for-each-ref",
+					"--format=%(refname)",
+					prefix,
+					prefix.replace("/targets/", "/bases/"),
+					prefix.replace("/targets/", "/selections/"),
+					`refs/stepstone-dispatch/creations/${run.id}`,
+				],
+				this.repositoryRoot,
+			)
+		).stdout.trim();
+		for (const ref of names.split("\n").filter(Boolean)) {
+			const revision = await readDirectRef(this.repositoryRoot, ref);
+			if (!revision) throw new Error("Git ref custody changed");
+			if (!expected.has(ref)) {
+				if (ref === `refs/stepstone-dispatch/creations/${run.id}`) {
+					const initial = validateRun(
+						JSON.parse((await runCommand("git", ["cat-file", "blob", revision], this.repositoryRoot)).stdout),
+						ref,
+					);
+					if (
+						initial.id !== run.id ||
+						initial.repositoryRoot !== run.repositoryRoot ||
+						initial.baseCustodyRef !== run.baseCustodyRef
+					)
+						throw new Error("Run creation journal changed");
+				} else if (ref !== dispatchTargetRef(run.id, revision)) throw new Error("Target ref custody changed");
+				expected.set(ref, revision);
+			}
+		}
+		return [...expected].sort(([a], [b]) => a.localeCompare(b)).map(([ref, revision]) => ({ ref, revision }));
+	}
+
+	protected async removeRunFile(run: DispatchRun): Promise<void> {
+		for (const entry of Object.values(run.entries)) {
+			if (entry.cleanupMarker)
+				await rm(join(this.directory, "workspaces", `${entry.cleanupMarker}.json`), { force: true });
+		}
+		await rm(this.path(run.id), { force: true });
+	}
+
 	async withRunLock<T>(runId: string, operation: () => Promise<T>): Promise<T> {
 		this.path(runId);
 		await mkdir(this.directory, { recursive: true, mode: 0o700 });
@@ -654,10 +895,35 @@ export class FileDispatchStateStore implements DispatchStateStore {
 
 	private async read(runId: string): Promise<DispatchRun> {
 		const path = this.path(runId);
-		return validateRun(JSON.parse(await readFile(path, "utf8")) as unknown, path);
+		try {
+			return validateRun(JSON.parse(await readFile(path, "utf8")) as unknown, path);
+		} catch (error) {
+			if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+			for (const phase of ["creations", "removals"]) {
+				const ref = `refs/stepstone-dispatch/${phase}/${runId}`;
+				const revision = await readDirectRef(this.repositoryRoot, ref);
+				if (!revision) continue;
+				const data = JSON.parse(
+					(await runCommand("git", ["cat-file", "blob", revision], this.repositoryRoot)).stdout,
+				);
+				const run = validateRun(
+					phase === "creations" ? data : { ...data.run, custodyRemoval: { ref, revision, refs: data.refs } },
+					ref,
+				);
+				if (run.id !== runId || run.repositoryRoot !== this.repositoryRoot)
+					throw new Error("Run journal identity changed");
+				if (phase === "creations") {
+					if (!run.baseCustodyRef || !run.baseRevision)
+						throw new Error("Run creation journal lacks base custody");
+					await verifyRevisionCustody(this.repositoryRoot, run.baseCustodyRef, run.baseRevision);
+				}
+				return run;
+			}
+			throw error;
+		}
 	}
 
-	private async write(run: DispatchRun): Promise<void> {
+	protected async write(run: DispatchRun): Promise<void> {
 		const target = this.path(run.id);
 		validateRun(run, target);
 		const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
@@ -1623,11 +1889,16 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 		);
 	}
 
-	async syncTarget(evidence: MergeEvidence, runId: string): Promise<string> {
+	async syncTarget(evidence: MergeEvidence, runId: string, selectionRef: string): Promise<string> {
 		dispatchTargetRefPrefix(runId);
+		if (
+			selectionRef !==
+			dispatchSelectionRef(runId, evidence.headBranch.slice(evidence.headBranch.lastIndexOf("/") + 1))
+		)
+			throw new Error("Invalid target selection ref");
 		await runCommand("git", ["check-ref-format", "--branch", evidence.baseBranch], this.repositoryRoot);
-		const targetRef = `refs/stepstone-dispatch/target/${randomUUID()}`;
-		try {
+		let targetRevision = await readDirectRef(this.repositoryRoot, selectionRef);
+		if (!targetRevision) {
 			await runCommand(
 				"git",
 				[
@@ -1635,30 +1906,25 @@ export class GitHubMergeEvidenceBinding implements MergeEvidenceBinding {
 					"--no-tags",
 					"--no-write-fetch-head",
 					"origin",
-					`refs/heads/${evidence.baseBranch}:${targetRef}`,
+					`refs/heads/${evidence.baseBranch}:${selectionRef}`,
 				],
 				this.repositoryRoot,
 			);
-			const targetRevision = (
-				await runCommand("git", ["rev-parse", "--verify", `${targetRef}^{commit}`], this.repositoryRoot)
-			).stdout.trim();
-			try {
-				await runCommand(
-					"git",
-					["merge-base", "--is-ancestor", evidence.mergeCommit, targetRevision],
-					this.repositoryRoot,
-				);
-			} catch {
-				throw new Error(
-					`Merge commit ${evidence.mergeCommit} is not reachable from updated target ${evidence.baseBranch}`,
-				);
-			}
-			const custodyRef = dispatchTargetRef(runId, targetRevision);
-			// An immutable ref keeps each journaled revision alive across later target rewrites.
-			await retainRevision(this.repositoryRoot, custodyRef, targetRevision);
-			return targetRevision;
-		} finally {
-			await runCommand("git", ["update-ref", "--no-deref", "-d", targetRef], this.repositoryRoot);
+			targetRevision = await readDirectRef(this.repositoryRoot, selectionRef);
 		}
+		if (!targetRevision) throw new Error("Target selection did not retain a revision");
+		try {
+			await runCommand(
+				"git",
+				["merge-base", "--is-ancestor", evidence.mergeCommit, targetRevision],
+				this.repositoryRoot,
+			);
+		} catch {
+			throw new Error(
+				`Merge commit ${evidence.mergeCommit} is not reachable from updated target ${evidence.baseBranch}`,
+			);
+		}
+		await retainRevision(this.repositoryRoot, dispatchTargetRef(runId, targetRevision), targetRevision);
+		return targetRevision;
 	}
 }

@@ -171,7 +171,7 @@ async function realFixture() {
 	const started = await cli("workspace", "start", "--goal", "alpha", "--workspace-parent", directory);
 	const runId: string = started.result.id;
 	const workspacePath: string = started.result.entries.alpha.workspace;
-	const store = new FileDispatchStateStore(join(root, ".git", "stepstone-dispatch"));
+	const store = new FileDispatchStateStore(join(root, ".git", "stepstone-dispatch"), root);
 	const roadmap = new ApplicationRoadmapBinding(root);
 	const workspace = new GitWorktreeBinding(root, directory);
 	return { directory, root, git, cli, runId, workspacePath, store, roadmap, workspace };

@@ -50,6 +50,7 @@ if (args[0] === "fetch") {
 		await chmod(join(bin, "git"), 0o755);
 		process.env.PATH = `${bin}:${originalPath}`;
 		const binding = new GitHubMergeEvidenceBinding(root);
+		const selectionRef = "refs/stepstone-dispatch/selections/target-test/alpha";
 		const evidence = {
 			url: "https://example.test/pull/1",
 			headBranch: "stepstone/run/alpha",
@@ -58,16 +59,18 @@ if (args[0] === "fetch") {
 			mergedAt: "2026-01-02T00:00:00.000Z",
 			mergeCommit: base,
 		};
-		await expect(binding.syncTarget(evidence, "../another-run")).rejects.toThrow("Invalid dispatch run ID");
-		expect(await binding.syncTarget(evidence, "target-test")).toBe(base);
-		expect(await git("rev-parse", "FETCH_HEAD")).toBe(release);
-		await expect(binding.syncTarget({ ...evidence, mergeCommit: release }, "target-test")).rejects.toThrow(
-			"not reachable from updated target main",
+		await expect(binding.syncTarget(evidence, "../another-run", selectionRef)).rejects.toThrow(
+			"Invalid dispatch run ID",
 		);
+		expect(await binding.syncTarget(evidence, "target-test", selectionRef)).toBe(base);
+		expect(await git("rev-parse", "FETCH_HEAD")).toBe(release);
+		await expect(
+			binding.syncTarget({ ...evidence, mergeCommit: release }, "target-test", selectionRef),
+		).rejects.toThrow("not reachable from updated target main");
 		expect(await git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/target/")).toBe("");
 		const custodyRef = `refs/stepstone-dispatch/targets/target-test/${base}`;
 		expect(await git("rev-parse", custodyRef)).toBe(base);
-		expect(await binding.syncTarget(evidence, "target-test")).toBe(base);
+		expect(await binding.syncTarget(evidence, "target-test", selectionRef)).toBe(base);
 		await binding.verifyTarget(evidence, { ref: custodyRef, revision: base }, "target-test");
 		await expect(
 			binding.verifyTarget(
@@ -83,7 +86,9 @@ if (args[0] === "fetch") {
 		await expect(
 			binding.verifyTarget(evidence, { ref: custodyRef, revision: base }, "target-test"),
 		).rejects.toThrow("Target ref custody changed");
-		await expect(binding.syncTarget(evidence, "target-test")).rejects.toThrow("Target ref custody changed");
+		await expect(binding.syncTarget(evidence, "target-test", selectionRef)).rejects.toThrow(
+			"Target ref custody changed",
+		);
 		const workspaceBinding = new GitWorktreeBinding(root, directory);
 		await expect(
 			workspaceBinding.acquire(

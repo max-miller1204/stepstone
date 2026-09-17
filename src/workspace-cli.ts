@@ -224,7 +224,10 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 	if (!rootResult.root) throw new Error(rootResult.failure?.message ?? `${cwd} is not a Git repository`);
 	const repositoryRoot = rootResult.root;
 	requireMainWorktree(repositoryRoot);
-	const store = new FileDispatchStateStore(await defaultDispatchStateDirectory(repositoryRoot));
+	const store = new FileDispatchStateStore(
+		await defaultDispatchStateDirectory(repositoryRoot),
+		repositoryRoot,
+	);
 
 	switch (invocation.action) {
 		case "start": {

@@ -9,6 +9,83 @@ beforeAll(compileProcessBoundaryRunner);
 // Deep binding/process cases. Packed executable and Pi RPC workflows live in
 // their own tiers; this suite never replaces git, gh, or an application binding.
 describe("real preparation process boundaries", () => {
+	it.each(["creation-before-state", "creation-after-state"])(
+		"recovers base custody after %s and pruning",
+		async (fault) => {
+			await withProcessBoundary(async (f) => {
+				const tree = await f.git("rev-parse", `${f.base}^{tree}`);
+				const base = await f.git("commit-tree", tree, "-p", f.base, "-m", "unreferenced base");
+				await expect(f.run("create", base, "", fault)).rejects.toMatchObject({
+					code: fault === "creation-before-state" ? 90 : 91,
+				});
+				await f.git("reflog", "expire", "--expire=all", "--all");
+				await f.git("gc", "--prune=now");
+				const run = await f.run("load", "boundary-run");
+				expect(run.baseRevision).toBe(base);
+				expect(await f.git("rev-parse", run.baseCustodyRef as string)).toBe(base);
+				expect((await f.workspaceCli("status")).result).toMatchObject([{ id: run.id }]);
+				if (fault === "creation-before-state")
+					await expect(
+						readFile(join(f.root, ".git", "stepstone-dispatch", `${run.id}.json`)),
+					).rejects.toMatchObject({ code: "ENOENT" });
+				const prepared = await f.run("advance", run.id);
+				expect(prepared.entries.alpha.phase).toBe("prepared");
+				expect(await f.workGit("rev-parse", "HEAD")).toBe(base);
+				await f.git("push", "origin", `${base}:refs/heads/base-backup`);
+				await f.run("recover", run.id);
+				await f.run("cleanup", run.id);
+				expect(await f.git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/")).toBe("");
+			});
+		},
+	);
+
+	it.each(["removal-intent", "removal-refs", "removal-file"])(
+		"recovers owned run removal after %s",
+		async (fault) => {
+			await withProcessBoundary(async (f) => {
+				const run = await f.prepare();
+				await f.run("recover", run.id);
+				await expect(f.run("cleanup", run.id, "", fault)).rejects.toMatchObject({
+					code: fault === "removal-intent" ? 92 : fault === "removal-refs" ? 93 : 94,
+				});
+				const pending = await f.run("load", run.id);
+				expect(pending.custodyRemoval).toBeDefined();
+				expect((await f.workspaceCli("status")).result).toMatchObject([{ id: run.id }]);
+				if (fault === "removal-intent") {
+					await f.git("update-ref", "-d", run.baseCustodyRef as string, f.base);
+					await expect(f.run("cleanup", run.id)).rejects.toMatchObject({ code: 1 });
+					await f.git("update-ref", run.baseCustodyRef as string, f.base, "");
+				}
+				await f.run("cleanup", run.id);
+				expect((await f.workspaceCli("status")).result).toEqual([]);
+				expect(await f.git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/")).toBe("");
+			});
+		},
+	);
+
+	it.each(["base", "target", "selection"])(
+		"refuses externally missing %s custody before run removal",
+		async (kind) => {
+			await withProcessBoundary(async (f) => {
+				const run = await f.prepare();
+				f.pullRequests = [f.pr(run.entries.alpha.claimUpdatedAt as string)];
+				const completed = await f.run("advance", run.id);
+				expect(completed.entries.alpha.phase).toBe("cleaned");
+				const ref = (
+					kind === "base"
+						? completed.baseCustodyRef
+						: kind === "target"
+							? completed.entries.alpha.completionTarget?.ref
+							: completed.entries.alpha.targetSelection?.ref
+				) as string;
+				await f.git("update-ref", "-d", ref, f.base);
+				await expect(f.run("cleanup", run.id)).rejects.toMatchObject({ code: 1 });
+				expect((await f.run("load", run.id)).custodyRemoval).toBeUndefined();
+				await f.git("update-ref", ref, f.base, "");
+				await f.run("cleanup", run.id);
+			});
+		},
+	);
 	it("prepares and claims the exact real worktree, then releases and removes its receipts", async () => {
 		await withProcessBoundary(async (f) => {
 			const prepared = await f.prepare();
@@ -245,7 +322,7 @@ describe("real GitHub CLI reconciliation", () => {
 		},
 	);
 
-	it.each(["lose-completion-response", "after-completion-intent"])(
+	it.each(["lose-completion-response", "after-completion-intent", "target-before-receipt"])(
 		"reuses journaled target custody after target rewrite and %s",
 		async (fault) => {
 			await withProcessBoundary(async (f) => {
@@ -255,10 +332,15 @@ describe("real GitHub CLI reconciliation", () => {
 				await f.git("push", "origin", `${tip}:refs/heads/main`, `${tip}:refs/heads/retained-feature`);
 				f.pullRequests = [f.pr(run.entries.alpha.claimUpdatedAt as string, tip)];
 				await expect(f.run("advance", run.id, "", fault)).rejects.toMatchObject({
-					code: fault === "lose-completion-response" ? 88 : 89,
+					code: fault === "lose-completion-response" ? 88 : fault === "after-completion-intent" ? 89 : 95,
 				});
 				const interrupted = await f.run("load", run.id);
-				expect(interrupted.entries.alpha.completionTarget?.revision).toBe(tip);
+				if (fault === "target-before-receipt") {
+					expect(interrupted.entries.alpha.completionTarget).toBeUndefined();
+					expect(await f.git("rev-parse", interrupted.entries.alpha.targetSelection?.ref as string)).toBe(
+						tip,
+					);
+				} else expect(interrupted.entries.alpha.completionTarget?.revision).toBe(tip);
 				await f.command("git", ["update-ref", "refs/heads/main", f.base, tip], f.remote);
 				await f.git("reflog", "expire", "--expire=all", "--all");
 				await f.git("gc", "--prune=now");
