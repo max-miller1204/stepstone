@@ -30,6 +30,6 @@ The server binds only to `127.0.0.1`. It checks the HTTP `Host` header on every 
 
 The server accepts bounded JSON request bodies. Browser code does not read or write the goal file. Goal mutations use `WorklistApplicationService`, the cross-process lock, and atomic file replacement. Workspace actions use `DispatchDriver` and its ownership checks.
 
-Run the application only from the main worktree. This rule keeps the committed roadmap on its canonical branch. Prepared linked worktrees remain read-only for roadmap mutations.
+Run the application only from the main worktree. The web application rejects `--file` and non-empty `STEPSTONE_WORKLIST` overrides. Unset `STEPSTONE_WORKLIST` before starting. The page and persisted workspace runs must use the same canonical repository roadmap. This rule keeps the committed roadmap on its canonical branch. Prepared linked worktrees remain read-only for roadmap mutations.
 
 Stepstone does not expose the server on the network. It does not start agents. It does not create or merge pull requests.

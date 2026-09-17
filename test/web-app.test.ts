@@ -4,7 +4,8 @@ import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import { type StepstoneWebApp, startStepstoneWebApp } from "../src/web-app.ts";
 
 const execFileAsync = promisify(execFile);
@@ -49,6 +50,7 @@ function post(app: StepstoneWebApp, token: string, body: object, origin = app.ur
 }
 
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	await Promise.all(apps.splice(0).map((app) => app.close()));
 	await Promise.all(workspacePaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -217,6 +219,58 @@ describe("Stepstone web application", () => {
 		};
 		expect(state.result.readyGoalIds).toEqual([]);
 		expect(state.result.runs).toEqual([expect.objectContaining({ id: result.result.id })]);
+	});
+
+	it("refuses explicit and environment roadmap overrides before serving", async () => {
+		const root = await repository();
+		await expect(
+			startStepstoneWebApp({ repositoryRoot: root, worklistOverride: join(root, "other.json") }).then(
+				(app) => {
+					apps.push(app);
+					return app;
+				},
+			),
+		).rejects.toThrow("does not support --file");
+		vi.stubEnv(WORKLIST_PATH_ENV, join(root, "other.json"));
+		await expect(
+			startStepstoneWebApp({ repositoryRoot: root }).then((app) => {
+				apps.push(app);
+				return app;
+			}),
+		).rejects.toThrow(`does not support ${WORKLIST_PATH_ENV}`);
+	});
+
+	it("refuses a stale reorder without changing the current order", async () => {
+		const { app, token } = await openApp();
+		for (const title of ["A", "B", "C"]) {
+			expect((await post(app, token, { action: "add", title })).status).toBe(200);
+		}
+		const snapshot = (await (await fetch(`${app.url}/api/state`)).json()) as {
+			result: { revision: string; goals: Array<{ id: string }> };
+		};
+		const [a, b, c] = snapshot.result.goals.map((goal) => goal.id);
+		expect(
+			(
+				await post(app, token, {
+					action: "move",
+					id: c,
+					direction: "up",
+					expectedRevision: snapshot.result.revision,
+				})
+			).status,
+		).toBe(200);
+		const stale = await post(app, token, {
+			action: "move",
+			id: b,
+			direction: "up",
+			expectedRevision: snapshot.result.revision,
+		});
+		expect(stale.status).toBe(409);
+		expect(await stale.json()).toMatchObject({ error: { code: "CONFLICT" } });
+		const current = (await (await fetch(`${app.url}/api/state`)).json()) as {
+			result: { goals: Array<{ id: string }> };
+		};
+		expect(current.result.goals.map((goal) => goal.id)).toEqual([a, c, b]);
 	});
 
 	it("refuses invalid ports and linked-worktree hosting", async () => {

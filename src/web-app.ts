@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { promisify } from "node:util";
 import { WorklistApplicationService, type WorklistOperation } from "./application-service.ts";
 import { inspectPreparedClaims } from "./claim-evidence.ts";
+import { WORKLIST_PATH_ENV } from "./cli-contract.ts";
 import { dependencyWaves, isGoalBlocked, readyGoals } from "./dependencies.ts";
 import {
 	ApplicationRoadmapBinding,
@@ -155,6 +156,12 @@ function html(token: string): string {
 }
 
 export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions): Promise<StepstoneWebApp> {
+	if (options.worklistOverride !== undefined) {
+		throw new Error("The Stepstone web app does not support --file. Use the canonical repository roadmap.");
+	}
+	if (process.env[WORKLIST_PATH_ENV]?.trim()) {
+		throw new Error(`The Stepstone web app does not support ${WORKLIST_PATH_ENV}. Unset it before starting.`);
+	}
 	const placement = resolveWorktreePlacement(options.repositoryRoot);
 	if (placement.kind !== "main") {
 		throw new Error("The Stepstone web app must run from the repository's main worktree.");
@@ -165,10 +172,7 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 	) {
 		throw new Error("Web app port must be an integer from 0 through 65535.");
 	}
-	const locator = createWorklistLocator(options.repositoryRoot, {
-		override: options.worklistOverride,
-		env: process.env,
-	});
+	const locator = createWorklistLocator(options.repositoryRoot);
 	const service = new WorklistApplicationService({ projectPath: null });
 	service.setProjectPathResolver(() => locator().path);
 	const store = new FileDispatchStateStore(await defaultDispatchStateDirectory(options.repositoryRoot));
