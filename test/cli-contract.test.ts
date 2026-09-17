@@ -793,6 +793,7 @@ describe("single CLI command contract", () => {
 			"ready",
 			"waves",
 			"ui",
+			"web",
 			"add",
 			"apply-plan",
 			"update",

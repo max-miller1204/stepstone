@@ -30,6 +30,7 @@ import {
 	type MergeEvidenceBinding,
 	type RoadmapBinding,
 	type RoadmapSnapshot,
+	unavailableDispatchGoalIds,
 	type WorkspaceBinding,
 } from "../src/dispatch-driver.ts";
 import type { ProjectGoal } from "../src/types.ts";
@@ -281,6 +282,49 @@ function fixture(goals: ProjectGoal[], maxParallel = 2) {
 }
 
 describe("workspace preparation driver", () => {
+	it("resolves historical approvals once and preserves their workspace identity", async () => {
+		const setup = fixture([goal("current", { previousIds: ["historical"] })]);
+		const run = await setup.create(["historical", "current"]);
+		expect(
+			unavailableDispatchGoalIds(["current"], setup.roadmap.snapshot.goals, await setup.store.list()),
+		).toEqual(["current"]);
+		const prepared = await setup.makeDriver().advance(run.id);
+		expect(prepared.approvedGoalIds).toEqual(["historical", "current"]);
+		expect(Object.keys(prepared.entries)).toEqual(["historical"]);
+		expect(setup.workspace.acquired).toEqual(["historical"]);
+		expect(setup.roadmap.claims[0]).toMatchObject({ id: "current", branch: "stepstone/historical" });
+		expect(prepared.entries.historical.goal).not.toHaveProperty("previousIds");
+		await setup.makeDriver().recoverRelease(run.id, "historical");
+		expect(setup.roadmap.releases[0]).toMatchObject({ id: "current" });
+		const cleanedRuns = await setup.store.list();
+		expect(cleanedRuns[0].entries.historical.phase).toBe("cleaned");
+		expect(
+			unavailableDispatchGoalIds(["historical", "current"], setup.roadmap.snapshot.goals, cleanedRuns),
+		).toEqual([]);
+		await setup.makeDriver().advance(run.id);
+		expect(setup.workspace.acquired).toEqual(["historical"]);
+		const retired = fixture([goal("current", { previousIds: ["historical"] })]);
+		retired.roadmap.snapshot.retiredIds.push("historical");
+		await expect(retired.create(["historical"])).rejects.toThrow("Approved goal IDs were not found");
+	});
+
+	it("closes a prepared claim after an identity-only ID migration", async () => {
+		const oldId = "goal-mse1rzxb-8213cc2a";
+		const setup = fixture([goal(oldId, { title: "Support goal templates" })], 1);
+		const run = await setup.create();
+		const prepared = await setup.makeDriver().advance(run.id);
+		const claimToken = prepared.entries[oldId].claimUpdatedAt;
+		const current = setup.roadmap.snapshot.goals[0];
+		current.id = "support-goal-templates";
+		current.previousIds = [oldId];
+		setup.merges.evidence.set(`stepstone/${oldId}`, merged({ headBranch: `stepstone/${oldId}` }));
+
+		const resumed = await setup.makeDriver().advance(run.id);
+
+		expect(setup.roadmap.completions).toEqual([{ id: "support-goal-templates", token: claimToken }]);
+		expect(resumed.entries[oldId].phase).toBe("cleaned");
+	});
+
 	it("prepares and claims only approved ready goals up to the configured limit", async () => {
 		const blocked = goal("blocked", { dependsOn: ["dependency"] });
 		const setup = fixture(
@@ -1233,18 +1277,23 @@ describe("published preparation CLI", () => {
 			});
 			expect(await readFile(goalFile, "utf8")).toContain("Complete alpha thoroughly");
 
-			const noWork = await execFileAsync(
-				process.execPath,
-				[cli, "project", "workspace", "start", "--cwd", root, "--goal", "alpha", "--json"],
-				{ cwd: join(import.meta.dirname, "..") },
-			);
-			expect(JSON.parse(noWork.stdout)).toMatchObject({
-				ok: true,
-				result: {
-					pass: { outcome: "no-ready-work", attemptedGoalIds: [] },
-					entries: {},
-				},
-			});
+			await expect(
+				execFileAsync(
+					process.execPath,
+					[cli, "project", "workspace", "start", "--cwd", root, "--goal", "alpha", "--json"],
+					{ cwd: join(import.meta.dirname, "..") },
+				),
+			).rejects.toMatchObject({ stderr: expect.stringContaining("reserved by an existing run") });
+			const afterRejectedStart = await execFileAsync(process.execPath, [
+				cli,
+				"project",
+				"workspace",
+				"status",
+				"--cwd",
+				root,
+				"--json",
+			]);
+			expect(JSON.parse(afterRejectedStart.stdout).result).toHaveLength(1);
 
 			await writeFile(join(workspaceParent, "stepstone-beta"), "occupied");
 			const humanRefusal = await execFileAsync(

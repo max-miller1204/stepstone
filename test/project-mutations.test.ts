@@ -267,6 +267,40 @@ describe("project mutation service", () => {
 		expect(added.goal.id).toBe("support-goal-templates-2");
 	});
 
+	it("preserves a claimed goal token during an identity-only ID migration", async () => {
+		const path = await tempPath();
+		await mkdir(dirname(path), { recursive: true });
+		const claimToken = "2026-08-04T03:01:42.534Z";
+		await writeFile(
+			path,
+			`${JSON.stringify({
+				version: 1,
+				revision: 3,
+				goals: [
+					{
+						id: "goal-mse1rzxb-8213cc2a",
+						title: "Support goal templates",
+						status: "open",
+						branch: "stepstone/goal-mse1rzxb-8213cc2a",
+						createdAt: "2026-08-04T02:37:07.871Z",
+						updatedAt: claimToken,
+					},
+				],
+			})}\n`,
+			"utf8",
+		);
+
+		const migrated = await migrateProjectGoalIds(path);
+
+		expect(migrated.revision).toBe("4");
+		expect(migrated.goals[0]).toMatchObject({
+			id: "support-goal-templates",
+			previousIds: ["goal-mse1rzxb-8213cc2a"],
+			branch: "stepstone/goal-mse1rzxb-8213cc2a",
+			updatedAt: claimToken,
+		});
+	});
+
 	it("appends new goals and reorders them only when asked", async () => {
 		const path = await tempPath();
 		// A clock that runs backwards would resort a createdAt-ordered list, so the

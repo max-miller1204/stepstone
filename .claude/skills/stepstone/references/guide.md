@@ -27,6 +27,7 @@ next
 ready
 waves
 ui
+web [--port <number>] [--no-open]
 add <title...> [--description <text> | -- <description...>]
 apply-plan <plan.json>
 update <id> [title...] [--description <text> | -- <description...>]
@@ -45,6 +46,8 @@ help
 
 Flags:
 
+- `--port <number>` - Bind the local web application to this loopback port; only for project web.
+- `--no-open` - Start the local web application without opening a browser; only for project web.
 - `--goal <id>` - Authorize one goal for workspace start; repeat for the approved set; only for project workspace.
 - `--max-parallel <count>` - Limit workspace start to this many prepared claims (default 1); only for project workspace.
 - `--stale-after-hours <hours>` - Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace.
@@ -117,7 +120,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- One goal-file resolution order applies in every roadmap interface, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- The web application uses only the canonical repository roadmap and rejects path overrides. Other roadmap interfaces use one goal-file resolution order, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
 - Linked worktrees may read either committed roadmap, but a mutation that would change `.worklist/worklist.json` or `.pi/worklist.json` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.
 - A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no `git worktree add` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a `--file` or `$STEPSTONE_WORKLIST` store.
@@ -229,7 +232,7 @@ Git workspace preparation, recovery, and cleanup rules are documented in the pac
 - `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, `start`, and `set_active` are safe to run whenever they serve the user's request.
 - `workspace status` and `workspace inspect` are reads; `workspace start` needs the approved goal set, `resume` keeps that authorization, and recovery or destructive cleanup needs explicit operator intent.
 - `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.
-- `ui` opens a full-screen board for the human at the keyboard, not for you.
+- `ui` and `web` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.
   Suggest `npx -y stepstone@latest project ui` when the user wants to browse or edit goals themselves; read state with `list` and `show` instead.
 - Session Tasks are a Pi extension feature that lives inside a Pi session, so the CLI rejects `session` scope.

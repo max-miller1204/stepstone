@@ -948,7 +948,8 @@ export interface GoalIdMigrationOutcome {
  * edges, is rewritten here as well: former IDs keep an outside reference
  * working, but leaving a stored edge on an old name would let the file disagree
  * with itself. A goal whose only change is a rewritten edge is stamped too,
- * because that edge is stored on it.
+ * because that edge is stored on it. An identity-only rename keeps the token of
+ * a claimed goal so its dispatch run retains exact custody.
  */
 export async function migrateProjectGoalIds(
 	path: string,
@@ -972,6 +973,7 @@ export async function migrateProjectGoalIds(
 				const dependsOn = goal.dependsOn?.map((id) => byPreviousId.get(id)?.to ?? id);
 				const edgesRewritten = !sameStringList(dependsOn, goal.dependsOn);
 				if (!migration && !edgesRewritten) return goal;
+				const preserveClaimToken = migration !== undefined && !edgesRewritten && goal.branch !== undefined;
 				const migratedGoal: ProjectGoal = {
 					...goal,
 					...(migration
@@ -981,7 +983,7 @@ export async function migrateProjectGoalIds(
 							}
 						: {}),
 					...(dependsOn !== undefined ? { dependsOn } : {}),
-					updatedAt: nextGoalUpdatedAt(goal.updatedAt),
+					updatedAt: preserveClaimToken ? goal.updatedAt : nextGoalUpdatedAt(goal.updatedAt),
 				};
 				changedGoalIds.push(migratedGoal.id);
 				return migratedGoal;

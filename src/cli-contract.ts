@@ -213,6 +213,12 @@ export const CLI_COMMAND_CONTRACT = {
 			interactive: true,
 		},
 		{
+			name: "web",
+			usage: "web [--port <number>] [--no-open]",
+			summary: "Open the local roadmap and workspace application (canonical roadmap only; no path overrides)",
+			interactive: true,
+		},
+		{
 			name: "add",
 			usage: "add <title...> [--description <text> | -- <description...>]",
 			summary: "Add an open goal",
@@ -319,6 +325,18 @@ export const CLI_COMMAND_CONTRACT = {
 		},
 	] satisfies CliActionContract[],
 	flags: [
+		{
+			name: "--port",
+			usage: "--port <number>",
+			summary: "Bind the local web application to this loopback port",
+			actions: ["web"],
+		},
+		{
+			name: "--no-open",
+			usage: "--no-open",
+			summary: "Start the local web application without opening a browser",
+			actions: ["web"],
+		},
 		{
 			name: "--goal",
 			usage: "--goal <id>",
@@ -470,7 +488,7 @@ export const CLI_COMMAND_CONTRACT = {
 	 */
 	pathRules: [
 		`The goal file is \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.`,
-		`One goal-file resolution order applies in every roadmap interface, in the CLI, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
+		`The web application uses only the canonical repository roadmap and rejects path overrides. Other roadmap interfaces use one goal-file resolution order, in the CLI, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
 		`Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only \`${LEGACY_WORKLIST_RELATIVE_PATH}\` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes \`${WORKLIST_RELATIVE_PATH}\`.`,
 		`Linked worktrees may read either committed roadmap, but a mutation that would change \`${WORKLIST_RELATIVE_PATH}\` or \`${LEGACY_WORKLIST_RELATIVE_PATH}\` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.`,
 		`A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no \`git worktree add\` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a \`--file\` or \`$${WORKLIST_PATH_ENV}\` store.`,

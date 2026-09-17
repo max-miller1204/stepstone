@@ -27,7 +27,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- One goal-file resolution order applies in every roadmap interface, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- The web application uses only the canonical repository roadmap and rejects path overrides. Other roadmap interfaces use one goal-file resolution order, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
 - Linked worktrees may read either committed roadmap, but a mutation that would change `.worklist/worklist.json` or `.pi/worklist.json` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.
 - A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no `git worktree add` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a `--file` or `$STEPSTONE_WORKLIST` store.
@@ -49,6 +49,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 | `npx -y stepstone@latest project ready` | List every unblocked, unclaimed open goal: the whole parallel frontier |
 | `npx -y stepstone@latest project waves` | Print unfinished goals in dependency layers, earliest first |
 | `npx -y stepstone@latest project ui` | Open the interactive goal board for a human at the keyboard. Requires a terminal; not for scripts or agents |
+| `npx -y stepstone@latest project web [--port <number>] [--no-open]` | Open the local roadmap and workspace application (canonical roadmap only; no path overrides). Requires a terminal; not for scripts or agents |
 | `npx -y stepstone@latest project add <title...> [--description <text> \| -- <description...>]` | Add an open goal |
 | `npx -y stepstone@latest project apply-plan <plan.json>` | Validate and atomically add every goal in a JSON plan |
 | `npx -y stepstone@latest project update <id> [title...] [--description <text> \| -- <description...>]` | Edit a goal's title or description |
@@ -81,6 +82,8 @@ See [workspace preparation, recovery, and cleanup](workspaces.md). Existing vers
 
 | Flag | Description |
 | --- | --- |
+| `--port <number>` | Bind the local web application to this loopback port; only for project web |
+| `--no-open` | Start the local web application without opening a browser; only for project web |
 | `--goal <id>` | Authorize one goal for workspace start; repeat for the approved set; only for project workspace |
 | `--max-parallel <count>` | Limit workspace start to this many prepared claims (default 1); only for project workspace |
 | `--stale-after-hours <hours>` | Set the claim and local branch inactivity threshold for workspace status/inspect (default 24); only for project workspace |
