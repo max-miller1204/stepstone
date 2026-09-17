@@ -263,30 +263,49 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 				if (!Number.isSafeInteger(maxParallel) || (maxParallel as number) < 1) {
 					throw new HttpError(400, "maxParallel must be a positive integer.");
 				}
-				const target = await currentDispatchTarget(options.repositoryRoot);
-				const placeholder = {
-					version: 2,
-					id: "pending",
-					repositoryRoot: options.repositoryRoot,
-					approvedGoalIds: [],
-					maxParallel: maxParallel as number,
-					targetBranch: target.branch,
-					targetRevision: target.revision,
-					workspaceConfig: {},
-					createdAt: "",
-					updatedAt: "",
-					entries: {},
-				} satisfies DispatchRun;
-				const driver = createDriver(placeholder, store);
-				const run = await driver.create({
-					repositoryRoot: options.repositoryRoot,
-					approvedGoalIds: body.approvedGoalIds as string[],
-					maxParallel: maxParallel as number,
-					targetBranch: target.branch,
-					targetRevision: target.revision,
-					workspaceConfig: {},
+				const advanced = await store.withRunLock("web-dispatch", async () => {
+					const snapshot = await service.readProjectSnapshot("web");
+					if (!snapshot.ok) throw new Error(snapshot.error.message);
+					const ready = new Set(
+						readyGoals(snapshot.result.goals ?? [], snapshot.result.retiredIds ?? []).map((goal) => goal.id),
+					);
+					const runs = await store.list();
+					for (const id of body.approvedGoalIds as string[]) {
+						if (
+							!ready.has(id) ||
+							runs.some((run) => run.approvedGoalIds.includes(id) && run.entries[id]?.phase !== "cleaned")
+						) {
+							throw new HttpError(
+								409,
+								`Goal ${id} is not ready or is reserved by an existing run. Refresh before preparing goals.`,
+							);
+						}
+					}
+					const target = await currentDispatchTarget(options.repositoryRoot);
+					const placeholder = {
+						version: 2,
+						id: "pending",
+						repositoryRoot: options.repositoryRoot,
+						approvedGoalIds: [],
+						maxParallel: maxParallel as number,
+						targetBranch: target.branch,
+						targetRevision: target.revision,
+						workspaceConfig: {},
+						createdAt: "",
+						updatedAt: "",
+						entries: {},
+					} satisfies DispatchRun;
+					const driver = createDriver(placeholder, store);
+					const run = await driver.create({
+						repositoryRoot: options.repositoryRoot,
+						approvedGoalIds: body.approvedGoalIds as string[],
+						maxParallel: maxParallel as number,
+						targetBranch: target.branch,
+						targetRevision: target.revision,
+						workspaceConfig: {},
+					});
+					return store.withRunLock(run.id, () => driver.advance(run.id));
 				});
-				const advanced = await store.withRunLock(run.id, () => driver.advance(run.id));
 				json(response, 200, { ok: true, result: summarizeRun(advanced) });
 				return;
 			}
@@ -294,21 +313,23 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 			if (!dispatchMatch) throw new HttpError(404, "Route not found.");
 			requireConfirmation(body);
 			const [, runId, action] = dispatchMatch;
-			const result = await store.withRunLock(runId, async () => {
-				const run = await store.load(runId);
-				if (run.repositoryRoot !== options.repositoryRoot)
-					throw new Error(`Run ${runId} belongs to another repository.`);
-				const driver = createDriver(run, store);
-				if (action === "continue") return driver.advance(runId);
-				if (action === "recover") {
-					return driver.recoverRelease(
-						runId,
-						requiredString(body.goalId, "goalId"),
-						typeof body.claimUpdatedAt === "string" ? body.claimUpdatedAt : undefined,
-					);
-				}
-				return driver.cleanup(runId);
-			});
+			const result = await store.withRunLock("web-dispatch", () =>
+				store.withRunLock(runId, async () => {
+					const run = await store.load(runId);
+					if (run.repositoryRoot !== options.repositoryRoot)
+						throw new Error(`Run ${runId} belongs to another repository.`);
+					const driver = createDriver(run, store);
+					if (action === "continue") return driver.advance(runId);
+					if (action === "recover") {
+						return driver.recoverRelease(
+							runId,
+							requiredString(body.goalId, "goalId"),
+							typeof body.claimUpdatedAt === "string" ? body.claimUpdatedAt : undefined,
+						);
+					}
+					return driver.cleanup(runId);
+				}),
+			);
 			json(response, 200, { ok: true, result: result ? summarizeRun(result) : { removedRunId: runId } });
 		} catch (error) {
 			const status = error instanceof HttpError ? error.status : 500;

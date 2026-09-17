@@ -219,6 +219,77 @@ describe("Stepstone web application", () => {
 		};
 		expect(state.result.readyGoalIds).toEqual([]);
 		expect(state.result.runs).toEqual([expect.objectContaining({ id: result.result.id })]);
+		const cleanup = await postPath(app, token, `/api/dispatch/${result.result.id}/cleanup`, {
+			confirm: true,
+		});
+		expect(cleanup.status).toBe(500);
+		expect(await cleanup.json()).toMatchObject({
+			error: { message: expect.stringContaining("still has custody") },
+		});
+		const recovered = await postPath(app, token, `/api/dispatch/${result.result.id}/recover`, {
+			confirm: true,
+			goalId: created.result.goal.id,
+		});
+		expect(recovered.status).toBe(200);
+		expect(await recovered.json()).toMatchObject({
+			result: {
+				entries: {
+					[created.result.goal.id]: {
+						phase: "cleanup-pending",
+						message: expect.stringContaining("no configured Git remote"),
+					},
+				},
+			},
+		});
+		const duplicate = await postPath(app, token, "/api/dispatch/start", {
+			confirm: true,
+			approvedGoalIds: [created.result.goal.id],
+			maxParallel: 1,
+		});
+		expect(duplicate.status).toBe(409);
+		expect(await duplicate.json()).toMatchObject({
+			error: { message: expect.stringContaining("reserved by an existing run") },
+		});
+	});
+
+	it("allows only one concurrent web start to reserve the same goal", async () => {
+		const root = await repository();
+		const servers = await Promise.all(
+			[0, 1].map(async () => {
+				const app = await startStepstoneWebApp({ repositoryRoot: root });
+				apps.push(app);
+				const token = (await (await fetch(app.url)).text()).match(
+					/name="stepstone-token" content="([^"]+)"/,
+				)?.[1];
+				if (!token) throw new Error("Missing token");
+				return { app, token };
+			}),
+		);
+		const created = await post(servers[0].app, servers[0].token, {
+			action: "add",
+			title: `Concurrent ${randomUUID()}`,
+		});
+		expect(created.status).toBe(200);
+		const goalId = ((await created.json()) as { result: { goal: { id: string } } }).result.goal.id;
+		const responses = await Promise.all(
+			servers.map(({ app, token }) =>
+				postPath(app, token, "/api/dispatch/start", {
+					confirm: true,
+					approvedGoalIds: [goalId],
+					maxParallel: 1,
+				}),
+			),
+		);
+		const state = (await (await fetch(`${servers[0].app.url}/api/state`)).json()) as {
+			result: { runs: Array<{ entries: Record<string, { phase: string; workspace?: string }> }> };
+		};
+		for (const run of state.result.runs) {
+			const workspace = run.entries[goalId]?.workspace;
+			if (workspace) workspacePaths.push(workspace);
+		}
+		expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+		expect(state.result.runs).toHaveLength(1);
+		expect(state.result.runs[0].entries[goalId].phase).toBe("prepared");
 	});
 
 	it("refuses explicit and environment roadmap overrides before serving", async () => {
