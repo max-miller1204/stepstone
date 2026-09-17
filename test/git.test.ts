@@ -7,7 +7,7 @@ import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
 import {
 	createProjectRootLookup,
 	currentGitBranch,
-	GIT_RETRY_HOLD_MS,
+	GIT_COMMAND_TIMEOUT_MS as GIT_RETRY_HOLD_MS,
 	type GitRootFailure,
 	gitRootDiagnostic,
 	isTransientGitFailure,

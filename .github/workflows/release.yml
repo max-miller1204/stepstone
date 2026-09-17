@@ -26,22 +26,24 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Deliberately no `registry-url`. It makes setup-node write an .npmrc
       # holding `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`, and npm
       # treats that as configured credentials even when the variable is unset -
       # so it skips the OIDC exchange entirely and publishes with an empty
       # token, which the registry rejects as a 404. Leaving it out is what lets
       # trusted publishing engage.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
+          package-manager-cache: false
 
-      # Trusted Publishing requires npm >= 11.5.1, which is newer than the npm
-      # bundled with some Node 24 releases.
-      - name: Ensure npm supports trusted publishing
-        run: npm install -g npm@latest
+      - name: Verify npm supports trusted publishing
+        run: |
+          npm_version="$(npm --version)"
+          node -e 'const [major, minor] = process.argv[1].split(".").map(Number); if (major < 11 || (major === 11 && minor < 5)) process.exit(1)' "$npm_version"
 
       # Guards against tagging v0.15.0 while package.json still says 0.14.0,
       # which would otherwise publish the wrong version under the right tag.

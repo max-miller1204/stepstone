@@ -26,7 +26,8 @@ The package ships TypeScript source directly because Pi loads extensions through
 | `npm run check` | Types, the import scan, Biome lint and format, and the whole test suite with coverage |
 | `npm run docs:check` | The generated documents match the sources they are rendered from |
 | `npm run imports:check` | Nothing a compiled executable loads imports a Pi package |
-| `npm run pack:check` | Prints the tarball's file list, so a packaging mistake is visible before publish |
+| `npm run knip` | Every source file, dependency, and export is reachable from a configured product, script, or test entry point |
+| `npm run pack:check` | Prints the tarball file list, then validates the packed manifest and public TypeScript entry points with publint and Are the Types Wrong |
 | `npm run no-pi-install:check` | Every packed and installed executable works with no Pi present |
 | `npm run test:boundaries` | Real Git/gh preparation, reconciliation, recovery and cleanup boundaries |
 | `npm run test:coverage` | Unit tests plus the committed per-file coverage ratchet |
@@ -61,6 +62,8 @@ A commit that defines no `quality:push:worktree`, which is every commit made bef
 Run where no push is feeding it, `npm run quality:pre-push` validates HEAD, and `npm run quality:pre-push -- <revision>...` validates the revisions named.
 
 AI review remains an explicit targeted command rather than part of either default hook.
+
+The supply-chain workflow runs Gitleaks, actionlint, zizmor, CodeQL, and GitHub dependency review before merge. All workflow actions use full commit SHAs. Dependabot updates those pins each week.
 
 ## Unit-test evidence
 

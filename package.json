@@ -62,12 +62,13 @@
 		"docs": "node ./scripts/generate-docs.ts",
 		"docs:check": "node ./scripts/generate-docs.ts --check",
 		"imports:check": "node ./scripts/cli-import-graph.ts",
+		"knip": "knip",
 		"no-pi-install:check": "node ./scripts/no-pi-install-check.ts",
 		"hooks:install": "lefthook install",
 		"quality:pre-commit": "node ./scripts/quality-gates.ts pre-commit",
 		"quality:pre-push": "node ./scripts/quality-gates.ts pre-push",
 		"quality:push:worktree": "npm run check && npm run pack:check && npm run no-pi-install:check && npm run test:e2e:fast",
-		"quality:static": "npm run typecheck && npm run imports:check && npm run lint:check && npm run docs:check",
+		"quality:static": "npm run typecheck && npm run imports:check && npm run knip && npm run lint:check && npm run docs:check",
 		"prepack": "npm run build",
 		"preversion": "npm run docs:check",
 		"test": "npm run test:coverage",
@@ -81,11 +82,27 @@
 		"format:check": "biome format .",
 		"lint": "biome lint --write .",
 		"lint:check": "biome lint .",
-		"check": "npm run typecheck && npm run imports:check && biome check . && npm run test && npm run videos:test",
-		"pack:check": "npm pack --dry-run",
+		"check": "npm run typecheck && npm run imports:check && npm run knip && biome check . && npm run test && npm run videos:test",
+		"pack:check": "npm pack --dry-run && publint --pack npm && attw --pack . --profile esm-only",
 		"verify": "npm run check && npm run pack:check && npm run test:mutation",
 		"test:e2e": "node ./scripts/e2e-check.ts",
 		"test:e2e:fast": "node ./scripts/e2e-check.ts --fast"
+	},
+	"knip": {
+		"entry": [
+			"src/extension.ts",
+			"src/cli.ts",
+			"scripts/*.ts",
+			"scripts/*.mjs",
+			"scripts/videos/*.mjs",
+			"scripts/videos/scenarios/*/verify.mjs"
+		],
+		"project": [
+			"src/**/*.ts",
+			"scripts/**/*.{ts,mjs}",
+			"test/**/*.ts",
+			"vitest.config.ts"
+		]
 	},
 	"dependencies": {
 		"proper-lockfile": "^4.1.2",
@@ -96,16 +113,12 @@
 		"zod"
 	],
 	"peerDependencies": {
-		"@earendil-works/pi-agent-core": "*",
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*",
 		"typebox": "*"
 	},
 	"peerDependenciesMeta": {
-		"@earendil-works/pi-agent-core": {
-			"optional": true
-		},
 		"@earendil-works/pi-ai": {
 			"optional": true
 		},
@@ -120,8 +133,8 @@
 		}
 	},
 	"devDependencies": {
+		"@arethetypeswrong/cli": "^0.18.5",
 		"@biomejs/biome": "^2.2.4",
-		"@earendil-works/pi-agent-core": "*",
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*",
@@ -130,7 +143,9 @@
 		"@types/proper-lockfile": "^4.1.4",
 		"@vitest/coverage-v8": "^4.1.10",
 		"@xterm/headless": "6.0.0",
+		"knip": "^6.36.0",
 		"lefthook": "^2.1.10",
+		"publint": "^0.3.24",
 		"typebox": "*",
 		"typescript": "^7.0.2",
 		"vitest": "^4.1.10"
