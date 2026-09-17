@@ -22,7 +22,7 @@ Repeated `--goal` values are the immutable authorization allow-list. The driver 
 
 `--max-parallel` is the maximum number of goals the run may keep claimed and prepared at once. It does not describe running agents: Stepstone starts none. The default is 1.
 
-Web and CLI workspace actions share a repository reservation lock. A new run rejects goals that are settled, claimed, or reserved by an existing run. Resume the existing run instead of creating another reservation. Blocked, unclaimed goals can be approved before they become ready.
+Web and CLI workspace actions share a repository reservation lock. A new run requires open goals. It rejects goals that are active, settled, claimed, or reserved by an existing run. Resume the existing run instead of creating another reservation. Blocked, unclaimed goals can be approved before they become ready.
 
 Each successful `start` and `resume` result includes a `pass` summary. It reports one of these outcomes:
 

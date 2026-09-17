@@ -30,6 +30,7 @@ import {
 	type MergeEvidenceBinding,
 	type RoadmapBinding,
 	type RoadmapSnapshot,
+	unavailableDispatchGoalIds,
 	type WorkspaceBinding,
 } from "../src/dispatch-driver.ts";
 import type { ProjectGoal } from "../src/types.ts";
@@ -284,6 +285,9 @@ describe("workspace preparation driver", () => {
 	it("resolves historical approvals once and preserves their workspace identity", async () => {
 		const setup = fixture([goal("current", { previousIds: ["historical"] })]);
 		const run = await setup.create(["historical", "current"]);
+		expect(
+			unavailableDispatchGoalIds(["current"], setup.roadmap.snapshot.goals, await setup.store.list()),
+		).toEqual(["current"]);
 		const prepared = await setup.makeDriver().advance(run.id);
 		expect(prepared.approvedGoalIds).toEqual(["historical", "current"]);
 		expect(Object.keys(prepared.entries)).toEqual(["historical"]);
@@ -292,6 +296,11 @@ describe("workspace preparation driver", () => {
 		expect(prepared.entries.historical.goal).not.toHaveProperty("previousIds");
 		await setup.makeDriver().recoverRelease(run.id, "historical");
 		expect(setup.roadmap.releases[0]).toMatchObject({ id: "current" });
+		const cleanedRuns = await setup.store.list();
+		expect(cleanedRuns[0].entries.historical.phase).toBe("cleaned");
+		expect(
+			unavailableDispatchGoalIds(["historical", "current"], setup.roadmap.snapshot.goals, cleanedRuns),
+		).toEqual([]);
 		await setup.makeDriver().advance(run.id);
 		expect(setup.workspace.acquired).toEqual(["historical"]);
 		const retired = fixture([goal("current", { previousIds: ["historical"] })]);

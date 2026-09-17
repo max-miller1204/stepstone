@@ -247,7 +247,7 @@ export async function runWorkspace(input: WorkspaceInvocation, cliVersion: strin
 				);
 				if (unavailable.length)
 					throw new Error(
-						`Goals ${unavailable.join(", ")} are not unfinished and unclaimed, or are reserved by an existing run.`,
+						`Goals ${unavailable.join(", ")} are not open and unclaimed, or are reserved by an existing run.`,
 					);
 				const target = await currentDispatchTarget(repositoryRoot);
 				const placeholder: DispatchRun = {

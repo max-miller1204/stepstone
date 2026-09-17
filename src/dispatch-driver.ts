@@ -203,17 +203,15 @@ export function unavailableDispatchGoalIds(
 ): string[] {
 	return approvedGoalIds.filter((id) => {
 		const goal = findGoalByStoredId(goals, id.trim(), retiredIds);
-		return (
-			!goal ||
-			!["open", "active"].includes(goal.status) ||
-			Boolean(goal.branch) ||
-			runs.some((run) =>
-				run.approvedGoalIds.some(
-					(storedId) =>
-						findGoalByStoredId([goal], storedId) !== undefined && run.entries[storedId]?.phase !== "cleaned",
-				),
-			)
-		);
+		if (goal?.status !== "open" || goal.branch) return true;
+		return runs.some((run) => {
+			if (!run.approvedGoalIds.some((storedId) => findGoalByStoredId([goal], storedId, retiredIds)))
+				return false;
+			const represented = Object.values(run.entries).filter((entry) =>
+				findGoalByStoredId([goal], entry.goal.id, retiredIds),
+			);
+			return represented.length === 0 || represented.some((entry) => entry.phase !== "cleaned");
+		});
 	});
 }
 

@@ -326,7 +326,7 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 					if (unavailable.length) {
 						throw new HttpError(
 							409,
-							`Goals ${unavailable.join(", ")} are not unfinished and unclaimed, or are reserved by an existing run. Refresh before approving goals.`,
+							`Goals ${unavailable.join(", ")} are not open and unclaimed, or are reserved by an existing run. Refresh before approving goals.`,
 						);
 					}
 					const target = await currentDispatchTarget(options.repositoryRoot);

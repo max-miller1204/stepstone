@@ -583,6 +583,36 @@ describe("Stepstone web application", () => {
 		expect(state.result.runs[0].entries[goalId].phase).toBe("prepared");
 	});
 
+	it("refuses an active unclaimed goal before creating a dispatch run", async () => {
+		const root = await repository();
+		const app = await startStepstoneWebApp({ repositoryRoot: root });
+		apps.push(app);
+		const token = (await (await fetch(app.url)).text()).match(
+			/name="stepstone-token" content="([^"]+)"/,
+		)?.[1];
+		if (!token) throw new Error("Missing token");
+		expect((await post(app, token, { action: "add", title: "Active work" })).status).toBe(200);
+		await execFileAsync(process.execPath, [
+			fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
+			"project",
+			"set_active",
+			"active-work",
+			"--cwd",
+			root,
+		]);
+		const state = await (await fetch(`${app.url}/api/state`)).json();
+		expect(state).toMatchObject({
+			result: { goals: [{ id: "active-work", status: "active", dispatchEligible: false }], runs: [] },
+		});
+		const refused = await postPath(app, token, "/api/dispatch/start", {
+			confirm: true,
+			approvedGoalIds: ["active-work"],
+			maxParallel: 1,
+		});
+		expect(refused.status).toBe(409);
+		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({ result: { runs: [] } });
+	});
+
 	it("refuses explicit and environment roadmap overrides before serving", async () => {
 		const root = await repository();
 		await expect(
