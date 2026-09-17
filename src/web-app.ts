@@ -3,7 +3,6 @@ import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
 import { WorklistApplicationService, type WorklistOperation } from "./application-service.ts";
-import { type ClaimEvidence, inspectPreparedClaims } from "./claim-evidence.ts";
 import { WORKLIST_PATH_ENV } from "./cli-contract.ts";
 import {
 	dependencyWaves,
@@ -13,24 +12,7 @@ import {
 	readyGoals,
 	unsatisfiedDependencies,
 } from "./dependencies.ts";
-import {
-	ApplicationRoadmapBinding,
-	currentDispatchTarget,
-	defaultDispatchStateDirectory,
-	FileDispatchStateStore,
-	GitHubMergeEvidenceBinding,
-	GitWorktreeBinding,
-} from "./dispatch-bindings.ts";
-import {
-	DISPATCH_REPOSITORY_LOCK,
-	DispatchDriver,
-	type DispatchRun,
-	hasGoalDispatchCustody,
-	MAX_DISPATCH_PARALLEL,
-	unavailableDispatchGoalIds,
-} from "./dispatch-driver.ts";
 import { createWorklistLocator, resolveWorktreePlacement } from "./git.ts";
-import { resolveGoalSelector } from "./goal-selection.ts";
 import { STEPSTONE_WEB_PAGE } from "./web-page.ts";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -113,62 +95,6 @@ function requiredString(value: unknown, name: string): string {
 	return value;
 }
 
-function requireConfirmation(body: Record<string, unknown>): void {
-	if (body.confirm !== true) throw new HttpError(403, "This action needs explicit confirmation.");
-}
-
-function shellQuote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function canReleaseInBrowser(evidence: ClaimEvidence | undefined): boolean {
-	return (
-		evidence !== undefined &&
-		evidence.canonical.state !== "unavailable" &&
-		evidence.workspace.state === "observed"
-	);
-}
-
-function summarizeRun(run: DispatchRun, evidence: Record<string, ClaimEvidence> = {}): object {
-	return {
-		id: run.id,
-		approvedGoalIds: run.approvedGoalIds,
-		maxParallel: run.maxParallel,
-		targetBranch: run.targetBranch,
-		createdAt: run.createdAt,
-		updatedAt: run.updatedAt,
-		lastPass: run.lastPass,
-		entries: Object.fromEntries(
-			Object.entries(run.entries).map(([id, entry]) => [
-				id,
-				{
-					phase: entry.phase,
-					branch: entry.branch,
-					workspace: entry.workspace?.path,
-					cdCommand: entry.workspace ? `cd ${shellQuote(entry.workspace.path)}` : undefined,
-					goalFile:
-						entry.workspace && entry.goalFile ? `${entry.workspace.path}/${entry.goalFile.path}` : undefined,
-					claimUpdatedAt: entry.claimUpdatedAt,
-					preparationFailure: entry.preparationFailure,
-					mergedPr: entry.mergedPr,
-					message: entry.message,
-					claimEvidence: evidence[id],
-					releaseAvailable: canReleaseInBrowser(evidence[id]),
-				},
-			]),
-		),
-	};
-}
-
-function createDriver(run: DispatchRun, store: FileDispatchStateStore): DispatchDriver {
-	return new DispatchDriver({
-		roadmap: new ApplicationRoadmapBinding(run.repositoryRoot),
-		workspace: new GitWorktreeBinding(run.repositoryRoot, run.workspaceConfig.workspaceParent),
-		merges: new GitHubMergeEvidenceBinding(run.repositoryRoot),
-		store,
-	});
-}
-
 async function openBrowser(url: string): Promise<void> {
 	if (process.platform === "darwin") await execFileAsync("open", [url]);
 	else if (process.platform === "linux") await execFileAsync("xdg-open", [url]);
@@ -176,10 +102,7 @@ async function openBrowser(url: string): Promise<void> {
 }
 
 function html(token: string): string {
-	return STEPSTONE_WEB_PAGE.replace("__STEPSTONE_TOKEN__", token).replace(
-		"__STEPSTONE_MAX_PARALLEL__",
-		String(MAX_DISPATCH_PARALLEL),
-	);
+	return STEPSTONE_WEB_PAGE.replace("__STEPSTONE_TOKEN__", token);
 }
 
 export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions): Promise<StepstoneWebApp> {
@@ -202,7 +125,6 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 	const locator = createWorklistLocator(options.repositoryRoot);
 	const service = new WorklistApplicationService({ projectPath: null });
 	service.setProjectPathResolver(() => locator().path);
-	const store = new FileDispatchStateStore(await defaultDispatchStateDirectory(options.repositoryRoot));
 	const token = randomBytes(32).toString("base64url");
 	let expectedOrigin = "";
 
@@ -232,16 +154,6 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 				const waveById = new Map(
 					waves.waves.flatMap((wave, index) => wave.map((goal) => [goal.id, index + 1])),
 				);
-				const runs = [];
-				const storedRuns = await store.list();
-				for (const run of storedRuns) {
-					const evidence = await inspectPreparedClaims(
-						run,
-						new ApplicationRoadmapBinding(run.repositoryRoot),
-						new GitWorktreeBinding(run.repositoryRoot, run.workspaceConfig.workspaceParent),
-					);
-					runs.push(summarizeRun(run, evidence));
-				}
 				json(response, 200, {
 					ok: true,
 					result: {
@@ -250,9 +162,6 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 						readyGoalIds: readyGoals(goals, retiredIds).map((goal) => goal.id),
 						goals: goals.map((goal) => ({
 							...goal,
-							dispatchCustody: hasGoalDispatchCustody(goal, storedRuns),
-							dispatchEligible:
-								unavailableDispatchGoalIds([goal.id], goals, storedRuns, retiredIds).length === 0,
 							blocked: isGoalBlocked(goals, goal, retiredIds),
 							blockedBy: isDependencySatisfied(goal)
 								? []
@@ -264,7 +173,6 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 										.map((dependent) => dependent.id),
 							wave: waveById.get(goal.id),
 						})),
-						runs,
 					},
 				});
 				return;
@@ -280,131 +188,11 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 					throw new HttpError(400, `Unsupported goal action ${action}.`);
 				}
 				const operation: WorklistOperation = { ...body, scope: "project", action } as WorklistOperation;
-				const result = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, async () => {
-					if (action !== "add" && action !== "move" && typeof operation.id === "string") {
-						const snapshot = await service.readProjectSnapshot("web");
-						if (!snapshot.ok) throw new Error(snapshot.error.message);
-						const selected = resolveGoalSelector(
-							snapshot.result.goals ?? [],
-							operation.id,
-							snapshot.result.retiredIds ?? [],
-						);
-						if (selected.kind === "found") {
-							operation.id = selected.goal.id;
-							if (hasGoalDispatchCustody(selected.goal, await store.list())) {
-								throw new HttpError(
-									409,
-									`Goal ${selected.goal.id} has workspace custody. Release its claim or reconcile its run before editing its roadmap data.`,
-								);
-							}
-						}
-					}
-					return service.execute(operation, { source: "dashboard" });
-				});
+				const result = await service.execute(operation, { source: "dashboard" });
 				json(response, result.ok ? 200 : result.error.code === "CONFLICT" ? 409 : 400, result);
 				return;
 			}
-			if (url.pathname === "/api/dispatch/start") {
-				requireConfirmation(body);
-				if (
-					!Array.isArray(body.approvedGoalIds) ||
-					!body.approvedGoalIds.every((id) => typeof id === "string")
-				) {
-					throw new HttpError(400, "approvedGoalIds must be an array of goal IDs.");
-				}
-				const maxParallel = body.maxParallel;
-				if (
-					!Number.isSafeInteger(maxParallel) ||
-					(maxParallel as number) < 1 ||
-					(maxParallel as number) > MAX_DISPATCH_PARALLEL
-				) {
-					throw new HttpError(
-						400,
-						`maxParallel must be a positive integer no greater than ${MAX_DISPATCH_PARALLEL}.`,
-					);
-				}
-				const advanced = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, async () => {
-					const snapshot = await service.readProjectSnapshot("web");
-					if (!snapshot.ok) throw new Error(snapshot.error.message);
-					const unavailable = unavailableDispatchGoalIds(
-						body.approvedGoalIds as string[],
-						snapshot.result.goals ?? [],
-						await store.list(),
-						snapshot.result.retiredIds ?? [],
-					);
-					if (unavailable.length) {
-						throw new HttpError(
-							409,
-							`Goals ${unavailable.join(", ")} are not open and unclaimed, or are reserved by an existing run. Refresh before approving goals.`,
-						);
-					}
-					const target = await currentDispatchTarget(options.repositoryRoot);
-					const placeholder = {
-						version: 2,
-						id: "pending",
-						repositoryRoot: options.repositoryRoot,
-						approvedGoalIds: [],
-						maxParallel: maxParallel as number,
-						targetBranch: target.branch,
-						targetRevision: target.revision,
-						workspaceConfig: {},
-						createdAt: "",
-						updatedAt: "",
-						entries: {},
-					} satisfies DispatchRun;
-					const driver = createDriver(placeholder, store);
-					const run = await driver.create({
-						repositoryRoot: options.repositoryRoot,
-						approvedGoalIds: body.approvedGoalIds as string[],
-						maxParallel: maxParallel as number,
-						targetBranch: target.branch,
-						targetRevision: target.revision,
-						workspaceConfig: {},
-					});
-					return store.withRunLock(run.id, () => driver.advance(run.id));
-				});
-				json(response, 200, { ok: true, result: summarizeRun(advanced) });
-				return;
-			}
-			const dispatchMatch = url.pathname.match(/^\/api\/dispatch\/([^/]+)\/(continue|recover|cleanup)$/);
-			if (!dispatchMatch) throw new HttpError(404, "Route not found.");
-			requireConfirmation(body);
-			const [, runId, action] = dispatchMatch;
-			const result = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, () =>
-				store.withRunLock(runId, async () => {
-					const run = await store.load(runId);
-					if (run.repositoryRoot !== options.repositoryRoot)
-						throw new Error(`Run ${runId} belongs to another repository.`);
-					const driver = createDriver(run, store);
-					if (action === "continue") return driver.advance(runId);
-					if (action === "recover") {
-						if (body.acknowledgeEvidence !== true)
-							throw new HttpError(
-								403,
-								"Read and explicitly acknowledge the claim and workspace evidence before release.",
-							);
-						const goalId = requiredString(body.goalId, "goalId");
-						const evidence = await inspectPreparedClaims(
-							run,
-							new ApplicationRoadmapBinding(run.repositoryRoot),
-							new GitWorktreeBinding(run.repositoryRoot, run.workspaceConfig.workspaceParent),
-							{ goalId },
-						);
-						if (!canReleaseInBrowser(evidence[goalId]))
-							throw new HttpError(
-								409,
-								`Claim evidence is unavailable. Use CLI inspection: project workspace inspect ${runId} ${goalId}.`,
-							);
-						return driver.recoverRelease(
-							runId,
-							goalId,
-							typeof body.claimUpdatedAt === "string" ? body.claimUpdatedAt : undefined,
-						);
-					}
-					return driver.cleanup(runId);
-				}),
-			);
-			json(response, 200, { ok: true, result: result ? summarizeRun(result) : { removedRunId: runId } });
+			throw new HttpError(404, "Route not found.");
 		} catch (error) {
 			const status = error instanceof HttpError ? error.status : 500;
 			json(response, status, {

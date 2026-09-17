@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorklistApplicationService } from "../src/application-service.ts";
 import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
+import { FileDispatchStateStore, GitWorktreeBinding } from "../src/dispatch-bindings.ts";
+import { createWorklistLocator } from "../src/git.ts";
 import { type StepstoneWebApp, startStepstoneWebApp } from "../src/web-app.ts";
 
 const execFileAsync = promisify(execFile);
@@ -52,6 +53,7 @@ function post(app: StepstoneWebApp, token: string, body: object, origin = app.ur
 
 afterEach(async () => {
 	vi.unstubAllEnvs();
+	vi.restoreAllMocks();
 	await Promise.all(apps.splice(0).map((app) => app.close()));
 	await Promise.all(workspacePaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -65,7 +67,6 @@ describe("Stepstone web application", () => {
 		expect(page).toContain('id="goal-detail-dialog"');
 		expect(page).toContain("data-view-goal");
 		expect(page).toContain("data-goal-id");
-		expect(page).toContain("jump-highlight");
 		expect(page).not.toContain(".run:target");
 		expect(page).not.toContain("Your next steps, in view");
 		expect(page).not.toContain("See what’s ready, what’s moving, and what needs to happen next.");
@@ -80,10 +81,10 @@ describe("Stepstone web application", () => {
 		expect(page).toContain('class="dependency-options"');
 		expect(page).not.toContain('<label for="group">Section</label>');
 		expect(page).toContain('id="action-toast"');
-		expect(page).toContain("Safe cleanup finished. Nothing was eligible for cleanup.");
+		expect(page).not.toContain("/api/dispatch");
+		expect(page).not.toContain("Prepare workspaces");
 		expect(page).not.toContain("notice('Updating workspaces…'");
-		expect(page).toContain('class="run-details"');
-		expect(page).toContain("Object.keys(r.entries).length");
+		expect(page).not.toContain('id="runs"');
 		const created = await post(app, token, {
 			action: "add",
 			title: "Ship local roadmap",
@@ -226,440 +227,91 @@ describe("Stepstone web application", () => {
 		expect(await completed.json()).toMatchObject({ result: { goal: { status: "done" } } });
 	});
 
-	it("prepares an explicitly approved ready goal and exposes its shell-quoted command", async () => {
-		const { app, token } = await openApp();
-		const created = (await (
-			await post(app, token, { action: "add", title: `Prepare browser ${randomUUID()}` })
-		).json()) as {
-			result: { goal: { id: string } };
-		};
-		expect(
-			(await postPath(app, token, "/api/dispatch/start", { approvedGoalIds: [created.result.goal.id] }))
-				.status,
-		).toBe(403);
+	it("loads claimed goals and edits the roadmap without dispatch journals or activity inspection", async () => {
+		const root = await repository();
+		const directory = join(root, ".git", "stepstone-dispatch");
+		await mkdir(directory);
+		await writeFile(join(directory, "broken.json"), "not valid JSON");
+		const journals = vi.spyOn(FileDispatchStateStore.prototype, "list");
+		const activity = vi.spyOn(GitWorktreeBinding.prototype, "observeActivity");
+		const service = new WorklistApplicationService({ projectPath: null });
+		service.setProjectPathResolver(() => createWorklistLocator(root)().path);
 		expect(
 			(
-				await postPath(app, token, "/api/dispatch/start", {
-					confirm: true,
-					approvedGoalIds: "not-an-array",
-					maxParallel: 1,
-				})
-			).status,
-		).toBe(400);
-		const tooMany = await postPath(app, token, "/api/dispatch/start", {
-			confirm: true,
-			approvedGoalIds: [created.result.goal.id],
-			maxParallel: 1025,
-		});
-		expect(tooMany.status).toBe(400);
-		expect(await tooMany.json()).toMatchObject({ error: { message: expect.stringContaining("1024") } });
-		const prepared = await postPath(app, token, "/api/dispatch/start", {
-			confirm: true,
-			approvedGoalIds: [created.result.goal.id],
-			maxParallel: 1024,
-		});
-		expect(prepared.status).toBe(200);
-		const result = (await prepared.json()) as {
-			result: {
-				id: string;
-				entries: Record<string, { phase: string; workspace: string; cdCommand: string }>;
-			};
+				await service.execute(
+					{
+						scope: "project",
+						action: "add",
+						title: "Claimed feature",
+						links: ["https://github.com/example/repo/pull/42"],
+					},
+					{ source: "cli" },
+				)
+			).ok,
+		).toBe(true);
+		expect(
+			(
+				await service.execute(
+					{
+						scope: "project",
+						action: "start",
+						id: "claimed-feature",
+						branch: "feature/claimed",
+					},
+					{ source: "cli" },
+				)
+			).ok,
+		).toBe(true);
+		const app = await startStepstoneWebApp({ repositoryRoot: root });
+		apps.push(app);
+		const page = await (await fetch(app.url)).text();
+		const token = page.match(/name="stepstone-token" content="([^"]+)"/)?.[1];
+		if (!token) throw new Error("Missing token");
+		const response = await fetch(`${app.url}/api/state`);
+		expect(response.status).toBe(200);
+		const state = (await response.json()) as {
+			result: { readyGoalIds: string[]; goals: Array<{ updatedAt: string }> };
 		};
-		const entry = result.result.entries[created.result.goal.id];
-		workspacePaths.push(entry.workspace);
-		expect(entry.phase).toBe("prepared");
-		expect(entry.cdCommand).toBe(`cd '${entry.workspace}'`);
-		expect((await postPath(app, token, `/api/dispatch/${result.result.id}/continue`, {})).status).toBe(403);
-
-		const state = (await (await fetch(`${app.url}/api/state`)).json()) as {
-			result: { readyGoalIds: string[]; runs: Array<{ id: string }> };
-		};
+		expect(state.result).not.toHaveProperty("runs");
 		expect(state.result.readyGoalIds).toEqual([]);
-		expect(state.result.runs).toEqual([expect.objectContaining({ id: result.result.id })]);
-		const before = (await (await fetch(`${app.url}/api/state`)).json()) as {
-			result: { revision: string; goals: unknown[] };
-		};
-		for (const action of ["update", "complete", "archive", "delete", "reopen"]) {
-			const refused = await post(app, token, {
-				action,
-				id: created.result.goal.id,
-				title: "Changed claim",
-				confirm: true,
-			});
-			expect(refused.status).toBe(409);
-			expect(await refused.json()).toMatchObject({
-				error: { message: expect.stringContaining("workspace custody") },
-			});
-		}
+		expect(state.result.goals[0]).toMatchObject({
+			branch: "feature/claimed",
+			links: ["https://github.com/example/repo/pull/42"],
+		});
+		expect(state.result.goals[0]).not.toHaveProperty("dispatchCustody");
 		expect(
 			(
 				await post(app, token, {
 					action: "update",
-					id: created.result.goal.id.slice(0, 12),
-					title: "Prefix edit",
+					id: "claimed-feature",
+					title: "Updated claimed feature",
+					expectedUpdatedAt: state.result.goals[0].updatedAt,
 				})
 			).status,
-		).toBe(409);
-		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({
-			result: { revision: before.result.revision, goals: before.result.goals },
-		});
-		expect(before).toMatchObject({ result: { goals: [{ dispatchCustody: true }] } });
-		expect((await post(app, token, { action: "add", title: "Other goal" })).status).toBe(200);
-		expect(
-			(await post(app, token, { action: "move", id: created.result.goal.id, direction: "down" })).status,
 		).toBe(200);
-		const moved = (await (await fetch(`${app.url}/api/state`)).json()) as { result: { goals: unknown[] } };
-		expect(moved.result.goals[1]).toEqual(before.result.goals[0]);
-		const cleanup = await postPath(app, token, `/api/dispatch/${result.result.id}/cleanup`, {
-			confirm: true,
-		});
-		expect(cleanup.status).toBe(500);
-		expect(await cleanup.json()).toMatchObject({
-			error: { message: expect.stringContaining("still has custody") },
-		});
-		await writeFile(join(entry.workspace, "uncommitted.txt"), "Inspect this work before release.\n");
-		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({
-			result: {
-				runs: [
-					{
-						entries: {
-							[created.result.goal.id]: {
-								claimEvidence: {
-									canonical: { state: "matches" },
-									workspace: { state: "observed", hasUncommittedChanges: true },
-								},
-							},
-						},
-					},
-				],
-			},
-		});
-		const unacknowledged = await postPath(app, token, `/api/dispatch/${result.result.id}/recover`, {
-			confirm: true,
-			goalId: created.result.goal.id,
-		});
-		expect(unacknowledged.status).toBe(403);
-		await rename(entry.workspace, `${entry.workspace}-unavailable`);
-		try {
-			const unavailable = await postPath(app, token, `/api/dispatch/${result.result.id}/recover`, {
-				confirm: true,
-				acknowledgeEvidence: true,
-				goalId: created.result.goal.id,
-			});
-			expect(unavailable.status).toBe(409);
-			expect(await unavailable.json()).toMatchObject({
-				error: { message: expect.stringContaining("CLI inspection") },
-			});
-		} finally {
-			await rename(`${entry.workspace}-unavailable`, entry.workspace);
-		}
-		await rm(join(entry.workspace, "uncommitted.txt"));
-		const recovered = await postPath(app, token, `/api/dispatch/${result.result.id}/recover`, {
-			confirm: true,
-			acknowledgeEvidence: true,
-			goalId: created.result.goal.id,
-		});
-		expect(recovered.status).toBe(200);
-		expect(await recovered.json()).toMatchObject({
-			result: {
-				entries: {
-					[created.result.goal.id]: {
-						phase: "cleanup-pending",
-						message: expect.stringContaining("no configured Git remote"),
-					},
-				},
-			},
-		});
-		const duplicate = await postPath(app, token, "/api/dispatch/start", {
-			confirm: true,
-			approvedGoalIds: [created.result.goal.id],
-			maxParallel: 1,
-		});
-		expect(duplicate.status).toBe(409);
-		expect(await duplicate.json()).toMatchObject({
-			error: { message: expect.stringContaining("reserved by an existing run") },
-		});
+		expect(journals).not.toHaveBeenCalled();
+		expect(activity).not.toHaveBeenCalled();
+		expect(await readFile(join(directory, "broken.json"), "utf8")).toBe("not valid JSON");
 	});
 
-	it("retains blocked approval and prepares it on continue after its dependency settles", async () => {
+	it("refuses every removed workspace endpoint without changing roadmap or worktrees", async () => {
 		const { app, token } = await openApp();
-		const prerequisite = (await (
-			await post(app, token, { action: "add", title: "Prerequisite" })
-		).json()) as {
-			result: { goal: { id: string } };
-		};
-		const dependent = (await (
-			await post(app, token, {
-				action: "add",
-				title: `Dependent ${randomUUID()}`,
-				dependsOn: [prerequisite.result.goal.id],
-			})
-		).json()) as { result: { goal: { id: string } } };
-		const started = await postPath(app, token, "/api/dispatch/start", {
-			confirm: true,
-			approvedGoalIds: [dependent.result.goal.id],
-			maxParallel: 1,
-		});
-		expect(started.status).toBe(200);
-		const run = (await started.json()) as {
-			result: { id: string; approvedGoalIds: string[]; entries: object };
-		};
-		expect(run.result.approvedGoalIds).toEqual([dependent.result.goal.id]);
-		expect(run.result.entries).toEqual({});
-		expect(
-			(await post(app, token, { action: "complete", id: prerequisite.result.goal.id, confirm: true })).status,
-		).toBe(200);
-		const continued = await postPath(app, token, `/api/dispatch/${run.result.id}/continue`, {
-			confirm: true,
-		});
-		expect(continued.status).toBe(200);
-		const advanced = (await continued.json()) as {
-			result: { entries: Record<string, { phase: string; workspace: string }> };
-		};
-		const entry = advanced.result.entries[dependent.result.goal.id];
-		workspacePaths.push(entry.workspace);
-		expect(entry.phase).toBe("prepared");
-	});
-
-	it("continues a stored blocked approval after CLI ID migration without changing run references", async () => {
-		const root = await repository();
-		const prerequisiteId = `goal-review-${randomUUID().slice(0, 8)}`;
-		const approvedId = `goal-review-${randomUUID().slice(0, 8)}`;
-		const timestamp = new Date().toISOString();
-		await mkdir(join(root, ".worklist"));
-		await writeFile(
-			join(root, ".worklist", "worklist.json"),
-			JSON.stringify({
-				version: 1,
-				revision: 0,
-				retiredIds: [],
-				goals: [
-					{
-						id: prerequisiteId,
-						title: "Migration prerequisite",
-						status: "open",
-						createdAt: timestamp,
-						updatedAt: timestamp,
-					},
-					{
-						id: approvedId,
-						title: "Migrated dependent",
-						status: "open",
-						createdAt: timestamp,
-						updatedAt: timestamp,
-						dependsOn: [prerequisiteId],
-					},
-				],
-			}),
-		);
-		const app = await startStepstoneWebApp({ repositoryRoot: root });
-		apps.push(app);
-		const token = (await (await fetch(app.url)).text()).match(
-			/name="stepstone-token" content="([^"]+)"/,
-		)?.[1];
-		if (!token) throw new Error("Missing token");
-		const started = await postPath(app, token, "/api/dispatch/start", {
-			confirm: true,
-			approvedGoalIds: [approvedId],
-			maxParallel: 1,
-		});
-		expect(started.status).toBe(200);
-		const run = (await started.json()) as { result: { id: string; entries: object } };
-		expect(run.result.entries).toEqual({});
-		await execFileAsync(process.execPath, [
-			fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
-			"project",
-			"migrate_ids",
-			"--confirm",
-			"--cwd",
-			root,
-			"--json",
-		]);
-		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({
-			result: {
-				goals: expect.arrayContaining([
-					expect.objectContaining({
-						id: "migrated-dependent",
-						previousIds: [approvedId],
-						dispatchEligible: false,
-					}),
-				]),
-			},
-		});
-		expect(
-			(
-				await postPath(app, token, "/api/dispatch/start", {
-					confirm: true,
-					approvedGoalIds: [approvedId],
-					maxParallel: 1,
-				})
-			).status,
-		).toBe(409);
-		expect((await post(app, token, { action: "complete", id: prerequisiteId, confirm: true })).status).toBe(
-			200,
-		);
-		const continued = await postPath(app, token, `/api/dispatch/${run.result.id}/continue`, {
-			confirm: true,
-		});
-		expect(continued.status).toBe(200);
-		const advanced = (await continued.json()) as {
-			result: {
-				approvedGoalIds: string[];
-				entries: Record<string, { phase: string; workspace: string; branch: string }>;
-			};
-		};
-		const entry = advanced.result.entries[approvedId];
-		if (entry?.workspace) workspacePaths.push(entry.workspace);
-		expect(entry?.phase).toBe("prepared");
-		expect(entry.branch).toBe(`stepstone/${approvedId}`);
-		expect(advanced.result.approvedGoalIds).toEqual([approvedId]);
-		expect(Object.keys(advanced.result.entries)).toEqual([approvedId]);
-		const state = await (await fetch(`${app.url}/api/state`)).json();
-		expect(state).toMatchObject({
-			result: {
-				goals: expect.arrayContaining([
-					expect.objectContaining({
-						id: "migrated-dependent",
-						previousIds: [approvedId],
-						branch: entry.branch,
-						dispatchCustody: true,
-					}),
-				]),
-			},
-		});
-		expect(
-			(
-				await postPath(app, token, `/api/dispatch/${run.result.id}/recover`, {
-					confirm: true,
-					acknowledgeEvidence: true,
-					goalId: approvedId,
-				})
-			).status,
-		).toBe(200);
-		const resumed = await postPath(app, token, `/api/dispatch/${run.result.id}/continue`, { confirm: true });
-		expect(resumed.status).toBe(200);
-		const resumedRun = (await resumed.json()) as {
-			result: { approvedGoalIds: string[]; entries: Record<string, { phase: string }> };
-		};
-		expect(resumedRun.result.approvedGoalIds).toEqual([approvedId]);
-		expect(Object.keys(resumedRun.result.entries)).toEqual([approvedId]);
-		expect(resumedRun.result.entries[approvedId].phase).toBe("cleanup-pending");
-	});
-
-	it("allows only one concurrent web start to reserve the same goal", async () => {
-		const root = await repository();
-		const servers = await Promise.all(
-			[0, 1].map(async () => {
-				const app = await startStepstoneWebApp({ repositoryRoot: root });
-				apps.push(app);
-				const token = (await (await fetch(app.url)).text()).match(
-					/name="stepstone-token" content="([^"]+)"/,
-				)?.[1];
-				if (!token) throw new Error("Missing token");
-				return { app, token };
-			}),
-		);
-		const created = await post(servers[0].app, servers[0].token, {
-			action: "add",
-			title: `Concurrent ${randomUUID()}`,
-		});
-		expect(created.status).toBe(200);
-		const goalId = ((await created.json()) as { result: { goal: { id: string } } }).result.goal.id;
-		const responses = await Promise.all(
-			servers.map(({ app, token }) =>
-				postPath(app, token, "/api/dispatch/start", {
-					confirm: true,
-					approvedGoalIds: [goalId],
-					maxParallel: 1,
-				}),
-			),
-		);
-		const state = (await (await fetch(`${servers[0].app.url}/api/state`)).json()) as {
-			result: { runs: Array<{ entries: Record<string, { phase: string; workspace?: string }> }> };
-		};
-		for (const run of state.result.runs) {
-			const workspace = run.entries[goalId]?.workspace;
-			if (workspace) workspacePaths.push(workspace);
-		}
-		expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
-		expect(state.result.runs).toHaveLength(1);
-		expect(state.result.runs[0].entries[goalId].phase).toBe("prepared");
-	});
-
-	it("shares reservation between a web start and a real CLI start", async () => {
-		const root = await repository();
-		const app = await startStepstoneWebApp({ repositoryRoot: root });
-		apps.push(app);
-		const token = (await (await fetch(app.url)).text()).match(
-			/name="stepstone-token" content="([^"]+)"/,
-		)?.[1];
-		if (!token) throw new Error("Missing token");
-		const created = (await (
-			await post(app, token, { action: "add", title: `Shared start ${randomUUID()}` })
-		).json()) as { result: { goal: { id: string } } };
-		const goalId = created.result.goal.id;
-		const outcomes = await Promise.allSettled([
-			postPath(app, token, "/api/dispatch/start", {
+		const before = await (await fetch(`${app.url}/api/state`)).json();
+		for (const path of [
+			"/api/dispatch/start",
+			"/api/dispatch/run/continue",
+			"/api/dispatch/run/recover",
+			"/api/dispatch/run/cleanup",
+		]) {
+			const response = await postPath(app, token, path, {
 				confirm: true,
-				approvedGoalIds: [goalId],
+				approvedGoalIds: ["goal"],
 				maxParallel: 1,
-			}).then(async (response) => ({ ok: response.ok, body: await response.json() })),
-			execFileAsync(
-				process.execPath,
-				[
-					fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
-					"project",
-					"workspace",
-					"start",
-					"--goal",
-					goalId,
-					"--cwd",
-					root,
-					"--json",
-				],
-				{ timeout: 30000 },
-			).then(({ stdout }) => ({ ok: true, body: JSON.parse(stdout) })),
-		]);
-		const state = (await (await fetch(`${app.url}/api/state`)).json()) as {
-			result: { runs: Array<{ entries: Record<string, { phase: string; workspace?: string }> }> };
-		};
-		for (const run of state.result.runs) {
-			const path = run.entries[goalId]?.workspace;
-			if (path) workspacePaths.push(path);
+			});
+			expect(response.status).toBe(404);
+			expect(await response.json()).toMatchObject({ ok: false, error: { message: "Route not found." } });
 		}
-		expect(outcomes.filter((outcome) => outcome.status === "fulfilled" && outcome.value.ok)).toHaveLength(1);
-		expect(state.result.runs).toHaveLength(1);
-		expect(state.result.runs[0].entries[goalId].phase).toBe("prepared");
-	});
-
-	it("refuses an active unclaimed goal before creating a dispatch run", async () => {
-		const root = await repository();
-		const app = await startStepstoneWebApp({ repositoryRoot: root });
-		apps.push(app);
-		const token = (await (await fetch(app.url)).text()).match(
-			/name="stepstone-token" content="([^"]+)"/,
-		)?.[1];
-		if (!token) throw new Error("Missing token");
-		expect((await post(app, token, { action: "add", title: "Active work" })).status).toBe(200);
-		await execFileAsync(process.execPath, [
-			fileURLToPath(new URL("../src/cli.ts", import.meta.url)),
-			"project",
-			"set_active",
-			"active-work",
-			"--cwd",
-			root,
-		]);
-		const state = await (await fetch(`${app.url}/api/state`)).json();
-		expect(state).toMatchObject({
-			result: { goals: [{ id: "active-work", status: "active", dispatchEligible: false }], runs: [] },
-		});
-		const refused = await postPath(app, token, "/api/dispatch/start", {
-			confirm: true,
-			approvedGoalIds: ["active-work"],
-			maxParallel: 1,
-		});
-		expect(refused.status).toBe(409);
-		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({ result: { runs: [] } });
+		expect(await (await fetch(`${app.url}/api/state`)).json()).toEqual(before);
 	});
 
 	it("refuses explicit and environment roadmap overrides before serving", async () => {
