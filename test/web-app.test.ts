@@ -61,6 +61,29 @@ describe("Stepstone web application", () => {
 	it("serves the application from loopback and projects roadmap state", async () => {
 		const { app, token } = await openApp();
 		expect(new URL(app.url).hostname).toBe("127.0.0.1");
+		const page = await (await fetch(app.url)).text();
+		expect(page).toContain('id="goal-detail-dialog"');
+		expect(page).toContain("data-view-goal");
+		expect(page).toContain("data-goal-id");
+		expect(page).toContain("jump-highlight");
+		expect(page).not.toContain(".run:target");
+		expect(page).not.toContain("Your next steps, in view");
+		expect(page).not.toContain("See what’s ready, what’s moving, and what needs to happen next.");
+		expect(page).not.toContain("Your workspaces");
+		expect(page).not.toContain("Project board");
+		expect(page).not.toContain("Project workspace");
+		expect(page).not.toContain("<h1>");
+		expect(page).toContain('id="repository-label"');
+		expect(page).toContain('id="group-select"');
+		expect(page).toContain("Create new group");
+		expect(page).toContain('id="dependency-search"');
+		expect(page).toContain('class="dependency-options"');
+		expect(page).not.toContain('<label for="group">Section</label>');
+		expect(page).toContain('id="action-toast"');
+		expect(page).toContain("Safe cleanup finished. Nothing was eligible for cleanup.");
+		expect(page).not.toContain("notice('Updating workspaces…'");
+		expect(page).toContain('class="run-details"');
+		expect(page).toContain("Object.keys(r.entries).length");
 		const created = await post(app, token, {
 			action: "add",
 			title: "Ship local roadmap",
