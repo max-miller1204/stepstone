@@ -318,11 +318,9 @@ async function workspacePreparation(): Promise<void> {
 	assert.equal(entry?.goalFile, join(parent, "stepstone-prepared-goal", "STEPSTONE_GOAL.md"));
 	assert.match(await readFile(entry.goalFile, "utf8"), /Verify installed workspace handoff/);
 	const workspace = dirname(entry.goalFile);
-	assert.equal(
-		(await h.checked("git", ["branch", "--show-current"], workspace)).trim(),
-		"stepstone/prepared-goal",
-	);
-	assert.equal((await readWorklist(cwd)).goals[0]?.branch, "stepstone/prepared-goal");
+	const expectedBranch = `stepstone/${receipt.result.id}/prepared-goal`;
+	assert.equal((await h.checked("git", ["branch", "--show-current"], workspace)).trim(), expectedBranch);
+	assert.equal((await readWorklist(cwd)).goals[0]?.branch, expectedBranch);
 	assert.equal(
 		(await h.checked("git", ["check-ignore", "STEPSTONE_GOAL.md"], workspace)).trim(),
 		"STEPSTONE_GOAL.md",
