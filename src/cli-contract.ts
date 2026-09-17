@@ -225,11 +225,16 @@ export const CLI_COMMAND_CONTRACT = {
 				title: "Capture brainstorms as approved goal plans",
 				steps: [
 					"Brainstorm broad outcomes for the roadmap rather than internal implementation steps.",
+					"Before drafting a plan, read related open and active goals. Use `list` or `find` to locate them, then use `show` to read their complete descriptions.",
+					"Compare the related goals with the current repository. Look for obsolete premises, removed commands or documentation, work that has already landed, overlapping outcomes, and stale sequencing assumptions. Use product judgment rather than treating this audit as an unattended validator.",
+					"Decide which related goals the proposal keeps, changes, or replaces. Do not silently duplicate an existing outcome.",
 					"Draft the exact plain JSON array that represents the complete proposed goal batch.",
-					"When a later, naturally ordered goal would collide with an earlier goal in the same modules or files, add the earlier goal's pre-collision slug to the later goal's `dependsOn` array even when no logical dependency exists.",
-					"Present that exact JSON array to the user and wait for explicit approval before making any mutation.",
-					"An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings; it is never approval and never replaces the explicit approval step.",
-					"After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array; never turn the batch into per-goal `add` calls.",
+					"Add `dependsOn` edges for logical prerequisites and shared implementation surfaces. When a later, naturally ordered batch goal depends on an earlier batch goal, use the earlier goal's exact pre-collision slug.",
+					"Present the exact JSON array with a short audit summary. Name every existing goal that the plan replaces by exact ID, or state that it replaces none. Report stale or overlapping goals that need a separate roadmap decision.",
+					"Wait for explicit approval of that exact array before making any mutation.",
+					"An optional dry-run is only a preview of validation, projected IDs, dependencies, and warnings. It is never approval and never replaces the explicit approval step.",
+					"After explicit approval, perform exactly one mutating `apply-plan` call for the entire approved array. Never turn the batch into per-goal `add` calls.",
+					"After the approved batch lands, run `waves` when sequencing matters. Report unexpected ready work or unreachable goals instead of silently accepting the projected order.",
 				],
 				schemaDescriptions: {
 					plan: "The exact plain JSON goal array presented for approval, or the same approved array to add atomically",
@@ -238,7 +243,7 @@ export const CLI_COMMAND_CONTRACT = {
 					description: "Optional outcome-level context, not an internal step-by-step implementation plan",
 					group: "Optional free-form roadmap section for this goal",
 					dependsOn:
-						"Exact pre-collision slugs of batch goals or exact current or former IDs of existing goals that must land first; for module or file collisions, the later naturally ordered goal names the earlier goal",
+						"Exact pre-collision slugs of batch goals or exact current or former IDs of existing goals that must land first because of a logical prerequisite or shared implementation surface",
 					dryRun:
 						"Preview validation, projected IDs, dependencies, and warnings without writing; a dry-run is not user approval",
 				},
