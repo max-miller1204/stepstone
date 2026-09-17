@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -197,10 +197,17 @@ describe("Stepstone web application", () => {
 				})
 			).status,
 		).toBe(400);
+		const tooMany = await postPath(app, token, "/api/dispatch/start", {
+			confirm: true,
+			approvedGoalIds: [created.result.goal.id],
+			maxParallel: 1025,
+		});
+		expect(tooMany.status).toBe(400);
+		expect(await tooMany.json()).toMatchObject({ error: { message: expect.stringContaining("1024") } });
 		const prepared = await postPath(app, token, "/api/dispatch/start", {
 			confirm: true,
 			approvedGoalIds: [created.result.goal.id],
-			maxParallel: 1,
+			maxParallel: 1024,
 		});
 		expect(prepared.status).toBe(200);
 		const result = (await prepared.json()) as {
@@ -261,8 +268,46 @@ describe("Stepstone web application", () => {
 		expect(await cleanup.json()).toMatchObject({
 			error: { message: expect.stringContaining("still has custody") },
 		});
+		await writeFile(join(entry.workspace, "uncommitted.txt"), "Inspect this work before release.\n");
+		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({
+			result: {
+				runs: [
+					{
+						entries: {
+							[created.result.goal.id]: {
+								claimEvidence: {
+									canonical: { state: "matches" },
+									workspace: { state: "observed", hasUncommittedChanges: true },
+								},
+							},
+						},
+					},
+				],
+			},
+		});
+		const unacknowledged = await postPath(app, token, `/api/dispatch/${result.result.id}/recover`, {
+			confirm: true,
+			goalId: created.result.goal.id,
+		});
+		expect(unacknowledged.status).toBe(403);
+		await rename(entry.workspace, `${entry.workspace}-unavailable`);
+		try {
+			const unavailable = await postPath(app, token, `/api/dispatch/${result.result.id}/recover`, {
+				confirm: true,
+				acknowledgeEvidence: true,
+				goalId: created.result.goal.id,
+			});
+			expect(unavailable.status).toBe(409);
+			expect(await unavailable.json()).toMatchObject({
+				error: { message: expect.stringContaining("CLI inspection") },
+			});
+		} finally {
+			await rename(`${entry.workspace}-unavailable`, entry.workspace);
+		}
+		await rm(join(entry.workspace, "uncommitted.txt"));
 		const recovered = await postPath(app, token, `/api/dispatch/${result.result.id}/recover`, {
 			confirm: true,
+			acknowledgeEvidence: true,
 			goalId: created.result.goal.id,
 		});
 		expect(recovered.status).toBe(200);
@@ -437,6 +482,7 @@ describe("Stepstone web application", () => {
 			(
 				await postPath(app, token, `/api/dispatch/${run.result.id}/recover`, {
 					confirm: true,
+					acknowledgeEvidence: true,
 					goalId: approvedId,
 				})
 			).status,

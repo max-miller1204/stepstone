@@ -34,7 +34,7 @@ import type {
 	WorkspaceBinding,
 	WorkspaceCleanupOptions,
 } from "./dispatch-driver.ts";
-import { DISPATCH_GOAL_FILE, DispatchBoundaryError } from "./dispatch-driver.ts";
+import { DISPATCH_GOAL_FILE, DispatchBoundaryError, MAX_DISPATCH_PARALLEL } from "./dispatch-driver.ts";
 import { acquireFileLock } from "./file-lock.ts";
 import { createWorklistLocator } from "./git.ts";
 import { WORKLIST_ERROR_CODES } from "./result-envelope.ts";
@@ -274,7 +274,7 @@ const runSchema = z
 		id: z.string().regex(/^[A-Za-z0-9_-]+$/),
 		repositoryRoot: absoluteNormalizedPath,
 		approvedGoalIds: z.array(goalIdSchema).min(1),
-		maxParallel: z.number().int().positive().max(1024),
+		maxParallel: z.number().int().positive().max(MAX_DISPATCH_PARALLEL),
 		targetBranch: safeString,
 		targetRevision: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/),
 		workspaceConfig: workspaceConfigSchema,

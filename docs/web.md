@@ -22,7 +22,10 @@ The application provides these local workflows:
 - Copy shell-quoted `cd` commands for prepared workspaces.
 - Continue an approved run after dependencies land.
 - Reconcile merged pull requests through the existing workspace driver.
-- Release inspected claims and retry safe cleanup.
+- Read the claim assessment, canonical state, and workspace activity before release. Explicitly acknowledge the evidence to release the claim.
+- Use CLI inspection and recovery when browser evidence is unavailable. Retry safe cleanup after inspection.
+
+The maximum number of prepared workspaces is 1024. Invalid limits receive a validation error before a run is created.
 
 The advanced CLI remains available for scripts, agents, migrations, forced cleanup, and detailed workspace inspection.
 

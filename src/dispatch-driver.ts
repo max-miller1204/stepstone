@@ -5,6 +5,7 @@ import type { WorklistError } from "./result-envelope.ts";
 import type { ProjectGoal } from "./types.ts";
 
 export const DISPATCH_STATE_VERSION = 2 as const;
+export const MAX_DISPATCH_PARALLEL = 1024;
 export const DISPATCH_GOAL_FILE = "STEPSTONE_GOAL.md" as const;
 
 export type DispatchPhase =
@@ -287,8 +288,12 @@ export class DispatchDriver {
 		targetRevision: string;
 		workspaceConfig: DispatchWorkspaceConfig;
 	}): Promise<DispatchRun> {
-		if (!Number.isSafeInteger(options.maxParallel) || options.maxParallel < 1) {
-			throw new Error("maxParallel must be a positive integer");
+		if (
+			!Number.isSafeInteger(options.maxParallel) ||
+			options.maxParallel < 1 ||
+			options.maxParallel > MAX_DISPATCH_PARALLEL
+		) {
+			throw new Error(`maxParallel must be a positive integer no greater than ${MAX_DISPATCH_PARALLEL}`);
 		}
 		const approvedGoalIds = [...new Set(options.approvedGoalIds.map((id) => id.trim()).filter(Boolean))];
 		if (approvedGoalIds.length === 0) throw new Error("At least one approved goal ID is required");

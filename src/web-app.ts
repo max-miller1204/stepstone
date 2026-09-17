@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
 import { WorklistApplicationService, type WorklistOperation } from "./application-service.ts";
-import { inspectPreparedClaims } from "./claim-evidence.ts";
+import { type ClaimEvidence, inspectPreparedClaims } from "./claim-evidence.ts";
 import { WORKLIST_PATH_ENV } from "./cli-contract.ts";
 import { dependencyWaves, isGoalBlocked, readyGoals } from "./dependencies.ts";
 import {
@@ -19,6 +19,7 @@ import {
 	DispatchDriver,
 	type DispatchRun,
 	hasGoalDispatchCustody,
+	MAX_DISPATCH_PARALLEL,
 	unavailableDispatchGoalIds,
 } from "./dispatch-driver.ts";
 import { createWorklistLocator, resolveWorktreePlacement } from "./git.ts";
@@ -113,7 +114,15 @@ function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function summarizeRun(run: DispatchRun, evidence: Record<string, unknown> = {}): object {
+function canReleaseInBrowser(evidence: ClaimEvidence | undefined): boolean {
+	return (
+		evidence !== undefined &&
+		evidence.canonical.state !== "unavailable" &&
+		evidence.workspace.state === "observed"
+	);
+}
+
+function summarizeRun(run: DispatchRun, evidence: Record<string, ClaimEvidence> = {}): object {
 	return {
 		id: run.id,
 		approvedGoalIds: run.approvedGoalIds,
@@ -137,6 +146,7 @@ function summarizeRun(run: DispatchRun, evidence: Record<string, unknown> = {}):
 					mergedPr: entry.mergedPr,
 					message: entry.message,
 					claimEvidence: evidence[id],
+					releaseAvailable: canReleaseInBrowser(evidence[id]),
 				},
 			]),
 		),
@@ -159,7 +169,10 @@ async function openBrowser(url: string): Promise<void> {
 }
 
 function html(token: string): string {
-	return STEPSTONE_WEB_PAGE.replace("__STEPSTONE_TOKEN__", token);
+	return STEPSTONE_WEB_PAGE.replace("__STEPSTONE_TOKEN__", token).replace(
+		"__STEPSTONE_MAX_PARALLEL__",
+		String(MAX_DISPATCH_PARALLEL),
+	);
 }
 
 export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions): Promise<StepstoneWebApp> {
@@ -291,8 +304,15 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 					throw new HttpError(400, "approvedGoalIds must be an array of goal IDs.");
 				}
 				const maxParallel = body.maxParallel;
-				if (!Number.isSafeInteger(maxParallel) || (maxParallel as number) < 1) {
-					throw new HttpError(400, "maxParallel must be a positive integer.");
+				if (
+					!Number.isSafeInteger(maxParallel) ||
+					(maxParallel as number) < 1 ||
+					(maxParallel as number) > MAX_DISPATCH_PARALLEL
+				) {
+					throw new HttpError(
+						400,
+						`maxParallel must be a positive integer no greater than ${MAX_DISPATCH_PARALLEL}.`,
+					);
 				}
 				const advanced = await store.withRunLock(DISPATCH_REPOSITORY_LOCK, async () => {
 					const snapshot = await service.readProjectSnapshot("web");
@@ -349,9 +369,26 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 					const driver = createDriver(run, store);
 					if (action === "continue") return driver.advance(runId);
 					if (action === "recover") {
+						if (body.acknowledgeEvidence !== true)
+							throw new HttpError(
+								403,
+								"Read and explicitly acknowledge the claim and workspace evidence before release.",
+							);
+						const goalId = requiredString(body.goalId, "goalId");
+						const evidence = await inspectPreparedClaims(
+							run,
+							new ApplicationRoadmapBinding(run.repositoryRoot),
+							new GitWorktreeBinding(run.repositoryRoot, run.workspaceConfig.workspaceParent),
+							{ goalId },
+						);
+						if (!canReleaseInBrowser(evidence[goalId]))
+							throw new HttpError(
+								409,
+								`Claim evidence is unavailable. Use CLI inspection: project workspace inspect ${runId} ${goalId}.`,
+							);
 						return driver.recoverRelease(
 							runId,
-							requiredString(body.goalId, "goalId"),
+							goalId,
 							typeof body.claimUpdatedAt === "string" ? body.claimUpdatedAt : undefined,
 						);
 					}
