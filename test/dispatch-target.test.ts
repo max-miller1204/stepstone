@@ -58,12 +58,18 @@ if (args[0] === "fetch") {
 			mergedAt: "2026-01-02T00:00:00.000Z",
 			mergeCommit: base,
 		};
-		expect(await binding.syncTarget(evidence)).toBe(base);
+		await expect(binding.syncTarget(evidence, "../another-run")).rejects.toThrow("Invalid dispatch run ID");
+		expect(await binding.syncTarget(evidence, "target-test")).toBe(base);
 		expect(await git("rev-parse", "FETCH_HEAD")).toBe(release);
-		await expect(binding.syncTarget({ ...evidence, mergeCommit: release })).rejects.toThrow(
+		await expect(binding.syncTarget({ ...evidence, mergeCommit: release }, "target-test")).rejects.toThrow(
 			"not reachable from updated target main",
 		);
-		expect(await git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/")).toBe("");
+		expect(await git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/target/")).toBe("");
+		const custodyRef = `refs/stepstone-dispatch/targets/target-test/${base}`;
+		expect(await git("rev-parse", custodyRef)).toBe(base);
+		expect(await binding.syncTarget(evidence, "target-test")).toBe(base);
+		await git("update-ref", custodyRef, release, base);
+		await expect(binding.syncTarget(evidence, "target-test")).rejects.toThrow("Target ref custody changed");
 		expect(await git("branch", "--show-current")).toBe("release");
 		expect(await git("rev-parse", "HEAD")).toBe(release);
 	} finally {

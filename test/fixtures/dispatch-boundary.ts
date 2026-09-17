@@ -20,6 +20,10 @@ class InterruptibleStore extends FileDispatchStateStore {
 			process.exit(86);
 		}
 		await super.save(run);
+		if (fault === "after-completion" && entry?.phase === "completed") {
+			process.stderr.write("Boundary fixture exited after completion, before cleanup.\n");
+			process.exit(87);
+		}
 		if (fault === "competing-claim" && entry?.phase === "claiming" && !entry.preparationFailure) {
 			await roadmap.claim("alpha", "operator/alpha", entry.goal.updatedAt);
 		}

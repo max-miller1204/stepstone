@@ -245,6 +245,47 @@ describe("real GitHub CLI reconciliation", () => {
 		},
 	);
 
+	it("retains exact target custody across restart and pruning until safe run removal", async () => {
+		await withProcessBoundary(async (f) => {
+			const run = await f.prepare();
+			await f.workGit("commit", "--allow-empty", "-qm", "feature");
+			const tip = await f.workGit("rev-parse", "HEAD");
+			const tree = await f.git("rev-parse", `${tip}^{tree}`);
+			const target = await f.git("commit-tree", tree, "-p", tip, "-m", "target tail");
+			await f.git("push", "origin", `${target}:refs/heads/main`, `${f.base}:refs/heads/release`);
+			await f.git("config", "remote.origin.fetch", "+refs/heads/release:refs/remotes/origin/release");
+			await f.git("update-ref", "-d", "refs/remotes/origin/main");
+			f.pullRequests = [f.pr(run.entries.alpha.claimUpdatedAt as string, tip)];
+			await expect(f.run("advance", run.id, "", "after-completion")).rejects.toMatchObject({ code: 87 });
+			const completed = await f.run("load", run.id);
+			expect(completed.entries.alpha.phase).toBe("completed");
+			expect(completed.targetRevision).toBe(target);
+			const targetRef = completed.targetRef as string;
+			expect(targetRef).toBe(`refs/stepstone-dispatch/targets/${run.id}/${target}`);
+			await f.git("reflog", "expire", "--expire=all", "--all");
+			await f.git("gc", "--prune=now");
+			expect(await f.git("rev-parse", `${targetRef}^{commit}`)).toBe(target);
+
+			await f.git("update-ref", targetRef, f.base, target);
+			const refused = await f.run("cleanup", run.id);
+			expect(refused.entries.alpha.phase).toBe("cleanup-pending");
+			expect(refused.entries.alpha.message).toContain("Target ref custody changed");
+			await f.git("update-ref", targetRef, target, f.base);
+			const resumed = await f.run("advance", run.id);
+			expect(resumed.entries.alpha.phase).toBe("cleaned");
+			expect(await f.git("rev-parse", targetRef)).toBe(target);
+			await f.git("update-ref", targetRef, f.base, target);
+			await expect(f.run("cleanup", run.id)).rejects.toMatchObject({ code: 1 });
+			expect((await f.run("load", run.id)).targetRevision).toBe(target);
+			await f.git("update-ref", targetRef, target, f.base);
+			await f.run("cleanup", run.id);
+			expect(await f.git("for-each-ref", "--format=%(refname)", "refs/stepstone-dispatch/")).toBe("");
+			await f.git("reflog", "expire", "--expire=all", "--all");
+			await f.git("gc", "--prune=now");
+			await expect(f.git("cat-file", "-e", target)).rejects.toMatchObject({ code: 1 });
+		});
+	});
+
 	it("reconciles the persisted target without changing an unrelated canonical checkout", async () => {
 		await withProcessBoundary(async (f) => {
 			const run = await f.prepare();

@@ -103,7 +103,7 @@ A resume pass:
 2. verifies every persisted workspace it still owns;
 3. asks GitHub for a merged pull request whose head is the exact claimed branch, whose base is the run's target branch, and whose creation and merge both postdate the claim;
 4. fetches the named target from `origin` and verifies that it contains the merge commit without changing the canonical checkout branch;
-5. persists the fetched target revision and completes the exact claimed goal under the approved run's standing consent;
+5. retains the fetched target in an immutable run-scoped Git ref, persists its exact revision and ref, and completes the exact claimed goal under the approved run's standing consent;
 6. cleans the completed workspace; and
 7. prepares newly ready allow-listed goals until the persisted preparation limit is full.
 
@@ -172,7 +172,7 @@ Completed or exactly released entries are cleaned automatically only when Git sa
 npx -y stepstone@latest project workspace cleanup <run-id> [goal-id] --json
 ```
 
-Without a goal ID, cleanup processes all eligible entries and removes the run record after every entry is `cleaned`. It refuses while an entry still owns a prepared claim.
+Without a goal ID, cleanup processes all eligible entries and removes the run record after every entry is `cleaned`. It refuses while an entry still owns a prepared claim. The run retains its fetched target commits under `refs/stepstone-dispatch/targets/<run-id>/<revision>` until that removal. These refs protect exact target evidence across restart and Git pruning, even when the configured fetchspec excludes the target. Cleanup verifies the recorded ref and revision. Run removal deletes only matching refs after safe workspace cleanup and refuses changed ref custody.
 
 Before deleting a workspace or its branch, cleanup verifies:
 
@@ -198,7 +198,7 @@ This override applies only to that invocation and goal. It is not accepted by `r
 
 ## State compatibility
 
-Preparation-only runs use dispatch state version 2. New runs persist `baseRef` and `baseRevision` as an additive pair. Runs created before this pair existed remain readable and continue to use their original persisted `targetRevision` as the workspace base. The goal-file receipt is also additive so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before inspecting merge evidence or making another canonical roadmap mutation for that prepared workspace.
+Preparation-only runs use dispatch state version 2. Fetched target custody uses an additive `targetRef` field. Earlier runs without that field remain readable and keep their persisted revision behavior until the next merged-work reconciliation records custody. New runs persist `baseRef` and `baseRevision` as an additive pair. Runs created before this pair existed remain readable and continue to use their original persisted `targetRevision` as the workspace base. The goal-file receipt is also additive so a version 2 run created before handoffs existed remains readable; `resume` writes and journals the missing handoff before inspecting merge evidence or making another canonical roadmap mutation for that prepared workspace.
 
 Version 1 belonged to the removed session-hosting driver and may contain live process or pane custody. Current Stepstone refuses that state rather than silently dropping launch metadata or attempting to control somebody else's session. Inspect or recover a version 1 run with the Stepstone release that created it before upgrading.
 

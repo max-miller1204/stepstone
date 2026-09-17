@@ -88,6 +88,7 @@ export interface DispatchRun {
 	baseRevision?: string;
 	targetBranch: string;
 	targetRevision: string;
+	targetRef?: string;
 	workspaceConfig: DispatchWorkspaceConfig;
 	createdAt: string;
 	updatedAt: string;
@@ -133,6 +134,7 @@ export interface WorkspaceBinding {
 export interface WorkspaceCleanupOptions {
 	targetBranch: string;
 	targetRevision: string;
+	targetRef?: string;
 	goalFile?: DispatchGoalFile;
 	force?: boolean;
 }
@@ -148,7 +150,17 @@ export interface MergeEvidence {
 
 export interface MergeEvidenceBinding {
 	findMerged(branch: string, targetBranch: string, claimedAt: string): Promise<MergeEvidence | undefined>;
-	syncTarget(evidence: MergeEvidence): Promise<string>;
+	syncTarget(evidence: MergeEvidence, runId: string): Promise<string>;
+}
+
+export function dispatchTargetRefPrefix(runId: string): string {
+	if (!/^[A-Za-z0-9_-]+$/.test(runId)) throw new Error("Invalid dispatch run ID");
+	return `refs/stepstone-dispatch/targets/${runId}/`;
+}
+
+export function dispatchTargetRef(runId: string, revision: string): string {
+	if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(revision)) throw new Error("Invalid target revision");
+	return `${dispatchTargetRefPrefix(runId)}${revision}`;
 }
 
 export interface DispatchStateStore {
@@ -521,7 +533,8 @@ export class DispatchDriver {
 			) {
 				throw new Error("Merge evidence does not match this claim and dispatch target");
 			}
-			run.targetRevision = await this.dependencies.merges.syncTarget(evidence);
+			run.targetRevision = await this.dependencies.merges.syncTarget(evidence, run.id);
+			run.targetRef = dispatchTargetRef(run.id, run.targetRevision);
 			await this.persist(run);
 			if (
 				entry.mergedPr &&
@@ -779,6 +792,7 @@ export class DispatchDriver {
 				await this.dependencies.workspace.cleanup(workspace, entry.branch, {
 					targetBranch: run.targetBranch,
 					targetRevision: run.targetRevision,
+					targetRef: run.targetRef,
 					goalFile: entry.goalFile,
 					force,
 				});

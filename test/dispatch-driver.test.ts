@@ -890,7 +890,7 @@ describe("persisted preparation state", () => {
 		const run: DispatchRun = {
 			version: 2,
 			id: "receipt-run",
-			repositoryRoot: "/repo",
+			repositoryRoot: directory,
 			approvedGoalIds: ["alpha"],
 			maxParallel: 1,
 			targetBranch: "main",
@@ -909,6 +909,7 @@ describe("persisted preparation state", () => {
 			},
 		};
 		try {
+			await execFileAsync("git", ["init", "-q"], { cwd: directory });
 			await mkdir(join(directory, "workspaces"));
 			await writeFile(markerPath, "verified removal");
 			const store = new FileDispatchStateStore(directory);
