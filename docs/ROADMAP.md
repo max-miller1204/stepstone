@@ -7,7 +7,7 @@ Each section is a group goals are filed under, and the goals inside one are in t
 Every goal states its status, whether the dependency graph has it waiting, and the goals it waits on.
 A goal's description is a record of what was decided when it was written rather than a current instruction, so an older one may still name a path, a package, or a directory this project has since renamed.
 
-86 goals: 15 open, 59 done, 12 archived.
+96 goals: 25 open, 59 done, 12 archived.
 
 ## Orchestrator
 
@@ -495,67 +495,71 @@ A goal's description is a record of what was decided when it was written rather 
 
   Depends on `make-unit-test-evidence-hard-to-game` (done), `show-the-workspace-dispatcher-in-the` (done).
 
-## Dispatch
+## Tracker Foundation
 
-- **[open]** Dispatch work from explicit base and target branches - `dispatch-work-from-explicit-base-and`
+- **[open, blocked]** Retire dispatcher and workspace management - `dispatch-work-from-explicit-base-and`
 
-  Let a workspace run select an explicit base ref and pull request target instead of depending on the canonical checkout branch. Resolve and persist the exact base revision. Define strict behavior for local branches, remote-tracking refs, integration branches, stacked work, rewritten refs, and branches already checked out in another worktree. Do not fetch or guess silently. Reconcile merged pull requests against the persisted target. Use team-safe branch names and preserve restart and cleanup guarantees.
+  Remove the dispatcher and keep Stepstone focused on tracking. Retire project workspace, project start --worktree, workspace-specific flags, worktree creation, persisted run management, custody tracking, local activity inspection, recovery, cleanup, handoff generation, browser dispatch endpoints, and automatic merged-PR reconciliation. Preserve tracker claims, dependencies, readiness, branch and PR references, and explicit lifecycle commands. Completion requires explicit authorization through the CLI or API. Leave existing branches, worktrees, handoff files, ownership markers, and dispatch journals untouched. Preserve existing goal IDs and claims. Document the breaking CLI change and how users inspect preserved resources with Git and manage them with external tools. Reject removed commands clearly. Remove obsolete dispatcher tests and evidence while preserving shared storage, locking, and repository-discovery checks. This scope supersedes the planned dispatcher branch-selection enhancements.
 
-  Depends on `release-stepstone-0-12-0` (done).
+  Depends on `release-stepstone-0-12-0` (done), `manage-local-goals-and-workspaces-in-a` (open).
+
+- **[open, blocked]** Organize tasks and milestones - `organize-tasks-and-milestones`
+
+  Define projects as larger efforts, milestones as meaningful outcomes, and tasks as actionable work. Let projects exist without a repository and link to several repositories. Map existing Project Goals into tasks while preserving stable IDs, former IDs, retired IDs, dependencies, links, and historical references. Define compatibility for the server, CLI, browser, and agent interfaces.
+
+  Depends on `dispatch-work-from-explicit-base-and` (open).
 
 ## Collaboration
 
-- **[open]** Prove the Stepstone collaboration protocol - `prove-the-stepstone-collaboration`
+- **[open, blocked]** Prove the Stepstone collaboration protocol - `prove-the-stepstone-collaboration`
 
-  Write the collaboration architecture decision and prove it with one CLI client and one browser client. Define immutable project identity, actor identity, roles, versioned commands, idempotency, ordered events, snapshots, stale-write conflicts, and SSE resume behavior. Keep standalone file mode explicit. Treat repository paths, Git origins, branches, and worktrees as linked context rather than storage authority. Fail loudly when a configured collaboration service is unavailable.
+  Write the collaboration architecture decision and prove one authoritative server with a CLI client and a browser client. Use the same server for local and shared deployments. Define immutable project and task identity, actor identity, roles, versioned commands, idempotency, ordered events, snapshots, stale-write conflicts, and SSE resume behavior. Preserve stable, former, and retired IDs. Treat repository paths, Git origins, branches, and worktrees as optional linked context rather than storage authority. Make the CLI and agent interfaces clients of the shared command contract. Fail loudly when the configured server is unavailable. Do not add an automatic file-mode fallback or workspace execution protocol.
 
-  Depends on `release-stepstone-0-12-0` (done).
+  Depends on `organize-tasks-and-milestones` (open).
 
 - **[open, blocked]** Run an authoritative Stepstone collaboration service - `run-an-authoritative-stepstone`
 
-  Build a self-hosted service with a hosted-ready protocol. Store canonical project state, an append-only per-project event sequence, idempotent command records, and current projections in PostgreSQL transactions. Route domain mutations through the same application and mutation services as standalone mode. Enforce project roles on commands, reads, and subscriptions. Support OIDC users and scoped service credentials. Package repeatable deployment, backup, restore, migration, retention, and health operations without requiring Git or a checked-out repository on the server.
+  Build the authoritative self-hosted Stepstone service for software teams and agents. Store canonical project and task state, an append-only per-project event sequence, idempotent command records, and current projections in PostgreSQL transactions. Route domain mutations through the shared application and mutation services. Enforce project permissions on commands, reads, and subscriptions. Support OIDC users and scoped service credentials. Run the same server on a laptop or a separate shared host. Provide repeatable installation, deployment, upgrades, migrations, backup, restore, retention, and health checks. Require no Git repository or developer checkout on the server. Do not consume local dispatch journals or manage workspaces.
 
   Depends on `prove-the-stepstone-collaboration` (open).
 
-- **[open, blocked]** Move projects between standalone and collaborative modes - `move-projects-between-standalone-and`
+- **[open, blocked]** Migrate file projects to the Stepstone server - `move-projects-between-standalone-and`
 
-  Let a user explicitly create, link, import, export, and detach a collaborative project without automatic dual writes. Store only an optional project pointer in a repository. Preserve goal IDs, retired IDs, dependencies, timestamps, and integration metadata across supported moves. Detect divergent histories and require an explicit resolution. Treat exports as interchange, not as a complete service backup.
+  Provide an explicit migration from existing repository-local goal files to server-backed projects. Preserve stable goal IDs as task IDs, former and retired IDs, historical references, dependencies, claims, timestamps, links, and integration metadata. Detect divergent histories and require explicit resolution. Move browser, CLI, and agent clients to the configured server without automatic dual writes or fallback to a writable local file. Keep the source file untouched as migration evidence. Retain export for interchange and portability, not as a second writable authority or a complete service backup. Document the transition away from standalone file mode. Local use runs the same server as shared use.
 
   Depends on `run-an-authoritative-stepstone` (open).
 
 - **[open, blocked]** Collaborate on goals in real time - `collaborate-on-goals-in-real-time`
 
-  Make shared projects safe for teammates and agents. Add actor-aware claims, leases, heartbeats, explicit transfer and reclaim actions, live ordered updates, project membership, and durable audit history. Keep presence advisory. Separate shared goal ownership from machine-local workspace custody. Link claims to branches, remotes, pull requests, and dispatcher runs without making Git authoritative. Preserve the standalone claim evidence workflow.
+  Make shared project and task tracking safe for teammates and agents. Separate assignment, which records responsibility for a task, from temporary agent claims, which coordinate active work. Add actor-aware claims, leases, heartbeats, explicit transfer and release actions, project membership, live ordered updates, and durable audit history. Keep presence advisory. Record progress, blockers, and branch or PR references through the shared service. Make claim races, expiry, and stale writes visible. Do not infer status or completion from machine activity. Do not create workspaces or track local workspace custody. Preserve explicit completion authorization.
 
   Depends on `move-projects-between-standalone-and` (open), `dispatch-work-from-explicit-base-and` (open).
 
-- **[open, blocked]** Work offline against collaborative projects - `work-offline-against-collaborative`
-
-  Cache collaborative projections for the CLI and web client and queue commands in an explicit outbox. Replay commands in client order with stable command IDs and expected versions. Resume events from the last applied project sequence. Keep rejected commands visible until a user resolves or discards them. Do not replace conflicts with last-write-wins or silently fall back to standalone mode.
-
-  Depends on `integrate-jira-cloud` (open).
-
 ## Interfaces
 
-- **[open, blocked]** Edit Stepstone projects in a local web application - `edit-stepstone-projects-in-a-local-web`
+- **[open]** Manage project goals in a web app - `manage-local-goals-and-workspaces-in-a`
 
-  Add a local web application that can connect explicitly to standalone mode or a collaborative service. Support roadmap views, search, dependency planning, goal editing, ordering, lifecycle actions, team claims, audit history, and visible conflict handling. Use the same command contract and optimistic checks as the CLI. Receive collaborative updates through SSE. Bind local mode to loopback by default and never let browser code write the worklist file directly.
+  Focus the existing web editor on goal tracking. Support roadmap views, search, goal creation and editing, ordering, dependency planning, and explicit lifecycle actions. Show ready, blocked, and claimed goals with recorded branch and PR links. Remove browser workspace preparation, dispatch run management, recovery, cleanup, and reconciliation controls and endpoints. Load the board without dispatch journals or workspace activity inspection. Preserve domain validation, application services, optimistic checks, storage locks, and canonical path resolution. Keep the existing loopback editor as the transition to the server-backed application. Never let browser code write the worklist file directly. Do not launch agents or create workspaces.
 
-  Depends on `collaborate-on-goals-in-real-time` (open).
+- **[open, blocked]** Host the web app for teams and agents - `edit-stepstone-projects-in-a-local-web`
+
+  Serve the existing goal editor as the shared Stepstone web application. Let teammates use it without installing a local server or having a repository checkout. Support project and task tracking, dependency planning, ownership, claims, branch and PR links, reported progress and blockers, audit history, live SSE updates, and visible conflict handling. Use the same server command contract, permissions, and optimistic checks as the CLI and agent interfaces. Local deployments use the same server. Keep browser code independent of local worklist files, dispatch journals, and workspace operations. Do not provide a dispatcher or silently switch storage authority when the server is unavailable.
+
+  Depends on `collaborate-on-goals-in-real-time` (open), `manage-local-goals-and-workspaces-in-a` (open).
 
 - **[open, blocked]** Consolidate human project views around the web application - `consolidate-human-project-views-around`
 
   After the web application reaches functional parity, make the terminal project ui board read-only and remove the Project Goals pane from the Pi dashboard. Keep the model-facing Project Goal tool. Preserve the terminal board as a fast dependency, readiness, status, and detail view. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.
 
-  Depends on `work-offline-against-collaborative` (open).
+  Depends on `prove-the-self-hosted-daily-workflow` (open).
 
-## Integrations
+## Later: Integrations
 
 - **[open, blocked]** Build a tracker integration framework - `build-a-tracker-integration-framework`
 
   Create a provider adapter boundary for external project trackers. Store immutable external identities, mapping versions, field ownership, provider shadows, raw representations, and provenance. Process verified webhooks through a durable deduplicated inbox. Send changes through a durable per-connection outbox. Refetch before reconciliation, suppress echoes, respect rate limits, and run periodic repair for missed events and access changes. Expose dry runs, directional sync, visible conflicts, and per-field ownership. Never use timestamp-only last-write-wins.
 
-  Depends on `edit-stepstone-projects-in-a-local-web` (open).
+  Depends on `prove-the-self-hosted-daily-workflow` (open).
 
 - **[open, blocked]** Integrate GitHub Issues - `integrate-github-issues`
 
@@ -574,3 +578,69 @@ A goal's description is a record of what was decided when it was written rather 
   Add a Jira Cloud adapter with an explicit OAuth or installed-app deployment contract. Map issues through tenant, project, issue-type, workflow, and link-type configuration. Use available transitions instead of assigning arbitrary statuses. Preserve Atlassian Document Format and provider-only fields. Renew expiring webhook registrations. Handle restricted comments, hidden identities, access loss, rate limits, and configurable dependency link types without silent data loss.
 
   Depends on `integrate-linear` (open).
+
+## Later: Offline
+
+- **[open, blocked]** Work offline against collaborative projects - `work-offline-against-collaborative`
+
+  Cache collaborative projections for the CLI and web client and queue commands in an explicit outbox. Replay commands in client order with stable command IDs and expected versions. Resume events from the last applied project sequence. Keep rejected commands visible until a user resolves or discards them. Do not replace conflicts with last-write-wins or silently fall back to standalone mode.
+
+  Depends on `prove-the-self-hosted-daily-workflow` (open).
+
+## Team Tracking
+
+- **[open, blocked]** Add team task fields - `add-team-task-fields`
+
+  Support assignees, priorities, labels, and configurable task statuses through the web application and shared API. Keep assignment separate from temporary agent claims. Preserve explicit completion and dependency readiness semantics. Support project and milestone organization in normal task editing.
+
+  Depends on `edit-stepstone-projects-in-a-local-web` (open).
+
+- **[open, blocked]** Discuss work on tasks - `discuss-work-on-tasks`
+
+  Add comments, mentions, and readable activity history to tasks. Let people and authorized agents read and contribute through the same service. Preserve actor attribution and project permissions. Keep decisions and reported blockers with the task.
+
+  Depends on `add-team-task-fields` (open).
+
+- **[open, blocked]** Save personal and team views - `save-personal-and-team-views`
+
+  Provide searchable task lists and boards with filters for assignee, status, priority, labels, project, milestone, and dependency readiness. Let users save personal views and share team views. Preserve useful keyboard navigation and task detail access.
+
+  Depends on `discuss-work-on-tasks` (open).
+
+- **[open, blocked]** Add notifications and a personal inbox - `add-notifications-and-a-personal-inbox`
+
+  Provide an in-app inbox for mentions, assignment changes, and relevant updates to followed tasks. Support read state and notification preferences. Apply project permissions to notification content. Keep email and external delivery channels outside the first version.
+
+  Depends on `save-personal-and-team-views` (open).
+
+## Agent Access
+
+- **[open, blocked]** Support the agent task workflow - `support-the-agent-task-workflow`
+
+  Prove that an agent can find ready work, obtain a temporary claim, read task context and discussion, report progress or a blocker, attach branch and PR references, and explicitly release or complete authorized work through the CLI and API. Handle claim races, retries, expired claims, and stale edits visibly. Do not create workspaces, launch agents, or infer completion from machine activity.
+
+  Depends on `add-notifications-and-a-personal-inbox` (open).
+
+## Self-hosting
+
+- **[open, blocked]** Prove the self-hosted daily workflow - `prove-the-self-hosted-daily-workflow`
+
+  Verify a complete workflow on a separate host: install the service, invite a teammate, create and organize tasks, assign and discuss work, track dependencies, and update tasks from the browser and CLI. Verify agent access, permissions, live updates, explicit completion, backup, restore, and upgrade behavior. Document the supported deployment and recovery procedure.
+
+  Depends on `support-the-agent-task-workflow` (open).
+
+## Later: Planning
+
+- **[open, blocked]** Plan work in cycles - `plan-work-in-cycles`
+
+  Add optional time-bounded planning cycles after the core tracker is useful. Let teams select work, inspect progress, and explicitly handle unfinished tasks. Keep cycles separate from milestones and avoid automatic task completion.
+
+  Depends on `prove-the-self-hosted-daily-workflow` (open).
+
+## Later: Reporting
+
+- **[open, blocked]** Report team progress - `report-team-progress`
+
+  Add project and milestone progress views, workload summaries, and time-based reports from recorded task history. Define each metric clearly. Do not infer productivity from commits, workspace activity, or agent runtime.
+
+  Depends on `plan-work-in-cycles` (open).

@@ -615,7 +615,8 @@
 			"dependsOn": ["authoritative-pull-request-quality-gates"],
 			"status": "open",
 			"createdAt": "2026-08-18T01:02:46.352Z",
-			"updatedAt": "2026-08-18T01:02:46.352Z"
+			"updatedAt": "2026-09-17T05:48:43.670Z",
+			"branch": "stepstone/harden-repository-supply-chain"
 		},
 		{
 			"id": "adversarial-test-quality-program",
@@ -757,7 +758,8 @@
 			"group": "Quality",
 			"status": "open",
 			"createdAt": "2026-08-18T22:17:01.718Z",
-			"updatedAt": "2026-09-16T07:27:32.864Z"
+			"updatedAt": "2026-09-17T05:48:44.136Z",
+			"branch": "stepstone/audit-the-roadmap-for-goals-the-project"
 		},
 		{
 			"id": "remove-the-symphony-incorporation",
@@ -804,124 +806,225 @@
 		},
 		{
 			"id": "dispatch-work-from-explicit-base-and",
-			"title": "Dispatch work from explicit base and target branches",
-			"description": "Let a workspace run select an explicit base ref and pull request target instead of depending on the canonical checkout branch. Resolve and persist the exact base revision. Define strict behavior for local branches, remote-tracking refs, integration branches, stacked work, rewritten refs, and branches already checked out in another worktree. Do not fetch or guess silently. Reconcile merged pull requests against the persisted target. Use team-safe branch names and preserve restart and cleanup guarantees.",
-			"group": "Dispatch",
-			"dependsOn": ["release-stepstone-0-12-0"],
+			"title": "Retire dispatcher and workspace management",
+			"description": "Remove the dispatcher and keep Stepstone focused on tracking. Retire project workspace, project start --worktree, workspace-specific flags, worktree creation, persisted run management, custody tracking, local activity inspection, recovery, cleanup, handoff generation, browser dispatch endpoints, and automatic merged-PR reconciliation. Preserve tracker claims, dependencies, readiness, branch and PR references, and explicit lifecycle commands. Completion requires explicit authorization through the CLI or API. Leave existing branches, worktrees, handoff files, ownership markers, and dispatch journals untouched. Preserve existing goal IDs and claims. Document the breaking CLI change and how users inspect preserved resources with Git and manage them with external tools. Reject removed commands clearly. Remove obsolete dispatcher tests and evidence while preserving shared storage, locking, and repository-discovery checks. This scope supersedes the planned dispatcher branch-selection enhancements.",
+			"group": "Tracker Foundation",
+			"dependsOn": ["release-stepstone-0-12-0", "manage-local-goals-and-workspaces-in-a"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:01.033Z",
+			"branch": "stepstone/dispatch-work-from-explicit-base-and"
 		},
 		{
 			"id": "prove-the-stepstone-collaboration",
 			"title": "Prove the Stepstone collaboration protocol",
-			"description": "Write the collaboration architecture decision and prove it with one CLI client and one browser client. Define immutable project identity, actor identity, roles, versioned commands, idempotency, ordered events, snapshots, stale-write conflicts, and SSE resume behavior. Keep standalone file mode explicit. Treat repository paths, Git origins, branches, and worktrees as linked context rather than storage authority. Fail loudly when a configured collaboration service is unavailable.",
+			"description": "Write the collaboration architecture decision and prove one authoritative server with a CLI client and a browser client. Use the same server for local and shared deployments. Define immutable project and task identity, actor identity, roles, versioned commands, idempotency, ordered events, snapshots, stale-write conflicts, and SSE resume behavior. Preserve stable, former, and retired IDs. Treat repository paths, Git origins, branches, and worktrees as optional linked context rather than storage authority. Make the CLI and agent interfaces clients of the shared command contract. Fail loudly when the configured server is unavailable. Do not add an automatic file-mode fallback or workspace execution protocol.",
 			"group": "Collaboration",
-			"dependsOn": ["release-stepstone-0-12-0"],
+			"dependsOn": ["organize-tasks-and-milestones"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:01.377Z"
 		},
 		{
 			"id": "run-an-authoritative-stepstone",
 			"title": "Run an authoritative Stepstone collaboration service",
-			"description": "Build a self-hosted service with a hosted-ready protocol. Store canonical project state, an append-only per-project event sequence, idempotent command records, and current projections in PostgreSQL transactions. Route domain mutations through the same application and mutation services as standalone mode. Enforce project roles on commands, reads, and subscriptions. Support OIDC users and scoped service credentials. Package repeatable deployment, backup, restore, migration, retention, and health operations without requiring Git or a checked-out repository on the server.",
+			"description": "Build the authoritative self-hosted Stepstone service for software teams and agents. Store canonical project and task state, an append-only per-project event sequence, idempotent command records, and current projections in PostgreSQL transactions. Route domain mutations through the shared application and mutation services. Enforce project permissions on commands, reads, and subscriptions. Support OIDC users and scoped service credentials. Run the same server on a laptop or a separate shared host. Provide repeatable installation, deployment, upgrades, migrations, backup, restore, retention, and health checks. Require no Git repository or developer checkout on the server. Do not consume local dispatch journals or manage workspaces.",
 			"group": "Collaboration",
 			"dependsOn": ["prove-the-stepstone-collaboration"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:01.804Z"
 		},
 		{
 			"id": "move-projects-between-standalone-and",
-			"title": "Move projects between standalone and collaborative modes",
-			"description": "Let a user explicitly create, link, import, export, and detach a collaborative project without automatic dual writes. Store only an optional project pointer in a repository. Preserve goal IDs, retired IDs, dependencies, timestamps, and integration metadata across supported moves. Detect divergent histories and require an explicit resolution. Treat exports as interchange, not as a complete service backup.",
+			"title": "Migrate file projects to the Stepstone server",
+			"description": "Provide an explicit migration from existing repository-local goal files to server-backed projects. Preserve stable goal IDs as task IDs, former and retired IDs, historical references, dependencies, claims, timestamps, links, and integration metadata. Detect divergent histories and require explicit resolution. Move browser, CLI, and agent clients to the configured server without automatic dual writes or fallback to a writable local file. Keep the source file untouched as migration evidence. Retain export for interchange and portability, not as a second writable authority or a complete service backup. Document the transition away from standalone file mode. Local use runs the same server as shared use.",
 			"group": "Collaboration",
 			"dependsOn": ["run-an-authoritative-stepstone"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:02.166Z"
 		},
 		{
 			"id": "collaborate-on-goals-in-real-time",
 			"title": "Collaborate on goals in real time",
-			"description": "Make shared projects safe for teammates and agents. Add actor-aware claims, leases, heartbeats, explicit transfer and reclaim actions, live ordered updates, project membership, and durable audit history. Keep presence advisory. Separate shared goal ownership from machine-local workspace custody. Link claims to branches, remotes, pull requests, and dispatcher runs without making Git authoritative. Preserve the standalone claim evidence workflow.",
+			"description": "Make shared project and task tracking safe for teammates and agents. Separate assignment, which records responsibility for a task, from temporary agent claims, which coordinate active work. Add actor-aware claims, leases, heartbeats, explicit transfer and release actions, project membership, live ordered updates, and durable audit history. Keep presence advisory. Record progress, blockers, and branch or PR references through the shared service. Make claim races, expiry, and stale writes visible. Do not infer status or completion from machine activity. Do not create workspaces or track local workspace custody. Preserve explicit completion authorization.",
 			"group": "Collaboration",
 			"dependsOn": ["move-projects-between-standalone-and", "dispatch-work-from-explicit-base-and"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:02.494Z"
+		},
+		{
+			"id": "manage-local-goals-and-workspaces-in-a",
+			"title": "Manage project goals in a web app",
+			"description": "Focus the existing web editor on goal tracking. Support roadmap views, search, goal creation and editing, ordering, dependency planning, and explicit lifecycle actions. Show ready, blocked, and claimed goals with recorded branch and PR links. Remove browser workspace preparation, dispatch run management, recovery, cleanup, and reconciliation controls and endpoints. Load the board without dispatch journals or workspace activity inspection. Preserve domain validation, application services, optimistic checks, storage locks, and canonical path resolution. Keep the existing loopback editor as the transition to the server-backed application. Never let browser code write the worklist file directly. Do not launch agents or create workspaces.",
+			"group": "Interfaces",
+			"status": "open",
+			"createdAt": "2026-09-17T05:40:49.562Z",
+			"updatedAt": "2026-09-17T21:40:00.700Z",
+			"branch": "stepstone/manage-local-goals-and-workspaces-in-a"
 		},
 		{
 			"id": "edit-stepstone-projects-in-a-local-web",
-			"title": "Edit Stepstone projects in a local web application",
-			"description": "Add a local web application that can connect explicitly to standalone mode or a collaborative service. Support roadmap views, search, dependency planning, goal editing, ordering, lifecycle actions, team claims, audit history, and visible conflict handling. Use the same command contract and optimistic checks as the CLI. Receive collaborative updates through SSE. Bind local mode to loopback by default and never let browser code write the worklist file directly.",
+			"title": "Host the web app for teams and agents",
+			"description": "Serve the existing goal editor as the shared Stepstone web application. Let teammates use it without installing a local server or having a repository checkout. Support project and task tracking, dependency planning, ownership, claims, branch and PR links, reported progress and blockers, audit history, live SSE updates, and visible conflict handling. Use the same server command contract, permissions, and optimistic checks as the CLI and agent interfaces. Local deployments use the same server. Keep browser code independent of local worklist files, dispatch journals, and workspace operations. Do not provide a dispatcher or silently switch storage authority when the server is unavailable.",
 			"group": "Interfaces",
-			"dependsOn": ["collaborate-on-goals-in-real-time"],
+			"dependsOn": ["collaborate-on-goals-in-real-time", "manage-local-goals-and-workspaces-in-a"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:02.825Z"
 		},
 		{
 			"id": "build-a-tracker-integration-framework",
 			"title": "Build a tracker integration framework",
 			"description": "Create a provider adapter boundary for external project trackers. Store immutable external identities, mapping versions, field ownership, provider shadows, raw representations, and provenance. Process verified webhooks through a durable deduplicated inbox. Send changes through a durable per-connection outbox. Refetch before reconciliation, suppress echoes, respect rate limits, and run periodic repair for missed events and access changes. Expose dry runs, directional sync, visible conflicts, and per-field ownership. Never use timestamp-only last-write-wins.",
-			"group": "Integrations",
-			"dependsOn": ["edit-stepstone-projects-in-a-local-web"],
+			"group": "Later: Integrations",
+			"dependsOn": ["prove-the-self-hosted-daily-workflow"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:03.170Z"
 		},
 		{
 			"id": "integrate-github-issues",
 			"title": "Integrate GitHub Issues",
 			"description": "Add a GitHub App adapter with repository-scoped installation permissions and webhook delivery. Link goals to issues using immutable GitHub IDs. Map a documented subset of title, body, status, assignee, labels, comments, sub-issues, and blocking dependencies while preserving provider-only state. Filter pull requests from issue reads. Connect pull request and branch context without making GitHub the Stepstone authority.",
-			"group": "Integrations",
+			"group": "Later: Integrations",
 			"dependsOn": ["build-a-tracker-integration-framework"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:03.491Z"
 		},
 		{
 			"id": "integrate-linear",
 			"title": "Integrate Linear",
 			"description": "Add a workspace-scoped Linear OAuth adapter with app actor attribution and webhook delivery. Map team-specific workflows, users, comments, relationships, and selected issue fields through explicit ownership rules. Preserve Linear IDs and exact workflow state. Handle rotating tokens, GraphQL complexity limits, retries, access changes, and lossy mappings without silent replacement.",
-			"group": "Integrations",
+			"group": "Later: Integrations",
 			"dependsOn": ["integrate-github-issues"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:03.820Z"
 		},
 		{
 			"id": "integrate-jira-cloud",
 			"title": "Integrate Jira Cloud",
 			"description": "Add a Jira Cloud adapter with an explicit OAuth or installed-app deployment contract. Map issues through tenant, project, issue-type, workflow, and link-type configuration. Use available transitions instead of assigning arbitrary statuses. Preserve Atlassian Document Format and provider-only fields. Renew expiring webhook registrations. Handle restricted comments, hidden identities, access loss, rate limits, and configurable dependency link types without silent data loss.",
-			"group": "Integrations",
+			"group": "Later: Integrations",
 			"dependsOn": ["integrate-linear"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:04.147Z"
 		},
 		{
 			"id": "work-offline-against-collaborative",
 			"title": "Work offline against collaborative projects",
 			"description": "Cache collaborative projections for the CLI and web client and queue commands in an explicit outbox. Replay commands in client order with stable command IDs and expected versions. Resume events from the last applied project sequence. Keep rejected commands visible until a user resolves or discards them. Do not replace conflicts with last-write-wins or silently fall back to standalone mode.",
-			"group": "Collaboration",
-			"dependsOn": ["integrate-jira-cloud"],
+			"group": "Later: Offline",
+			"dependsOn": ["prove-the-self-hosted-daily-workflow"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:04.463Z"
 		},
 		{
 			"id": "consolidate-human-project-views-around",
 			"title": "Consolidate human project views around the web application",
 			"description": "After the web application reaches functional parity, make the terminal project ui board read-only and remove the Project Goals pane from the Pi dashboard. Keep the model-facing Project Goal tool. Preserve the terminal board as a fast dependency, readiness, status, and detail view. Direct human mutations to explicit CLI commands or the web application and document the breaking interface change.",
 			"group": "Interfaces",
-			"dependsOn": ["work-offline-against-collaborative"],
+			"dependsOn": ["prove-the-self-hosted-daily-workflow"],
 			"status": "open",
 			"createdAt": "2026-09-16T07:09:20.058Z",
-			"updatedAt": "2026-09-16T07:09:20.058Z"
+			"updatedAt": "2026-09-17T21:40:04.784Z"
+		},
+		{
+			"id": "organize-tasks-and-milestones",
+			"title": "Organize tasks and milestones",
+			"description": "Define projects as larger efforts, milestones as meaningful outcomes, and tasks as actionable work. Let projects exist without a repository and link to several repositories. Map existing Project Goals into tasks while preserving stable IDs, former IDs, retired IDs, dependencies, links, and historical references. Define compatibility for the server, CLI, browser, and agent interfaces.",
+			"group": "Tracker Foundation",
+			"dependsOn": ["dispatch-work-from-explicit-base-and"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "add-team-task-fields",
+			"title": "Add team task fields",
+			"description": "Support assignees, priorities, labels, and configurable task statuses through the web application and shared API. Keep assignment separate from temporary agent claims. Preserve explicit completion and dependency readiness semantics. Support project and milestone organization in normal task editing.",
+			"group": "Team Tracking",
+			"dependsOn": ["edit-stepstone-projects-in-a-local-web"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "discuss-work-on-tasks",
+			"title": "Discuss work on tasks",
+			"description": "Add comments, mentions, and readable activity history to tasks. Let people and authorized agents read and contribute through the same service. Preserve actor attribution and project permissions. Keep decisions and reported blockers with the task.",
+			"group": "Team Tracking",
+			"dependsOn": ["add-team-task-fields"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "save-personal-and-team-views",
+			"title": "Save personal and team views",
+			"description": "Provide searchable task lists and boards with filters for assignee, status, priority, labels, project, milestone, and dependency readiness. Let users save personal views and share team views. Preserve useful keyboard navigation and task detail access.",
+			"group": "Team Tracking",
+			"dependsOn": ["discuss-work-on-tasks"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "add-notifications-and-a-personal-inbox",
+			"title": "Add notifications and a personal inbox",
+			"description": "Provide an in-app inbox for mentions, assignment changes, and relevant updates to followed tasks. Support read state and notification preferences. Apply project permissions to notification content. Keep email and external delivery channels outside the first version.",
+			"group": "Team Tracking",
+			"dependsOn": ["save-personal-and-team-views"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "support-the-agent-task-workflow",
+			"title": "Support the agent task workflow",
+			"description": "Prove that an agent can find ready work, obtain a temporary claim, read task context and discussion, report progress or a blocker, attach branch and PR references, and explicitly release or complete authorized work through the CLI and API. Handle claim races, retries, expired claims, and stale edits visibly. Do not create workspaces, launch agents, or infer completion from machine activity.",
+			"group": "Agent Access",
+			"dependsOn": ["add-notifications-and-a-personal-inbox"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "prove-the-self-hosted-daily-workflow",
+			"title": "Prove the self-hosted daily workflow",
+			"description": "Verify a complete workflow on a separate host: install the service, invite a teammate, create and organize tasks, assign and discuss work, track dependencies, and update tasks from the browser and CLI. Verify agent access, permissions, live updates, explicit completion, backup, restore, and upgrade behavior. Document the supported deployment and recovery procedure.",
+			"group": "Self-hosting",
+			"dependsOn": ["support-the-agent-task-workflow"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "plan-work-in-cycles",
+			"title": "Plan work in cycles",
+			"description": "Add optional time-bounded planning cycles after the core tracker is useful. Let teams select work, inspect progress, and explicitly handle unfinished tasks. Keep cycles separate from milestones and avoid automatic task completion.",
+			"group": "Later: Planning",
+			"dependsOn": ["prove-the-self-hosted-daily-workflow"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
+		},
+		{
+			"id": "report-team-progress",
+			"title": "Report team progress",
+			"description": "Add project and milestone progress views, workload summaries, and time-based reports from recorded task history. Define each metric clearly. Do not infer productivity from commits, workspace activity, or agent runtime.",
+			"group": "Later: Reporting",
+			"dependsOn": ["plan-work-in-cycles"],
+			"status": "open",
+			"createdAt": "2026-09-17T21:38:33.048Z",
+			"updatedAt": "2026-09-17T21:38:33.048Z"
 		}
 	],
-	"revision": 356
+	"revision": 385
 }
