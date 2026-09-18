@@ -20,6 +20,11 @@ Inside a stepstone development checkout, prefer the TypeScript entry point so un
 Actions:
 
 ```text
+structure
+configure <title...> --confirm
+add_milestone <title...>
+update_milestone <id> [title...]
+assign_milestone <id> --milestone <id>
 list
 show <id>
 find <text...>
@@ -51,15 +56,18 @@ Flags:
 - `--confirm` - Acknowledge an action that requires confirmation; pass it only for an explicit user request.
 - `--cwd <dir>` - Resolve the git root from this directory instead of the working directory.
 - `--file <path>` - Read and write this goal file instead of the one the repository resolves to, overriding $STEPSTONE_WORKLIST.
-- `--description <text>` - Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add and update.
+- `--description <text>` - Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it; only for project add, update, configure, add_milestone, and update_milestone.
 - `--append-description <text>` - Add one argv token as a new description paragraph without replacing stored prose; cannot be combined with a title change; only for project update.
 - `--append` - Interactive compatibility form that adds the text after -- as a new paragraph; cannot be combined with a title change; only for project update.
 - `--group <name>` - Filter list to one free-form section, or put an added or updated goal in that section; names match exactly and are case sensitive, an empty name selects ungrouped goals for list and clears the field for update, and it may be provided only once; only for project list, add, and update.
 - `--depends-on <id>` - Require that goal to land first; repeat it to name several, and pass an empty id alone to clear every edge; only for project add and update.
 - `--link <url>` - Store an informational absolute HTTP or HTTPS URL; repeat it to name several, and pass an empty URL alone to clear every link; only for project add and update.
+- `--repository <url>` - Replace the project repository URLs; repeat for several, or use an empty value alone to clear all; only for project configure.
+- `--milestone <id>` - Set the task milestone; an empty value clears it; only for project assign_milestone.
 - `--branch <name>` - Record the branch working on a goal; project start defaults to the current Git branch; only for project start.
 - `--clear` - Release the branch claim on a goal; only for project start.
-- `--expect-updated-at <timestamp>` - Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, and delete.
+- `--expect-revision <revision>` - Refuse the organization change unless the store revision matches the last read; only for project configure, add_milestone, update_milestone, and assign_milestone.
+- `--expect-updated-at <timestamp>` - Refuse the change as a conflict unless the goal's updatedAt still matches this value; only for project update, start, set_active, complete, reopen, archive, delete, and assign_milestone.
 - `--dry-run` - Validate and report an apply-plan projection, ID migration, or path migration without writing; only for project apply-plan, migrate_ids, and migrate_path.
 
 Prefer `--json` whenever you need to read IDs, statuses, or errors back rather than parsing human output.
@@ -102,6 +110,10 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 
 ## Result envelopes
 
+- Projects are larger efforts. Milestones are meaningful outcomes. Tasks are actionable work. The existing `project` task actions and goal result fields remain compatible.
+- `structure` returns `result.projectStructure` with project metadata, milestones, tasks, and retired task IDs. Legacy stores have no configured project until `configure --confirm` upgrades them.
+- `configure` sets a required project title and optional description and repository URLs. Repository URLs replace the complete set. Projects can have zero or several repositories. Use an explicit `--file` or `$STEPSTONE_WORKLIST` outside Git.
+- `add_milestone` and `update_milestone` return `result.milestone`. `assign_milestone` returns the updated task in the compatible `result.goal` field. Read IDs from receipts.
 - Collection reads return the collection they explicitly request: `list`, `find`, and `ready` use `result.goals`, while `waves` uses `result.waves`.
 - Project mutations return bounded receipts instead of the complete post-mutation roadmap. Single-goal mutations use `result.goal`, `delete` uses `result.deletedGoalId`, and `apply-plan` uses `result.addedGoals`.
 - Mutation receipts keep change status, changed entity IDs, and the resulting revision in `meta`; run an explicit read only when later work needs current roadmap state.
@@ -110,7 +122,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 ## Where the goal file lives
 
 - The goal file is `<git-root>/.worklist/worklist.json`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.
-- The web application uses only the canonical repository roadmap and rejects path overrides. Other roadmap interfaces use one goal-file resolution order, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
+- The web application accepts an explicit store. Without an override it uses the canonical roadmap in the main worktree. Roadmap interfaces use one goal-file resolution order, in the CLI, the board, and a live Pi session: an explicit `--file <path>` or `$STEPSTONE_WORKLIST` first, then `.worklist/worklist.json`, then the legacy `.pi/worklist.json`.
 - Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only `.pi/worklist.json` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes `.worklist/worklist.json`.
 - Linked worktrees may read either committed roadmap, but a mutation that would change `.worklist/worklist.json` or `.pi/worklist.json` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.
 - A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no `git worktree add` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a `--file` or `$STEPSTONE_WORKLIST` store.
@@ -150,7 +162,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - A goal's ID is derived from its title when the goal is created and frozen from then on, so it reads as words and a later rename never invalidates a reference written down elsewhere.
 - A title-derived ID never uses the legacy random-ID shape, so `migrate_ids` can identify generated IDs without consulting a title that may have changed.
 - Read an ID back from `list`, `find`, or `add` instead of deriving it from a title yourself: truncation and collision suffixes make a guessed slug unreliable.
-- Every `<id>` argument also accepts a unique prefix of an ID, or an ID the goal answered to before `migrate_ids` renamed it.
+- Task ID arguments also accept a unique prefix or a former ID from before `migrate_ids`. Milestone IDs must match exactly.
 - An ambiguous prefix is refused with the goals it matched instead of resolved by guesswork, so widen the prefix rather than retrying it.
 - Deleting a goal permanently retires its current and former IDs: they stop resolving, but no later goal can claim them and inherit stale references.
 - `find <text>` searches titles and descriptions, so locating a goal never needs `list --json` plus client-side filtering.
@@ -192,7 +204,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 
 ## Guardrails
 
-- `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` are reserved for explicit user intent.
+- `configure`, `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` are reserved for explicit user intent.
   Pass `--confirm` only for the exact action the user requested and, when the action names a goal, only for that exact goal.
   Never pass it because a goal merely looks finished or stale.
 - `migrate_ids` names no goal and rewrites every generated ID in the repository at once, so it needs an explicit request of its own.
@@ -201,7 +213,7 @@ The full generated command reference lives in the package's `docs/cli.md`, rende
 - Exit code 3 (confirmation required) means the command needs `--confirm`; stop and ask the user instead of retrying with the flag.
 - Exit code 4 (conflict) means a concurrent change conflicted with yours; re-read current state with `list` or `show` before retrying.
   A conflicting change wrote nothing at all, so rebuild it against the goal you just re-read and pass that goal's new `updatedAt`.
-- `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, `start`, and `set_active` are safe to run whenever they serve the user's request.
+- `structure`, `add_milestone`, `update_milestone`, `assign_milestone`, `list`, `show`, `find`, `next`, `ready`, `waves`, `add`, `update`, `move`, `start`, and `set_active` are safe to run whenever they serve the user's request.
 - `apply-plan --dry-run` is safe for preview; a mutating `apply-plan` is safe only after explicit approval of that exact plan.
 - `ui` and `web` opens a full-screen board for the human at the keyboard, not for you.
   Never run it: it holds the terminal until the user quits, and it exits with an error when stdin or stdout is not a terminal.

@@ -6,9 +6,14 @@
 [![CI](https://github.com/max-miller1204/stepstone/actions/workflows/ci.yml/badge.svg)](https://github.com/max-miller1204/stepstone/actions/workflows/ci.yml)
 [![Release](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml/badge.svg)](https://github.com/max-miller1204/stepstone/actions/workflows/release.yml)
 
-stepstone keeps a repository's roadmap inside the repository.
-Project Goals are a list committed alongside the code, which any coding agent and any human at a terminal reads and changes through the same CLI.
-Goals carry dependency edges, so `next`, `ready`, and `waves` answer what to start, what can run in parallel, and what each finished goal unblocks.
+stepstone organizes projects, milestones, and tasks.
+A project is a larger effort. A milestone is a meaningful outcome. A task is actionable work.
+Projects can have no repository or link to several repositories.
+Existing Project Goals become tasks with the same IDs, dependencies, and history. The existing CLI and boards remain compatible.
+Read the [organization guide](docs/organization.md) to configure a project and assign tasks to milestones.
+
+A repository roadmap stays committed alongside the code. An effort outside Git uses an explicit store.
+Task dependencies let `next`, `ready`, and `waves` show what to start, what can run in parallel, and what each finished task unblocks.
 
 ## Interfaces
 

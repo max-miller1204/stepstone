@@ -118,6 +118,19 @@ function formatProjectGoalDetail(result: WorklistOperationResult): string {
 
 function formatProjectResult(operation: WorklistOperation, result: WorklistOperationResult): string {
 	switch (operation.action) {
+		case "structure":
+			if (!result.projectStructure) throw new Error("Project structure was not returned.");
+			return JSON.stringify(result.projectStructure, null, 2);
+		case "configure":
+			if (!result.project) throw new Error("Configured project was not returned.");
+			return JSON.stringify(result.project, null, 2);
+		case "add_milestone":
+		case "update_milestone":
+			if (!result.milestone) throw new Error("Milestone was not returned.");
+			return JSON.stringify(result.milestone, null, 2);
+		case "assign_milestone":
+			if (!result.goal) throw new Error("Assigned task was not returned.");
+			return JSON.stringify(result.goal, null, 2);
 		case "list":
 			if (!result.projectGoalList) throw new Error("Project list did not return a bounded page.");
 			return formatProjectGoalListPage(result.projectGoalList);

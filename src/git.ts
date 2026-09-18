@@ -648,21 +648,23 @@ export interface WorklistLocationOptions {
  * because writing the other one instead would split one roadmap into two.
  */
 export function resolveWorklistLocation(
-	gitRoot: string,
+	gitRoot: string | null,
 	options: WorklistLocationOptions = {},
 ): WorklistLocation {
-	const currentPath = resolve(gitRoot, WORKLIST_DIRECTORY, WORKLIST_FILENAME);
-	const legacyPath = resolve(gitRoot, LEGACY_WORKLIST_DIRECTORY, WORKLIST_FILENAME);
 	const override = options.override?.trim() || options.env?.[WORKLIST_PATH_ENV]?.trim();
 	if (override) {
 		const base = options.overrideBase ?? process.cwd();
+		const path = isAbsolute(override) ? override : resolve(base, override);
 		return {
-			path: isAbsolute(override) ? override : resolve(base, override),
+			path,
 			source: "override",
-			currentPath,
-			legacyPath,
+			currentPath: gitRoot ? resolve(gitRoot, WORKLIST_DIRECTORY, WORKLIST_FILENAME) : path,
+			legacyPath: gitRoot ? resolve(gitRoot, LEGACY_WORKLIST_DIRECTORY, WORKLIST_FILENAME) : path,
 		};
 	}
+	if (!gitRoot) throw new Error("A project outside Git requires --file or STEPSTONE_WORKLIST.");
+	const currentPath = resolve(gitRoot, WORKLIST_DIRECTORY, WORKLIST_FILENAME);
+	const legacyPath = resolve(gitRoot, LEGACY_WORKLIST_DIRECTORY, WORKLIST_FILENAME);
 	const hasCurrent = existsSync(currentPath);
 	const hasLegacy = existsSync(legacyPath);
 	if (hasCurrent) {
@@ -710,7 +712,7 @@ export interface LocatedWorklist extends WorklistLocation {
  * resolution, the notice cannot describe a file other than the one in use.
  */
 export function createWorklistLocator(
-	gitRoot: string,
+	gitRoot: string | null,
 	options: WorklistLocationOptions = {},
 ): () => LocatedWorklist {
 	return () => {
@@ -771,6 +773,9 @@ export function createProjectRootLookup(
 	let settled: GitRootFailure | undefined;
 	let held: { failure: GitRootFailure; until: number } | undefined;
 	return () => {
+		if (location.override?.trim() || location.env?.[WORKLIST_PATH_ENV]?.trim()) {
+			return { worklist: createWorklistLocator(null, location)() };
+		}
 		if (locate) return { worklist: locate() };
 		if (settled) return { failure: settled };
 		if (held && now() < held.until) return { failure: held.failure };

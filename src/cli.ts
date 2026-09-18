@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import {
 	projectGoalSelectionError,
 	projectRootUnavailableError,
@@ -109,9 +110,12 @@ interface CliInvocation {
 	dependsOn?: string[];
 	/** Informational URLs; an empty entry clears every link. */
 	links?: string[];
+	repositories?: string[];
+	milestoneId?: string;
 	branch?: string;
 	clear: boolean;
 	expectedUpdatedAt?: string;
+	expectedRevision?: string;
 	/** Report what a mutation would do without writing it. */
 	dryRun: boolean;
 	json: boolean;
@@ -239,6 +243,8 @@ interface ParsedCliHead {
 	flagsUsed: Set<string>;
 	dependsOn: string[];
 	links: string[];
+	repositories: string[];
+	milestoneId?: string;
 	/** Positionals written after the --description value, which a title must not be built from. */
 	positionalsAfterDescription: number;
 	/** Positionals written after the --append-description value, which a title must not be built from. */
@@ -249,6 +255,7 @@ interface ParsedCliHead {
 	dryRun: boolean;
 	group?: string;
 	expectedUpdatedAt?: string;
+	expectedRevision?: string;
 	branch?: string;
 	clear: boolean;
 	json: boolean;
@@ -264,6 +271,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	const flagsUsed = new Set<string>();
 	const dependsOn: string[] = [];
 	const links: string[] = [];
+	const repositories: string[] = [];
+	let milestoneId: string | undefined;
 	let json = false;
 	let confirm = false;
 	let append = false;
@@ -274,6 +283,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	let branch: string | undefined;
 	let clear = false;
 	let expectedUpdatedAt: string | undefined;
+	let expectedRevision: string | undefined;
 	let cwd = process.cwd();
 	let file: string | undefined;
 	let port: number | undefined;
@@ -361,12 +371,25 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 				);
 				index++;
 				break;
+			case "--repository":
+				repositories.push(readClearableFlagValue(head, index, part, "a repository URL, or '' to clear all"));
+				index++;
+				break;
+			case "--milestone":
+				if (milestoneId !== undefined) fail(`--milestone may be provided only once\n\n${USAGE}`, 2);
+				milestoneId = readClearableFlagValue(head, index, part, "a milestone ID, or '' to clear it");
+				index++;
+				break;
 			case "--branch":
 				branch = readFlagValue(head, index, part, "a branch name");
 				index++;
 				break;
 			case "--clear":
 				clear = true;
+				break;
+			case "--expect-revision":
+				expectedRevision = readFlagValue(head, index, part, "a revision");
+				index++;
 				break;
 			case "--expect-updated-at":
 				expectedUpdatedAt = readFlagValue(head, index, part, "a timestamp");
@@ -386,6 +409,12 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 	if (links.some((entry) => entry.trim() === "") && links.length > 1) {
 		fail(`--link '' clears every link and cannot be combined with another --link\n\n${USAGE}`, 2);
 	}
+	if (repositories.some((entry) => entry.trim() === "") && repositories.length > 1) {
+		fail(
+			`--repository '' clears all repositories and cannot be combined with another --repository\n\n${USAGE}`,
+			2,
+		);
+	}
 	const positionalsAfter = (flag: string): number => {
 		const before = positionalsBeforeFlag.get(flag);
 		return before === undefined ? 0 : positionals.length - before;
@@ -395,6 +424,8 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		flagsUsed,
 		dependsOn,
 		links,
+		repositories,
+		milestoneId,
 		positionalsAfterDescription: positionalsAfter("--description"),
 		positionalsAfterAppendDescription: positionalsAfter("--append-description"),
 		directDescription,
@@ -405,6 +436,7 @@ function parseCliHead(head: readonly string[]): ParsedCliHead {
 		branch,
 		clear,
 		expectedUpdatedAt,
+		expectedRevision,
 		json,
 		confirm,
 		cwd,
@@ -443,7 +475,7 @@ function parseArgs(argv: string[]): CliInvocation {
 	const parsed = parseCliHead(head);
 	const hasSeparatorDescription = separator !== -1;
 	validateDescriptionInputs(parsed, hasSeparatorDescription);
-	const { positionals, directDescription, dependsOn, links, ...carried } = parsed;
+	const { positionals, directDescription, dependsOn, links, repositories, ...carried } = parsed;
 	const [scope, action, ...rest] = positionals;
 	if (!scope || !action) fail(USAGE, 2);
 	return {
@@ -454,6 +486,9 @@ function parseArgs(argv: string[]): CliInvocation {
 		description: directDescription ?? (hasSeparatorDescription ? descriptionTokens.join(" ") : undefined),
 		...(carried.flagsUsed.has("--depends-on")
 			? { dependsOn: dependsOn.filter((entry) => entry.trim() !== "") }
+			: {}),
+		...(carried.flagsUsed.has("--repository")
+			? { repositories: repositories.filter((entry) => entry.trim() !== "") }
 			: {}),
 		...(carried.flagsUsed.has("--link") ? { links: links.filter((entry) => entry.trim() !== "") } : {}),
 	};
@@ -485,7 +520,8 @@ function repositoryRootFailure(action: string, failure?: GitRootFailure): Workli
 			action,
 			error: {
 				code: WORKLIST_ERROR_CODES.UNAVAILABLE,
-				message: "Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
+				message:
+					"Project tasks require a Git repository or an explicit store. Run inside a repository, pass --cwd <dir>, or use --file or STEPSTONE_WORKLIST.",
 				retryable: false,
 				details: gitFailureDetails("run-inside-git-repository", failure?.command),
 			},
@@ -504,6 +540,17 @@ function repositoryRootFailure(action: string, failure?: GitRootFailure): Workli
 }
 
 function resolveRepositoryRoot(invocation: CliInvocation): string {
+	if (invocation.file?.trim() || process.env[WORKLIST_PATH_ENV]?.trim()) {
+		try {
+			if (!statSync(invocation.cwd).isDirectory()) throw new Error(`${invocation.cwd} is not a directory`);
+		} catch (error) {
+			throw repositoryRootFailure(invocation.action, {
+				kind: "unusable-directory",
+				message: error instanceof Error ? error.message : String(error),
+			});
+		}
+		return resolve(invocation.cwd);
+	}
 	const result = resolveGitRoot(invocation.cwd);
 	if (!result.root) throw repositoryRootFailure(invocation.action, result.failure);
 	return result.root;
@@ -1142,6 +1189,47 @@ async function runCompletionInstall(invocation: CliInvocation): Promise<void> {
 	process.stdout.write("Restart the shell to load completion.\n");
 }
 
+async function runProjectStructure(
+	invocation: CliInvocation,
+	service: WorklistApplicationService,
+): Promise<void> {
+	const { action, rest } = invocation;
+	if (action === "structure" && (rest.length > 0 || invocation.description !== undefined)) {
+		fail(`project structure takes no arguments\n\n${USAGE}`, 2);
+	}
+	const hasId = action === "update_milestone" || action === "assign_milestone";
+	const id = hasId ? requireId(invocation) : undefined;
+	const title = (hasId ? rest.slice(1) : rest).join(" ").trim() || undefined;
+	if ((action === "configure" || action === "add_milestone") && !title) {
+		fail(`project ${action} requires a title\n\n${USAGE}`, 2);
+	}
+	if (invocation.positionalsAfterDescription > 0) {
+		fail(`project ${action} requires the title before --description\n\n${USAGE}`, 2);
+	}
+	if (action === "update_milestone" && !title && invocation.description === undefined) {
+		fail(`project update_milestone requires a title or --description\n\n${USAGE}`, 2);
+	}
+	if (
+		action === "assign_milestone" &&
+		(rest.length !== 1 || invocation.milestoneId === undefined || invocation.description !== undefined)
+	) {
+		fail(`project assign_milestone requires one task ID and --milestone <id>\n\n${USAGE}`, 2);
+	}
+	const envelope = await executeCliOperation(service, {
+		scope: "project",
+		action,
+		id,
+		title,
+		description: invocation.description,
+		repositories: invocation.repositories,
+		milestoneId: invocation.milestoneId,
+		confirm: action === "configure" || invocation.confirm ? invocation.confirm : undefined,
+		expectedUpdatedAt: invocation.expectedUpdatedAt,
+		expectedRevision: invocation.expectedRevision,
+	});
+	report(invocation, envelope, JSON.stringify(envelope.result, null, 2));
+}
+
 async function run(invocation: CliInvocation): Promise<void> {
 	if (invocation.scope === "completion") {
 		await runCompletionInstall(invocation);
@@ -1171,6 +1259,14 @@ async function run(invocation: CliInvocation): Promise<void> {
 	const service = new WorklistApplicationService({ projectPath: location.worklist.path });
 
 	switch (invocation.action) {
+		case "structure":
+		case "configure":
+		case "add_milestone":
+		case "update_milestone":
+		case "assign_milestone": {
+			await runProjectStructure(invocation, service);
+			return;
+		}
 		case "web":
 			await runWebApplication(invocation, location);
 			return;

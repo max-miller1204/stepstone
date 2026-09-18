@@ -71,7 +71,31 @@ export interface ProjectGoalListPage {
 	nextCursor?: string;
 }
 
+/** An actionable unit of work. The stored goal contract remains compatible. */
+export type Task = ProjectGoal;
+
+/** A larger effort that can link to zero or more repositories. */
+export interface Project {
+	id: string;
+	title: string;
+	description?: string;
+	repositories: string[];
+	createdAt: string;
+	updatedAt: string;
+}
+
+/** A meaningful outcome within one project. */
+export interface Milestone {
+	id: string;
+	title: string;
+	description?: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface ProjectGoal {
+	/** The outcome this task contributes to. */
+	milestoneId?: string;
 	id: string;
 	title: string;
 	description?: string;
@@ -137,6 +161,9 @@ export interface SessionSnapshot {
 
 export interface ProjectWorklist {
 	version: number;
+	/** Present with milestones in version 2. */
+	project?: Project;
+	milestones?: Milestone[];
 	/** Absent only in legacy version 1 files, which readers normalize to revision 0. */
 	revision?: number;
 	/**
@@ -154,6 +181,9 @@ export interface RevisionedProjectWorklist extends ProjectWorklist {
 }
 
 export interface WorklistOperationResult {
+	project?: Project;
+	projectStructure?: { project?: Project; milestones: Milestone[]; tasks: Task[]; retiredIds: string[] };
+	milestone?: Milestone;
 	scope: "session" | "project";
 	action: string;
 	task?: SessionTask;
@@ -213,3 +243,5 @@ export type WorklistToolDetails = WorklistOperationResult;
 export const SESSION_SNAPSHOT_VERSION = 3;
 export const READABLE_SESSION_SNAPSHOT_VERSIONS: readonly number[] = [1, 2, 3];
 export const PROJECT_WORKLIST_VERSION = 1;
+
+export const ORGANIZED_PROJECT_WORKLIST_VERSION = 2;

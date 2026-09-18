@@ -1063,12 +1063,12 @@ describe("project goal CLI", () => {
 
 		const outside = await runCli(bare, ["project", "list"]);
 		expect(outside.code).toBe(1);
-		expect(outside.stderr).toContain("git repository");
+		expect(outside.stderr).toContain("Git repository");
 		// The commonest failure in the CLI says the one thing a person can act on.
 		// Git's invocation and exit status are an internal detail here, and a caller
 		// that wants them reads the envelope below.
 		expect(diagnostic(outside.stderr).trim()).toBe(
-			"Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
+			"Project tasks require a Git repository or an explicit store. Run inside a repository, pass --cwd <dir>, or use --file or STEPSTONE_WORKLIST.",
 		);
 
 		const outsideJson = await runCli(bare, ["project", "list", "--json"]);
@@ -1103,7 +1103,7 @@ describe("project goal CLI", () => {
 		const human = await runCli(root, ["project", "list", "--cwd", child], env);
 		expect(human.code).toBe(1);
 		expect(diagnostic(human.stderr).trim()).toBe(
-			"Project goals require a git repository. Run inside a repository or pass --cwd <dir>.",
+			"Project tasks require a Git repository or an explicit store. Run inside a repository, pass --cwd <dir>, or use --file or STEPSTONE_WORKLIST.",
 		);
 		const json = await runCli(child, ["project", "list", "--json"], env);
 		expect(json.code).toBe(1);

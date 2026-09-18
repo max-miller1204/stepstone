@@ -532,10 +532,10 @@ describe("project ui command guards", () => {
 		expect(result.stderr).toContain("cannot be combined with --json");
 	});
 
-	it("still requires a git repository", async () => {
+	it("requires a repository when no explicit store is selected", async () => {
 		const outside = await mkdtemp(join(tmpdir(), "stepstone-not-a-repo-"));
 		const result = await runCli(outside, ["project", "ui"]);
 		expect(result.code).not.toBe(0);
-		expect(result.stderr).toContain("git repository");
+		expect(result.stderr).toContain("Git repository or an explicit store");
 	});
 });

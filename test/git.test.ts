@@ -527,3 +527,26 @@ describe("worklist location", () => {
 		expect(location).toMatchObject({ path: join(root, ".worklist", "worklist.json"), source: "default" });
 	});
 });
+
+describe("standalone project lookup", () => {
+	it("requires an explicit path without a repository", () => {
+		expect(() => resolveWorklistLocation(null, { env: {} })).toThrow("requires --file or STEPSTONE_WORKLIST");
+	});
+
+	it("resolves explicit paths without invoking Git and observes environment changes", async () => {
+		const root = await mkdtemp(join(tmpdir(), "stepstone-standalone-"));
+		const restore = await noGitOnPath();
+		try {
+			const env = { [WORKLIST_PATH_ENV]: "first.json" };
+			const lookup = createProjectRootLookup(root, { env, overrideBase: root });
+			expect(lookup()).toMatchObject({ worklist: { path: join(root, "first.json"), source: "override" } });
+			env[WORKLIST_PATH_ENV] = "second.json";
+			expect(lookup()).toMatchObject({ worklist: { path: join(root, "second.json") } });
+			expect(
+				createProjectRootLookup(root, { override: "flag.json", env, overrideBase: root })(),
+			).toMatchObject({ worklist: { path: join(root, "flag.json") } });
+		} finally {
+			restore();
+		}
+	});
+});

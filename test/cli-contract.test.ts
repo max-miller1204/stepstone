@@ -797,6 +797,11 @@ describe("single CLI command contract", () => {
 		await execFileAsync("git", ["init", "-q"], { cwd: root });
 		const documented = CLI_COMMAND_CONTRACT.actions.map((action) => action.name);
 		expect(documented).toEqual([
+			"structure",
+			"configure",
+			"add_milestone",
+			"update_milestone",
+			"assign_milestone",
 			"list",
 			"show",
 			"find",
@@ -821,7 +826,7 @@ describe("single CLI command contract", () => {
 		]);
 
 		// A documented read action must not be rejected as unknown.
-		for (const action of ["list", "next", "ready", "waves", "help"]) {
+		for (const action of ["structure", "list", "next", "ready", "waves", "help"]) {
 			// Each invocation is independent; sequential execution keeps output readable.
 			// pi-lens-ignore: await-in-loop
 			const result = await execFileAsync(process.execPath, [resolve("src/cli.ts"), "project", action], {

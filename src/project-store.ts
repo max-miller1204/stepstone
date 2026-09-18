@@ -22,7 +22,7 @@ import {
 } from "./git.ts";
 import { findGoalByStoredId } from "./goal-selection.ts";
 import type { ProjectWorklist, RevisionedProjectWorklist } from "./types.ts";
-import { PROJECT_WORKLIST_VERSION } from "./types.ts";
+import { ORGANIZED_PROJECT_WORKLIST_VERSION, PROJECT_WORKLIST_VERSION } from "./types.ts";
 
 export interface ProjectStoreResult<T> {
 	data: T;
@@ -260,7 +260,8 @@ const OPTIONAL_GOAL_STRING_ARRAY_FIELDS = ["links", "previousIds", "dependsOn"] 
 export function isProjectWorklist(value: unknown): value is ProjectWorklist {
 	if (typeof value !== "object" || value === null) return false;
 	const obj = value as Record<string, unknown>;
-	if (obj.version !== PROJECT_WORKLIST_VERSION) return false;
+	if (obj.version !== PROJECT_WORKLIST_VERSION && obj.version !== ORGANIZED_PROJECT_WORKLIST_VERSION)
+		return false;
 	if (obj.revision !== undefined && (!Number.isSafeInteger(obj.revision) || Number(obj.revision) < 0)) {
 		return false;
 	}
@@ -281,6 +282,41 @@ export function isProjectWorklist(value: unknown): value is ProjectWorklist {
 			if (goal[field] !== undefined && !isStringArray(goal[field])) return false;
 		}
 	}
+	if (obj.version === PROJECT_WORKLIST_VERSION) return true;
+	if (obj.revision === undefined || !isOrganizationEntity(obj.project, true)) return false;
+	if (!Array.isArray(obj.milestones) || !obj.milestones.every((entry) => isOrganizationEntity(entry, false)))
+		return false;
+	const milestoneIds = new Set(obj.milestones.map((entry) => entry.id));
+	if (milestoneIds.size !== obj.milestones.length) return false;
+	return obj.goals.every((goal) => goal.milestoneId === undefined || milestoneIds.has(goal.milestoneId));
+}
+
+/** Organization metadata has an explicit schema. Task history keeps its legacy schema. */
+function isOrganizationEntity(value: unknown, project: boolean): boolean {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const entity = value as Record<string, unknown>;
+	const fields = [
+		"id",
+		"title",
+		"description",
+		"createdAt",
+		"updatedAt",
+		...(project ? ["repositories"] : []),
+	];
+	if (Object.keys(entity).some((key) => !fields.includes(key))) return false;
+	if (typeof entity.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entity.id)) return false;
+	if (typeof entity.title !== "string" || !entity.title.trim()) return false;
+	if (entity.description !== undefined && typeof entity.description !== "string") return false;
+	for (const field of ["createdAt", "updatedAt"]) {
+		if (typeof entity[field] !== "string" || !Number.isFinite(Date.parse(entity[field]))) return false;
+	}
+	if (
+		project &&
+		(!isStringArray(entity.repositories) ||
+			entity.repositories.some((entry) => !isRepositoryUrl(entry)) ||
+			new Set(entity.repositories).size !== entity.repositories.length)
+	)
+		return false;
 	return true;
 }
 
@@ -622,5 +658,14 @@ export async function mutateProjectWorklist<T>(
 	} finally {
 		if (tempName) await rm(tempName, { force: true });
 		await release();
+	}
+}
+
+function isRepositoryUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && url.href === value;
+	} catch {
+		return false;
 	}
 }

@@ -25,7 +25,8 @@ export interface StepstoneWebApp {
 }
 
 export interface StartStepstoneWebAppOptions {
-	repositoryRoot: string;
+	repositoryRoot?: string;
+	overrideBase?: string;
 	worklistOverride?: string;
 	port?: number;
 	openBrowser?: boolean;
@@ -106,15 +107,14 @@ function html(token: string): string {
 }
 
 export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions): Promise<StepstoneWebApp> {
-	if (options.worklistOverride !== undefined) {
-		throw new Error("The Stepstone web app does not support --file. Use the canonical repository roadmap.");
-	}
-	if (process.env[WORKLIST_PATH_ENV]?.trim()) {
-		throw new Error(`The Stepstone web app does not support ${WORKLIST_PATH_ENV}. Unset it before starting.`);
-	}
-	const placement = resolveWorktreePlacement(options.repositoryRoot);
-	if (placement.kind !== "main") {
-		throw new Error("The Stepstone web app must run from the repository's main worktree.");
+	const hasOverride = Boolean(options.worklistOverride?.trim() || process.env[WORKLIST_PATH_ENV]?.trim());
+	if (!hasOverride) {
+		if (!options.repositoryRoot)
+			throw new Error("A project outside Git requires --file or STEPSTONE_WORKLIST.");
+		const placement = resolveWorktreePlacement(options.repositoryRoot);
+		if (placement.kind !== "main") {
+			throw new Error("The Stepstone web app must run from the repository's main worktree.");
+		}
 	}
 	if (
 		options.port !== undefined &&
@@ -122,7 +122,11 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 	) {
 		throw new Error("Web app port must be an integer from 0 through 65535.");
 	}
-	const locator = createWorklistLocator(options.repositoryRoot);
+	const locator = createWorklistLocator(options.repositoryRoot ?? null, {
+		override: options.worklistOverride,
+		env: process.env,
+		overrideBase: options.overrideBase,
+	});
 	const service = new WorklistApplicationService({ projectPath: null });
 	service.setProjectPathResolver(() => locator().path);
 	const token = randomBytes(32).toString("base64url");
@@ -142,6 +146,14 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 				response.end();
 				return;
 			}
+			if (request.method === "GET" && url.pathname === "/api/structure") {
+				const result = await service.execute(
+					{ scope: "project", action: "structure" },
+					{ source: "dashboard" },
+				);
+				json(response, result.ok ? 200 : 400, result);
+				return;
+			}
 			if (request.method === "GET" && url.pathname === "/api/state") {
 				const snapshot = await service.readProjectSnapshot("web");
 				if (!snapshot.ok) {
@@ -157,7 +169,7 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 				json(response, 200, {
 					ok: true,
 					result: {
-						repositoryLabel: options.repositoryRoot.split("/").at(-1),
+						repositoryLabel: options.repositoryRoot?.split("/").at(-1) ?? "Standalone project",
 						revision: snapshot.meta.revisions?.project ?? "0",
 						readyGoalIds: readyGoals(goals, retiredIds).map((goal) => goal.id),
 						goals: goals.map((goal) => ({
@@ -184,7 +196,21 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 			const body = await readJson(request);
 			if (url.pathname === "/api/goals") {
 				const action = requiredString(body.action, "action");
-				if (!new Set(["add", "update", "move", "complete", "reopen", "archive", "delete"]).has(action)) {
+				if (
+					!new Set([
+						"add",
+						"update",
+						"move",
+						"complete",
+						"reopen",
+						"archive",
+						"delete",
+						"configure",
+						"add_milestone",
+						"update_milestone",
+						"assign_milestone",
+					]).has(action)
+				) {
 					throw new HttpError(400, `Unsupported goal action ${action}.`);
 				}
 				const operation: WorklistOperation = { ...body, scope: "project", action } as WorklistOperation;
