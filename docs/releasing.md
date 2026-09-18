@@ -18,8 +18,9 @@ The workflow's generated release notes name the pull requests merged since the p
 
 ## Workspace CLI consolidation (0.12.0)
 
-The removal of the companion executable is staged at **0.12.0**, a minor release.
-After the reviewed change lands, tag that version on current `main` and push the tag to run the release workflow. Do not bump it again with `npm version patch`: the manifest and shrinkwrap already carry the intended minor version. The workspace guide documents the replacement commands and in-place state compatibility.
+Version **0.12.0** removed the companion executable and moved workspace commands under `project workspace`. It retained existing dispatch state in place.
+
+Workspace management is now removed. This is another breaking change and requires a minor release. See [the migration guide](workspaces.md) for removed commands and preserved resources.
 
 ## Cutting a release
 

@@ -949,7 +949,7 @@ export interface GoalIdMigrationOutcome {
  * working, but leaving a stored edge on an old name would let the file disagree
  * with itself. A goal whose only change is a rewritten edge is stamped too,
  * because that edge is stored on it. An identity-only rename keeps the token of
- * a claimed goal so its dispatch run retains exact custody.
+ * a claimed goal so existing claim references remain valid.
  */
 export async function migrateProjectGoalIds(
 	path: string,

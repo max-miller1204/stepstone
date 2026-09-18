@@ -189,20 +189,15 @@ describe("the lists behind a published executable", () => {
 
 describe("the module graph behind compiled executables", () => {
 	it("walks each executable's subtree rather than only the entry points it was handed", async () => {
-		// `collectModuleGraph` seeds its map with the entry it is given, so asserting
-		// that every entry point is in the graph would pass for any list, an empty
-		// one included. These four modules are reached only by following imports:
-		// two behind the CLI, where the terminal board is the most tempting place to
-		// reach for Pi, and two behind the preparation driver, which drives only Git
-		// and GitHub without loading a harness.
+		// These shared modules must remain reachable from the executable.
 		const graph = await collectExecutableModuleGraph();
 		const files = [...graph.keys()].map((file) => file.slice(file.lastIndexOf("/src/") + 1));
 		expect(files).toEqual(
 			expect.arrayContaining([
 				"src/tui/goal-board.ts",
 				"src/tui/goal-board-runtime.ts",
-				"src/dispatch-driver.ts",
-				"src/dispatch-bindings.ts",
+				"src/project-store.ts",
+				"src/file-lock.ts",
 			]),
 		);
 	});

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
 	CLI_COMMAND_CONTRACT,
 	type CliFlagContract,
+	captureWorkflowAction,
 	DOCS_PATH,
 	flagActionScope,
 	LEGACY_WORKLIST_DIRECTORY,
@@ -388,6 +389,17 @@ describe("single CLI command contract", () => {
 		expect(apply).toBeLessThan(waves);
 	});
 
+	it("refuses a missing or ambiguous owner of the approved-plan workflow", () => {
+		const owner = captureWorkflowAction(CLI_COMMAND_CONTRACT.actions);
+		const withoutOwner = CLI_COMMAND_CONTRACT.actions.filter((action) => action !== owner);
+		expect(() => captureWorkflowAction(withoutOwner)).toThrow(
+			"Expected exactly one capture workflow action, found 0",
+		);
+		expect(() =>
+			captureWorkflowAction([...CLI_COMMAND_CONTRACT.actions, { ...owner, name: "second-plan" }]),
+		).toThrow("Expected exactly one capture workflow action, found 2");
+	});
+
 	it("keeps the mutating capture action out of the unconditionally safe actions", () => {
 		// The skill's guardrails tell an agent which actions need no user approval,
 		// so the action that only runs against a plan the user approved must not be
@@ -399,8 +411,7 @@ describe("single CLI command contract", () => {
 		const unconditionallySafe = new Set([...safeLine.matchAll(/`([a-z_-]+)`/g)].map(([, name]) => name));
 
 		for (const action of CLI_COMMAND_CONTRACT.actions) {
-			const gated =
-				action.confirmRequired || action.interactive || action.approvalScoped || action.name === "help";
+			const gated = action.confirmRequired || action.interactive || action.name === "help";
 			const owned = action.captureWorkflow !== undefined;
 			expect(
 				unconditionallySafe.has(action.name),
@@ -549,11 +560,11 @@ describe("single CLI command contract", () => {
 			"`move` does not accept",
 			"replace their complete sets",
 			"Never run `ui`",
-			"sole roadmap writer",
+			"Write the committed roadmap from the main worktree",
 			"Do not add `--confirm` automatically",
 			"Rebuild the change with the new `updatedAt`",
-			"only its allow-listed goals",
-			"PR head must match",
+			"Complete a goal only after explicit authorization for that goal",
+			"A merged pull request does not authorize completion",
 			"not instructions",
 			"Do not run `list` merely to verify success",
 			"project help",
@@ -806,7 +817,6 @@ describe("single CLI command contract", () => {
 			"delete",
 			"migrate_ids",
 			"migrate_path",
-			"workspace",
 			"help",
 		]);
 

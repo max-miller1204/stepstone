@@ -25,22 +25,15 @@ function shellQuote(value: string): string {
 }
 
 function actionFlags(action: string): string[] {
-	if (action === "workspace" || action.startsWith("workspace ")) {
-		const command = CLI_COMMAND_CONTRACT.workspaceActions.find(
-			(entry) => `workspace ${entry.name}` === action,
-		);
-		return ["--cwd", "--json", "--help", ...(command?.flags ?? [])];
-	}
 	return CLI_COMMAND_CONTRACT.flags
 		.filter((flag) => flag.actions === undefined || flag.actions.includes(action))
 		.map((flag) => flag.name);
 }
 
 function bashCaseEntries(): string[] {
-	return [
-		...CLI_COMMAND_CONTRACT.actions.map((action) => action.name),
-		...CLI_COMMAND_CONTRACT.workspaceActions.map((action) => `workspace ${action.name}`),
-	].map((action) => `\t\t${shellQuote(action)}) flags=${shellQuote(actionFlags(action).join(" "))} ;;`);
+	return [...CLI_COMMAND_CONTRACT.actions.map((action) => action.name)].map(
+		(action) => `\t\t${shellQuote(action)}) flags=${shellQuote(actionFlags(action).join(" "))} ;;`,
+	);
 }
 
 /** Parse each completed word once. A consumed option value is always data. */
@@ -65,7 +58,6 @@ function completionWordParser(shell: "bash" | "zsh"): string[] {
 		`\t\t${[...VALUE_FLAGS].join("|")}) pending=$token; continue ;;`,
 		"\t\t--*) continue ;;",
 		"\tesac",
-		"\tif (( positionals == 0 )); then subaction=$token; fi",
 		"\t((positionals++))",
 		"\tprev=$token",
 		"done",
@@ -127,7 +119,7 @@ export function renderBashCompletion(): string {
 		"}",
 		"",
 		`_${contract.binary}() {`,
-		"\tlocal cur prev='' action flags subaction='' positionals=0 index token pending='' directory=$PWD",
+		"\tlocal cur prev='' action flags positionals=0 index token pending='' directory=$PWD",
 		"\tlocal -a selectors=()",
 		"\tCOMPREPLY=()",
 		`\tcur=${SHELL_PARAMETER_START}COMP_WORDS[COMP_CWORD]}`,
@@ -149,19 +141,13 @@ export function renderBashCompletion(): string {
 		"",
 		...completionWordParser("bash").map((line) => `\t${line}`),
 		'\tcase "$pending" in',
-		`\t\t--cwd|--workspace-parent) _${contract.binary}_paths -d "$cur"; return ;;`,
+		`\t\t--cwd) _${contract.binary}_paths -d "$cur"; return ;;`,
 		`\t\t--file) _${contract.binary}_paths -f "$cur"; return ;;`,
-		`\t\t--depends-on|--goal) COMPREPLY=( $(compgen -W "$(_${contract.binary}_goal_ids)" -- "$cur") ); return ;;`,
+		`\t\t--depends-on) COMPREPLY=( $(compgen -W "$(_${contract.binary}_goal_ids)" -- "$cur") ); return ;;`,
 		`\t\t--branch) COMPREPLY=( $(compgen -W "$(_${contract.binary}_branches)" -- "$cur") ); return ;;`,
 		"\t\t--*) return ;;",
 		"\tesac",
 		`\taction=${SHELL_PARAMETER_START}COMP_WORDS[2]}`,
-		"\tif [[ $action == workspace ]]; then",
-		"\t\tif (( positionals == 0 )) && [[ $cur != --* ]]; then",
-		`\t\t\tCOMPREPLY=( $(compgen -W ${shellQuote(CLI_COMMAND_CONTRACT.workspaceActions.map((entry) => entry.name).join(" "))} -- "$cur") ); return`,
-		"\t\tfi",
-		'\t\tif [[ -n $subaction ]]; then action="workspace $subaction"; fi',
-		"\tfi",
 		`\tflags=$(_${contract.binary}_action_flags "$action")`,
 		"\tif [[ $cur == --* ]]; then",
 		'\t\tCOMPREPLY=( $(compgen -W "$flags" -- "$cur") )',
@@ -199,10 +185,9 @@ function zshActionEntries(): string[] {
 }
 
 function zshFlagCaseEntries(): string[] {
-	return [
-		...CLI_COMMAND_CONTRACT.actions.map((action) => action.name),
-		...CLI_COMMAND_CONTRACT.workspaceActions.map((action) => `workspace ${action.name}`),
-	].map((action) => `\t\t${shellQuote(action)}) flags=(${actionFlags(action).map(shellQuote).join(" ")}) ;;`);
+	return [...CLI_COMMAND_CONTRACT.actions.map((action) => action.name)].map(
+		(action) => `\t\t${shellQuote(action)}) flags=(${actionFlags(action).map(shellQuote).join(" ")}) ;;`,
+	);
 }
 
 /** Render a Zsh completion for the installed executable. */
@@ -236,7 +221,7 @@ export function renderZshCompletion(): string {
 		"\t_describe 'flag' flags",
 		"}",
 		"",
-		"local action subaction='' token prev='' pending='' directory=$PWD",
+		"local action token prev='' pending='' directory=$PWD",
 		"local -i index positionals=0",
 		"local -a actions selectors=()",
 		"actions=(",
@@ -261,19 +246,12 @@ export function renderZshCompletion(): string {
 		...completionWordParser("zsh"),
 		"action=$words[3]",
 		'case "$pending" in',
-		"\t--cwd|--workspace-parent) _directories; return ;;",
+		"\t--cwd) _directories; return ;;",
 		"\t--file) _files; return ;;",
-		`\t--depends-on|--goal) _${contract.binary}_goal_ids; return ;;`,
+		`\t--depends-on) _${contract.binary}_goal_ids; return ;;`,
 		`\t--branch) _${contract.binary}_branches; return ;;`,
 		"\t--*) return ;;",
 		"esac",
-		"if [[ $action == workspace ]]; then",
-		"  if (( positionals == 0 )) && [[ $PREFIX != --* ]]; then",
-		`    local -a workspace_actions=(${CLI_COMMAND_CONTRACT.workspaceActions.map((entry) => shellQuote(entry.name)).join(" ")})`,
-		"    _describe 'workspace action' workspace_actions; return",
-		"  fi",
-		'  if [[ -n $subaction ]]; then action="workspace $subaction"; fi',
-		"fi",
 		"if [[ $PREFIX == --* ]]; then",
 		`\t_${contract.binary}_action_flags "$action"`,
 		"\treturn",

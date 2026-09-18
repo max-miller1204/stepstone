@@ -59,8 +59,8 @@ npx -y stepstone@latest project waves
 `next` is the first entry of `ready`, by definition rather than by a second calculation, so a driver taking one goal and a human reading the whole frontier can never be told two different things.
 
 A goal is claimed when it is `active` or carries a `branch`.
-Both are dedicated fields somebody set deliberately, never a heuristic over prose, and a claimed goal is left out of `ready` because handing the same work to a second driver is the one mistake a dispatch read exists to prevent.
-`project set_active <id>` sets the first and `project start <id> [--branch <name>]` the second; a claim is released by `project start <id> --clear` or by `project complete <id> --confirm`, so a dispatch that was abandoned rather than finished does not stay out of the frontier forever.
+Both are dedicated fields somebody set deliberately, never a heuristic over prose, and a claimed goal is left out of `ready` to prevent selecting the same work twice.
+`project set_active <id>` sets the first and `project start <id> [--branch <name>]` the second; a claim is released by `project start <id> --clear` or by `project complete <id> --confirm`, so an abandoned branch claim does not exclude the goal forever.
 
 `waves` lays the unfinished goals out in the earliest layer each could start in.
 Wave 1 is everything unblocked today, and each later wave is exactly what the wave before it releases, so the layers read as a schedule: how much can run in parallel, and what finishing this round opens up.

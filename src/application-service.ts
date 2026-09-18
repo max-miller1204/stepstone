@@ -1190,7 +1190,7 @@ export class WorklistApplicationService {
 				}).toResultError();
 			} else if (error instanceof ProjectWorklistWorktreeLookupError) {
 				// A lookup that never answered is an availability failure, not a write
-				// that failed: nothing was written, and telling a dispatcher to retry a
+				// that failed: nothing was written, and telling a caller to retry a
 				// verdict Git already reached would spin it forever.
 				typedError = createApplicationError(
 					WORKLIST_ERROR_CODES.UNAVAILABLE,

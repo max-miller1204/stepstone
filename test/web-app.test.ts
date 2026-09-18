@@ -6,7 +6,6 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorklistApplicationService } from "../src/application-service.ts";
 import { WORKLIST_PATH_ENV } from "../src/cli-contract.ts";
-import { FileDispatchStateStore, GitWorktreeBinding } from "../src/dispatch-bindings.ts";
 import { createWorklistLocator } from "../src/git.ts";
 import { type StepstoneWebApp, startStepstoneWebApp } from "../src/web-app.ts";
 
@@ -232,8 +231,6 @@ describe("Stepstone web application", () => {
 		const directory = join(root, ".git", "stepstone-dispatch");
 		await mkdir(directory);
 		await writeFile(join(directory, "broken.json"), "not valid JSON");
-		const journals = vi.spyOn(FileDispatchStateStore.prototype, "list");
-		const activity = vi.spyOn(GitWorktreeBinding.prototype, "observeActivity");
 		const service = new WorklistApplicationService({ projectPath: null });
 		service.setProjectPathResolver(() => createWorklistLocator(root)().path);
 		expect(
@@ -289,8 +286,6 @@ describe("Stepstone web application", () => {
 				})
 			).status,
 		).toBe(200);
-		expect(journals).not.toHaveBeenCalled();
-		expect(activity).not.toHaveBeenCalled();
 		expect(await readFile(join(directory, "broken.json"), "utf8")).toBe("not valid JSON");
 	});
 

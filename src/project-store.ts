@@ -178,7 +178,7 @@ export class ProjectWorklistNoMainWorktreeError extends ProjectMutationRefusedEr
  *
  * `retryable` follows how the Git run ended rather than the bare fact that it
  * failed. A status Git exited with is a verdict it will reach again - an option
- * this Git is too old for, a repository it refuses to read - and a dispatcher told
+ * this Git is too old for, a repository it refuses to read - and a caller told
  * to retry one of those never stops. Only a run killed before Git answered can
  * answer differently next time.
  */

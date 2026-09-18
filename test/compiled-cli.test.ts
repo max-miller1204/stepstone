@@ -87,10 +87,15 @@ describe("published stepstone package", () => {
 			expect(compiled).not.toMatch(/from "\.\/[^"]+\.ts"/);
 		}
 		expect(await readFile(compiledCliPath, "utf8")).toContain('from "./application-service.js"');
-		expect(await readFile(resolve("dist/workspace-cli.js"), "utf8")).toContain(
-			'from "./dispatch-bindings.js"',
-		);
-		expect(existsSync(resolve("dist/dispatch.js"))).toBe(false);
+		for (const file of [
+			"workspace-cli",
+			"dispatch",
+			"dispatch-driver",
+			"dispatch-bindings",
+			"claim-evidence",
+		]) {
+			expect(existsSync(resolve(`dist/${file}.js`))).toBe(false);
+		}
 	});
 
 	it("imports only declared dependencies, never a Pi peer", async () => {

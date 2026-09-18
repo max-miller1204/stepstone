@@ -1867,235 +1867,95 @@ describe("project goal CLI", () => {
 		expect(completed.result.goal.branch).toBeUndefined();
 	});
 
-	it("creates and claims a deterministic goal worktree", async () => {
+	it("preserves existing worktrees, custody files, historical IDs, and claims during tracker reads", async () => {
 		const root = await tempGitRepo();
-		await runCli(root, ["project", "add", "Prepared work"]);
-		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
-		await execFileAsync(
-			"git",
-			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap"],
-			{ cwd: root },
-		);
-		const workspaceParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-worktrees-")));
-		const worktreePath = join(workspaceParent, "stepstone-prepared-work");
-		try {
-			const started = await runCli(root, [
-				"project",
-				"start",
-				"prepared-work",
-				"--worktree",
-				"--workspace-parent",
-				workspaceParent,
-				"--json",
-			]);
-			expect(started.code).toBe(0);
-			expect(parseJson(started.stdout)).toMatchObject({
-				ok: true,
-				action: "start",
-				result: {
-					goal: { id: "prepared-work", branch: "stepstone/prepared-work" },
-					worktreePath,
-				},
-				meta: { changed: true },
-			});
-			expect(
-				(await execFileAsync("git", ["branch", "--show-current"], { cwd: worktreePath })).stdout.trim(),
-			).toBe("stepstone/prepared-work");
-			expect((await readGoals(root))[0]?.branch).toBe("stepstone/prepared-work");
-			await expect(readFile(join(root, ".git", "stepstone-dispatch"))).rejects.toMatchObject({
-				code: "ENOENT",
-			});
-			const gitdir = (
-				await execFileAsync("git", ["rev-parse", "--absolute-git-dir"], { cwd: worktreePath })
-			).stdout.trim();
-			await expect(readFile(join(gitdir, "stepstone-dispatch-owner.json"))).rejects.toMatchObject({
-				code: "ENOENT",
-			});
-
-			const duplicate = await runCli(root, [
-				"project",
-				"start",
-				"prepared-work",
-				"--worktree",
-				"--workspace-parent",
-				workspaceParent,
-				"--json",
-			]);
-			expect(duplicate.code).toBe(1);
-			expect(duplicate.stdout).toBe("");
-			expect(parseJson(duplicate.stderr)).toMatchObject({
-				error: {
-					code: "UNAVAILABLE",
-					details: {
-						branch: "stepstone/prepared-work",
-						worktreePath,
-						resolution: "inspect-git-worktree-state",
-					},
-				},
-			});
-		} finally {
-			await execFileAsync("git", ["worktree", "remove", "--force", worktreePath], { cwd: root }).catch(
-				() => undefined,
-			);
-			await execFileAsync("git", ["branch", "-D", "stepstone/prepared-work"], { cwd: root }).catch(
-				() => undefined,
-			);
-			await rm(workspaceParent, { recursive: true, force: true });
-		}
-	});
-
-	it("rejects a regular file as the workspace parent before creating Git state", async () => {
-		const root = await tempGitRepo();
-		await runCli(root, ["project", "add", "File parent"]);
 		await execFileAsync(
 			"git",
 			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "--allow-empty", "-m", "root"],
 			{ cwd: root },
 		);
-		const parent = join(root, "parent-file");
-		await writeFile(parent, "keep this file");
-		const refused = await runCli(root, [
-			"project",
-			"start",
-			"file-parent",
-			"--worktree",
-			"--workspace-parent",
-			parent,
-			"--json",
-		]);
-		expect(refused.code).toBe(1);
-		expect(parseJson(refused.stderr)).toMatchObject({
-			error: { code: "VALIDATION_FAILED", details: { fields: ["workspaceParent"] } },
-		});
-		expect(await readFile(parent, "utf8")).toBe("keep this file");
-		expect(
-			(await execFileAsync("git", ["branch", "--list", "stepstone/file-parent"], { cwd: root })).stdout,
-		).toBe("");
-		expect((await readGoals(root))[0]?.branch).toBeUndefined();
-	});
-
-	it("times out worktree creation and preserves its Git state without claiming the goal", async () => {
-		const root = await tempGitRepo();
-		await runCli(root, ["project", "add", "Timed work"]);
-		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
-		await execFileAsync(
-			"git",
-			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap"],
-			{ cwd: root },
-		);
-		const hook = join(root, ".git", "hooks", "post-checkout");
-		await writeFile(hook, `#!/bin/sh\nexec "${process.execPath}" -e 'setTimeout(() => {}, 32000)'\n`);
-		await chmod(hook, 0o755);
-		const parent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-timeout-")));
-		const worktreePath = join(parent, "stepstone-timed-work");
+		const parent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-preserved-")));
+		const workspace = join(parent, "existing-worktree");
+		await execFileAsync("git", ["worktree", "add", "-b", "external/work", workspace, "HEAD"], { cwd: root });
 		try {
-			const refused = await runCli(root, [
-				"project",
-				"start",
-				"timed-work",
-				"--worktree",
-				"--workspace-parent",
-				parent,
-				"--json",
-			]);
-			expect(refused.code).toBe(1);
-			expect(parseJson(refused.stderr)).toMatchObject({
-				error: {
-					code: "UNAVAILABLE",
-					details: { branch: "stepstone/timed-work", worktreePath, resolution: "inspect-git-worktree-state" },
-				},
+			await runCli(root, ["project", "add", "Preserved claim"]);
+			await runCli(root, ["project", "start", "preserved-claim", "--branch", "external/work"]);
+			await editGoalByHand(root, "preserved-claim", {
+				previousIds: ["historical-claim"],
+				links: ["https://github.com/example/repo/pull/1"],
 			});
-			expect(refused.stderr).toContain("timed out");
+			const before = await readFile(join(root, ".worklist", "worklist.json"), "utf8");
+			const gitDirectory = (
+				await execFileAsync("git", ["rev-parse", "--absolute-git-dir"], { cwd: workspace })
+			).stdout.trim();
+			const files = [
+				join(root, ".git", "stepstone-dispatch", "existing.json"),
+				join(gitDirectory, "stepstone-dispatch-owner.json"),
+				join(workspace, "handoff.md"),
+			];
+			for (const file of files) {
+				await mkdir(dirname(file), { recursive: true });
+				await writeFile(file, `preserved resource: ${file}\n`);
+			}
+			for (const args of [
+				["list"],
+				["show", "preserved-claim"],
+				["ready"],
+				["workspace", "resume", "existing"],
+			]) {
+				const result = await runCli(root, ["project", ...args]);
+				expect(result.code).toBe(args[0] === "workspace" ? 2 : 0);
+			}
+			expect(await readFile(join(root, ".worklist", "worklist.json"), "utf8")).toBe(before);
+			for (const file of files) expect(await readFile(file, "utf8")).toBe(`preserved resource: ${file}\n`);
 			expect(
-				(await execFileAsync("git", ["branch", "--show-current"], { cwd: worktreePath })).stdout.trim(),
-			).toBe("stepstone/timed-work");
-			expect((await readGoals(root))[0]?.branch).toBeUndefined();
+				(await execFileAsync("git", ["branch", "--show-current"], { cwd: workspace })).stdout.trim(),
+			).toBe("external/work");
+			expect(
+				(await execFileAsync("git", ["worktree", "list", "--porcelain"], { cwd: root })).stdout,
+			).toContain(`worktree ${workspace}`);
 		} finally {
-			await execFileAsync("git", ["worktree", "remove", "--force", worktreePath], { cwd: root });
-			await execFileAsync("git", ["branch", "-D", "stepstone/timed-work"], { cwd: root });
+			await execFileAsync("git", ["worktree", "remove", "--force", workspace], { cwd: root });
 			await rm(parent, { recursive: true, force: true });
 		}
-	}, 45000);
-
-	it("creates no Git state for a stale worktree-start baseline", async () => {
-		const root = await tempGitRepo();
-		await runCli(root, ["project", "add", "Guarded work"]);
-		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
-		await execFileAsync(
-			"git",
-			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap"],
-			{ cwd: root },
-		);
-		const workspaceParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-stale-")));
-		const worktreePath = join(workspaceParent, "stepstone-guarded-work");
-		const refused = await runCli(root, [
-			"project",
-			"start",
-			"guarded-work",
-			"--worktree",
-			"--workspace-parent",
-			workspaceParent,
-			"--expect-updated-at",
-			"2020-01-01T00:00:00.000Z",
-			"--json",
-		]);
-		expect(refused.code).toBe(4);
-		expect(parseJson(refused.stderr)).toMatchObject({
-			error: { code: "CONFLICT", conflict: { type: "goal-updated-at", id: "guarded-work" } },
-		});
-		expect(
-			(await execFileAsync("git", ["branch", "--list", "stepstone/guarded-work"], { cwd: root })).stdout,
-		).toBe("");
-		await expect(readFile(worktreePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-		await rm(workspaceParent, { recursive: true, force: true });
 	});
 
-	it("preserves a created worktree when a concurrent edit rejects its claim", async () => {
+	it.each(["start", "resume", "status", "inspect", "recover", "cleanup", "help"])(
+		"rejects removed project workspace %s without modifying resources",
+		async (action) => {
+			const root = await tempGitRepo();
+			await runCli(root, ["project", "add", "Preserved claim"]);
+			await runCli(root, ["project", "start", "preserved-claim", "--branch", "external/work"]);
+			const before = await readGoals(root);
+			const journal = join(root, ".git", "stepstone-dispatch", "existing.json");
+			await mkdir(dirname(journal), { recursive: true });
+			await writeFile(journal, "preserved dispatch journal");
+			const result = await runCli(root, ["project", "workspace", action]);
+			expect(result.code).toBe(2);
+			expect(result.stderr).toContain("project workspace was removed");
+			expect(await readGoals(root)).toEqual(before);
+			expect(await readFile(journal, "utf8")).toBe("preserved dispatch journal");
+		},
+	);
+
+	it.each([
+		"--worktree",
+		"--workspace-parent",
+		"--goal",
+		"--max-parallel",
+		"--stale-after-hours",
+		"--claim-updated-at",
+		"--help",
+		"--release",
+		"--force",
+	])("rejects removed workspace flag %s before claiming a goal", async (flag) => {
 		const root = await tempGitRepo();
-		await runCli(root, ["project", "add", "Raced work"]);
-		await execFileAsync("git", ["add", ".worklist/worklist.json"], { cwd: root });
-		await execFileAsync(
-			"git",
-			["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "roadmap"],
-			{ cwd: root },
-		);
-		const workspaceParent = await realpath(await mkdtemp(join(tmpdir(), "stepstone-cli-race-")));
-		const worktreePath = join(workspaceParent, "stepstone-raced-work");
-		const realGit = (await execFileAsync("which", ["git"])).stdout.trim();
-		const script = [
-			'if [ "$1" = "worktree" ] && [ "$2" = "add" ]; then',
-			`  ${realGit} "$@" || exit $?`,
-			`  ${process.execPath} -e 'const fs=require("fs");const p=process.env.STEPSTONE_TEST_WORKLIST;const w=JSON.parse(fs.readFileSync(p,"utf8"));w.goals[0].updatedAt="2030-01-01T00:00:00.000Z";w.revision+=1;fs.writeFileSync(p,JSON.stringify(w,null,2)+"\\n")'`,
-			"  exit 0",
-			"fi",
-			`exec ${realGit} "$@"`,
-		];
-		const refused = await runCli(
-			root,
-			["project", "start", "raced-work", "--worktree", "--workspace-parent", workspaceParent, "--json"],
-			{
-				PATH: await fakeGitPath(script),
-				STEPSTONE_TEST_WORKLIST: join(root, ".worklist", "worklist.json"),
-			},
-		);
-		try {
-			expect(refused.code).toBe(4);
-			expect(parseJson(refused.stderr)).toMatchObject({
-				error: {
-					code: "CONFLICT",
-					details: { branch: "stepstone/raced-work", worktreePath },
-				},
-			});
-			expect(refused.stderr).toContain("preserved for inspection");
-			expect(
-				(await execFileAsync("git", ["branch", "--show-current"], { cwd: worktreePath })).stdout.trim(),
-			).toBe("stepstone/raced-work");
-			expect((await readGoals(root))[0]?.branch).toBeUndefined();
-		} finally {
-			await execFileAsync("git", ["worktree", "remove", "--force", worktreePath], { cwd: root });
-			await execFileAsync("git", ["branch", "-D", "stepstone/raced-work"], { cwd: root });
-			await rm(workspaceParent, { recursive: true, force: true });
-		}
+		await runCli(root, ["project", "add", "Existing goal"]);
+		const before = await readGoals(root);
+		const result = await runCli(root, ["project", "start", "existing-goal", flag]);
+		expect(result.code).toBe(2);
+		expect(result.stderr).toContain(`${flag} was removed with workspace management`);
+		expect(await readGoals(root)).toEqual(before);
 	});
 
 	it("returns typed JSON failures when the current branch cannot supply a claim", async () => {
