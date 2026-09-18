@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -43,12 +44,37 @@ export interface ProjectMutationOptions {
 	expectedGoal?: ProjectGoalPrecondition;
 }
 
-export type ProjectMutation<T> = (current: RevisionedProjectWorklist) => {
+type ProjectMutationValue<T> = {
 	worklist: RevisionedProjectWorklist;
 	result: T;
 	/** Set false when validation produced a result without a canonical state change. */
 	changed?: boolean;
 };
+export type ProjectMutation<T> = (
+	current: RevisionedProjectWorklist,
+) => ProjectMutationValue<T> | Promise<ProjectMutationValue<T>>;
+
+interface StagedProjectTransaction {
+	path: string;
+	worklist: RevisionedProjectWorklist;
+}
+const aggregateTransactions = new WeakSet<ProjectMutation<unknown>>();
+const stagedProjectTransaction = new AsyncLocalStorage<StagedProjectTransaction>();
+
+/** Run domain operations against one locked snapshot and commit once. */
+export async function transactProjectWorklist<T>(
+	path: string,
+	transaction: (state: StagedProjectTransaction) => Promise<{ result: T; changed: boolean }>,
+): Promise<ProjectStoreResult<T>> {
+	if (stagedProjectTransaction.getStore()) throw new Error("Nested project transactions are not supported.");
+	const mutation: ProjectMutation<T> = async (worklist) => {
+		const state = { path, worklist: structuredClone(worklist) };
+		const outcome = await stagedProjectTransaction.run(state, () => transaction(state));
+		return { worklist: state.worklist, ...outcome };
+	};
+	aggregateTransactions.add(mutation);
+	return mutateProjectWorklist(path, mutation);
+}
 
 /**
  * A mutation refused on its own terms, rather than one that failed to persist.
@@ -358,6 +384,11 @@ function parseProjectWorklist(text: string, path: string): ProjectStoreResult<Re
 export async function readProjectWorklist(
 	path: string,
 ): Promise<ProjectStoreResult<RevisionedProjectWorklist>> {
+	const staged = stagedProjectTransaction.getStore();
+	if (staged) {
+		if (staged.path !== path) throw new Error("Project transaction path changed.");
+		return { data: structuredClone(staged.worklist) };
+	}
 	try {
 		const text = await readFile(path, "utf8");
 		return parseProjectWorklist(text, path);
@@ -572,6 +603,10 @@ export async function moveProjectWorklist(
 		// the revision reported back is the revision that travelled.
 		const readResult = parseProjectWorklist(contents, fromPath);
 		if (readResult.error) return { data: { fromPath, toPath }, error: readResult.error };
+		if ("collaboration" in readResult.data)
+			throw new ProjectMutationRefusedError(
+				"This store is owned by the collaboration server. Server storage moves require an explicit maintenance operation.",
+			);
 		// Checked under both locks, so nothing can create the destination between
 		// the look and the rename that would otherwise overwrite it.
 		const destination = await stat(toPath).catch(() => undefined);
@@ -607,6 +642,20 @@ export async function mutateProjectWorklist<T>(
 	mutate: ProjectMutation<T>,
 	options: ProjectMutationOptions = {},
 ): Promise<ProjectStoreResult<T>> {
+	const staged = stagedProjectTransaction.getStore();
+	if (staged) {
+		if (staged.path !== path) throw new Error("Project transaction path changed.");
+		const revision = staged.worklist.revision;
+		if (options.expectedRevision !== undefined && options.expectedRevision !== String(revision))
+			throw new ProjectRevisionConflictError(options.expectedRevision, String(revision));
+		assertGoalPrecondition(staged.worklist, options.expectedGoal);
+		const outcome = await mutate(structuredClone(staged.worklist));
+		if (!isRevisionedProjectWorklist(outcome.worklist))
+			throw new Error("Project mutation produced an invalid worklist.");
+		if (outcome.changed === false) return { data: outcome.result, revision, changed: false };
+		staged.worklist = { ...outcome.worklist, revision: revision + 1 };
+		return { data: outcome.result, revision: revision + 1 };
+	}
 	const dir = dirname(path);
 	const refusal = committedRoadmapWriteRefusal(path);
 	const release = await lockWorklistDirectory(dir);
@@ -618,13 +667,18 @@ export async function mutateProjectWorklist<T>(
 			return { data: undefined as unknown as T, error: readResult.error };
 		}
 
+		if ("collaboration" in readResult.data && !aggregateTransactions.has(mutate)) {
+			throw new ProjectMutationRefusedError(
+				"This store is owned by the collaboration server. Use its command interface.",
+			);
+		}
 		const actualRevision = String(readResult.data.revision);
 		if (options.expectedRevision !== undefined && options.expectedRevision !== actualRevision) {
 			throw new ProjectRevisionConflictError(options.expectedRevision, actualRevision);
 		}
 		assertGoalPrecondition(readResult.data, options.expectedGoal);
 
-		const { worklist, result, changed = true } = mutate(readResult.data);
+		const { worklist, result, changed = true } = await mutate(readResult.data);
 		if (!isRevisionedProjectWorklist(worklist)) {
 			return {
 				data: undefined as unknown as T,

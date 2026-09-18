@@ -1,9 +1,9 @@
 {
 	"src/application-service.ts": {
-		"lines": 87.76,
-		"branches": 80.89,
+		"lines": 91.44,
+		"branches": 85.05,
 		"functions": 98.5,
-		"statements": 86.68
+		"statements": 90.46
 	},
 	"src/bounded-text.ts": {
 		"lines": 95.45,
@@ -12,16 +12,40 @@
 		"statements": 91.66
 	},
 	"src/cli-contract.ts": {
-		"lines": 95.74,
-		"branches": 91.3,
-		"functions": 96.29,
-		"statements": 96.36
+		"lines": 98.87,
+		"branches": 95.45,
+		"functions": 100,
+		"statements": 99.04
 	},
 	"src/cli.ts": {
 		"lines": 0,
 		"branches": 0,
 		"functions": 0,
 		"statements": 0
+	},
+	"src/collaboration-client.ts": {
+		"lines": 91.66,
+		"branches": 78.26,
+		"functions": 100,
+		"statements": 87.5
+	},
+	"src/collaboration-page.ts": {
+		"lines": 100,
+		"branches": 100,
+		"functions": 100,
+		"statements": 100
+	},
+	"src/collaboration-protocol.ts": {
+		"lines": 93.96,
+		"branches": 81.89,
+		"functions": 95,
+		"statements": 85.6
+	},
+	"src/collaboration-server.ts": {
+		"lines": 87.2,
+		"branches": 78.12,
+		"functions": 90,
+		"statements": 83.7
 	},
 	"src/completion-installer.ts": {
 		"lines": 97.05,
@@ -54,10 +78,10 @@
 		"statements": 86.76
 	},
 	"src/git.ts": {
-		"lines": 77.02,
-		"branches": 75.47,
-		"functions": 82.75,
-		"statements": 76.6
+		"lines": 86.13,
+		"branches": 83.87,
+		"functions": 96,
+		"statements": 85
 	},
 	"src/goal-selection.ts": {
 		"lines": 98.07,
@@ -78,16 +102,16 @@
 		"statements": 92.12
 	},
 	"src/project-mutations.ts": {
-		"lines": 95.54,
-		"branches": 88.96,
+		"lines": 96.57,
+		"branches": 91.89,
 		"functions": 100,
-		"statements": 91.47
+		"statements": 93.17
 	},
 	"src/project-store.ts": {
-		"lines": 86.24,
-		"branches": 74.67,
-		"functions": 92.59,
-		"statements": 80.61
+		"lines": 88.42,
+		"branches": 82.09,
+		"functions": 94.44,
+		"statements": 84.51
 	},
 	"src/result-envelope.ts": {
 		"lines": 40,
@@ -120,10 +144,10 @@
 		"statements": 100
 	},
 	"src/tool.ts": {
-		"lines": 87.71,
-		"branches": 68.75,
+		"lines": 89.23,
+		"branches": 74.02,
 		"functions": 100,
-		"statements": 85.71
+		"statements": 87.8
 	},
 	"src/tui/goal-board-runtime.ts": {
 		"lines": 93.75,
@@ -174,10 +198,10 @@
 		"statements": 89.41
 	},
 	"src/web-app.ts": {
-		"lines": 78.98,
-		"branches": 65.83,
-		"functions": 80.64,
-		"statements": 75.97
+		"lines": 85.18,
+		"branches": 77.35,
+		"functions": 87.5,
+		"statements": 81.66
 	},
 	"src/web-page.ts": {
 		"lines": 100,
@@ -186,9 +210,9 @@
 		"statements": 100
 	},
 	"total": {
-		"lines": 77.5,
-		"branches": 68.85,
-		"functions": 85.41,
-		"statements": 75.95
+		"lines": 81.47,
+		"branches": 73.3,
+		"functions": 87.3,
+		"statements": 79.68
 	}
 }
