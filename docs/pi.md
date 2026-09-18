@@ -176,3 +176,7 @@ Errors carry a stable code, `UNAVAILABLE`, `INVALID_REQUEST`, `VALIDATION_FAILED
 Operations accept an `expectedRevision` and, for a single Project Goal, an `expectedUpdatedAt`, both checked under the same lock that writes, so a caller resuming from a stale read is told rather than allowed to overwrite newer state.
 Project operations resolve the goal file through a resolver the host supplies rather than a path captured at startup, so a `migrate_path` elsewhere cannot leave a long-lived caller writing to a file that is no longer the roadmap.
 Session Task operations need a session store and report `UNAVAILABLE` without one, which is what a non-Pi host gets.
+
+## Project organization
+
+The model tool also supports `structure`, `configure`, `add_milestone`, `update_milestone`, and `assign_milestone` in project scope. `configure` requires explicit intent and `confirm=true`. `structure` returns a complete snapshot in `projectStructure`; its `tasks` are project tasks. Existing bounded list reads remain unchanged. The direct `/tasks` commands and dashboard keep their existing task controls. Use the model tool or CLI for organization. See [organization.md](organization.md).

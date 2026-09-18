@@ -1,9 +1,10 @@
 <!-- markdownlint-disable MD013 -->
 
-# The goal model
+# The task model and Project Goal compatibility
 
-A Project Goal is a broad outcome for the repository: the kind of thing a pull request description or a release note would name.
-The concrete steps toward one belong in whatever task list the agent working on it already has, not in the roadmap.
+A Project Goal is the compatibility name for a project task.
+Projects describe larger efforts. Milestones describe meaningful outcomes. Tasks describe actionable work.
+See [Projects, milestones, and tasks](organization.md) for organization and migration.
 
 ## Fields
 
@@ -16,7 +17,8 @@ Beyond that it may carry:
 - `branch`, naming where the work is happening, which also marks the goal as claimed; `start` records it, and `start --clear` or `complete` releases it.
 - `dependsOn`, the goals that must land first, documented in [docs/dependencies.md](dependencies.md).
 
-Every one of those fields is optional and additive, so the schema version stays at 1 and older files keep loading unchanged.
+These task fields remain compatible with version 1. An explicit project configuration upgrades the store to version 2.
+Version 2 tasks can also carry `milestoneId`.
 A goal completed before `completedAt` existed simply has none, because that moment is genuinely unknown and inventing one would be worse than admitting it.
 
 ## Statuses

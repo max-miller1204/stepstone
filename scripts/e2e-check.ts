@@ -155,6 +155,97 @@ async function plansAndConflicts(): Promise<void> {
 	);
 }
 
+async function projectOrganization(): Promise<void> {
+	const cwd = join(h.root, "standalone-project");
+	await mkdir(cwd);
+	const path = join(cwd, "effort.json");
+	const run = (args: string[]) => ok(cwd, [...args, "--file", path]);
+	const stamp = "2026-01-01T00:00:00.000Z";
+	const historical = {
+		id: "frozen-task",
+		previousIds: ["former-task"],
+		title: "Historical task",
+		status: "done",
+		createdAt: stamp,
+		updatedAt: stamp,
+		completedAt: stamp,
+		links: ["https://example.com/evidence"],
+		historicalExtension: { evidence: "preserved" },
+	};
+	const dependent = {
+		...historical,
+		id: "dependent",
+		previousIds: [],
+		dependsOn: ["former-task", "retired-task"],
+	};
+	const tasks = [historical, dependent];
+	await writeFile(
+		path,
+		JSON.stringify({ version: 1, revision: 4, goals: tasks, retiredIds: ["retired-task"] }),
+	);
+	const before = await readFile(path, "utf8");
+	envelope(await cli(cwd, ["configure", "Launch", "--file", path]), "configure", {
+		exit: 3,
+		code: "APPROVAL_REQUIRED",
+	});
+	assert.equal(await readFile(path, "utf8"), before);
+	const configured = await run(["configure", "Launch", "--confirm"]);
+	assert.equal(configured.meta.revisions.project, "5");
+	assert.equal("projectStructure" in configured.result, false);
+	assert.equal((configured.result.project as { title: string }).title, "Launch");
+	const initial = (await run(["structure"])).result.projectStructure as {
+		project: { title: string; repositories: string[] };
+		milestones: unknown[];
+		tasks: unknown[];
+		retiredIds: string[];
+	};
+	assert.equal(initial.project.title, "Launch");
+	assert.deepEqual(initial.project.repositories, []);
+	assert.deepEqual(initial.milestones, []);
+	assert.deepEqual(initial.tasks, tasks);
+	assert.deepEqual(initial.retiredIds, ["retired-task"]);
+	assert.equal(JSON.parse(await readFile(path, "utf8")).version, 2);
+	const repositories = ["https://github.com/example/client", "https://github.com/example/service"];
+	await run([
+		"configure",
+		"Launch",
+		"--confirm",
+		"--repository",
+		repositories[0] as string,
+		"--repository",
+		repositories[1] as string,
+	]);
+	const milestone = (await run(["add_milestone", "Pilot works"])).result.milestone as { id: string };
+	const renamed = (
+		await run([
+			"update_milestone",
+			milestone.id,
+			"Pilot is usable",
+			"--description",
+			"People can finish their work",
+		])
+	).result.milestone as { id: string };
+	assert.equal(renamed.id, milestone.id);
+	const task = (await run(["add", "Test the pilot"])).result.goal;
+	await run(["assign_milestone", task.id, "--milestone", milestone.id]);
+	const structure = (await ok(cwd, ["structure"], { STEPSTONE_WORKLIST: path })).result.projectStructure as {
+		project: { repositories: string[] };
+		milestones: unknown[];
+		tasks: Array<{ id: string; milestoneId?: string }>;
+		retiredIds: string[];
+	};
+	assert.deepEqual(structure.project.repositories, repositories);
+	assert.deepEqual(structure.milestones, [renamed]);
+	assert.deepEqual(structure.tasks.slice(0, 2), tasks);
+	assert.deepEqual(structure.retiredIds, ["retired-task"]);
+	assert.equal(structure.tasks[2]?.milestoneId, milestone.id);
+	assert.deepEqual((await run(["show", "former-task"])).result.goal, historical);
+	await run(["assign_milestone", task.id, "--milestone", ""]);
+	assert.equal("milestoneId" in (await run(["show", task.id])).result.goal, false);
+	assert.equal(existsSync(join(cwd, ".git")), false);
+	assert.equal(existsSync(worklistPath(cwd)), false);
+}
+
 async function locations(): Promise<void> {
 	const cwd = await h.repository("locations");
 	const nested = join(cwd, "nested");
@@ -348,6 +439,7 @@ try {
 	const scenarios = [
 		installed,
 		plansAndConflicts,
+		projectOrganization,
 		piRpc,
 		...(fast ? [] : [locations, locking, linkedWorktree, roadmap]),
 	];

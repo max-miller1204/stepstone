@@ -34,6 +34,8 @@ The server binds only to `127.0.0.1`. It checks the HTTP `Host` header on every 
 
 The server accepts bounded JSON request bodies. Browser code does not read or write the goal file. Goal mutations use `WorklistApplicationService`, domain validation, optimistic checks, the cross-process lock, and atomic file replacement. Lifecycle changes require explicit confirmation.
 
-Run the editor only from the main worktree. It rejects `--file` and non-empty `STEPSTONE_WORKLIST` overrides. Unset `STEPSTONE_WORKLIST` before starting. The editor resolves the canonical roadmap for each operation. Prepared linked worktrees remain read-only for roadmap mutations.
+Use the main worktree for a committed roadmap. An explicit `--file` or `STEPSTONE_WORKLIST` store can also run outside Git. The editor resolves the store for each operation. An override that names a linked worktree's committed roadmap remains read-only for mutations.
+
+`GET /api/structure` returns the project, milestones, and tasks at one revision. The existing `POST /api/goals` endpoint also accepts `configure`, `add_milestone`, `update_milestone`, and `assign_milestone`. These actions use the same token, origin, confirmation, and revision checks as task edits. The board retains its task controls. Use the CLI or agent tool for milestone controls. See [organization.md](organization.md).
 
 The loopback editor is the transition to a server-backed application. It does not expose a network service, launch agents, create workspaces, or create or merge pull requests.

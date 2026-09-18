@@ -6,6 +6,11 @@ const ScopeSchema: TUnsafe<"session" | "project"> = StringEnum(["session", "proj
 });
 
 const ActionSchema: TUnsafe<
+	| "structure"
+	| "configure"
+	| "add_milestone"
+	| "update_milestone"
+	| "assign_milestone"
 	| "list"
 	| "show"
 	| "add"
@@ -21,6 +26,11 @@ const ActionSchema: TUnsafe<
 	| "set_active"
 > = StringEnum(
 	[
+		"structure",
+		"configure",
+		"add_milestone",
+		"update_milestone",
+		"assign_milestone",
 		"list",
 		"show",
 		"add",
@@ -37,7 +47,7 @@ const ActionSchema: TUnsafe<
 	] as const,
 	{
 		description:
-			"Action to perform. Project 'list' returns one bounded page and 'show' returns one complete goal. 'apply-plan' validates or atomically adds a project plan. 'move' reorders a Session Task in its queue or a Project Goal in the roadmap. 'start' claims or releases a Project Goal branch. 'complete', 'reopen', 'archive', and 'delete' on project goals require confirm=true.",
+			"Action to perform. Project 'structure' reads the project, milestones, and tasks. 'configure' requires a title and confirm=true, and upgrades legacy storage. 'add_milestone' and 'update_milestone' edit meaningful outcomes. 'assign_milestone' sets a task milestone. Project 'list' returns one bounded page and 'show' returns one complete goal. 'apply-plan' validates or atomically adds a project plan. 'move' reorders a Session Task in its queue or a Project Goal in the roadmap. 'start' claims or releases a Project Goal branch. 'complete', 'reopen', 'archive', and 'delete' on project goals require confirm=true.",
 	},
 );
 
@@ -82,13 +92,16 @@ export const WorklistParamsSchema = Type.Object({
 	id: Type.Optional(
 		Type.String({
 			description:
-				"Task or goal ID (for move, show, update, set_status, delete, complete, reopen, archive, set_active). A project goal also accepts a unique prefix of its ID, or an ID it answered to before an ID migration.",
+				"Task or goal ID for move, show, update, set_status, delete, complete, reopen, archive, set_active, or assign_milestone. A project task accepts a unique ID prefix or a former ID. For update_milestone, use the exact milestone ID.",
 		}),
 	),
-	title: Type.Optional(Type.String({ description: "Title for add/update." })),
+	title: Type.Optional(
+		Type.String({ description: "Title for add/update, configure, add_milestone, or update_milestone." }),
+	),
 	description: Type.Optional(
 		Type.String({
-			description: "Description for project goal add/update. Session tasks do not support descriptions.",
+			description:
+				"Description for project task add/update, configure, add_milestone, or update_milestone. Session tasks do not support descriptions.",
 		}),
 	),
 	group: Type.Optional(
@@ -131,6 +144,15 @@ export const WorklistParamsSchema = Type.Object({
 				"Informational absolute HTTP or HTTPS URLs for project goal add/update. Replaces the whole set; an empty array clears it. Accepted URLs are stored in canonical form and duplicates collapse. Session tasks do not support links.",
 		}),
 	),
+	repositories: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				"Absolute HTTP(S) repository URLs for configure. Replaces the complete set; an empty array removes all repository links.",
+		}),
+	),
+	milestoneId: Type.Optional(
+		Type.String({ description: "Milestone ID for assign_milestone. An empty string clears the assignment." }),
+	),
 	branch: Type.Optional(
 		Type.String({
 			description: "Branch claiming a Project Goal for project start. Omit only when clear=true.",
@@ -141,10 +163,16 @@ export const WorklistParamsSchema = Type.Object({
 			description: "For project start, remove the existing branch claim instead of setting one.",
 		}),
 	),
+	expectedRevision: Type.Optional(
+		Type.String({
+			description:
+				"Exact store revision from the last read. Refuse an organization change if the stored revision differs.",
+		}),
+	),
 	expectedUpdatedAt: Type.Optional(
 		Type.String({
 			description:
-				"The target Project Goal's exact updatedAt from the caller's last read, for project start, update, set_active, complete, reopen, archive, and delete. A stale value returns a typed conflict instead of overwriting a newer change.",
+				"The target Project Goal's exact updatedAt from the caller's last read, for project start, update, set_active, complete, reopen, archive, delete, and assign_milestone. A stale value returns a typed conflict instead of overwriting a newer change.",
 		}),
 	),
 	plan: Type.Optional(
@@ -179,7 +207,7 @@ export const WorklistParamsSchema = Type.Object({
 	confirm: Type.Optional(
 		Type.Boolean({
 			description:
-				"Required boolean for destructive project-goal actions: complete, reopen, archive, delete. Set to true ONLY when the user explicitly requested the action.",
+				"Required boolean for configure and destructive project-goal actions: complete, reopen, archive, delete. Set to true ONLY when the user explicitly requested the action.",
 		}),
 	),
 });

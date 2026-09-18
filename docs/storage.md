@@ -43,7 +43,9 @@ Every interface writes through one application service, which serializes physica
 A CLI call, an open board, and a live Pi session may therefore all be working on one repository without corrupting the file or losing an edit.
 
 A malformed or unsupported file is reported and never overwritten automatically, so a corrupt roadmap is a question for its owner rather than something a tool silently replaces.
-Project Goal operations are unavailable outside a Git repository; in a Pi session, Session Tasks continue to work normally there.
+An explicit `--file` or `STEPSTONE_WORKLIST` store supports project operations outside Git. Without an explicit store, project operations require a Git repository. Session Tasks continue to work outside Git.
+
+See [organization.md](organization.md) for version 2 project metadata, milestones, and the explicit upgrade from Project Goals to tasks.
 
 ## The committed roadmap has one writer
 

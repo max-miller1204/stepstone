@@ -309,23 +309,88 @@ describe("Stepstone web application", () => {
 		expect(await (await fetch(`${app.url}/api/state`)).json()).toEqual(before);
 	});
 
-	it("refuses explicit and environment roadmap overrides before serving", async () => {
-		const root = await repository();
-		await expect(
-			startStepstoneWebApp({ repositoryRoot: root, worklistOverride: join(root, "other.json") }).then(
-				(app) => {
-					apps.push(app);
-					return app;
+	it.each(["flag", "environment"])("serves an explicit standalone store through %s", async (source) => {
+		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-standalone-")));
+		roots.push(root);
+		const path = join(root, "effort.json");
+		if (source === "environment") vi.stubEnv(WORKLIST_PATH_ENV, path);
+		const app = await startStepstoneWebApp(source === "flag" ? { worklistOverride: path } : {});
+		apps.push(app);
+		const page = await (await fetch(app.url)).text();
+		const token = page.match(/name="stepstone-token" content="([^"]+)"/)?.[1];
+		if (!token) throw new Error("Missing token");
+		expect(
+			(
+				await post(app, token, {
+					action: "configure",
+					title: "Launch",
+					description: "Ship the product",
+					repositories: [],
+					confirm: true,
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(await post(app, token, { action: "add_milestone", title: "Pilot", description: "Pilot works" }))
+				.status,
+		).toBe(200);
+		expect(
+			(await post(app, token, { action: "update_milestone", id: "pilot", description: "Pilot is usable" }))
+				.status,
+		).toBe(200);
+		expect((await post(app, token, { action: "add", title: "Test pilot" })).status).toBe(200);
+		expect(
+			(await post(app, token, { action: "assign_milestone", id: "test-pilot", milestoneId: "pilot" })).status,
+		).toBe(200);
+		const structure = await (await fetch(`${app.url}/api/structure`)).json();
+		expect(structure).toMatchObject({
+			ok: true,
+			result: {
+				projectStructure: {
+					project: { title: "Launch", repositories: [] },
+					milestones: [{ id: "pilot", description: "Pilot is usable" }],
+					tasks: [{ id: "test-pilot", milestoneId: "pilot" }],
 				},
-			),
-		).rejects.toThrow("does not support --file");
-		vi.stubEnv(WORKLIST_PATH_ENV, join(root, "other.json"));
-		await expect(
-			startStepstoneWebApp({ repositoryRoot: root }).then((app) => {
-				apps.push(app);
-				return app;
-			}),
-		).rejects.toThrow(`does not support ${WORKLIST_PATH_ENV}`);
+			},
+		});
+		expect(await (await fetch(`${app.url}/api/state`)).json()).toMatchObject({
+			result: { goals: [{ id: "test-pilot" }] },
+		});
+		expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ goals: [{ id: "test-pilot" }] });
+	});
+
+	it("rejects stale organization mutations without changing the store", async () => {
+		const { app, token } = await openApp();
+		const configured = await post(app, token, { action: "configure", title: "Launch", confirm: true });
+		expect(await configured.json()).toMatchObject({ result: { project: { title: "Launch" } } });
+		const initial = (await (await fetch(`${app.url}/api/structure`)).json()) as {
+			meta: { revisions: { project: string } };
+		};
+		expect(
+			(
+				await post(app, token, {
+					action: "add_milestone",
+					title: "Pilot",
+					expectedRevision: initial.meta.revisions.project,
+				})
+			).status,
+		).toBe(200);
+		const before = await (await fetch(`${app.url}/api/structure`)).json();
+		const bytes = await readFile(join(roots.at(-1) as string, ".worklist", "worklist.json"), "utf8");
+		const stale = await post(app, token, {
+			action: "update_milestone",
+			id: "pilot",
+			title: "Must not land",
+			expectedRevision: initial.meta.revisions.project,
+		});
+		expect(stale.status).toBe(409);
+		expect(await stale.json()).toMatchObject({ error: { code: "CONFLICT" } });
+		expect(await (await fetch(`${app.url}/api/structure`)).json()).toEqual(before);
+		expect(await readFile(join(roots.at(-1) as string, ".worklist", "worklist.json"), "utf8")).toBe(bytes);
+	});
+
+	it("requires an explicit store outside a repository", async () => {
+		await expect(startStepstoneWebApp({})).rejects.toThrow("requires --file or STEPSTONE_WORKLIST");
 	});
 
 	it("refuses a stale reorder without changing the current order", async () => {
@@ -370,6 +435,20 @@ describe("Stepstone web application", () => {
 		workspacePaths.push(linked);
 		await execFileAsync("git", ["worktree", "add", "-b", "linked", linked], { cwd: root });
 		await expect(startStepstoneWebApp({ repositoryRoot: linked })).rejects.toThrow("main worktree");
+		const app = await startStepstoneWebApp({
+			repositoryRoot: linked,
+			worklistOverride: join(linked, ".worklist", "worklist.json"),
+		});
+		apps.push(app);
+		const page = await (await fetch(app.url)).text();
+		const token = page.match(/name="stepstone-token" content="([^"]+)"/)?.[1];
+		if (!token) throw new Error("Missing token");
+		const response = await post(app, token, { action: "configure", title: "Unsafe", confirm: true });
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			ok: false,
+			error: { message: expect.stringContaining("main worktree") },
+		});
 	});
 
 	it("does not write the goal file outside the application service", async () => {

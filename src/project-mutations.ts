@@ -16,13 +16,18 @@ import {
 } from "./project-store.ts";
 import type {
 	GoalIdMigration,
+	Milestone,
+	Project,
 	ProjectGoal,
 	ProjectGoalPlacement,
 	ProjectGoalPlanEntry,
 	ProjectGoalStatus,
 	ProjectPlanWarning,
 	ProjectWorklist,
+	RevisionedProjectWorklist,
 } from "./types.ts";
+
+import { ORGANIZED_PROJECT_WORKLIST_VERSION, PROJECT_WORKLIST_VERSION } from "./types.ts";
 
 /**
  * Pi-free Project Goal persistence primitives.
@@ -1018,4 +1023,285 @@ export async function migrateProjectWorklistPath(
 	if (result.error) throw new Error(result.error);
 	if (result.revision === undefined) throw new Error("Project worklist move did not return a revision");
 	return { ...result.data, revision: String(result.revision) };
+}
+
+export interface ProjectConfiguration {
+	title: string;
+	description?: string;
+	repositories?: string[];
+}
+
+export interface MilestoneDraft {
+	title: string;
+	description?: string;
+}
+
+export interface ProjectStructureSnapshot {
+	project?: Project;
+	milestones: Milestone[];
+	tasks: ProjectGoal[];
+	retiredIds: string[];
+	revision: string;
+}
+
+export interface ProjectStructureOutcome extends ProjectStructureSnapshot {
+	changed: boolean;
+	milestone?: Milestone;
+}
+
+export class ProjectOrganizationError extends ProjectMutationRefusedError {
+	constructor(message: string) {
+		super(message);
+		this.name = "ProjectOrganizationError";
+	}
+}
+
+function requireMilestones(worklist: ProjectWorklist): Milestone[] {
+	requireOrganization(worklist);
+	return worklist.milestones;
+}
+
+function structure(worklist: ProjectWorklist): Omit<ProjectStructureSnapshot, "revision"> {
+	return {
+		...(worklist.version === ORGANIZED_PROJECT_WORKLIST_VERSION ? { project: worklist.project } : {}),
+		milestones: worklist.version === ORGANIZED_PROJECT_WORKLIST_VERSION ? requireMilestones(worklist) : [],
+		tasks: worklist.goals,
+		retiredIds: worklist.retiredIds ?? [],
+	};
+}
+
+export async function readProjectStructure(path: string): Promise<ProjectStructureSnapshot> {
+	const { data, error } = await readProjectWorklist(path);
+	if (error) throw new Error(error);
+	return { ...structure(data), revision: String(data.revision) };
+}
+
+function organizationTitle(title: string): string {
+	if (typeof title !== "string" || !title.trim()) {
+		throw new ProjectOrganizationError("A nonempty title is required.");
+	}
+	return title.trim();
+}
+
+function organizationDescription(description: string | undefined): void {
+	if (description !== undefined && typeof description !== "string") {
+		throw new ProjectOrganizationError("Description must be a string.");
+	}
+}
+
+function organizationRepositories(repositories: string[]): string[] {
+	if (!Array.isArray(repositories)) throw new ProjectOrganizationError("Repositories must be an array.");
+	return [
+		...new Set(
+			repositories.map((repository) => {
+				if (typeof repository !== "string")
+					throw new ProjectOrganizationError("Repositories must contain strings.");
+				let url: URL;
+				try {
+					url = new URL(repository);
+				} catch {
+					throw new ProjectOrganizationError("Repositories must be absolute HTTP(S) URLs.");
+				}
+				if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+					throw new ProjectOrganizationError(
+						"Repositories must be absolute HTTP(S) URLs without credentials.",
+					);
+				}
+				return url.href;
+			}),
+		),
+	];
+}
+
+function requireOrganization(
+	worklist: ProjectWorklist,
+): asserts worklist is ProjectWorklist & { project: Project; milestones: Milestone[] } {
+	if (worklist.version !== ORGANIZED_PROJECT_WORKLIST_VERSION || !worklist.project || !worklist.milestones) {
+		throw new ProjectOrganizationError("Configure the project before you change milestones.");
+	}
+}
+
+async function mutateStructure(
+	path: string,
+	mutate: (worklist: RevisionedProjectWorklist) => {
+		worklist: RevisionedProjectWorklist;
+		changed: boolean;
+		milestone?: Milestone;
+	},
+	options?: ProjectMutationOptions,
+): Promise<ProjectStructureOutcome> {
+	const result = await mutateProjectWorklist(
+		path,
+		(current) => {
+			const next = mutate(current);
+			return {
+				...next,
+				result: { ...structure(next.worklist), ...(next.milestone ? { milestone: next.milestone } : {}) },
+			};
+		},
+		options,
+	);
+	if (result.error) throw new Error(result.error);
+	if (result.revision === undefined) throw new Error("Project mutation did not return a revision");
+	return { ...result.data, revision: String(result.revision), changed: result.changed !== false };
+}
+
+/** Explicitly upgrade organization metadata without rewriting task identity or history. */
+export async function configureProject(
+	path: string,
+	configuration: ProjectConfiguration,
+	options?: ProjectMutationOptions,
+): Promise<ProjectStructureOutcome> {
+	const title = organizationTitle(configuration.title);
+	organizationDescription(configuration.description);
+	const repositories =
+		configuration.repositories === undefined
+			? undefined
+			: organizationRepositories(configuration.repositories);
+	return mutateStructure(
+		path,
+		(worklist) => {
+			if (
+				worklist.version === PROJECT_WORKLIST_VERSION &&
+				(worklist.project !== undefined ||
+					worklist.milestones !== undefined ||
+					worklist.goals.some((goal) => goal.milestoneId !== undefined))
+			) {
+				throw new ProjectOrganizationError(
+					"Legacy organization fields conflict with the version 2 schema. Resolve these fields before configuration.",
+				);
+			}
+			const current = worklist.project;
+			const description = configuration.description ?? current?.description;
+			const nextRepositories = repositories ?? current?.repositories ?? [];
+			if (
+				current &&
+				current.title === title &&
+				current.description === description &&
+				sameStringList(current.repositories, nextRepositories)
+			)
+				return { worklist, changed: false };
+			const now = current ? nextGoalUpdatedAt(current.updatedAt) : new Date().toISOString();
+			const project = {
+				id: current?.id ?? slugifyGoalTitle(title),
+				title,
+				...(description !== undefined ? { description } : {}),
+				repositories: nextRepositories,
+				createdAt: current?.createdAt ?? now,
+				updatedAt: now,
+			};
+			return {
+				worklist: {
+					...worklist,
+					version: ORGANIZED_PROJECT_WORKLIST_VERSION,
+					project,
+					milestones: worklist.milestones ?? [],
+				},
+				changed: true,
+			};
+		},
+		options,
+	);
+}
+
+export async function addMilestone(
+	path: string,
+	draft: MilestoneDraft,
+	options?: ProjectMutationOptions,
+): Promise<ProjectStructureOutcome> {
+	const title = organizationTitle(draft.title);
+	organizationDescription(draft.description);
+	return mutateStructure(
+		path,
+		(worklist) => {
+			requireOrganization(worklist);
+			const milestones = worklist.milestones;
+			const taken = new Set(milestones.map((milestone) => milestone.id));
+			const base = slugifyGoalTitle(title);
+			let id = base;
+			for (let suffix = 2; taken.has(id); suffix++) id = `${base}-${suffix}`;
+			const now = new Date().toISOString();
+			const milestone = {
+				id,
+				title,
+				...(draft.description !== undefined ? { description: draft.description } : {}),
+				createdAt: now,
+				updatedAt: now,
+			};
+			return { worklist: { ...worklist, milestones: [...milestones, milestone] }, milestone, changed: true };
+		},
+		options,
+	);
+}
+
+export async function updateMilestone(
+	path: string,
+	id: string,
+	updates: Partial<MilestoneDraft>,
+	options?: ProjectMutationOptions,
+): Promise<ProjectStructureOutcome> {
+	const title = updates.title === undefined ? undefined : organizationTitle(updates.title);
+	organizationDescription(updates.description);
+	return mutateStructure(
+		path,
+		(worklist) => {
+			requireOrganization(worklist);
+			const milestones = worklist.milestones;
+			const current = milestones.find((milestone) => milestone.id === id);
+			if (!current) throw new ProjectOrganizationError(`Milestone ${id} not found.`);
+			const nextTitle = title ?? current.title;
+			const description = updates.description ?? current.description;
+			if (current.title === nextTitle && current.description === description)
+				return { worklist, milestone: current, changed: false };
+			const milestone = {
+				...current,
+				title: nextTitle,
+				...(description !== undefined ? { description } : {}),
+				updatedAt: nextGoalUpdatedAt(current.updatedAt),
+			};
+			return {
+				worklist: {
+					...worklist,
+					milestones: milestones.map((entry) => (entry.id === id ? milestone : entry)),
+				},
+				milestone,
+				changed: true,
+			};
+		},
+		options,
+	);
+}
+
+/** An empty milestone ID removes the assignment. Former task IDs remain valid. */
+export async function assignTaskMilestone(
+	path: string,
+	taskId: string,
+	milestoneId: string,
+	options?: ProjectMutationOptions,
+): Promise<ProjectMutationOutcome> {
+	const result = await mutateProjectWorklist(
+		path,
+		(worklist) => {
+			requireOrganization(worklist);
+			if (milestoneId !== "" && !worklist.milestones.some((milestone) => milestone.id === milestoneId))
+				throw new ProjectOrganizationError(`Milestone ${milestoneId} not found.`);
+			const current = findGoalByStoredId(worklist.goals, taskId, worklist.retiredIds ?? []);
+			if (!current) return { worklist, result: null, changed: false };
+			const nextId = milestoneId === "" ? undefined : milestoneId;
+			if (current.milestoneId === nextId)
+				return { worklist, result: { goal: current, goals: worklist.goals }, changed: false };
+			const { milestoneId: _removed, ...rest } = current;
+			const goal = {
+				...rest,
+				...(nextId === undefined ? {} : { milestoneId: nextId }),
+				updatedAt: nextGoalUpdatedAt(current.updatedAt),
+			};
+			const goals = worklist.goals.map((entry) => (entry === current ? goal : entry));
+			return { worklist: { ...worklist, goals }, result: { goal, goals } };
+		},
+		options,
+	);
+	if (result.error) throw new Error(result.error);
+	if (!result.data) throw new ProjectGoalNotFoundError(taskId);
+	return mutationOutcome({ ...result, data: result.data });
 }

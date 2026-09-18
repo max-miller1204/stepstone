@@ -25,8 +25,11 @@ import {
 } from "./project-list-projection.ts";
 import {
 	activateProjectGoal,
+	addMilestone,
 	addProjectGoal,
 	applyProjectPlan,
+	assignTaskMilestone,
+	configureProject,
 	deleteProjectGoal,
 	listProjectGoals,
 	migrateProjectGoalIds,
@@ -40,9 +43,12 @@ import {
 	ProjectGoalNotFoundError,
 	ProjectGoalPlanValidationError,
 	type ProjectGoalUpdate,
+	ProjectOrganizationError,
 	readProjectGoals,
+	readProjectStructure,
 	setProjectGoalBranch,
 	transitionProjectGoal,
+	updateMilestone,
 	updateProjectGoal,
 } from "./project-mutations.ts";
 import {
@@ -86,6 +92,10 @@ export interface WorklistOperation {
 	action: string;
 	id?: string;
 	title?: string;
+	/** Project repository links. An empty array clears the complete set. */
+	repositories?: string[];
+	/** Exact milestone ID. An empty string removes task membership. */
+	milestoneId?: string;
 	description?: string;
 	/** Project Goal only: append a paragraph instead of replacing the description. */
 	appendDescription?: string;
@@ -462,6 +472,8 @@ function asSessionPlacement(placement: ProjectGoalPlacement | undefined): Sessio
 
 /** Fields describing a Project Goal's prose or baseline, which a Session Task has no counterpart for. */
 const PROJECT_ONLY_FIELDS = [
+	{ field: "repositories", resolution: "use-project-configure" },
+	{ field: "milestoneId", resolution: "use-project-assign-milestone" },
 	{ field: "description", resolution: "remove-description" },
 	{ field: "appendDescription", resolution: "remove-append-description" },
 	{ field: "group", resolution: "remove-group" },
@@ -544,8 +556,9 @@ function normalizeDescriptionUpdate(operation: WorklistOperation): ProjectGoalUp
 	return { appendDescription };
 }
 
-const READ_ACTIONS = new Set(["list", "show"]);
+const READ_ACTIONS = new Set(["list", "show", "structure"]);
 const EXPECTED_UPDATED_AT_ACTIONS = new Set([
+	"assign_milestone",
 	"update",
 	"start",
 	"set_active",
@@ -571,6 +584,36 @@ const GOAL_SELECTOR_ACTIONS = new Set([...EXPECTED_UPDATED_AT_ACTIONS, "move", "
  * caller overwrite a concurrent edit.
  */
 function rejectUnsupportedProjectOptions(operation: WorklistOperation): void {
+	for (const [field, action] of [
+		["repositories", "configure"],
+		["milestoneId", "assign_milestone"],
+	] as const) {
+		if (operation[field] !== undefined && operation.action !== action) {
+			throw validationError(`${field} is only supported for project ${action}.`, { fields: [field] });
+		}
+	}
+	if (
+		new Set(["structure", "configure", "add_milestone", "update_milestone", "assign_milestone"]).has(
+			operation.action,
+		)
+	) {
+		const allowed = new Set(["scope", "action", "expectedRevision"]);
+		if (operation.action === "configure")
+			for (const field of ["title", "description", "repositories", "confirm"]) allowed.add(field);
+		if (operation.action === "add_milestone")
+			for (const field of ["title", "description"]) allowed.add(field);
+		if (operation.action === "update_milestone")
+			for (const field of ["id", "title", "description"]) allowed.add(field);
+		if (operation.action === "assign_milestone")
+			for (const field of ["id", "milestoneId", "expectedUpdatedAt"]) allowed.add(field);
+		for (const [field, value] of Object.entries(operation)) {
+			if (value !== undefined && !allowed.has(field))
+				throw validationError(`${field} is not supported for project ${operation.action}.`, {
+					fields: [field],
+				});
+		}
+	}
+
 	if (operation.plan !== undefined && operation.action !== "apply-plan") {
 		throw validationError("plan is only supported for project apply-plan.", {
 			fields: ["plan"],
@@ -725,7 +768,14 @@ function metadataForSuccess(input: SuccessMetadataInput): WorklistResultMeta {
 	// A path migration relocates the goals without editing one, so it reports the
 	// location as what changed. Naming `/goals` instead would send a reader
 	// watching for edits looking for a change it will never find.
-	const projectRoot = operation.action === "migrate_path" ? "/worklistPath" : "/goals";
+	const projectRoot =
+		operation.action === "migrate_path"
+			? "/worklistPath"
+			: operation.action === "configure"
+				? "/project"
+				: operation.action === "add_milestone" || operation.action === "update_milestone"
+					? "/milestones"
+					: "/goals";
 	const changedRoot = operation.scope === "session" ? "/tasks" : projectRoot;
 	return {
 		changed,
@@ -1094,7 +1144,9 @@ export class WorklistApplicationService {
 			let typedError: WorklistError;
 			let failureMeta = cloneEmptyResultMeta();
 			if (error instanceof WorklistApplicationError) typedError = error.toResultError();
-			else if (error instanceof ProjectGoalNotFoundError) {
+			else if (error instanceof ProjectOrganizationError) {
+				typedError = validationError(error.message, {}).toResultError();
+			} else if (error instanceof ProjectGoalNotFoundError) {
 				typedError = notFoundError("project-goal", error.goalId).toResultError();
 			} else if (error instanceof ProjectGoalAnchorNotFoundError) {
 				typedError = notFoundError("project-goal-anchor", error.anchorId).toResultError();
@@ -1289,6 +1341,65 @@ export class WorklistApplicationService {
 			expectedGoal: normalizeExpectedGoal(operation),
 		};
 		switch (operation.action) {
+			case "structure": {
+				const { revision, ...projectStructure } = await readProjectStructure(projectPath);
+				return {
+					result: { scope: "project", action: operation.action, projectStructure },
+					revision,
+					changed: false,
+				};
+			}
+			case "configure":
+			case "add_milestone":
+			case "update_milestone": {
+				if (operation.action === "configure") requireConfirmation(operation);
+				if (operation.action !== "update_milestone" && typeof operation.title !== "string") {
+					throw validationError("title is required.", { fields: ["title"] });
+				}
+				if (operation.action === "update_milestone" && !operation.id) {
+					throw validationError("id is required for project update_milestone.", { fields: ["id"] });
+				}
+				const input = { title: operation.title, description: operation.description };
+				const outcome =
+					operation.action === "configure"
+						? await configureProject(
+								projectPath,
+								{ ...input, title: operation.title as string, repositories: operation.repositories },
+								options,
+							)
+						: operation.action === "add_milestone"
+							? await addMilestone(projectPath, { ...input, title: operation.title as string }, options)
+							: await updateMilestone(projectPath, operation.id as string, input, options);
+				const { revision, changed, milestone, project } = outcome;
+				return {
+					result: {
+						scope: "project",
+						action: operation.action,
+						...(operation.action === "configure" ? { project } : { milestone }),
+					},
+					revision,
+					changed,
+				};
+			}
+			case "assign_milestone": {
+				if (!operation.id || typeof operation.milestoneId !== "string") {
+					throw validationError("id and milestoneId are required for project assign_milestone.", {
+						fields: ["id", "milestoneId"],
+					});
+				}
+				const { goal, revision, changed } = await assignTaskMilestone(
+					projectPath,
+					operation.id,
+					operation.milestoneId,
+					options,
+				);
+				return {
+					result: { scope: "project", action: operation.action, goal },
+					revision,
+					changed,
+					changedGoalIds: changed ? [goal.id] : [],
+				};
+			}
 			case "list": {
 				const { goals, revision } = await readProjectGoals(projectPath);
 				const projectGoalList = projectProjectGoalList(goals, revision, {
@@ -1433,6 +1544,11 @@ export class WorklistApplicationService {
 					`Unknown project action: ${operation.action}.`,
 					{
 						supportedActions: [
+							"structure",
+							"configure",
+							"add_milestone",
+							"update_milestone",
+							"assign_milestone",
 							"add",
 							"apply-plan",
 							"archive",
@@ -1734,7 +1850,7 @@ export class WorklistApplicationService {
 		if (!projectPath) {
 			throw createApplicationError(
 				WORKLIST_ERROR_CODES.UNAVAILABLE,
-				"Project goals require a git repository. Session tasks are still available outside git.",
+				"Project tasks require a Git repository or an explicit STEPSTONE_WORKLIST store. Session tasks are still available outside Git.",
 				{ resolution: "run-inside-git-repository" },
 			);
 		}

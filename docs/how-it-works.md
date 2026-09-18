@@ -2,7 +2,12 @@
 
 # How Stepstone works
 
-A Project Goal is a broad outcome with a title, an optional description, a status, and a slug ID.
+A project is a larger effort with zero or more repository links.
+A milestone is a meaningful outcome.
+A task is actionable work. Existing Project Goals are tasks and keep their IDs.
+See [organization.md](organization.md) for the model and interface compatibility.
+
+A task has a title, an optional description, a status, and a slug ID.
 Stepstone derives the ID from the title and then freezes it.
 A reference in a commit message or pull request stays valid after a rename.
 

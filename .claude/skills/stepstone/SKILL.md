@@ -39,12 +39,13 @@ An empty ready frontier is a valid result, not an error.
 
 ## Change a goal safely
 
+- Read `structure` before an organization change. Pass its `meta.revisions.project` as `--expect-revision` to `configure`, `add_milestone`, `update_milestone`, or `assign_milestone`.
 - Read an existing goal with `show` before changing it. Pass its `updatedAt` as `--expect-updated-at` on actions that accept it. `move` does not accept that flag.
 - Put a new title before `--description`. Quote the whole description as one argument. Use `--append-description` to add a paragraph without replacing stored text. Do not combine an append with a title change.
 - Dependency and link updates replace their complete sets. Pass every desired `--depends-on` or `--link`; an empty value alone clears the set.
 - `dependsOn` means must land first, including goals that touch the same files. Roadmap order does not determine readiness.
 - Read created IDs and changed state from mutation receipts. Do not run `list` merely to verify success.
-- `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` require explicit user intent for that exact action and target. Pass `--confirm` only with that authorization. Never infer completion from apparent progress.
+- `configure`, `complete`, `reopen`, `archive`, `delete`, `migrate_ids`, and `migrate_path` require explicit user intent for that exact action and target. Pass `--confirm` only with that authorization. Never infer completion from apparent progress.
 - Never run `ui`. It takes over the terminal. Suggest it only for a human to run.
 - Write the committed roadmap from the main worktree, not a linked worktree.
 

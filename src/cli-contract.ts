@@ -126,6 +126,24 @@ export const CLI_COMMAND_CONTRACT = {
 		sourceNodeFloor: "22.18",
 	},
 	actions: [
+		{ name: "structure", usage: "structure", summary: "Show the project, milestones, and tasks" },
+		{
+			name: "configure",
+			usage: "configure <title...> --confirm",
+			summary: "Configure a project and explicitly upgrade legacy goals to tasks",
+			confirmRequired: true,
+		},
+		{ name: "add_milestone", usage: "add_milestone <title...>", summary: "Add a meaningful project outcome" },
+		{
+			name: "update_milestone",
+			usage: "update_milestone <id> [title...]",
+			summary: "Update a milestone title or description",
+		},
+		{
+			name: "assign_milestone",
+			usage: "assign_milestone <id> --milestone <id>",
+			summary: "Assign a task to a milestone; an empty milestone clears the assignment",
+		},
 		{
 			name: "list",
 			usage: "list",
@@ -165,7 +183,7 @@ export const CLI_COMMAND_CONTRACT = {
 		{
 			name: "web",
 			usage: "web [--port <number>] [--no-open]",
-			summary: "Open the local goal editor (canonical roadmap only; no path overrides)",
+			summary: "Open the local task editor for the canonical roadmap or an explicit store",
 			interactive: true,
 		},
 		{
@@ -305,7 +323,7 @@ export const CLI_COMMAND_CONTRACT = {
 			usage: "--description <text>",
 			summary:
 				"Set the whole description from one argv token; order-independent and preferred for agents and scripts; a new update title must come before it, and an add title must not straddle it",
-			actions: ["add", "update"],
+			actions: ["add", "update", "configure", "add_milestone", "update_milestone"],
 		},
 		{
 			name: "--append-description",
@@ -343,6 +361,19 @@ export const CLI_COMMAND_CONTRACT = {
 			actions: ["add", "update"],
 		},
 		{
+			name: "--repository",
+			usage: "--repository <url>",
+			summary:
+				"Replace the project repository URLs; repeat for several, or use an empty value alone to clear all",
+			actions: ["configure"],
+		},
+		{
+			name: "--milestone",
+			usage: "--milestone <id>",
+			summary: "Set the task milestone; an empty value clears it",
+			actions: ["assign_milestone"],
+		},
+		{
 			name: "--branch",
 			usage: "--branch <name>",
 			summary: "Record the branch working on a goal; project start defaults to the current Git branch",
@@ -355,10 +386,25 @@ export const CLI_COMMAND_CONTRACT = {
 			actions: ["start"],
 		},
 		{
+			name: "--expect-revision",
+			usage: "--expect-revision <revision>",
+			summary: "Refuse the organization change unless the store revision matches the last read",
+			actions: ["configure", "add_milestone", "update_milestone", "assign_milestone"],
+		},
+		{
 			name: "--expect-updated-at",
 			usage: "--expect-updated-at <timestamp>",
 			summary: "Refuse the change as a conflict unless the goal's updatedAt still matches this value",
-			actions: ["update", "start", "set_active", "complete", "reopen", "archive", "delete"],
+			actions: [
+				"update",
+				"start",
+				"set_active",
+				"complete",
+				"reopen",
+				"archive",
+				"delete",
+				"assign_milestone",
+			],
 		},
 		{
 			name: "--dry-run",
@@ -378,7 +424,7 @@ export const CLI_COMMAND_CONTRACT = {
 	 */
 	pathRules: [
 		`The goal file is \`<git-root>/${WORKLIST_RELATIVE_PATH}\`, a directory rather than a bare dotfile so later local state has somewhere to live beside the committed roadmap.`,
-		`The web application uses only the canonical repository roadmap and rejects path overrides. Other roadmap interfaces use one goal-file resolution order, in the CLI, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
+		`The web application accepts an explicit store. Without an override it uses the canonical roadmap in the main worktree. Roadmap interfaces use one goal-file resolution order, in the CLI, the board, and a live Pi session: an explicit \`--file <path>\` or \`$${WORKLIST_PATH_ENV}\` first, then \`${WORKLIST_RELATIVE_PATH}\`, then the legacy \`${LEGACY_WORKLIST_RELATIVE_PATH}\`.`,
 		`Reads fall back to the legacy path and writes go to whichever path resolved, so a repository holding only \`${LEGACY_WORKLIST_RELATIVE_PATH}\` keeps using it untouched rather than silently splitting into two roadmaps; a repository with neither file writes \`${WORKLIST_RELATIVE_PATH}\`.`,
 		`Linked worktrees may read either committed roadmap, but a mutation that would change \`${WORKLIST_RELATIVE_PATH}\` or \`${LEGACY_WORKLIST_RELATIVE_PATH}\` is refused with the main worktree path; dry runs and semantic no-ops remain allowed because they cannot fork the roadmap.`,
 		`A repository whose main worktree holds no checkout, which every worktree of a bare clone is, has no sole writer to send anyone to, so a committed roadmap change there is refused naming the Git directory; no \`git worktree add\` gives such a repository a main worktree, so the ways out are restoring one that was removed, working in a clone that has one, or keeping that roadmap in a \`--file\` or \`$${WORKLIST_PATH_ENV}\` store.`,
@@ -400,6 +446,10 @@ export const CLI_COMMAND_CONTRACT = {
 	],
 	/** Bounded machine output rules for reads and mutation receipts. */
 	resultRules: [
+		"Projects are larger efforts. Milestones are meaningful outcomes. Tasks are actionable work. The existing `project` task actions and goal result fields remain compatible.",
+		"`structure` returns `result.projectStructure` with project metadata, milestones, tasks, and retired task IDs. Legacy stores have no configured project until `configure --confirm` upgrades them.",
+		"`configure` sets a required project title and optional description and repository URLs. Repository URLs replace the complete set. Projects can have zero or several repositories. Use an explicit `--file` or `$STEPSTONE_WORKLIST` outside Git.",
+		"`add_milestone` and `update_milestone` return `result.milestone`. `assign_milestone` returns the updated task in the compatible `result.goal` field. Read IDs from receipts.",
 		"Collection reads return the collection they explicitly request: `list`, `find`, and `ready` use `result.goals`, while `waves` uses `result.waves`.",
 		"Project mutations return bounded receipts instead of the complete post-mutation roadmap. Single-goal mutations use `result.goal`, `delete` uses `result.deletedGoalId`, and `apply-plan` uses `result.addedGoals`.",
 		"Mutation receipts keep change status, changed entity IDs, and the resulting revision in `meta`; run an explicit read only when later work needs current roadmap state.",
@@ -416,7 +466,7 @@ export const CLI_COMMAND_CONTRACT = {
 		"A goal's ID is derived from its title when the goal is created and frozen from then on, so it reads as words and a later rename never invalidates a reference written down elsewhere.",
 		"A title-derived ID never uses the legacy random-ID shape, so `migrate_ids` can identify generated IDs without consulting a title that may have changed.",
 		"Read an ID back from `list`, `find`, or `add` instead of deriving it from a title yourself: truncation and collision suffixes make a guessed slug unreliable.",
-		"Every `<id>` argument also accepts a unique prefix of an ID, or an ID the goal answered to before `migrate_ids` renamed it.",
+		"Task ID arguments also accept a unique prefix or a former ID from before `migrate_ids`. Milestone IDs must match exactly.",
 		"An ambiguous prefix is refused with the goals it matched instead of resolved by guesswork, so widen the prefix rather than retrying it.",
 		"Deleting a goal permanently retires its current and former IDs: they stop resolving, but no later goal can claim them and inherit stale references.",
 		"`find <text>` searches titles and descriptions, so locating a goal never needs `list --json` plus client-side filtering.",
@@ -497,7 +547,7 @@ export const CLI_COMMAND_CONTRACT = {
 		"Use `--description <text>` and `--append-description <text>` for every programmatic description input; reserve the -- separator for a human typing prose interactively.",
 		"Read the CLI's own exit code rather than a shell pipeline's; a known flag after the description separator is a usage error with exit code 2.",
 		"Never run ui: it is an interactive board for a human, it holds the terminal until they quit, and it refuses to start without one.",
-		"Never pass --confirm for complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.",
+		"Never pass --confirm for configure, complete, reopen, archive, delete, migrate_ids, or migrate_path unless the user explicitly requested that exact action.",
 		"Treat exit code 3 as a request for explicit user confirmation, not as a retryable failure.",
 		"Treat exit code 4 as a concurrent-change conflict: re-read current state before retrying.",
 		"Use list for orientation, `find <text>` to locate a goal by wording, and `show <id>` when you need a goal's complete description.",
@@ -513,6 +563,7 @@ export const CLI_COMMAND_CONTRACT = {
 		"Record a real must-land-before relationship with `--depends-on <id>`, including one that exists only because two goals would collide in the same files; do not add an edge merely to justify the order the file happens to be in.",
 		"Send the complete set of edges on every --depends-on update, because it replaces the stored set rather than adding to it.",
 		"Send the complete set of URLs on every --link update, because it replaces the stored set rather than adding to it.",
+		"Read structure before an organization change. Pass --expect-revision with meta.revisions.project from that read to configure, add_milestone, update_milestone, or assign_milestone.",
 		"Pass --expect-updated-at with the updatedAt from your own read whenever you change a goal, so your mutation conflicts if the goal changed in the meantime.",
 	],
 } as const;
@@ -671,6 +722,7 @@ export function renderSkillMarkdown(): string {
 		"",
 		"## Change a goal safely",
 		"",
+		"- Read `structure` before an organization change. Pass its `meta.revisions.project` as `--expect-revision` to `configure`, `add_milestone`, `update_milestone`, or `assign_milestone`.",
 		"- Read an existing goal with `show` before changing it. Pass its `updatedAt` as `--expect-updated-at` on actions that accept it. `move` does not accept that flag.",
 		"- Put a new title before `--description`. Quote the whole description as one argument. Use `--append-description` to add a paragraph without replacing stored text. Do not combine an append with a title change.",
 		"- Dependency and link updates replace their complete sets. Pass every desired `--depends-on` or `--link`; an empty value alone clears the set.",
