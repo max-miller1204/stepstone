@@ -9,11 +9,12 @@ body{font:16px system-ui,sans-serif;background:#f4f5f7;color:#17212b;margin:0}ma
 <section id="login"><form id="connect"><label for="token">Server credential</label><input id="token" type="password" autocomplete="off" required><button>Connect</button></form></section>
 <p id="connection" role="status">Disconnected</p><p id="notice" role="alert"></p>
 <section id="project" hidden><h2 id="title"></h2><p id="identity"></p><button id="refresh">Refresh snapshot</button><button id="pause">Disconnect events</button><button id="resume" disabled>Resume events</button>
+<p id="pending" hidden><span id="pending-status"></span> <button id="retry" type="button">Retry pending change</button></p>
 <form id="add"><label for="task-title">New task</label><input id="task-title" required maxlength="200"><button>Add task</button></form><ul id="tasks"></ul></section></main>
 <script type="module">
-import { CollaborationClient } from '/client.js';
+import { CollaborationClient, CollaborationRequestError } from '/client.js';
 const el = id => document.getElementById(id);
-let client, snapshot, stream, cursor = 0;
+let client, snapshot, stream, pending, sending = false, uncertain = false, cursor = 0;
 const fail = error => { el('notice').textContent = error.message; };
 function render() {
  el('project').hidden = false;
@@ -31,6 +32,13 @@ function render() {
   }
   el('tasks').append(row);
  }
+ updateControls();
+}
+function updateControls() {
+ for (const control of document.querySelectorAll('#add input, #add button, #tasks button')) control.disabled = Boolean(pending);
+ el('pending').hidden = !pending;
+ el('pending-status').textContent = sending ? 'Sending change.' : 'The result is not confirmed. Retry this change before making another.';
+ el('retry').disabled = sending;
 }
 async function refresh() {
  const next = await client.snapshot();
@@ -38,8 +46,24 @@ async function refresh() {
  snapshot = next; cursor = next.cursor; render();
 }
 async function send(operation) {
- el('notice').textContent = '';
- await client.command({version:1,commandId:crypto.randomUUID(),projectId:snapshot.projectId,expectedRevision:snapshot.revision,...operation});
+ if (pending) throw new Error('Retry the pending change before making another.');
+ uncertain = false;
+ pending = Object.freeze({version:1,commandId:crypto.randomUUID(),projectId:snapshot.projectId,expectedRevision:snapshot.revision,...operation});
+ await submitPending();
+}
+async function submitPending() {
+ if (!pending || sending) return;
+ const command = pending;
+ sending = true; el('notice').textContent = ''; updateControls();
+ try {
+  await client.command(command);
+  pending = undefined;
+  if (command.action === 'add') el('task-title').value = '';
+ } catch(error) {
+  if (error instanceof CollaborationRequestError && ((error.status === 409 && error.code === 'REVISION_CONFLICT') || (!uncertain && [400,401,403,404,409,413,415].includes(error.status)))) pending = undefined;
+  else uncertain = true;
+  throw error;
+ } finally { sending = false; updateControls(); }
  await refresh();
 }
 async function subscribe() {
@@ -54,7 +78,8 @@ async function subscribe() {
  finally { if (stream === controller) { el('connection').textContent = 'Events disconnected'; el('pause').disabled = true; el('resume').disabled = false; } }
 }
 el('connect').onsubmit = async event => { event.preventDefault(); try { client = new CollaborationClient(location.origin, el('token').value); await refresh(); el('login').hidden = true; el('token').value = ''; subscribe(); } catch(error) { fail(error); } };
-el('add').onsubmit = async event => { event.preventDefault(); try { await send({action:'add',title:el('task-title').value}); el('task-title').value = ''; } catch(error) { fail(error); } };
+el('add').onsubmit = async event => { event.preventDefault(); try { await send({action:'add',title:el('task-title').value}); } catch(error) { fail(error); } };
+el('retry').onclick = () => submitPending().catch(fail);
 el('refresh').onclick = () => refresh().catch(fail);
 el('pause').onclick = () => stream?.abort();
 el('resume').onclick = () => { el('notice').textContent = ''; subscribe(); };

@@ -24,10 +24,10 @@
 		"statements": 0
 	},
 	"src/collaboration-client.ts": {
-		"lines": 91.66,
-		"branches": 78.26,
+		"lines": 93.02,
+		"branches": 83.33,
 		"functions": 100,
-		"statements": 87.5
+		"statements": 89.36
 	},
 	"src/collaboration-page.ts": {
 		"lines": 100,
@@ -210,9 +210,9 @@
 		"statements": 100
 	},
 	"total": {
-		"lines": 81.47,
-		"branches": 73.3,
-		"functions": 87.3,
-		"statements": 79.68
+		"lines": 81.5,
+		"branches": 73.35,
+		"functions": 87.31,
+		"statements": 79.7
 	}
 }

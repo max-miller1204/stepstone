@@ -4,8 +4,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
-import { CollaborationClient } from "../src/collaboration-client.ts";
+import { createContext, runInContext } from "node:vm";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CollaborationClient, CollaborationRequestError } from "../src/collaboration-client.ts";
+import { COLLABORATION_PAGE } from "../src/collaboration-page.ts";
 import type { CollaborationCommand, CollaborationSnapshot } from "../src/collaboration-protocol.ts";
 import { CollaborationService } from "../src/collaboration-protocol.ts";
 import { startCollaborationServer } from "../src/collaboration-server.ts";
@@ -204,4 +206,170 @@ describe("collaboration HTTP protocol", () => {
 			stderr: expect.stringContaining("Configured collaboration server is unavailable"),
 		});
 	});
+});
+
+function browserHarness(
+	initial: CollaborationSnapshot,
+	transport: Pick<CollaborationClient, "snapshot" | "command">,
+) {
+	const elements = new Map<
+		string,
+		{
+			textContent: string;
+			value: string;
+			disabled: boolean;
+			hidden: boolean;
+			append(...children: unknown[]): void;
+			replaceChildren(): void;
+		}
+	>();
+	const element = () => ({
+		textContent: "",
+		value: "",
+		disabled: false,
+		hidden: false,
+		append(..._children: unknown[]) {},
+		replaceChildren() {},
+	});
+	const get = (id: string) => {
+		const existing = elements.get(id);
+		if (existing) return existing;
+		const created = element();
+		elements.set(id, created);
+		return created;
+	};
+	const context = createContext({
+		initial,
+		transport,
+		CollaborationClient,
+		CollaborationRequestError,
+		crypto: { randomUUID },
+		document: {
+			getElementById: get,
+			createElement: element,
+			querySelectorAll: () => [get("task-title"), get("add-button")],
+		},
+	});
+	const script = COLLABORATION_PAGE.split('<script type="module">')[1]
+		.split("</script>")[0]
+		.replace(/^import .*;$/m, "");
+	runInContext(script, context);
+	runInContext("snapshot = initial; client = transport; render();", context);
+	return { get, run: (code: string) => runInContext(code, context) };
+}
+
+describe("browser command recovery", () => {
+	it("retries the original command after a lost response and an SSE snapshot refresh", async () => {
+		const { client, snapshot } = await fixture();
+		const commands: CollaborationCommand[] = [];
+		let loseResponse = true;
+		const browser = browserHarness(snapshot, {
+			snapshot: () => client.snapshot(),
+			command: async (command) => {
+				commands.push(structuredClone(command));
+				if (commands.length === 2)
+					throw new CollaborationRequestError(403, "Credential no longer permits writes");
+				const receipt = await client.command(command);
+				if (loseResponse) {
+					loseResponse = false;
+					throw new Error("Response lost after commit");
+				}
+				return receipt;
+			},
+		});
+		browser.get("task-title").value = "Only once";
+		await expect(browser.run("send({action:'add',title:'Only once'})")).rejects.toThrow("Response lost");
+		expect(browser.get("retry").disabled).toBe(false);
+		expect(browser.get("pending").hidden).toBe(false);
+		expect(browser.get("task-title").disabled).toBe(true);
+		await browser.run("refresh()");
+		await expect(browser.run("send({action:'add',title:'Another change'})")).rejects.toThrow(
+			"pending change",
+		);
+		await expect(browser.run("submitPending()")).rejects.toThrow("403");
+		expect(browser.get("pending").hidden).toBe(false);
+		await browser.run("submitPending()");
+		expect(commands).toHaveLength(3);
+		expect(commands[1]).toEqual(commands[0]);
+		expect(commands[2]).toEqual(commands[0]);
+		const current = await client.snapshot();
+		expect(current.tasks).toHaveLength(1);
+		expect(current.cursor).toBe(1);
+		expect(browser.get("task-title").value).toBe("");
+		expect(browser.get("task-title").disabled).toBe(false);
+		expect(browser.get("pending").hidden).toBe(true);
+	});
+
+	it("releases an uncertain command when retry proves it never committed", async () => {
+		const { client, snapshot } = await fixture();
+		const commands: CollaborationCommand[] = [];
+		let dropRequest = true;
+		const browser = browserHarness(snapshot, {
+			snapshot: () => client.snapshot(),
+			command: (command) => {
+				commands.push(structuredClone(command));
+				if (dropRequest) {
+					dropRequest = false;
+					return Promise.reject(new Error("Connection failed before sending"));
+				}
+				return client.command(command);
+			},
+		});
+		browser.get("task-title").value = "My task";
+		await expect(browser.run("send({action:'add',title:'My task'})")).rejects.toThrow("before sending");
+		await client.command(add(snapshot, "Other client"));
+		await browser.run("refresh()");
+		await expect(browser.run("submitPending()")).rejects.toMatchObject({
+			status: 409,
+			code: "REVISION_CONFLICT",
+		});
+		expect(commands[1]).toEqual(commands[0]);
+		expect(browser.get("pending").hidden).toBe(true);
+		expect(browser.get("task-title").disabled).toBe(false);
+		expect(browser.get("task-title").value).toBe("My task");
+		await browser.run("send({action:'add',title:'My task'})");
+		expect(commands[2].commandId).not.toBe(commands[0].commandId);
+		expect((await client.snapshot()).tasks.map((task) => task.goal.title)).toEqual([
+			"Other client",
+			"My task",
+		]);
+	});
+
+	it("releases a rejected command and clears an acknowledged add before a failed refresh", async () => {
+		const { client, snapshot } = await fixture();
+		await client.command(add(snapshot, "Concurrent task"));
+		let failRefresh = false;
+		const browser = browserHarness(snapshot, {
+			command: (command) => client.command(command),
+			snapshot: () => (failRefresh ? Promise.reject(new Error("Snapshot unavailable")) : client.snapshot()),
+		});
+		browser.get("task-title").value = "New task";
+		await expect(browser.run("send({action:'add',title:'New task'})")).rejects.toThrow("REVISION_CONFLICT");
+		expect(browser.get("pending").hidden).toBe(true);
+		expect(browser.get("task-title").disabled).toBe(false);
+		await browser.run("refresh()");
+		failRefresh = true;
+		await expect(browser.run("send({action:'add',title:'New task'})")).rejects.toThrow(
+			"Snapshot unavailable",
+		);
+		expect(browser.get("task-title").value).toBe("");
+		expect(browser.get("pending").hidden).toBe(true);
+		expect((await client.snapshot()).tasks).toHaveLength(2);
+	});
+});
+
+describe("invalid server error responses", () => {
+	it.each(["null", "[]", '{"code":17}', "not JSON"])(
+		"fails loudly for %s instead of classifying it as a command refusal",
+		async (body) => {
+			const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(body, { status: 409 }));
+			try {
+				const client = new CollaborationClient("https://review.example", "token");
+				await expect(client.snapshot()).rejects.toThrow();
+				await expect(client.snapshot()).rejects.not.toBeInstanceOf(CollaborationRequestError);
+			} finally {
+				fetchMock.mockRestore();
+			}
+		},
+	);
 });

@@ -5,6 +5,17 @@ import type {
 	CollaborationSnapshot,
 } from "./collaboration-protocol.ts";
 
+/** An HTTP refusal, distinct from an unknown transport outcome. */
+export class CollaborationRequestError extends Error {
+	readonly status: number;
+	readonly code?: string;
+	constructor(status: number, detail: string, code?: string) {
+		super(`Server rejected request (${status}): ${detail}`);
+		this.status = status;
+		this.code = code;
+	}
+}
+
 /** Shared HTTP client for the proof CLI, browser, and agent callers. */
 export class CollaborationClient {
 	readonly url: string;
@@ -42,7 +53,17 @@ export class CollaborationClient {
 			throw new Error(`Configured collaboration server is unavailable: ${this.url}`, { cause });
 		}
 		if (!response.ok) {
-			throw new Error(`Server rejected request (${response.status}): ${await response.text()}`);
+			const detail = await response.text();
+			const failure = JSON.parse(detail) as { code?: unknown } | null;
+			if (
+				!failure ||
+				typeof failure !== "object" ||
+				Array.isArray(failure) ||
+				(failure.code !== undefined && typeof failure.code !== "string")
+			) {
+				throw new Error("The collaboration server returned an invalid error response.");
+			}
+			throw new CollaborationRequestError(response.status, detail, failure.code);
 		}
 		return response;
 	}
