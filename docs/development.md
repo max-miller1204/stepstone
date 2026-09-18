@@ -115,6 +115,10 @@ On Windows the check fails explicitly before setup: [Node cannot launch `.bat` a
 The pre-push gate retains this required check and propagates its failure.
 Real Windows support is a separate decision that requires Windows CI to validate installed shim execution; invoking the JavaScript targets directly would not prove the same behavior.
 
+## Collaboration protocol proof
+
+See [the collaboration decision](collaboration.md) for server authority, command revisions, idempotency, identity history, and SSE recovery. The wave 4 proof uses a separate store. Use a fresh store or a disposable worklist copy. Do not initialize the committed roadmap as a proof store.
+
 ## README screenshots
 
 After a visual change, run:
