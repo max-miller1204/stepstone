@@ -86,3 +86,39 @@ jobs:
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: warn
+
+  authoritative-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18.3
+        env:
+          POSTGRES_PASSWORD: service-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      STEPSTONE_TEST_DATABASE_URL: postgresql://postgres:service-test-only@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: cp npm-shrinkwrap.json package-lock.json && npm ci --ignore-scripts && rm package-lock.json
+      - run: npm run test:service -- --coverage
+      - run: npm run test:service:operations
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: authoritative-service-evidence
+          path: |
+            artifacts/service-operations.json
+            artifacts/service-coverage/
+          retention-days: 14
+          if-no-files-found: error

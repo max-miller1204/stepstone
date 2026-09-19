@@ -54,6 +54,12 @@ export type ProjectMutation<T> = (
 	current: RevisionedProjectWorklist,
 ) => ProjectMutationValue<T> | Promise<ProjectMutationValue<T>>;
 
+/** A private snapshot owned by an outer database transaction. No file I/O occurs. */
+export interface ProjectSnapshotStore {
+	worklist: RevisionedProjectWorklist;
+}
+export type ProjectStoreTarget = string | ProjectSnapshotStore;
+
 interface StagedProjectTransaction {
 	path: string;
 	worklist: RevisionedProjectWorklist;
@@ -382,8 +388,9 @@ function parseProjectWorklist(text: string, path: string): ProjectStoreResult<Re
 }
 
 export async function readProjectWorklist(
-	path: string,
+	path: ProjectStoreTarget,
 ): Promise<ProjectStoreResult<RevisionedProjectWorklist>> {
+	if (typeof path !== "string") return { data: structuredClone(path.worklist) };
 	const staged = stagedProjectTransaction.getStore();
 	if (staged) {
 		if (staged.path !== path) throw new Error("Project transaction path changed.");
@@ -637,24 +644,34 @@ export async function moveProjectWorklist(
 	}
 }
 
+async function mutateSnapshot<T>(
+	staged: ProjectSnapshotStore,
+	mutate: ProjectMutation<T>,
+	options: ProjectMutationOptions,
+): Promise<ProjectStoreResult<T>> {
+	const revision = staged.worklist.revision;
+	if (options.expectedRevision !== undefined && options.expectedRevision !== String(revision))
+		throw new ProjectRevisionConflictError(options.expectedRevision, String(revision));
+	assertGoalPrecondition(staged.worklist, options.expectedGoal);
+	const outcome = await mutate(structuredClone(staged.worklist));
+	if (!isRevisionedProjectWorklist(outcome.worklist))
+		throw new Error("Project mutation produced an invalid worklist.");
+	if (outcome.changed === false) return { data: outcome.result, revision, changed: false };
+	if (!Number.isSafeInteger(revision + 1)) throw new Error("Project revision is exhausted.");
+	staged.worklist = { ...outcome.worklist, revision: revision + 1 };
+	return { data: outcome.result, revision: revision + 1 };
+}
+
 export async function mutateProjectWorklist<T>(
-	path: string,
+	path: ProjectStoreTarget,
 	mutate: ProjectMutation<T>,
 	options: ProjectMutationOptions = {},
 ): Promise<ProjectStoreResult<T>> {
+	if (typeof path !== "string") return mutateSnapshot(path, mutate, options);
 	const staged = stagedProjectTransaction.getStore();
 	if (staged) {
 		if (staged.path !== path) throw new Error("Project transaction path changed.");
-		const revision = staged.worklist.revision;
-		if (options.expectedRevision !== undefined && options.expectedRevision !== String(revision))
-			throw new ProjectRevisionConflictError(options.expectedRevision, String(revision));
-		assertGoalPrecondition(staged.worklist, options.expectedGoal);
-		const outcome = await mutate(structuredClone(staged.worklist));
-		if (!isRevisionedProjectWorklist(outcome.worklist))
-			throw new Error("Project mutation produced an invalid worklist.");
-		if (outcome.changed === false) return { data: outcome.result, revision, changed: false };
-		staged.worklist = { ...outcome.worklist, revision: revision + 1 };
-		return { data: outcome.result, revision: revision + 1 };
+		return mutateSnapshot(staged, mutate, options);
 	}
 	const dir = dirname(path);
 	const refusal = committedRoadmapWriteRefusal(path);

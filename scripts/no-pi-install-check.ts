@@ -395,6 +395,25 @@ async function exerciseCli(binPath: string, workspace: string, version: string):
  */
 const BIN_EXERCISES: Record<string, BinExercise> = {
 	[binary]: exerciseCli,
+	[`${binary}-server`]: async (binPath, workspace) => {
+		const help = await execFileAsync(binPath, ["help"], { cwd: workspace, timeout: CLI_TIMEOUT_MS });
+		assert.match(help.stdout, /migrate/);
+		const credential = await execFileAsync(binPath, ["credential"], {
+			cwd: workspace,
+			timeout: CLI_TIMEOUT_MS,
+		});
+		const parsed = JSON.parse(credential.stdout);
+		assert.match(parsed.token, /^sts_/);
+		assert.equal(parsed.tokenHash.length, 64);
+		await assert.rejects(
+			execFileAsync(binPath, ["migrate"], {
+				cwd: workspace,
+				env: { ...process.env, DATABASE_URL: "" },
+				timeout: CLI_TIMEOUT_MS,
+			}),
+			/DATABASE_URL is required/,
+		);
+	},
 };
 
 if (process.platform === "win32") {

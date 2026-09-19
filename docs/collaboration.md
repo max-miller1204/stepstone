@@ -2,7 +2,7 @@
 
 # Collaboration protocol decision
 
-Status: accepted for the wave 4 protocol proof. The next wave owns the full authoritative collaboration service and migration of existing interfaces.
+Status: accepted for the wave 4 protocol proof. The authoritative service is described in [service operations](service.md). Its goal description defines wave 5 scope. Existing interface and file-project migration belongs to the later migration goal.
 
 ## Decision
 
@@ -24,7 +24,7 @@ Projects, tasks, and actors have immutable IDs. A task belongs to one immutable 
 
 Former task IDs continue to resolve to the same task. Removed task IDs remain retired and cannot identify a new task. Migration must preserve current IDs, former IDs, retired IDs, dependency references, and historical references. It must not mint identity from a title, repository path, Git origin, branch, or worktree.
 
-Production migration of existing worklists is a separate operation for the full service. Proof adoption of a disposable copy does not supply that migration workflow. It must explicitly map each worklist and stored task to immutable identity. Existing `findGoalByStoredId` and `migrateProjectGoalIds` rules remain authoritative for the file model until that migration occurs.
+Production migration of existing worklists belongs to the later migration goal. Proof adoption of a disposable copy does not supply that migration workflow. It must explicitly map each worklist and stored task to immutable identity. Existing `findGoalByStoredId` and `migrateProjectGoalIds` rules remain authoritative for the file model until that migration occurs.
 
 ## Actors and permissions
 
@@ -125,6 +125,6 @@ Automated assertions prove protocol behavior. An inspected browser capture prove
 
 ## Deferred work
 
-The next wave owns the complete authoritative service. Its work includes migration from existing worklists, full domain operation coverage, production persistence, account and membership administration, deployment, and operational policy. The next wave uses PostgreSQL transactions, OIDC users, and scoped service credentials. The proof does not select a deployment vendor or establish production readiness.
+Wave 5 owns the authoritative service: domain operations, production persistence, membership administration, deployment, and operational policy. The later migration goal owns existing worklist import and client migration. The next wave uses PostgreSQL transactions, OIDC users, and scoped service credentials. The proof does not select a deployment vendor or establish production readiness.
 
 Milestones, dependency editing, cross-project behavior, full agent integration, and richer browser workflows must use the same authority and transaction boundaries when they are added. A workspace execution protocol remains outside this decision.

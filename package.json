@@ -34,10 +34,13 @@
 		"!docs/releasing.md",
 		".claude/skills/stepstone",
 		"README.md",
-		"package.json"
+		"package.json",
+		"deploy",
+		"npm-shrinkwrap.json"
 	],
 	"bin": {
-		"stepstone": "dist/cli.js"
+		"stepstone": "dist/cli.js",
+		"stepstone-server": "dist/server-cli.js"
 	},
 	"main": "./src/extension.ts",
 	"exports": {
@@ -80,15 +83,21 @@
 		"pack:check": "npm pack --dry-run",
 		"verify": "npm run check && npm run pack:check && npm run test:mutation",
 		"test:e2e": "node ./scripts/e2e-check.ts",
-		"test:e2e:fast": "node ./scripts/e2e-check.ts --fast"
+		"test:e2e:fast": "node ./scripts/e2e-check.ts --fast",
+		"test:service": "vitest run --config vitest.service.config.ts",
+		"test:service:operations": "node scripts/service-operations-check.ts"
 	},
 	"dependencies": {
+		"jose": "^6.2.12",
+		"pg": "^8.23.0",
 		"proper-lockfile": "^4.1.2",
 		"zod": "^4.4.3"
 	},
 	"bundledDependencies": [
 		"proper-lockfile",
-		"zod"
+		"zod",
+		"pg",
+		"jose"
 	],
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": "*",
@@ -122,6 +131,7 @@
 		"@earendil-works/pi-tui": "*",
 		"@resvg/resvg-js": "2.6.2",
 		"@types/node": "^24.0.0",
+		"@types/pg": "^8.23.1",
 		"@types/proper-lockfile": "^4.1.4",
 		"@vitest/coverage-v8": "^4.1.10",
 		"@xterm/headless": "6.0.0",

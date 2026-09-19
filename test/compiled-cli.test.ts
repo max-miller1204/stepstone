@@ -362,6 +362,7 @@ describe("published stepstone package", () => {
 		expect(packageJson.name).toBe(CLI_COMMAND_CONTRACT.binary);
 		expect(packageJson.bin).toEqual({
 			[CLI_COMMAND_CONTRACT.binary]: "dist/cli.js",
+			[`${CLI_COMMAND_CONTRACT.binary}-server`]: "dist/server-cli.js",
 		});
 		expect(paths).not.toContain("src/dispatch.ts");
 		expect(paths).not.toContain("dist/dispatch.js");

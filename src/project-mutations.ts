@@ -11,6 +11,7 @@ import {
 	mutateProjectWorklist,
 	type ProjectMutationOptions,
 	ProjectMutationRefusedError,
+	type ProjectStoreTarget,
 	type ProjectWorklistMove,
 	readProjectWorklist,
 } from "./project-store.ts";
@@ -139,13 +140,13 @@ export interface ProjectGoalUpdate {
 	dependsOn?: string[];
 }
 
-export async function readProjectGoals(path: string): Promise<ProjectGoalsSnapshot> {
+export async function readProjectGoals(path: ProjectStoreTarget): Promise<ProjectGoalsSnapshot> {
 	const { data, error } = await readProjectWorklist(path);
 	if (error) throw new Error(error);
 	return { goals: data.goals, retiredIds: data.retiredIds ?? [], revision: String(data.revision) };
 }
 
-export async function listProjectGoals(path: string): Promise<ProjectGoal[]> {
+export async function listProjectGoals(path: ProjectStoreTarget): Promise<ProjectGoal[]> {
 	const snapshot = await readProjectGoals(path);
 	return snapshot.goals;
 }
@@ -436,7 +437,7 @@ function normalizeProjectPlan(plan: readonly ProjectGoalPlanEntry[]): Normalized
  * moves it.
  */
 export async function addProjectGoal(
-	path: string,
+	path: ProjectStoreTarget,
 	title: string,
 	draft: ProjectGoalDraft = {},
 	options?: ProjectMutationOptions,
@@ -482,7 +483,7 @@ export async function addProjectGoal(
  * instead of silently wiring the edge to the existing goal.
  */
 export async function applyProjectPlan(
-	path: string,
+	path: ProjectStoreTarget,
 	plan: readonly ProjectGoalPlanEntry[],
 	options: ProjectMutationOptions & { dryRun?: boolean } = {},
 ): Promise<ProjectPlanOutcome> {
@@ -575,7 +576,7 @@ export async function applyProjectPlan(
 }
 
 export async function updateProjectGoal(
-	path: string,
+	path: ProjectStoreTarget,
 	id: string,
 	updates: ProjectGoalUpdate,
 	options?: ProjectMutationOptions,
@@ -632,7 +633,7 @@ export interface ProjectActivationOutcome extends ProjectMutationOutcome {
 }
 
 export async function activateProjectGoal(
-	path: string,
+	path: ProjectStoreTarget,
 	id: string,
 	options?: ProjectMutationOptions,
 ): Promise<ProjectActivationOutcome> {
@@ -708,7 +709,7 @@ export async function activateProjectGoal(
 }
 
 export async function setProjectGoalBranch(
-	path: string,
+	path: ProjectStoreTarget,
 	id: string,
 	branch: string | undefined,
 	options?: ProjectMutationOptions,
@@ -742,7 +743,7 @@ export async function setProjectGoalBranch(
 }
 
 export async function transitionProjectGoal(
-	path: string,
+	path: ProjectStoreTarget,
 	id: string,
 	status: ProjectGoalStatus,
 	options?: ProjectMutationOptions,
@@ -823,7 +824,7 @@ function reorderGoals(
  * with.
  */
 export async function moveProjectGoal(
-	path: string,
+	path: ProjectStoreTarget,
 	id: string,
 	placement: ProjectGoalPlacement,
 	options?: ProjectMutationOptions,
@@ -905,7 +906,7 @@ export interface ProjectDeletionOutcome {
 }
 
 export async function deleteProjectGoal(
-	path: string,
+	path: ProjectStoreTarget,
 	id: string,
 	options?: ProjectMutationOptions,
 ): Promise<ProjectDeletionOutcome> {
@@ -957,7 +958,7 @@ export interface GoalIdMigrationOutcome {
  * a claimed goal so existing claim references remain valid.
  */
 export async function migrateProjectGoalIds(
-	path: string,
+	path: ProjectStoreTarget,
 	options?: ProjectMutationOptions,
 ): Promise<GoalIdMigrationOutcome> {
 	const result = await mutateProjectWorklist(
@@ -1070,7 +1071,7 @@ function structure(worklist: ProjectWorklist): Omit<ProjectStructureSnapshot, "r
 	};
 }
 
-export async function readProjectStructure(path: string): Promise<ProjectStructureSnapshot> {
+export async function readProjectStructure(path: ProjectStoreTarget): Promise<ProjectStructureSnapshot> {
 	const { data, error } = await readProjectWorklist(path);
 	if (error) throw new Error(error);
 	return { ...structure(data), revision: String(data.revision) };
@@ -1122,7 +1123,7 @@ function requireOrganization(
 }
 
 async function mutateStructure(
-	path: string,
+	path: ProjectStoreTarget,
 	mutate: (worklist: RevisionedProjectWorklist) => {
 		worklist: RevisionedProjectWorklist;
 		changed: boolean;
@@ -1148,7 +1149,7 @@ async function mutateStructure(
 
 /** Explicitly upgrade organization metadata without rewriting task identity or history. */
 export async function configureProject(
-	path: string,
+	path: ProjectStoreTarget,
 	configuration: ProjectConfiguration,
 	options?: ProjectMutationOptions,
 ): Promise<ProjectStructureOutcome> {
@@ -1205,7 +1206,7 @@ export async function configureProject(
 }
 
 export async function addMilestone(
-	path: string,
+	path: ProjectStoreTarget,
 	draft: MilestoneDraft,
 	options?: ProjectMutationOptions,
 ): Promise<ProjectStructureOutcome> {
@@ -1235,7 +1236,7 @@ export async function addMilestone(
 }
 
 export async function updateMilestone(
-	path: string,
+	path: ProjectStoreTarget,
 	id: string,
 	updates: Partial<MilestoneDraft>,
 	options?: ProjectMutationOptions,
@@ -1274,7 +1275,7 @@ export async function updateMilestone(
 
 /** An empty milestone ID removes the assignment. Former task IDs remain valid. */
 export async function assignTaskMilestone(
-	path: string,
+	path: ProjectStoreTarget,
 	taskId: string,
 	milestoneId: string,
 	options?: ProjectMutationOptions,
