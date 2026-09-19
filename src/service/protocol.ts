@@ -90,7 +90,6 @@ export const actionSchema = z.discriminatedUnion("action", [
 							description: text.optional(),
 							group: reference.optional(),
 							dependsOn: z.array(reference).optional(),
-							links: z.array(z.url()).optional(),
 						})
 						.strict(),
 				)
