@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -213,7 +213,7 @@ try {
 			{
 				checks: evidence,
 				restored: { projectId: seeded.command.projectId, revision: seeded.receipt.revision },
-				archiveBytes: (await readFile(join(directory, "service.dump"))).length,
+				archiveBytes: (await stat(join(directory, "service.dump"))).size,
 			},
 			null,
 			2,
