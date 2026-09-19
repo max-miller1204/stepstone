@@ -1,0 +1,11 @@
+{
+	"host": "0.0.0.0",
+	"port": 4318,
+	"publicOrigin": "https://stepstone.example.com",
+	"oidc": {
+		"issuer": "https://identity.example.com",
+		"audience": "stepstone",
+		"jwksUri": "https://identity.example.com/.well-known/jwks.json",
+		"administratorSubjects": ["REPLACE_WITH_OIDC_SUBJECT"]
+	}
+}

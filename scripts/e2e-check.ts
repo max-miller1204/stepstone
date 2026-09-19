@@ -69,10 +69,13 @@ async function installed(): Promise<void> {
 		await readFile(join(packagePath, "package.json"), "utf8"),
 	) as typeof manifest;
 	assert.equal(installedManifest.version, manifest.version);
-	assert.deepEqual(Object.keys(installedManifest.bin).sort(), [binary]);
+	assert.deepEqual(Object.keys(installedManifest.bin).sort(), [binary, `${binary}-server`].sort());
 	bins = Object.fromEntries(
 		Object.entries(installedManifest.bin).map(([name, path]) => [name, join(packagePath, path)]),
 	);
+	const serverHelp = await h.run(process.execPath, [bins[`${binary}-server`] as string, "help"], install);
+	assert.equal(serverHelp.code, 0);
+	assert.match(serverHelp.stdout, /serve <config.json>/);
 	const files = await readdir(join(install, "node_modules"), { recursive: true });
 	assert.deepEqual(
 		files.filter((path) => /(^|[/\\])(@earendil-works|typebox)([/\\]|$)/.test(path)),

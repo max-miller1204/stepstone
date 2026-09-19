@@ -51,6 +51,7 @@ import {
 	updateMilestone,
 	updateProjectGoal,
 } from "./project-mutations.ts";
+import type { ProjectSnapshotStore, ProjectStoreTarget } from "./project-store.ts";
 import {
 	ProjectGoalConflictError,
 	type ProjectGoalPrecondition,
@@ -184,6 +185,7 @@ export type WorklistApplicationResult = WorklistApplicationSuccess | WorklistApp
 export interface WorklistApplicationServiceOptions {
 	sessionStore?: SessionStore;
 	projectPath?: string | null;
+	projectStore?: ProjectSnapshotStore;
 }
 
 /**
@@ -808,7 +810,7 @@ function isSessionRevisionConflictError(
 function persistenceError(
 	operation: WorklistOperation,
 	error: unknown,
-	projectPath?: string | null,
+	projectPath?: ProjectStoreTarget | null,
 ): WorklistError {
 	const rawMessage = error instanceof Error ? error.message : String(error);
 	if (
@@ -1020,11 +1022,12 @@ async function deleteSessionTask(
  */
 export class WorklistApplicationService {
 	private readonly options: WorklistApplicationServiceOptions;
-	private resolveProjectPath: ProjectPathResolver;
+	private resolveProjectPath: () => ProjectStoreTarget | null;
 
 	constructor(options: WorklistApplicationServiceOptions) {
 		this.options = options;
-		const configured = options.projectPath ?? null;
+		if (options.projectStore && options.projectPath) throw new Error("Choose one project store.");
+		const configured = options.projectStore ?? options.projectPath ?? null;
 		this.resolveProjectPath = () => configured;
 	}
 
@@ -1048,7 +1051,9 @@ export class WorklistApplicationService {
 			.map((task) => ({ ...task }));
 	}
 
-	async getProjectGoals(projectPath: string | null = this.resolveProjectPath()): Promise<ProjectGoal[]> {
+	async getProjectGoals(
+		projectPath: ProjectStoreTarget | null = this.resolveProjectPath(),
+	): Promise<ProjectGoal[]> {
 		if (!projectPath) return [];
 		try {
 			return await listProjectGoals(projectPath);
@@ -1064,7 +1069,7 @@ export class WorklistApplicationService {
 		// Resolved inside the attempt, because a host that hands over the resolution
 		// can hand over a failure to resolve, and that is this read's outcome rather
 		// than an exception escaping the envelope.
-		let resolved: string | null = null;
+		let resolved: ProjectStoreTarget | null = null;
 		try {
 			resolved = this.resolveProjectPath();
 			const projectPath = this.requireProjectPath(resolved);
@@ -1095,7 +1100,7 @@ export class WorklistApplicationService {
 		operation: WorklistOperation,
 		_context: WorklistOperationContext,
 	): Promise<WorklistApplicationResult> {
-		let resolvedProjectPath: string | null = null;
+		let resolvedProjectPath: ProjectStoreTarget | null = null;
 		try {
 			if (operation.scope === "project") resolvedProjectPath = this.resolveProjectPath();
 			const placement = normalizePlacement(operation);
@@ -1329,7 +1334,7 @@ export class WorklistApplicationService {
 
 	private async executeProject(
 		rawOperation: WorklistOperation,
-		resolvedProjectPath: string | null,
+		resolvedProjectPath: ProjectStoreTarget | null,
 	): Promise<ProjectExecutionResult> {
 		const projectPath = this.requireProjectPath(resolvedProjectPath);
 		rejectUnsupportedProjectOptions(rawOperation);
@@ -1581,7 +1586,7 @@ export class WorklistApplicationService {
 	 * itself reports the miss, which keeps one not-found path instead of two.
 	 */
 	private async withResolvedGoalId(
-		projectPath: string,
+		projectPath: ProjectStoreTarget,
 		operation: WorklistOperation,
 	): Promise<WorklistOperation> {
 		const dependsOn = normalizeDependsOn(operation);
@@ -1625,7 +1630,7 @@ export class WorklistApplicationService {
 	 * and leaves the moved goal's own fields, including its baseline, untouched.
 	 */
 	private async moveProjectGoal(
-		projectPath: string,
+		projectPath: ProjectStoreTarget,
 		operation: WorklistOperation,
 		placement: ProjectGoalPlacement | undefined,
 		options: ProjectMutationOptions,
@@ -1647,7 +1652,7 @@ export class WorklistApplicationService {
 	}
 
 	private async runGoalIdMigration(
-		projectPath: string,
+		projectPath: ProjectStoreTarget,
 		operation: WorklistOperation,
 		options: ProjectMutationOptions,
 	): Promise<ProjectExecutionResult> {
@@ -1673,10 +1678,12 @@ export class WorklistApplicationService {
 	 * answer an ID migration gives when no ID needs rewriting.
 	 */
 	private async runWorklistPathMigration(
-		projectPath: string,
+		projectPath: ProjectStoreTarget,
 		operation: WorklistOperation,
 	): Promise<ProjectExecutionResult> {
 		requireConfirmation(operation);
+		if (typeof projectPath !== "string")
+			throw validationError("Database projects cannot migrate file paths.");
 		const targetPath = operation.targetPath?.trim();
 		if (!targetPath) {
 			throw validationError("targetPath is required for project migrate_path.", {
@@ -1710,7 +1717,7 @@ export class WorklistApplicationService {
 	}
 
 	private async startProjectGoal(
-		projectPath: string,
+		projectPath: ProjectStoreTarget,
 		operation: WorklistOperation,
 		options: ProjectMutationOptions,
 	): Promise<ProjectExecutionResult> {
@@ -1754,7 +1761,7 @@ export class WorklistApplicationService {
 	}
 
 	private async activateProjectGoal(
-		projectPath: string,
+		projectPath: ProjectStoreTarget,
 		operation: WorklistOperation,
 		options: ProjectMutationOptions,
 	): Promise<ProjectExecutionResult> {
@@ -1787,7 +1794,7 @@ export class WorklistApplicationService {
 	}
 
 	private async transitionProjectGoal(
-		projectPath: string,
+		projectPath: ProjectStoreTarget,
 		operation: WorklistOperation,
 		options: ProjectMutationOptions,
 	): Promise<ProjectExecutionResult> {
@@ -1846,7 +1853,9 @@ export class WorklistApplicationService {
 		return this.options.sessionStore;
 	}
 
-	private requireProjectPath(projectPath: string | null = this.resolveProjectPath()): string {
+	private requireProjectPath(
+		projectPath: ProjectStoreTarget | null = this.resolveProjectPath(),
+	): ProjectStoreTarget {
 		if (!projectPath) {
 			throw createApplicationError(
 				WORKLIST_ERROR_CODES.UNAVAILABLE,
