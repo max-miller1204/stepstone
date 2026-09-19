@@ -185,7 +185,13 @@ test("all domain operations use shared validation and preserve identity and reti
 	).taskIds[0];
 	await execute({ action: "update", taskId: first, title: "Renamed" });
 	await execute({ action: "update", taskId: first, appendDescription: "More" });
-	await execute({ action: "move", taskId: second, beforeId: "first" });
+	const moved = await execute({ action: "move", taskId: second, beforeId: "first" });
+	expect(moved.taskIds).toEqual([second]);
+	expect(await service.events(owner, projectId, moved.cursor - 1)).toEqual([moved]);
+	expect((await service.snapshot(owner, projectId)).worklist.goals.map((goal) => goal.id)).toEqual([
+		"second",
+		"first",
+	]);
 	await execute({ action: "set_active", taskId: first });
 	await execute({ action: "start", taskId: first, branch: "feature/test" });
 	await expect(

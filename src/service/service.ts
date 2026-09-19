@@ -301,7 +301,12 @@ export class AuthoritativeService {
 					...state.identities,
 					[goal.id]: previous ? state.identities[previous.id] : randomUUID(),
 				};
-			if (!previous || canonical(previous) !== canonical(goal)) affected.push(state.identities[goal.id]);
+			if (
+				!previous ||
+				canonical(previous) !== canonical(goal) ||
+				result.meta.changedEntities?.projectGoalIds.includes(goal.id)
+			)
+				affected.push(state.identities[goal.id]);
 		}
 		for (const old of before.goals)
 			if (!findGoalByStoredId(state.worklist.goals, old.id, state.worklist.retiredIds ?? []))
