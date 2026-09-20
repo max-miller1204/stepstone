@@ -133,7 +133,7 @@
 		"@types/node": "^24.0.0",
 		"@types/pg": "^8.23.1",
 		"@types/proper-lockfile": "^4.1.4",
-		"@vitest/coverage-v8": "^4.1.10",
+		"@vitest/coverage-v8": "^5.0.0",
 		"@xterm/headless": "6.0.0",
 		"lefthook": "^2.1.10",
 		"typebox": "*",
