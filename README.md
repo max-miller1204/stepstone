@@ -148,3 +148,9 @@ Everything continues here, under a name that does not imply the tool only serves
 ## License
 
 MIT
+
+## Collaboration service
+
+The authoritative service uses PostgreSQL, OIDC users, and scoped service credentials.
+Run the same server locally or on a shared host without a Git checkout.
+See [service installation and operations](docs/service.md).

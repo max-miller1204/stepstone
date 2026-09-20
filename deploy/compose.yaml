@@ -1,0 +1,46 @@
+name: stepstone
+services:
+  database:
+    image: postgres:18.3@sha256:7e32e9833a6fb1c92c32552794cb6ed569d51b445a54907d35fc112ef39684db
+    environment:
+      POSTGRES_DB: stepstone
+      POSTGRES_USER: stepstone
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the private .env file}
+    volumes:
+      - database:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U stepstone -d stepstone']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    image: ${STEPSTONE_IMAGE:?Set STEPSTONE_IMAGE to a versioned server image}
+    command: [migrate]
+    env_file: [service.env]
+    depends_on:
+      database:
+        condition: service_healthy
+  server:
+    image: ${STEPSTONE_IMAGE:?Set STEPSTONE_IMAGE to a versioned server image}
+    command: [serve, /config/server.json]
+    env_file: [service.env]
+    volumes:
+      - ./server.json:/config/server.json:ro
+      - ./backups:/backups
+    ports:
+      - 127.0.0.1:4318:4318
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, 'fetch("http://127.0.0.1:4318/health/ready").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+volumes:
+  database:

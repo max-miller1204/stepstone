@@ -119,6 +119,13 @@ Real Windows support is a separate decision that requires Windows CI to validate
 
 See [the collaboration decision](collaboration.md) for server authority, command revisions, idempotency, identity history, and SSE recovery. The wave 4 proof uses a separate store. Use a fresh store or a disposable worklist copy. Do not initialize the committed roadmap as a proof store.
 
+## Authoritative service
+
+See [service operations](service.md) for installation, authentication, database migration, backup, restore, and retention.
+Run `npm run test:service -- --coverage` with `STEPSTONE_TEST_DATABASE_URL` set to a disposable PostgreSQL instance.
+Run `npm run test:service:operations` with Docker to verify the packed release and restored state.
+These checks use separate coverage output and do not require PostgreSQL for the existing file and Pi test suite.
+
 ## README screenshots
 
 After a visual change, run:

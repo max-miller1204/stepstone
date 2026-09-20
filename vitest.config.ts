@@ -6,6 +6,7 @@ export default defineConfig({
 		globals: false,
 		environment: "node",
 		include: ["test/**/*.test.ts"],
+		exclude: ["test/service/**"],
 		reporters: ["default", new TestPolicyReporter()],
 		allowOnly: false,
 		passWithNoTests: false,
@@ -15,6 +16,9 @@ export default defineConfig({
 		coverage: {
 			provider: "v8",
 			include: ["src/**/*.ts"],
+			// Service modules have a PostgreSQL coverage gate. The server executable has
+			// packed-install and container backup/restore checks.
+			exclude: ["src/service/**", "src/server-cli.ts"],
 			reporter: ["text", "json-summary"],
 			reportsDirectory: "coverage",
 		},
