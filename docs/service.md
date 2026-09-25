@@ -5,9 +5,15 @@ One PostgreSQL database holds projects, tasks, membership, credentials, current 
 The same server runs on a laptop or a shared host.
 It requires no Git repository, worklist file, dispatch journal, Pi installation, or developer checkout.
 
-The existing file CLI and Pi interfaces remain separate clients of the file model.
-Moving those interfaces and importing existing worklists belong to the later migration goal.
-The wave 4 file proof remains a development proof. Its endpoints and credentials do not select this service.
+When `STEPSTONE_SERVER`, `STEPSTONE_TOKEN`, and `STEPSTONE_PROJECT` are all set, the file CLI, the loopback web application, the terminal board, and the Pi extension use that server project.
+They post domain commands and read snapshots. They do not write the goal file, and they do not fall back to it when the server is unavailable.
+When none of those variables is set, those interfaces keep using the goal file.
+A partial set is an error.
+`--file` and `STEPSTONE_WORKLIST` do not select storage while the server configuration is present.
+`migrate_path` is refused for a server project because there is no goal file to move.
+Session Tasks stay in the Pi session.
+Operator import, documented below, copies a file into the server and leaves that file untouched.
+The wave 4 file proof remains a development proof. Its `/api` endpoints and credentials do not select this service.
 
 ## Install from a release
 
@@ -168,7 +174,7 @@ The source schema in `src/service/protocol.ts` defines the exact accepted payloa
 Lifecycle operations and ID migration require `confirm: true`.
 A client must collect explicit authorization before setting that field.
 The `start` action records branch context only. It does not create a branch or workspace.
-File-path migration, file import, dispatch, and workspace management are not service operations.
+File paths, dispatch, and workspace management are not HTTP operations. Use the operator import command below to copy a worklist.
 
 A PostgreSQL row lock serializes each project's commands and permission changes.
 The service runs domain changes through `WorklistApplicationService` and `src/project-mutations.ts` against a private transaction snapshot.
@@ -280,6 +286,55 @@ Backup archives are independent of live history. Remove old archives only under 
 Neither endpoint returns project data or credentials.
 `stepstone-server verify` checks current projections, task identity, owner membership, event order, and matching receipts in a consistent database snapshot.
 The service returns structured errors and logs unexpected failures without returning database internals to clients.
+
+## Import a repository worklist
+
+The server CLI copies one repository worklist into a project.
+It does not modify the source file. Leave that file as migration evidence.
+Import does not dual-write.
+After import, set `STEPSTONE_SERVER`, `STEPSTONE_TOKEN`, and `STEPSTONE_PROJECT` to the server origin, bearer credential, and project UUID.
+The CLI, loopback browser, and Pi clients then use that project.
+If the server is unavailable, those clients fail and leave the source file untouched.
+
+```sh
+stepstone-server actor "$ISSUER" "$SUBJECT"
+stepstone-server import .worklist/worklist.json \
+  --project "$PROJECT_ID" \
+  --actor "$ACTOR_ID" \
+  --confirm
+```
+
+`--dry-run` reports the decision and writes nothing.
+`--confirm` is required to write.
+Pass a new project UUID to create the project and grant that actor the owner role.
+An existing project must already list that actor as an owner.
+
+Import keeps task order, titles, descriptions, statuses, groups, milestones, repository links, dependency edges, branch claims, informational links, timestamps, former IDs, retired IDs, and additional JSON fields the file already stores.
+Human-facing goal IDs stay the task references.
+The server assigns a new immutable task UUID when a stored ID has not been imported before.
+A later import reuses that UUID when the current ID or a former ID still matches.
+Identity is not derived from a title, path, or Git remote.
+
+The server revision counts commands.
+It is not the file's revision.
+The original file revision is stored beside the projection.
+
+A second import of the same canonical tasks changes nothing and appends no event.
+Comparison ignores the revision number and object key order.
+When the server projection and the file differ, import stops with `DIVERGENT_HISTORY` and leaves both sides unchanged.
+`--replace` is the explicit choice to adopt the file as the new projection.
+That command appends one event, preserves task UUIDs for matching stored IDs, and keeps identities for tasks the file no longer contains.
+It does not merge fields and it does not delete event history.
+
+```sh
+stepstone-server export "$PROJECT_ID" ./stepstone-export.json
+```
+
+Export writes a new worklist file for interchange.
+It refuses a path that already exists.
+The file is not a service backup and not a second writable authority.
+Membership, credentials, events, and receipts stay in the database.
+Restore from a backup remains the recovery path.
 
 ## Verification
 

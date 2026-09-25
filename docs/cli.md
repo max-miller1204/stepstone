@@ -37,6 +37,7 @@ This command does not need a Git repository. Restart the shell after it finishes
 - `--file` and `$STEPSTONE_WORKLIST` are resolved from the process working directory, independently of `--cwd`.
 - `migrate_path` moves a legacy file to `.worklist/worklist.json` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.
 - `migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.
+- When `$STEPSTONE_SERVER`, `$STEPSTONE_TOKEN`, and `$STEPSTONE_PROJECT` are all set, the CLI, the web application, the board, and a live Pi session use that server project for Project Goals. `--file` and `$STEPSTONE_WORKLIST` do not select storage. The goal file is left untouched. A partial set is an error and does not fall back to the file. `migrate_path` is refused because a server project has no goal file to move. Session Tasks stay in the Pi session.
 
 ## Commands
 

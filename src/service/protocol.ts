@@ -17,7 +17,8 @@ export type Scope = z.infer<typeof scopeSchema>;
 const text = z.string().max(32000);
 const title = z.string().trim().min(1).max(500);
 const reference = z.string().min(1).max(200);
-const lifecycle = { taskId: z.uuid(), confirm: z.literal(true) };
+const expectedUpdatedAt = z.string().min(1).max(200).optional();
+const lifecycle = { taskId: z.uuid(), confirm: z.literal(true), expectedUpdatedAt };
 const changes = {
 	title: title.optional(),
 	description: text.optional(),
@@ -38,19 +39,26 @@ export const actionSchema = z.discriminatedUnion("action", [
 		.strict(),
 	z.object({ action: z.literal("add"), ...changes, title }).strict(),
 	z
-		.object({ action: z.literal("update"), taskId: z.uuid(), ...changes, appendDescription: text.optional() })
+		.object({
+			action: z.literal("update"),
+			taskId: z.uuid(),
+			...changes,
+			appendDescription: text.optional(),
+			expectedUpdatedAt,
+		})
 		.strict(),
 	z.object({ action: z.literal("complete"), ...lifecycle }).strict(),
 	z.object({ action: z.literal("reopen"), ...lifecycle }).strict(),
 	z.object({ action: z.literal("archive"), ...lifecycle }).strict(),
 	z.object({ action: z.literal("delete"), ...lifecycle }).strict(),
-	z.object({ action: z.literal("set_active"), taskId: z.uuid() }).strict(),
+	z.object({ action: z.literal("set_active"), taskId: z.uuid(), expectedUpdatedAt }).strict(),
 	z
 		.object({
 			action: z.literal("start"),
 			taskId: z.uuid(),
 			branch: reference.optional(),
 			clear: z.boolean().optional(),
+			expectedUpdatedAt,
 		})
 		.strict(),
 	z
@@ -77,6 +85,7 @@ export const actionSchema = z.discriminatedUnion("action", [
 			action: z.literal("assign_milestone"),
 			taskId: z.uuid(),
 			milestoneId: reference.or(z.literal("")),
+			expectedUpdatedAt,
 		})
 		.strict(),
 	z
@@ -143,7 +152,7 @@ export interface Receipt {
 	actorId: string;
 	revision: number;
 	cursor: number;
-	action: Command["operation"]["action"];
+	action: Command["operation"]["action"] | "import_worklist";
 	taskIds: string[];
 }
 export function hash(value: string): string {

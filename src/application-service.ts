@@ -69,6 +69,13 @@ import {
 	type WorklistError,
 	type WorklistResultMeta,
 } from "./result-envelope.ts";
+import type { ProjectSnapshotResponse } from "./service/project-client.ts";
+import {
+	resolveServerProject,
+	ServerProjectClient,
+	ServerProjectError,
+	sameProjectDomain,
+} from "./service/project-client.ts";
 import type { SessionStore } from "./session-store.ts";
 import type {
 	ProjectGoal,
@@ -186,6 +193,13 @@ export interface WorklistApplicationServiceOptions {
 	sessionStore?: SessionStore;
 	projectPath?: string | null;
 	projectStore?: ProjectSnapshotStore;
+	/**
+	 * Environment that selects a server project. Defaults to `process.env`.
+	 *
+	 * A snapshot store is the authority for the caller that already holds one,
+	 * including the server process itself, so this environment is ignored then.
+	 */
+	env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -1013,6 +1027,114 @@ async function deleteSessionTask(
 	};
 }
 
+const SERVER_TASK_ACTIONS = new Set([
+	"update",
+	"start",
+	"set_active",
+	"set_status",
+	"complete",
+	"reopen",
+	"archive",
+	"delete",
+	"move",
+	"assign_milestone",
+]);
+
+function serverRevision(expected: string | undefined, actual: number): number {
+	// Preview already rejected a baseline that is not the snapshot revision.
+	if (expected === undefined) return actual;
+	return Number(expected);
+}
+
+function taskUuid(snapshot: ProjectSnapshotResponse, reference: string): string {
+	const task = snapshot.tasks.find((item) => item.reference === reference);
+	if (!task) throw notFoundError("project-goal", reference);
+	return task.taskId;
+}
+
+function copyDefined(
+	body: Record<string, unknown>,
+	source: WorklistOperation,
+	keys: (keyof WorklistOperation)[],
+): void {
+	for (const key of keys) {
+		const value = source[key];
+		if (value !== undefined) body[key] = value;
+	}
+}
+
+/**
+ * The service command for a resolved project operation.
+ *
+ * Selectors are already stored goal IDs. The target goal's immutable task UUID
+ * comes from the snapshot. Dependency and placement fields stay human references.
+ */
+function serviceOperation(
+	operation: WorklistOperation,
+	snapshot: ProjectSnapshotResponse,
+): Record<string, unknown> {
+	const action = operation.action === "set_status" ? "set_active" : operation.action;
+	const body: Record<string, unknown> = { action };
+	if (SERVER_TASK_ACTIONS.has(operation.action)) {
+		if (!operation.id) throw validationError("id is required.", { fields: ["id"] });
+		body.taskId = taskUuid(snapshot, operation.id);
+	}
+	if (action === "add" || action === "update") {
+		copyDefined(body, operation, [
+			"title",
+			"description",
+			"appendDescription",
+			"group",
+			"dependsOn",
+			"links",
+		]);
+	}
+	if (EXPECTED_UPDATED_AT_ACTIONS.has(operation.action)) copyDefined(body, operation, ["expectedUpdatedAt"]);
+	if (
+		action === "complete" ||
+		action === "reopen" ||
+		action === "archive" ||
+		action === "delete" ||
+		action === "configure" ||
+		action === "migrate_ids"
+	) {
+		if (operation.confirm === true) body.confirm = true;
+	}
+	if (action === "start") copyDefined(body, operation, ["branch", "clear"]);
+	if (action === "move") copyDefined(body, operation, ["beforeId", "afterId", "direction"]);
+	if (action === "configure") copyDefined(body, operation, ["title", "description", "repositories"]);
+	if (action === "add_milestone" || action === "update_milestone") {
+		copyDefined(body, operation, ["title", "description"]);
+	}
+	if (action === "update_milestone") copyDefined(body, operation, ["id"]);
+	if (action === "assign_milestone") copyDefined(body, operation, ["milestoneId"]);
+	if (action === "apply-plan") copyDefined(body, operation, ["plan"]);
+	return body;
+}
+
+/** Replace previewed goals with the snapshot the server actually stored. */
+function adoptServerProjection(
+	result: WorklistOperationResult,
+	after: ProjectSnapshotResponse,
+): WorklistOperationResult {
+	const goals = after.worklist.goals;
+	const retiredIds = after.worklist.retiredIds ?? [];
+	const find = (id: string) => findGoalByStoredId(goals, id, retiredIds);
+	const next: WorklistOperationResult = { ...result };
+	if (next.goal) {
+		const current = find(next.goal.id);
+		if (current) next.goal = current;
+	}
+	if (next.addedGoals) next.addedGoals = next.addedGoals.map((goal) => find(goal.id) ?? goal);
+	if (next.project && after.worklist.project) next.project = after.worklist.project;
+	if (next.milestone) {
+		const milestone = after.worklist.milestones?.find((item) => item.id === next.milestone?.id);
+		if (milestone) next.milestone = milestone;
+	}
+	if (next.goals) next.goals = goals;
+	return next;
+}
+
 /**
  * Canonical application boundary for every worklist interface.
  *
@@ -1054,6 +1176,11 @@ export class WorklistApplicationService {
 	async getProjectGoals(
 		projectPath: ProjectStoreTarget | null = this.resolveProjectPath(),
 	): Promise<ProjectGoal[]> {
+		const server = this.serverClient();
+		if (server) {
+			const snapshot = await this.readServerSnapshot(server);
+			return snapshot.worklist.goals.map((goal) => ({ ...goal }));
+		}
 		if (!projectPath) return [];
 		try {
 			return await listProjectGoals(projectPath);
@@ -1068,9 +1195,12 @@ export class WorklistApplicationService {
 		const operation: WorklistOperation = { scope: "project", action };
 		// Resolved inside the attempt, because a host that hands over the resolution
 		// can hand over a failure to resolve, and that is this read's outcome rather
-		// than an exception escaping the envelope.
+		// than an exception escaping the envelope. A configured server is asked
+		// before that resolution so a missing checkout cannot send the read to a file.
 		let resolved: ProjectStoreTarget | null = null;
 		try {
+			const server = this.serverClient();
+			if (server) return await this.readServerProject(server, action);
 			resolved = this.resolveProjectPath();
 			const projectPath = this.requireProjectPath(resolved);
 			const { goals, retiredIds, revision } = await readProjectGoals(projectPath);
@@ -1102,7 +1232,8 @@ export class WorklistApplicationService {
 	): Promise<WorklistApplicationResult> {
 		let resolvedProjectPath: ProjectStoreTarget | null = null;
 		try {
-			if (operation.scope === "project") resolvedProjectPath = this.resolveProjectPath();
+			const server = operation.scope === "project" ? this.serverClient() : null;
+			if (operation.scope === "project" && !server) resolvedProjectPath = this.resolveProjectPath();
 			const placement = normalizePlacement(operation);
 			let result: WorklistOperationResult;
 			let changed = false;
@@ -1117,6 +1248,12 @@ export class WorklistApplicationService {
 				sessionRevision = sessionExecution.revision;
 				projectRevision = sessionExecution.projectRevision;
 				changedTaskIds = sessionExecution.changedTaskIds;
+			} else if (operation.scope === "project" && server) {
+				const projectExecution = await this.executeOnServer(server, operation);
+				result = projectExecution.result;
+				changed = projectExecution.changed;
+				projectRevision = projectExecution.revision;
+				changedGoalIds = projectExecution.changedGoalIds;
 			} else if (operation.scope === "project") {
 				const projectExecution = await this.executeProject(operation, resolvedProjectPath);
 				result = projectExecution.result;
@@ -1840,6 +1977,128 @@ export class WorklistApplicationService {
 			changed,
 			changedGoalIds: [goal.id],
 		};
+	}
+
+	/**
+	 * Whether Project Goal operations must use the configured server.
+	 *
+	 * A partial configuration counts: the file is not a fallback, so a board or
+	 * widget must not watch it while the configuration is unfinished.
+	 */
+	usesConfiguredServer(): boolean {
+		if (this.options.projectStore) return false;
+		return resolveServerProject(this.options.env ?? process.env).mode !== "file";
+	}
+
+	private serverClient(): ServerProjectClient | null {
+		if (this.options.projectStore) return null;
+		const resolution = resolveServerProject(this.options.env ?? process.env);
+		if (resolution.mode === "file") return null;
+		if (resolution.mode === "invalid") {
+			throw createApplicationError(WORKLIST_ERROR_CODES.UNAVAILABLE, resolution.message, {
+				resolution: "configure-stepstone-server",
+			});
+		}
+		return new ServerProjectClient(resolution.config);
+	}
+
+	private async readServerSnapshot(server: ServerProjectClient): Promise<ProjectSnapshotResponse> {
+		try {
+			return await server.snapshot();
+		} catch (error) {
+			throw this.serverFailure(error);
+		}
+	}
+
+	private async readServerProject(
+		server: ServerProjectClient,
+		action: string,
+	): Promise<WorklistApplicationResult> {
+		const snapshot = await this.readServerSnapshot(server);
+		return {
+			ok: true,
+			scope: "project",
+			action,
+			result: {
+				scope: "project",
+				action,
+				goals: snapshot.worklist.goals,
+				retiredIds: snapshot.worklist.retiredIds ?? [],
+			},
+			meta: { ...cloneEmptyResultMeta(), revisions: { project: String(snapshot.revision) } },
+		};
+	}
+
+	/**
+	 * Apply one project operation to the configured server.
+	 *
+	 * Reads and dry runs use an in-memory copy of the snapshot. Writes post one
+	 * domain command and then read the snapshot again. The goal file is not
+	 * opened, and a failed post is not repaired from that file.
+	 */
+	private async executeOnServer(
+		server: ServerProjectClient,
+		operation: WorklistOperation,
+	): Promise<ProjectExecutionResult> {
+		if (operation.action === "migrate_path") {
+			throw validationError("Database projects cannot migrate file paths.");
+		}
+		const snapshot = await this.readServerSnapshot(server);
+		const store = { worklist: structuredClone(snapshot.worklist) };
+		const memory = new WorklistApplicationService({ projectStore: store });
+		if (READ_ACTIONS.has(operation.action) || operation.dryRun === true) {
+			const preview = await memory.execute(operation, { source: "cli" });
+			if (!preview.ok) throw new WorklistApplicationError(preview.error);
+			return {
+				result: preview.result,
+				revision: preview.meta.revisions?.project ?? String(snapshot.revision),
+				changed: false,
+			};
+		}
+		const resolved = await memory.withResolvedGoalId(store, operation);
+		const preview = await memory.execute(resolved, { source: "cli" });
+		if (!preview.ok) throw new WorklistApplicationError(preview.error);
+		const expectedRevision = serverRevision(operation.expectedRevision, snapshot.revision);
+		try {
+			await server.command(serviceOperation(resolved, snapshot), expectedRevision);
+		} catch (error) {
+			throw this.serverFailure(error, String(expectedRevision));
+		}
+		const after = await this.readServerSnapshot(server);
+		const changed = !sameProjectDomain(snapshot.worklist, after.worklist);
+		return {
+			result: adoptServerProjection(preview.result, after),
+			revision: String(after.revision),
+			changed,
+			changedGoalIds: changed ? preview.meta.changedEntities?.projectGoalIds : [],
+		};
+	}
+
+	private serverFailure(error: unknown, expectedRevision?: string): Error {
+		if (error instanceof WorklistApplicationError) return error;
+		if (!(error instanceof ServerProjectError)) {
+			return createApplicationError(
+				WORKLIST_ERROR_CODES.UNAVAILABLE,
+				error instanceof Error ? error.message : String(error),
+			);
+		}
+		if (error.code === "REVISION_CONFLICT") {
+			const actual = /Current project revision is (\d+)\.?/.exec(error.message)?.[1] ?? "";
+			return new ProjectRevisionConflictError(expectedRevision ?? "", actual);
+		}
+		if (error.code === "CONFLICT") {
+			const goal = /^Project goal (.+) changed from (.+) to (.+)\.$/.exec(error.message);
+			if (goal?.[1] && goal[2] && goal[3]) return new ProjectGoalConflictError(goal[1], goal[2], goal[3]);
+			return createApplicationError(WORKLIST_ERROR_CODES.CONFLICT, error.message, undefined, true);
+		}
+		if (error.code === "IDEMPOTENCY_CONFLICT") {
+			return createApplicationError(WORKLIST_ERROR_CODES.CONFLICT, error.message, undefined, true);
+		}
+		const known = new Set<string>(Object.values(WORKLIST_ERROR_CODES));
+		if (known.has(error.code)) {
+			return createApplicationError(error.code as WorklistError["code"], error.message);
+		}
+		return createApplicationError(WORKLIST_ERROR_CODES.UNAVAILABLE, error.message);
 	}
 
 	private requireSessionStore(): SessionStore {
