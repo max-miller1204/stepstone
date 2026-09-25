@@ -24,7 +24,7 @@ Projects, tasks, and actors have immutable IDs. A task belongs to one immutable 
 
 Former task IDs continue to resolve to the same task. Removed task IDs remain retired and cannot identify a new task. Migration must preserve current IDs, former IDs, retired IDs, dependency references, and historical references. It must not mint identity from a title, repository path, Git origin, branch, or worktree.
 
-`stepstone-server import` copies one existing worklist into a server project. It preserves stored goal IDs, former IDs, and retired IDs, and it assigns immutable task identities. Proof adoption of a disposable copy does not supply that migration. File CLI, browser, and Pi clients still use the file model, where `findGoalByStoredId` and `migrateProjectGoalIds` remain authoritative. Import does not switch those clients and does not write the source file.
+`stepstone-server import` copies one existing worklist into a server project. It preserves stored goal IDs, former IDs, and retired IDs, and it assigns immutable task identities. Proof adoption of a disposable copy does not supply that migration. The file CLI, loopback browser, and Pi clients use the authoritative server when `STEPSTONE_SERVER`, `STEPSTONE_TOKEN`, and `STEPSTONE_PROJECT` are set. They do not write the goal file and they do not fall back to it. Without that configuration they keep the file model, where `findGoalByStoredId` and `migrateProjectGoalIds` remain authoritative for the file. Import does not write the source file.
 
 ## Actors and permissions
 
@@ -81,7 +81,7 @@ Create a private configuration file with a fresh random token:
 }
 ```
 
-Start the server with `mise exec -- node scripts/collaboration-proof.ts serve <config.json>`. Open its printed URL in a browser. Enter the configured token. In a separate terminal, set `STEPSTONE_SERVER` to that URL and `STEPSTONE_TOKEN` to that token. Run `mise exec -- node scripts/collaboration-proof.ts snapshot` to read the project ID and revision.
+Start the server with `mise exec -- node scripts/collaboration-proof.ts serve <config.json>`. Open its printed URL in a browser. Enter the configured token. In a separate terminal, set `STEPSTONE_SERVER` to that URL and `STEPSTONE_TOKEN` to that token. Run `mise exec -- node scripts/collaboration-proof.ts snapshot` to read the project ID and revision. Those two names are also read by the production CLI. A shell that sets only the proof pair makes `npx -y stepstone@latest project` fail instead of using the goal file, because production access also requires `STEPSTONE_PROJECT`. Unset the pair before a file-mode command.
 
 The `command <command.json>` action reads a command from a file. An add command has this shape:
 

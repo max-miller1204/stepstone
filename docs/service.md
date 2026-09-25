@@ -5,10 +5,15 @@ One PostgreSQL database holds projects, tasks, membership, credentials, current 
 The same server runs on a laptop or a shared host.
 It requires no Git repository, worklist file, dispatch journal, Pi installation, or developer checkout.
 
-The existing file CLI and Pi interfaces remain separate clients of the file model.
-Moving those interfaces onto the server remains a later part of the migration goal.
-Operator import, documented below, copies a file into the server without switching those clients.
-The wave 4 file proof remains a development proof. Its endpoints and credentials do not select this service.
+When `STEPSTONE_SERVER`, `STEPSTONE_TOKEN`, and `STEPSTONE_PROJECT` are all set, the file CLI, the loopback web application, the terminal board, and the Pi extension use that server project.
+They post domain commands and read snapshots. They do not write the goal file, and they do not fall back to it when the server is unavailable.
+When none of those variables is set, those interfaces keep using the goal file.
+A partial set is an error.
+`--file` and `STEPSTONE_WORKLIST` do not select storage while the server configuration is present.
+`migrate_path` is refused for a server project because there is no goal file to move.
+Session Tasks stay in the Pi session.
+Operator import, documented below, copies a file into the server and leaves that file untouched.
+The wave 4 file proof remains a development proof. Its `/api` endpoints and credentials do not select this service.
 
 ## Install from a release
 
@@ -286,8 +291,10 @@ The service returns structured errors and logs unexpected failures without retur
 
 The server CLI copies one repository worklist into a project.
 It does not modify the source file. Leave that file as migration evidence.
-Browser, CLI, and Pi clients continue to use the file.
-Import does not register them with the server, dual-write through them, or fall back to the file when the server is unavailable.
+Import does not dual-write.
+After import, set `STEPSTONE_SERVER`, `STEPSTONE_TOKEN`, and `STEPSTONE_PROJECT` to the server origin, bearer credential, and project UUID.
+The CLI, loopback browser, and Pi clients then use that project.
+If the server is unavailable, those clients fail and leave the source file untouched.
 
 ```sh
 stepstone-server actor "$ISSUER" "$SUBJECT"

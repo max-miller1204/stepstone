@@ -91,6 +91,17 @@ export const LEGACY_WORKLIST_RELATIVE_PATH = `${LEGACY_WORKLIST_DIRECTORY}/${WOR
  */
 export const WORKLIST_PATH_ENV = `${BINARY.toUpperCase().replaceAll("-", "_")}_WORKLIST`;
 
+/**
+ * Environment names that select one server project.
+ *
+ * Derived from the published binary, like the file override. All three must be
+ * set together. None of them means the goal file remains the store.
+ */
+const SERVER_ENV_PREFIX = BINARY.toUpperCase().replaceAll("-", "_");
+export const SERVER_ORIGIN_ENV = `${SERVER_ENV_PREFIX}_SERVER`;
+export const SERVER_TOKEN_ENV = `${SERVER_ENV_PREFIX}_TOKEN`;
+export const SERVER_PROJECT_ENV = `${SERVER_ENV_PREFIX}_PROJECT`;
+
 /** Repository-relative path of the script that writes every generated artifact. */
 export const GENERATOR_PATH = "scripts/generate-docs.ts";
 
@@ -434,6 +445,7 @@ export const CLI_COMMAND_CONTRACT = {
 		`\`--file\` and \`$${WORKLIST_PATH_ENV}\` are resolved from the process working directory, independently of \`--cwd\`.`,
 		`\`migrate_path\` moves a legacy file to \`${WORKLIST_RELATIVE_PATH}\` under the same cross-process lock and atomic replacement as any other write, reporting both paths; it is a location change and leaves the goals, their IDs, and the schema version untouched.`,
 		"`migrate_path --dry-run` reports the move it would make without writing and without `--confirm`, and it refuses to run against an explicitly overridden path, which names a file rather than a repository to migrate.",
+		`When \`$${SERVER_ORIGIN_ENV}\`, \`$${SERVER_TOKEN_ENV}\`, and \`$${SERVER_PROJECT_ENV}\` are all set, the CLI, the web application, the board, and a live Pi session use that server project for Project Goals. \`--file\` and \`$${WORKLIST_PATH_ENV}\` do not select storage. The goal file is left untouched. A partial set is an error and does not fall back to the file. \`migrate_path\` is refused because a server project has no goal file to move. Session Tasks stay in the Pi session.`,
 	],
 	/** Description input rules rendered onto every generated caller surface. */
 	descriptionRules: [
