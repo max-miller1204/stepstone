@@ -6,13 +6,37 @@ import { findGoalByStoredId } from "../goal-selection.ts";
 import { createEmptyWorklist } from "../project-store.ts";
 import type { RevisionedProjectWorklist } from "../types.ts";
 import { transaction } from "./database.ts";
+import {
+	assertImportRequest,
+	assertProjectId,
+	assignImportedIdentities,
+	parseImportWorklist,
+	type WorklistImportInput,
+	worklistFingerprint,
+} from "./import.ts";
 import type { Command, Principal, Receipt, Role, Scope } from "./protocol.ts";
 import { canonical, hash, parseCommand, ServiceError } from "./protocol.ts";
 
+interface ImportSource {
+	fingerprint: string;
+	fileRevision: number;
+}
 interface State {
 	worklist: RevisionedProjectWorklist;
 	/** Includes deleted tasks. Identity can never be reused. */
 	identities: Record<string, string>;
+	/** Last file accepted by operator import. Domain commands leave it in place. */
+	importSource?: ImportSource;
+}
+export interface WorklistImportResult {
+	projectId: string;
+	revision: number;
+	changed: boolean;
+	resolution: "unchanged" | "initial" | "replace-with-file";
+	fingerprint: string;
+	fileRevision: number;
+	taskCount: number;
+	dryRun: boolean;
 }
 export interface Snapshot {
 	version: 1;
@@ -312,6 +336,153 @@ export class AuthoritativeService {
 			if (!findGoalByStoredId(state.worklist.goals, old.id, state.worklist.retiredIds ?? []))
 				affected.push(state.identities[old.id]);
 		return [...new Set(affected)];
+	}
+	/**
+	 * Install a validated worklist snapshot as one command.
+	 *
+	 * Replaying the file through goal mutations would mint new references and
+	 * timestamps. Import keeps the stored history and only borrows the same
+	 * schema, identity, and cycle checks those mutations already enforce.
+	 * The caller reads the file. This method never writes it.
+	 */
+	async importWorklist(input: WorklistImportInput): Promise<WorklistImportResult> {
+		assertImportRequest(input.projectId, input.actorId);
+		const worklist = parseImportWorklist(input.worklist);
+		const fingerprint = worklistFingerprint(worklist);
+		const fileRevision = worklist.revision;
+		const outcome = (
+			resolution: WorklistImportResult["resolution"],
+			revision: number,
+			changed: boolean,
+		): WorklistImportResult => ({
+			projectId: input.projectId,
+			revision,
+			changed,
+			resolution,
+			fingerprint,
+			fileRevision,
+			taskCount: worklist.goals.length,
+			dryRun: input.dryRun,
+		});
+		return transaction(this.pool, async (client) => {
+			await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [input.projectId]);
+			const row = (
+				await client.query("SELECT state, revision FROM stepstone_projects WHERE id=$1 FOR UPDATE", [
+					input.projectId,
+				])
+			).rows[0] as { state: State; revision: string } | undefined;
+			if (!row) {
+				if (input.dryRun) return outcome("initial", 1, true);
+				const imported = this.importedState(worklist, fingerprint, fileRevision, {
+					worklist: createEmptyWorklist(),
+					identities: {},
+				});
+				await this.writeImport(client, input.projectId, input.actorId, 0, imported, true);
+				return outcome("initial", 1, true);
+			}
+			const member = (
+				await client.query("SELECT role FROM stepstone_members WHERE project_id=$1 AND actor_id=$2", [
+					input.projectId,
+					input.actorId,
+				])
+			).rows[0];
+			if (member?.role !== "owner") {
+				throw new ServiceError("FORBIDDEN", "Worklist import requires a project owner.", 403);
+			}
+			const current = Number(row.revision);
+			if (worklistFingerprint(row.state.worklist) === fingerprint)
+				return outcome("unchanged", current, false);
+			if (!input.replace) {
+				const serverFingerprint = worklistFingerprint(row.state.worklist).slice(0, 12);
+				throw new ServiceError(
+					"DIVERGENT_HISTORY",
+					`Server project ${input.projectId} revision ${current} does not match this worklist ` +
+						`(server ${serverFingerprint}, file ${fingerprint.slice(0, 12)}). ` +
+						"Pass --replace to accept the file as the canonical projection. " +
+						"Matching stored goal IDs keep their task identities. The source file is left unchanged.",
+					409,
+				);
+			}
+			if (!Number.isSafeInteger(current + 1)) {
+				throw new ServiceError("REVISION_EXHAUSTED", "Project revision cannot advance.", 409);
+			}
+			if (input.dryRun) return outcome("replace-with-file", current + 1, true);
+			const imported = this.importedState(worklist, fingerprint, fileRevision, row.state);
+			await this.writeImport(client, input.projectId, input.actorId, current, imported, false);
+			return outcome("replace-with-file", current + 1, true);
+		});
+	}
+	private importedState(
+		worklist: RevisionedProjectWorklist,
+		fingerprint: string,
+		fileRevision: number,
+		previous: State,
+	): State {
+		const stored = structuredClone(worklist);
+		const identities = assignImportedIdentities(
+			previous.worklist.goals,
+			previous.worklist.retiredIds ?? [],
+			previous.identities,
+			stored,
+		);
+		return {
+			worklist: stored,
+			identities,
+			importSource: { fingerprint, fileRevision },
+		};
+	}
+	private async writeImport(
+		client: PoolClient,
+		projectId: string,
+		actorId: string,
+		currentRevision: number,
+		state: State,
+		create: boolean,
+	): Promise<void> {
+		const revision = currentRevision + 1;
+		state.worklist.revision = revision;
+		const receipt: Receipt = {
+			version: 1,
+			projectId,
+			commandId: randomUUID(),
+			actorId,
+			revision,
+			cursor: revision,
+			action: "import_worklist",
+			taskIds: state.worklist.goals.map((goal) => state.identities[goal.id]),
+		};
+		const projected = projection(projectId, state);
+		if (create) {
+			await client.query("INSERT INTO stepstone_projects(id,revision,state,projection) VALUES($1,$2,$3,$4)", [
+				projectId,
+				revision,
+				state,
+				projected,
+			]);
+			await client.query("INSERT INTO stepstone_members VALUES($1,$2,'owner')", [projectId, actorId]);
+		} else {
+			await client.query("UPDATE stepstone_projects SET revision=$2,state=$3,projection=$4 WHERE id=$1", [
+				projectId,
+				revision,
+				state,
+				projected,
+			]);
+		}
+		await client.query(
+			"INSERT INTO stepstone_events(project_id,sequence,command_id,actor_id,event) VALUES($1,$2,$3,$4,$5)",
+			[projectId, revision, receipt.commandId, actorId, receipt],
+		);
+		await client.query(
+			"INSERT INTO stepstone_receipts(project_id,command_id,actor_id,fingerprint,result) VALUES($1,$2,$3,$4,$5)",
+			[projectId, receipt.commandId, actorId, hash(canonical(receipt)), receipt],
+		);
+	}
+	async exportWorklist(projectId: string): Promise<RevisionedProjectWorklist> {
+		assertProjectId(projectId);
+		return transaction(this.pool, async (client) => {
+			const row = await this.lock(client, projectId, false);
+			return structuredClone(row.state.worklist);
+		});
 	}
 	async verify(): Promise<void> {
 		await transaction(this.pool, async (client) => {

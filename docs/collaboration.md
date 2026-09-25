@@ -24,7 +24,7 @@ Projects, tasks, and actors have immutable IDs. A task belongs to one immutable 
 
 Former task IDs continue to resolve to the same task. Removed task IDs remain retired and cannot identify a new task. Migration must preserve current IDs, former IDs, retired IDs, dependency references, and historical references. It must not mint identity from a title, repository path, Git origin, branch, or worktree.
 
-Production migration of existing worklists belongs to the later migration goal. Proof adoption of a disposable copy does not supply that migration workflow. It must explicitly map each worklist and stored task to immutable identity. Existing `findGoalByStoredId` and `migrateProjectGoalIds` rules remain authoritative for the file model until that migration occurs.
+`stepstone-server import` copies one existing worklist into a server project. It preserves stored goal IDs, former IDs, and retired IDs, and it assigns immutable task identities. Proof adoption of a disposable copy does not supply that migration. File CLI, browser, and Pi clients still use the file model, where `findGoalByStoredId` and `migrateProjectGoalIds` remain authoritative. Import does not switch those clients and does not write the source file.
 
 ## Actors and permissions
 

@@ -143,7 +143,7 @@ export interface Receipt {
 	actorId: string;
 	revision: number;
 	cursor: number;
-	action: Command["operation"]["action"];
+	action: Command["operation"]["action"] | "import_worklist";
 	taskIds: string[];
 }
 export function hash(value: string): string {

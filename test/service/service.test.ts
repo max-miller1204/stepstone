@@ -1,12 +1,16 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { Pool } from "pg";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { configSchema, createAuthenticator } from "../../src/service/auth.ts";
 import { checkSchema, connectDatabase, migrate, transaction } from "../../src/service/database.ts";
 import { startService } from "../../src/service/http.ts";
+import { loadImportWorklist } from "../../src/service/import.ts";
 import type { Command, Principal } from "../../src/service/protocol.ts";
 import { canonical, hash, oidcActor, parseCommand } from "../../src/service/protocol.ts";
 import { AuthoritativeService } from "../../src/service/service.ts";
@@ -577,4 +581,361 @@ test("credential identity cannot be reused after revocation", async () => {
 		code: "CREDENTIAL_EXISTS",
 	});
 	expect((await service.snapshot(owner, projectId)).revision).toBe(3);
+});
+
+const importedStamp = "2026-01-02T03:04:05.000Z";
+function importedWorklist() {
+	return {
+		version: 2,
+		revision: 4,
+		project: {
+			id: "release-preparation",
+			title: "Release preparation",
+			repositories: ["https://github.com/example/client"],
+			createdAt: importedStamp,
+			updatedAt: importedStamp,
+		},
+		milestones: [
+			{
+				id: "documentation-is-ready",
+				title: "Documentation is ready",
+				createdAt: importedStamp,
+				updatedAt: importedStamp,
+			},
+		],
+		goals: [
+			{
+				id: "review-the-guide",
+				previousIds: ["goal-old-review"],
+				title: "Review the guide",
+				description: "Keep the historical note",
+				status: "done",
+				createdAt: importedStamp,
+				updatedAt: importedStamp,
+				completedAt: importedStamp,
+				group: "Docs",
+				branch: "docs/review",
+				links: ["https://github.com/example/client/pull/1"],
+				milestoneId: "documentation-is-ready",
+				dependsOn: ["ship-the-draft"],
+				externalRef: "issue-9",
+			},
+			{
+				id: "ship-the-draft",
+				title: "Ship the draft",
+				status: "open",
+				createdAt: importedStamp,
+				updatedAt: importedStamp,
+			},
+		],
+		retiredIds: ["removed-task"],
+	};
+}
+
+test("imports file history once and leaves the source file untouched", async () => {
+	const projectId = randomUUID();
+	const directory = await mkdtemp(join(tmpdir(), "stepstone-import-"));
+	const path = join(directory, "worklist.json");
+	await writeFile(path, `${JSON.stringify(importedWorklist())}\n`);
+	const before = await readFile(path);
+	try {
+		const imported = await service.importWorklist({
+			projectId,
+			actorId: owner.actorId,
+			worklist: await loadImportWorklist(path),
+			replace: false,
+			dryRun: false,
+		});
+		expect(imported).toMatchObject({
+			revision: 1,
+			changed: true,
+			resolution: "initial",
+			fileRevision: 4,
+			taskCount: 2,
+			dryRun: false,
+		});
+		expect(await readFile(path)).toEqual(before);
+		const snapshot = await service.snapshot(owner, projectId);
+		expect(snapshot.worklist.goals[0]).toMatchObject({
+			id: "review-the-guide",
+			previousIds: ["goal-old-review"],
+			branch: "docs/review",
+			links: ["https://github.com/example/client/pull/1"],
+			dependsOn: ["ship-the-draft"],
+			completedAt: importedStamp,
+			milestoneId: "documentation-is-ready",
+		});
+		expect((snapshot.worklist.goals[0] as { externalRef?: string }).externalRef).toBe("issue-9");
+		expect(snapshot.worklist.retiredIds).toEqual(["removed-task"]);
+		expect(snapshot.worklist.project?.repositories).toEqual(["https://github.com/example/client"]);
+		expect(snapshot.tasks.map((task) => task.reference)).toEqual(["review-the-guide", "ship-the-draft"]);
+		const stored = (await pool.query("SELECT state FROM stepstone_projects WHERE id=$1", [projectId])).rows[0]
+			.state;
+		expect(stored.importSource).toEqual({ fingerprint: imported.fingerprint, fileRevision: 4 });
+		const again = await service.importWorklist({
+			projectId,
+			actorId: owner.actorId,
+			worklist: importedWorklist(),
+			replace: true,
+			dryRun: false,
+		});
+		expect(again).toMatchObject({ changed: false, resolution: "unchanged", revision: 1 });
+		expect(
+			Number(
+				(await pool.query("SELECT count(*) FROM stepstone_events WHERE project_id=$1", [projectId])).rows[0]
+					.count,
+			),
+		).toBe(1);
+		expect((await service.exportWorklist(projectId)).goals.map((goal) => goal.id)).toEqual([
+			"review-the-guide",
+			"ship-the-draft",
+		]);
+		await service.verify();
+	} finally {
+		await rm(directory, { recursive: true });
+	}
+});
+
+test("refuses a divergent file until replace explicitly adopts it", async () => {
+	const projectId = randomUUID();
+	const worklist = importedWorklist();
+	await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist,
+		replace: false,
+		dryRun: false,
+	});
+	await service.execute(owner, command(projectId, 1, { action: "add", title: "Server only task" }));
+	const before = await service.snapshot(owner, projectId);
+	await expect(
+		service.importWorklist({
+			projectId,
+			actorId: owner.actorId,
+			worklist,
+			replace: false,
+			dryRun: true,
+		}),
+	).rejects.toMatchObject({ code: "DIVERGENT_HISTORY", status: 409 });
+	expect((await service.snapshot(owner, projectId)).revision).toBe(before.revision);
+	const preview = await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist,
+		replace: true,
+		dryRun: true,
+	});
+	expect(preview).toMatchObject({
+		dryRun: true,
+		resolution: "replace-with-file",
+		changed: true,
+		revision: before.revision + 1,
+	});
+	expect((await service.snapshot(owner, projectId)).revision).toBe(before.revision);
+	const replaced = await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist: {
+			...worklist,
+			goals: [
+				{
+					...worklist.goals[0],
+					id: "review-the-manual",
+					previousIds: ["review-the-guide", "goal-old-review"],
+					dependsOn: [],
+				},
+				{
+					id: "publish-notes",
+					title: "Publish notes",
+					status: "open",
+					createdAt: importedStamp,
+					updatedAt: importedStamp,
+				},
+			],
+		},
+		replace: true,
+		dryRun: false,
+	});
+	expect(replaced).toMatchObject({ resolution: "replace-with-file", changed: true });
+	const snapshot = await service.snapshot(owner, projectId);
+	const original = before.tasks.find((task) => task.reference === "review-the-guide");
+	const dropped = before.tasks.find((task) => task.reference === "ship-the-draft");
+	const serverOnly = before.tasks.find((task) => task.reference === "server-only-task");
+	expect(snapshot.tasks.find((task) => task.reference === "review-the-manual")?.taskId).toBe(
+		original?.taskId,
+	);
+	expect(snapshot.tasks.map((task) => task.reference)).toEqual(["review-the-manual", "publish-notes"]);
+	const identities = (await pool.query("SELECT state FROM stepstone_projects WHERE id=$1", [projectId]))
+		.rows[0].state.identities;
+	expect(identities["review-the-guide"]).toBe(original?.taskId);
+	expect(identities["ship-the-draft"]).toBe(dropped?.taskId);
+	expect(identities["server-only-task"]).toBe(serverOnly?.taskId);
+	expect(identities["publish-notes"]).not.toBe(serverOnly?.taskId);
+	await expect(
+		service.importWorklist({
+			projectId,
+			actorId: reader.actorId,
+			worklist,
+			replace: true,
+			dryRun: false,
+		}),
+	).rejects.toMatchObject({ code: "FORBIDDEN" });
+	expect((await service.snapshot(owner, projectId)).revision).toBe(replaced.revision);
+	await service.verify();
+});
+
+test("previews a new import without creating a project and rejects invalid targets", async () => {
+	const projectId = randomUUID();
+	const preview = await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist: importedWorklist(),
+		replace: false,
+		dryRun: true,
+	});
+	expect(preview).toMatchObject({ resolution: "initial", revision: 1, changed: true, dryRun: true });
+	await expect(service.snapshot(owner, projectId)).rejects.toMatchObject({ code: "NOT_FOUND" });
+	const { projectId: existing } = await project();
+	await expect(
+		service.importWorklist({
+			projectId: existing,
+			actorId: owner.actorId,
+			worklist: importedWorklist(),
+			replace: false,
+			dryRun: false,
+		}),
+	).rejects.toMatchObject({ code: "DIVERGENT_HISTORY" });
+	expect((await service.snapshot(owner, existing)).worklist.project?.title).toBe("Service test");
+	await expect(
+		service.importWorklist({
+			projectId: "not-a-uuid",
+			actorId: owner.actorId,
+			worklist: importedWorklist(),
+			replace: false,
+			dryRun: false,
+		}),
+	).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+	await expect(
+		service.importWorklist({
+			projectId,
+			actorId: "not-an-actor",
+			worklist: importedWorklist(),
+			replace: false,
+			dryRun: false,
+		}),
+	).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+	await expect(service.exportWorklist(randomUUID())).rejects.toMatchObject({ code: "NOT_FOUND" });
+	await expect(service.exportWorklist("not-a-uuid")).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+});
+
+test("reuses a task identity when the file adopts a former goal ID", async () => {
+	const projectId = randomUUID();
+	const worklist = importedWorklist();
+	await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist,
+		replace: false,
+		dryRun: false,
+	});
+	const before = await service.snapshot(owner, projectId);
+	const adopted = await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist: {
+			...worklist,
+			goals: [
+				{ ...worklist.goals[0], id: "goal-old-review", previousIds: ["review-the-guide"] },
+				worklist.goals[1],
+			],
+		},
+		replace: true,
+		dryRun: false,
+	});
+	expect(adopted.resolution).toBe("replace-with-file");
+	const snapshot = await service.snapshot(owner, projectId);
+	expect(snapshot.tasks.find((task) => task.reference === "goal-old-review")?.taskId).toBe(
+		before.tasks.find((task) => task.reference === "review-the-guide")?.taskId,
+	);
+	expect(snapshot.tasks.find((task) => task.reference === "ship-the-draft")?.taskId).toBe(
+		before.tasks.find((task) => task.reference === "ship-the-draft")?.taskId,
+	);
+	await service.verify();
+});
+
+test("refuses to replace a project whose revision cannot advance", async () => {
+	const projectId = randomUUID();
+	await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist: importedWorklist(),
+		replace: false,
+		dryRun: false,
+	});
+	const row = (
+		await pool.query("SELECT revision, state, projection FROM stepstone_projects WHERE id=$1", [projectId])
+	).rows[0];
+	const state = structuredClone(row.state);
+	state.worklist.revision = Number.MAX_SAFE_INTEGER;
+	await pool.query("UPDATE stepstone_projects SET revision=$2, state=$3 WHERE id=$1", [
+		projectId,
+		Number.MAX_SAFE_INTEGER,
+		state,
+	]);
+	const changed = importedWorklist();
+	changed.goals[1].title = "Needs a new revision";
+	try {
+		await expect(
+			service.importWorklist({
+				projectId,
+				actorId: owner.actorId,
+				worklist: changed,
+				replace: true,
+				dryRun: true,
+			}),
+		).rejects.toMatchObject({ code: "REVISION_EXHAUSTED" });
+	} finally {
+		await pool.query("UPDATE stepstone_projects SET revision=$2, state=$3, projection=$4 WHERE id=$1", [
+			projectId,
+			row.revision,
+			row.state,
+			row.projection,
+		]);
+	}
+});
+
+test("refuses an import that would alias two goals to one task identity", async () => {
+	const projectId = randomUUID();
+	await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist: importedWorklist(),
+		replace: false,
+		dryRun: false,
+	});
+	const row = (await pool.query("SELECT state FROM stepstone_projects WHERE id=$1", [projectId])).rows[0];
+	const original = structuredClone(row.state);
+	row.state.identities["ship-the-draft"] = row.state.identities["review-the-guide"];
+	await pool.query("UPDATE stepstone_projects SET state=$2 WHERE id=$1", [projectId, row.state]);
+	const changed = importedWorklist();
+	changed.goals[1].title = "Ship a different draft";
+	try {
+		await expect(
+			service.importWorklist({
+				projectId,
+				actorId: owner.actorId,
+				worklist: changed,
+				replace: true,
+				dryRun: false,
+			}),
+		).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+		expect(
+			Number(
+				(await pool.query("SELECT revision FROM stepstone_projects WHERE id=$1", [projectId])).rows[0]
+					.revision,
+			),
+		).toBe(1);
+	} finally {
+		await pool.query("UPDATE stepstone_projects SET state=$2 WHERE id=$1", [projectId, original]);
+	}
 });
