@@ -1,9 +1,9 @@
 {
 	"src/application-service.ts": {
-		"lines": 91.44,
-		"branches": 85.05,
-		"functions": 98.5,
-		"statements": 90.46
+		"lines": 92.81,
+		"branches": 86.29,
+		"functions": 98.79,
+		"statements": 92
 	},
 	"src/bounded-text.ts": {
 		"lines": 95.45,
@@ -12,10 +12,10 @@
 		"statements": 91.66
 	},
 	"src/cli-contract.ts": {
-		"lines": 98.87,
+		"lines": 98.92,
 		"branches": 95.45,
 		"functions": 100,
-		"statements": 99.04
+		"statements": 99.08
 	},
 	"src/cli.ts": {
 		"lines": 0,
@@ -103,15 +103,15 @@
 	},
 	"src/project-mutations.ts": {
 		"lines": 96.57,
-		"branches": 91.89,
+		"branches": 92.13,
 		"functions": 100,
 		"statements": 93.17
 	},
 	"src/project-store.ts": {
-		"lines": 88.42,
-		"branches": 82.09,
-		"functions": 94.44,
-		"statements": 84.51
+		"lines": 89.43,
+		"branches": 83.82,
+		"functions": 94.59,
+		"statements": 85.52
 	},
 	"src/result-envelope.ts": {
 		"lines": 40,
@@ -150,10 +150,10 @@
 		"statements": 87.8
 	},
 	"src/tui/goal-board-runtime.ts": {
-		"lines": 93.75,
-		"branches": 75.47,
+		"lines": 95.36,
+		"branches": 77.87,
 		"functions": 88.88,
-		"statements": 91.7
+		"statements": 93.18
 	},
 	"src/tui/goal-board.ts": {
 		"lines": 94.95,
@@ -198,10 +198,10 @@
 		"statements": 89.41
 	},
 	"src/web-app.ts": {
-		"lines": 85.18,
-		"branches": 77.35,
+		"lines": 85.84,
+		"branches": 78.94,
 		"functions": 87.5,
-		"statements": 81.66
+		"statements": 82.53
 	},
 	"src/web-page.ts": {
 		"lines": 100,
@@ -210,9 +210,9 @@
 		"statements": 100
 	},
 	"total": {
-		"lines": 81.5,
-		"branches": 73.35,
-		"functions": 87.31,
-		"statements": 79.7
+		"lines": 81.82,
+		"branches": 73.67,
+		"functions": 87.45,
+		"statements": 80.09
 	}
 }

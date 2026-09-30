@@ -552,7 +552,7 @@ function serializeJsonValue(value: unknown, level: number, column: number, suffi
 	return `{\n${properties.join(",\n")}\n${"\t".repeat(level)}}`;
 }
 
-function serializeProjectWorklist(worklist: RevisionedProjectWorklist): string {
+export function serializeProjectWorklist(worklist: RevisionedProjectWorklist): string {
 	// Apply JSON's normal omission and conversion rules before the layout pass.
 	const json = JSON.stringify(worklist);
 	if (json === undefined) throw new TypeError("Project worklist cannot be represented as JSON");

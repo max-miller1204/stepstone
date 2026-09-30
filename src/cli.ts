@@ -17,6 +17,7 @@ import {
 	CLI_COMMAND_CONTRACT,
 	type CliFlagContract,
 	renderCliUsage,
+	SERVER_ORIGIN_ENV,
 	WORKLIST_PATH_ENV,
 } from "./cli-contract.ts";
 import { installShellCompletions } from "./completion-installer.ts";
@@ -51,6 +52,7 @@ import {
 	slugifyGoalTitle,
 } from "./goal-selection.ts";
 import { WORKLIST_ERROR_CODES, type WorklistErrorCode, type WorklistResultMeta } from "./result-envelope.ts";
+import { resolveServerProject } from "./service/project-client.ts";
 import { runGoalBoard } from "./tui/goal-board-runtime.ts";
 import { singleLine } from "./tui/text.ts";
 import type {
@@ -1120,7 +1122,7 @@ async function runSetActive(invocation: CliInvocation, service: WorklistApplicat
 async function runInteractiveBoard(
 	invocation: CliInvocation,
 	service: WorklistApplicationService,
-	location: ProjectLocation,
+	location: ProjectLocation | null,
 ): Promise<void> {
 	if (invocation.json) {
 		fail(`project ui is interactive and cannot be combined with --json\n\n${USAGE}`, 2);
@@ -1143,13 +1145,19 @@ async function runInteractiveBoard(
 	// written to stderr is on a buffer the user will not see again until they
 	// quit; it travels with the path. `runGoalBoard` points the service at this
 	// same locator, so what the board shows and what it writes cannot come apart.
+	const remote = service.usesConfiguredServer();
 	await runGoalBoard({
 		service,
-		resolveLocation: createWorklistLocator(location.root, {
-			override: invocation.file,
-			env: process.env,
-		}),
-		repositoryLabel: basename(location.root),
+		resolveLocation: remote
+			? () => ({
+					path: "",
+					notice: "Project goals come from the configured server. The local goal file is not used.",
+				})
+			: createWorklistLocator(location?.root ?? "", {
+					override: invocation.file,
+					env: process.env,
+				}),
+		repositoryLabel: location ? basename(location.root) : "Server project",
 		initialGoals: (envelope.ok ? envelope.result.goals : undefined) ?? [],
 		input: process.stdin,
 		output: process.stdout,
@@ -1157,14 +1165,14 @@ async function runInteractiveBoard(
 	});
 }
 
-async function runWebApplication(invocation: CliInvocation, location: ProjectLocation): Promise<void> {
+async function runWebApplication(invocation: CliInvocation, location: ProjectLocation | null): Promise<void> {
 	if (invocation.json) fail(`project web cannot be combined with --json\n\n${USAGE}`, 2);
 	if (invocation.rest.length > 0) fail(`project web takes no positional arguments\n\n${USAGE}`, 2);
 	if (!process.stdin.isTTY || !process.stdout.isTTY) {
 		fail("project web needs an interactive terminal. Run it from a terminal to keep the server open.", 1);
 	}
 	const app = await startStepstoneWebApp({
-		repositoryRoot: location.root,
+		repositoryRoot: location?.root,
 		worklistOverride: invocation.file,
 		port: invocation.port,
 		openBrowser: !invocation.noOpen,
@@ -1255,8 +1263,16 @@ async function run(invocation: CliInvocation): Promise<void> {
 		process.stdout.write(`${USAGE}\n`);
 		return;
 	}
-	const location = resolveProjectLocation(invocation);
-	const service = new WorklistApplicationService({ projectPath: location.worklist.path });
+	const server = resolveServerProject(process.env);
+	if (server.mode === "invalid") fail(server.message, exitCodeForError(WORKLIST_ERROR_CODES.UNAVAILABLE));
+	const remote = server.mode === "server";
+	if (remote && (invocation.file?.trim() || process.env[WORKLIST_PATH_ENV]?.trim()) && !invocation.json) {
+		process.stderr.write(
+			`${SERVER_ORIGIN_ENV} is configured, so --file and ${WORKLIST_PATH_ENV} do not select storage.\n`,
+		);
+	}
+	const location = remote ? null : resolveProjectLocation(invocation);
+	const service = new WorklistApplicationService(location ? { projectPath: location.worklist.path } : {});
 
 	switch (invocation.action) {
 		case "structure":
@@ -1357,6 +1373,20 @@ async function run(invocation: CliInvocation): Promise<void> {
 			return;
 		}
 		case "migrate_path": {
+			if (!location) {
+				const envelope = await service.execute(
+					{
+						scope: "project",
+						action: "migrate_path",
+						confirm: invocation.confirm,
+						dryRun: invocation.dryRun,
+					},
+					{ source: "cli" },
+				);
+				if (!envelope.ok) throw new WorklistCliFailure(envelope);
+				report(invocation, envelope, "Project worklist path was not migrated.");
+				return;
+			}
 			await runPathMigration(invocation, service, location.worklist);
 			return;
 		}
@@ -1478,8 +1508,8 @@ async function run(invocation: CliInvocation): Promise<void> {
 			let branch = invocation.branch;
 			if (!invocation.clear && branch === undefined) {
 				const current = currentGitBranch(invocation.cwd);
-				if (current.error) throw branchLookupFailure(current.error);
-				branch = current.branch ?? undefined;
+				if (current.error && !remote) throw branchLookupFailure(current.error);
+				branch = current.error ? undefined : (current.branch ?? undefined);
 				if (!branch) {
 					throw new WorklistCliFailure({
 						ok: false,

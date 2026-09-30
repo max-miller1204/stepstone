@@ -229,6 +229,11 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 		const located = locatedProject();
 		announceLocationNotice(ctx, located);
 		await refreshProject(located);
+		renderUi(ctx);
+	}
+
+	function renderUi(ctx: ExtensionContext): void {
+		latestContext = ctx;
 		const lines = buildWidgetLines(applicationService.getSessionTasks(), projectGoals);
 		if (!lines.length) ctx.ui.setWidget(WIDGET_ID, undefined);
 		else if (ctx.mode === "tui") {
@@ -246,7 +251,8 @@ export default function worklistExtension(pi: ExtensionAPI): void {
 
 	async function execute(params: ParsedCommand, ctx: ExtensionContext, source: WorklistOperationSource) {
 		const result = await executeWorklist(params, ctx, { applicationService }, source);
-		await updateUi(ctx);
+		if (params.scope === "session") renderUi(ctx);
+		else await updateUi(ctx);
 		return result;
 	}
 

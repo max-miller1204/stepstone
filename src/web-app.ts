@@ -13,6 +13,7 @@ import {
 	unsatisfiedDependencies,
 } from "./dependencies.ts";
 import { createWorklistLocator, resolveWorktreePlacement } from "./git.ts";
+import { resolveServerProject } from "./service/project-client.ts";
 import { STEPSTONE_WEB_PAGE } from "./web-page.ts";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -107,8 +108,11 @@ function html(token: string): string {
 }
 
 export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions): Promise<StepstoneWebApp> {
+	const configured = resolveServerProject(process.env);
+	if (configured.mode === "invalid") throw new Error(configured.message);
+	const remote = configured.mode === "server";
 	const hasOverride = Boolean(options.worklistOverride?.trim() || process.env[WORKLIST_PATH_ENV]?.trim());
-	if (!hasOverride) {
+	if (!remote && !hasOverride) {
 		if (!options.repositoryRoot)
 			throw new Error("A project outside Git requires --file or STEPSTONE_WORKLIST.");
 		const placement = resolveWorktreePlacement(options.repositoryRoot);
@@ -122,13 +126,18 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 	) {
 		throw new Error("Web app port must be an integer from 0 through 65535.");
 	}
-	const locator = createWorklistLocator(options.repositoryRoot ?? null, {
-		override: options.worklistOverride,
-		env: process.env,
-		overrideBase: options.overrideBase,
-	});
-	const service = new WorklistApplicationService({ projectPath: null });
-	service.setProjectPathResolver(() => locator().path);
+	const service = new WorklistApplicationService({});
+	if (!remote) {
+		const locator = createWorklistLocator(options.repositoryRoot ?? null, {
+			override: options.worklistOverride,
+			env: process.env,
+			overrideBase: options.overrideBase,
+		});
+		service.setProjectPathResolver(() => locator().path);
+	}
+	const repositoryLabel = remote
+		? "Server project"
+		: (options.repositoryRoot?.split("/").at(-1) ?? "Standalone project");
 	const token = randomBytes(32).toString("base64url");
 	let expectedOrigin = "";
 
@@ -169,7 +178,7 @@ export async function startStepstoneWebApp(options: StartStepstoneWebAppOptions)
 				json(response, 200, {
 					ok: true,
 					result: {
-						repositoryLabel: options.repositoryRoot?.split("/").at(-1) ?? "Standalone project",
+						repositoryLabel,
 						revision: snapshot.meta.revisions?.project ?? "0",
 						readyGoalIds: readyGoals(goals, retiredIds).map((goal) => goal.id),
 						goals: goals.map((goal) => ({

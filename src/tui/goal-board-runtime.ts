@@ -137,10 +137,12 @@ function runEditor(argv: string[], file: string): Promise<void> {
 
 export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<void> {
 	const { service, env } = options;
+	const remote = service.usesConfiguredServer();
 	// Pointed here rather than by the caller: every write then lands in the file
 	// the board resolved for its own reads, and no host can wire the two halves
-	// to different answers.
-	service.setProjectPathResolver(() => options.resolveLocation().path);
+	// to different answers. A configured server ignores the path and must not
+	// be pointed at a goal file.
+	if (!remote) service.setProjectPathResolver(() => options.resolveLocation().path);
 	const palette = createPalette(supportsColor(options.output, env));
 	let location = options.resolveLocation();
 	const board = new GoalBoard({
@@ -272,7 +274,7 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 			.then(async () => {
 				if (intent.kind === "reload") {
 					await reload();
-					board.setMessage("Reloaded from disk.", "info");
+					board.setMessage(remote ? "Reloaded from the server." : "Reloaded from disk.", "info");
 					return;
 				}
 				if (intent.kind === "operation") {
@@ -382,14 +384,18 @@ export async function runGoalBoard(options: GoalBoardRuntimeOptions): Promise<vo
 	// A goal file that moved is in another directory, so the watches that would
 	// have reported the next change are watching the wrong one until they follow.
 	retargetWatchers = (directory: string): void => {
-		if (!running || directory === projectDirectory) return;
+		if (remote || !running || directory === projectDirectory) return;
 		projectDirectory = directory;
 		attachParentWatcher();
 		attachProjectWatcher();
 	};
 
-	attachParentWatcher();
-	attachProjectWatcher();
+	// The server has no goal file to watch. Polling still refreshes the snapshot
+	// so a write from another client shows up on the board.
+	if (!remote) {
+		attachParentWatcher();
+		attachProjectWatcher();
+	}
 
 	try {
 		await finished;

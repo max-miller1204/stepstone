@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { link, open, readFile, rm } from "node:fs/promises";
+import { link, open, readFile, rm, writeFile } from "node:fs/promises";
 import { CLI_COMMAND_CONTRACT } from "./cli-contract.ts";
+import { serializeProjectWorklist } from "./project-store.ts";
 import { configSchema } from "./service/auth.ts";
 import { checkSchema, connectDatabase, migrate } from "./service/database.ts";
 import { startService } from "./service/http.ts";
+import { loadImportWorklist, parseServerImportArgs, type ServerImportArgs } from "./service/import.ts";
 import { hash, oidcActor } from "./service/protocol.ts";
 import { AuthoritativeService } from "./service/service.ts";
 
@@ -16,6 +18,9 @@ const usage = `${CLI_COMMAND_CONTRACT.binary}-server <command>
   storage                  Report retained history and storage sizes.
   backup <new-file.dump>    Create a PostgreSQL custom archive with pg_dump.
   restore <file.dump> --confirm  Restore into an empty database with pg_restore.
+  import <file> --project <uuid> --actor <id> (--confirm | --dry-run) [--replace]
+                           Copy one worklist into a server project. The source file stays unchanged.
+  export <uuid> <new-file>  Write the canonical worklist for interchange. Refuses an existing path.
   credential               Generate a service token and its grant fields.
   actor <issuer> <subject>  Calculate an OIDC actor ID for membership commands.
   help                     Show this help.
@@ -64,10 +69,18 @@ async function main(args: string[]): Promise<void> {
 		console.log(JSON.stringify({ actorId: oidcActor(rest[0], rest[1]) }));
 		return;
 	}
+	let importArgs: ServerImportArgs | undefined;
+	let importedWorklist: Awaited<ReturnType<typeof loadImportWorklist>> | undefined;
+	if (command === "import") {
+		importArgs = parseServerImportArgs(rest);
+		importedWorklist = await loadImportWorklist(importArgs.file);
+	}
 	const valid =
 		((command === "serve" || command === "backup") && rest.length === 1) ||
 		(["migrate", "verify", "storage"].includes(command) && rest.length === 0) ||
-		(command === "restore" && rest.length === 2 && rest[1] === "--confirm");
+		(command === "restore" && rest.length === 2 && rest[1] === "--confirm") ||
+		importArgs !== undefined ||
+		(command === "export" && rest.length === 2);
 	if (!valid) throw new Error(usage);
 	const database = process.env.DATABASE_URL;
 	if (!database) throw new Error("DATABASE_URL is required.");
@@ -112,6 +125,26 @@ async function main(args: string[]): Promise<void> {
 			else if (command === "verify") {
 				await service.verify();
 				console.log(JSON.stringify({ ok: true }));
+			} else if (command === "import" && importArgs && importedWorklist) {
+				const result = await service.importWorklist({
+					projectId: importArgs.projectId,
+					actorId: importArgs.actorId,
+					worklist: importedWorklist,
+					replace: importArgs.replace,
+					dryRun: importArgs.dryRun,
+				});
+				console.log(JSON.stringify({ ok: true, ...result }));
+			} else if (command === "export") {
+				const worklist = await service.exportWorklist(rest[0]);
+				try {
+					await writeFile(rest[1], serializeProjectWorklist(worklist), { flag: "wx" });
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+						throw new Error(`Export path ${rest[1]} already exists. Choose a new file.`);
+					}
+					throw error;
+				}
+				console.log(JSON.stringify({ ok: true, path: rest[1], revision: worklist.revision }));
 			} else {
 				const temporary = `${rest[0]}.partial-${randomUUID()}`;
 				const file = await open(temporary, "wx", 0o600);
