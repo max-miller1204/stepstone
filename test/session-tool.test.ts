@@ -900,8 +900,9 @@ describe("registered model tool", () => {
 	function registerExtension() {
 		let tool: Record<string, unknown> | undefined;
 		const handlers = new Map<string, SessionHandler>();
+		const entries: unknown[] = [];
 		const api = {
-			appendEntry: () => {},
+			appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
 			registerTool: (config: Record<string, unknown>) => {
 				tool = config;
 			},
@@ -913,7 +914,7 @@ describe("registered model tool", () => {
 		} as unknown as ExtensionAPI;
 		worklistExtension(api);
 		if (!tool) throw new Error("worklist tool was not registered");
-		return { tool, handlers };
+		return { tool, handlers, entries };
 	}
 
 	it("delivers the complete canonical capture workflow in the model prompt", () => {
@@ -1118,6 +1119,79 @@ describe("registered model tool", () => {
 			},
 		};
 	}
+
+	it.each([
+		{ status: 503, code: "UNAVAILABLE" },
+		{ status: 401, code: "UNAUTHORIZED" },
+	])(
+		"keeps Session Task results independent of a $status project refresh failure",
+		async ({ status, code }) => {
+			const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-server-outage-")));
+			execFileSync("git", ["init", "-q"], { cwd: root });
+			const projectId = "11111111-1111-4111-8111-111111111111";
+			let unavailable = false;
+			const fetchServer = vi.fn(async () =>
+				unavailable
+					? Response.json({ error: { code, message: "Project refresh failed." } }, { status })
+					: Response.json({
+							version: 1,
+							projectId,
+							revision: 1,
+							cursor: 1,
+							worklist: { version: 1, revision: 1, goals: [] },
+							tasks: [],
+						}),
+			);
+			vi.stubEnv("STEPSTONE_SERVER", "http://127.0.0.1:12345");
+			vi.stubEnv("STEPSTONE_TOKEN", "test-token");
+			vi.stubEnv("STEPSTONE_PROJECT", projectId);
+			vi.stubGlobal("fetch", fetchServer);
+			try {
+				const { tool, handlers, entries } = registerExtension();
+				const setWidget = vi.fn();
+				const notify = vi.fn();
+				const sessionContext = {
+					cwd: root,
+					mode: "cli",
+					sessionManager: { getBranch: () => [] },
+					ui: { notify, setWidget },
+				} as unknown as ExtensionContext;
+				const sessionStart = handlers.get("session_start");
+				const contextHandler = handlers.get("context");
+				if (!sessionStart || !contextHandler) throw new Error("Session handlers were not registered");
+				await sessionStart({ reason: "new" }, sessionContext);
+				expect(fetchServer).toHaveBeenCalledTimes(1);
+				unavailable = true;
+				const execute = tool.execute as ToolExecute;
+				const call = (params: Record<string, unknown>) =>
+					execute("call", params, undefined, undefined, sessionContext);
+				const added = (await call({ scope: "session", action: "add", title: "Local work" })) as {
+					details: WorklistOperationResult;
+				};
+				expect(added.details.task?.title).toBe("Local work");
+				expect(entries).toHaveLength(1);
+				expect(entries[0]).toMatchObject({ data: { tasks: [{ title: "Local work", status: "todo" }] } });
+				await call({ scope: "session", action: "set_status", id: added.details.task?.id, status: "doing" });
+				const listed = (await call({ scope: "session", action: "list" })) as {
+					details: WorklistOperationResult;
+				};
+				expect(listed.details.tasks).toHaveLength(1);
+				expect(listed.details.tasks?.[0].status).toBe("doing");
+				expect(setWidget.mock.calls.at(-1)?.[1]).toEqual(
+					expect.arrayContaining([expect.stringContaining("Local work")]),
+				);
+				expect(fetchServer).toHaveBeenCalledTimes(1);
+				await expect(call({ scope: "project", action: "list" })).rejects.toThrow("Project refresh failed.");
+				await expect(contextHandler({ messages: [] }, sessionContext)).rejects.toThrow(
+					"Project refresh failed.",
+				);
+				expect(notify).not.toHaveBeenCalled();
+			} finally {
+				vi.unstubAllGlobals();
+				vi.unstubAllEnvs();
+			}
+		},
+	);
 
 	it("bounds Project Goal list content and details and collapses its transcript rendering", async () => {
 		const root = await realpath(await mkdtemp(join(tmpdir(), "stepstone-tool-bounded-list-")));

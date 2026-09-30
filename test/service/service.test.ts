@@ -784,6 +784,63 @@ test("refuses a divergent file until replace explicitly adopts it", async () => 
 	await service.verify();
 });
 
+test("replacement imports preserve reference history and cannot reuse a dropped task identity", async () => {
+	const projectId = randomUUID();
+	const worklist = importedWorklist();
+	await service.importWorklist({
+		projectId,
+		actorId: owner.actorId,
+		worklist,
+		replace: false,
+		dryRun: false,
+	});
+	const serverOnly = await service.execute(
+		owner,
+		command(projectId, 1, { action: "add", title: "Server only task" }),
+	);
+	const toDelete = await service.execute(
+		owner,
+		command(projectId, 2, { action: "add", title: "Deleted on server" }),
+	);
+	await service.execute(
+		owner,
+		command(projectId, 3, { action: "delete", taskId: toDelete.taskIds[0], confirm: true }),
+	);
+	const before = await service.snapshot(owner, projectId);
+	const incoming = {
+		...worklist,
+		goals: [
+			{ ...worklist.goals[0], id: "review-the-manual", previousIds: ["review-the-guide"], dependsOn: [] },
+		],
+		retiredIds: [],
+	};
+	const input = { projectId, actorId: owner.actorId, worklist: incoming, replace: true, dryRun: false };
+	const replaced = await service.importWorklist(input);
+	const snapshot = await service.snapshot(owner, projectId);
+	expect(snapshot.worklist.retiredIds).toEqual(
+		expect.arrayContaining(["removed-task", "deleted-on-server", "ship-the-draft", "server-only-task"]),
+	);
+	expect(snapshot.worklist.goals[0].previousIds).toEqual(["review-the-guide", "goal-old-review"]);
+	expect(snapshot.tasks[0].taskId).toBe(before.tasks[0].taskId);
+	expect(incoming.retiredIds).toEqual([]);
+	expect(incoming.goals[0].previousIds).toEqual(["review-the-guide"]);
+	expect(await service.importWorklist({ ...input, replace: false })).toMatchObject({
+		resolution: "unchanged",
+		changed: false,
+		revision: replaced.revision,
+	});
+	const newTask = await service.execute(
+		owner,
+		command(projectId, replaced.revision, { action: "add", title: "Server only task" }),
+	);
+	expect(newTask.taskIds[0]).not.toBe(serverOnly.taskIds[0]);
+	const afterAdd = await service.snapshot(owner, projectId);
+	expect(afterAdd.tasks[1].reference).toBe("server-only-task-2");
+	await service.importWorklist(input);
+	expect((await service.snapshot(owner, projectId)).worklist.retiredIds).toContain("server-only-task-2");
+	await service.verify();
+});
+
 test("previews a new import without creating a project and rejects invalid targets", async () => {
 	const projectId = randomUUID();
 	const preview = await service.importWorklist({

@@ -11,6 +11,7 @@ import {
 	assertProjectId,
 	assignImportedIdentities,
 	parseImportWorklist,
+	preserveImportedReferences,
 	type WorklistImportInput,
 	worklistFingerprint,
 } from "./import.ts";
@@ -390,7 +391,8 @@ export class AuthoritativeService {
 				throw new ServiceError("FORBIDDEN", "Worklist import requires a project owner.", 403);
 			}
 			const current = Number(row.revision);
-			if (worklistFingerprint(row.state.worklist) === fingerprint)
+			const imported = this.importedState(worklist, fingerprint, fileRevision, row.state);
+			if (worklistFingerprint(row.state.worklist) === worklistFingerprint(imported.worklist))
 				return outcome("unchanged", current, false);
 			if (!input.replace) {
 				const serverFingerprint = worklistFingerprint(row.state.worklist).slice(0, 12);
@@ -407,7 +409,6 @@ export class AuthoritativeService {
 				throw new ServiceError("REVISION_EXHAUSTED", "Project revision cannot advance.", 409);
 			}
 			if (input.dryRun) return outcome("replace-with-file", current + 1, true);
-			const imported = this.importedState(worklist, fingerprint, fileRevision, row.state);
 			await this.writeImport(client, input.projectId, input.actorId, current, imported, false);
 			return outcome("replace-with-file", current + 1, true);
 		});
@@ -418,7 +419,7 @@ export class AuthoritativeService {
 		fileRevision: number,
 		previous: State,
 	): State {
-		const stored = structuredClone(worklist);
+		const stored = preserveImportedReferences(previous.worklist, worklist);
 		const identities = assignImportedIdentities(
 			previous.worklist.goals,
 			previous.worklist.retiredIds ?? [],

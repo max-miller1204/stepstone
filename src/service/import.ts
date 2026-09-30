@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { findDependencyCycleFromRoots } from "../dependencies.ts";
-import { findGoalByStoredId } from "../goal-selection.ts";
+import { findGoalByStoredId, takenGoalIds } from "../goal-selection.ts";
 import { isProjectWorklist } from "../project-store.ts";
 import type { ProjectGoal, RevisionedProjectWorklist } from "../types.ts";
 import { canonical, hash, ServiceError } from "./protocol.ts";
@@ -113,6 +113,28 @@ export function assertImportRequest(projectId: string, actorId: string): void {
 			"Import actor must be an OIDC actor ID from stepstone-server actor.",
 		);
 	}
+}
+
+/** Keep former references for retained goals and retire references of dropped goals. */
+export function preserveImportedReferences(
+	previous: RevisionedProjectWorklist,
+	incoming: RevisionedProjectWorklist,
+): RevisionedProjectWorklist {
+	const stored = structuredClone(incoming);
+	for (const goal of stored.goals) {
+		const matched = matchingGoal(previous.goals, previous.retiredIds ?? [], goal);
+		if (!matched) continue;
+		const former = new Set([...(goal.previousIds ?? []), matched.id, ...(matched.previousIds ?? [])]);
+		former.delete(goal.id);
+		if (former.size) goal.previousIds = [...former];
+	}
+	const retained = takenGoalIds({ ...stored, retiredIds: [] });
+	const retired = new Set(stored.retiredIds ?? []);
+	for (const reference of takenGoalIds(previous)) {
+		if (!retained.has(reference)) retired.add(reference);
+	}
+	if (retired.size) stored.retiredIds = [...retired];
+	return parseImportWorklist(stored);
 }
 
 /**

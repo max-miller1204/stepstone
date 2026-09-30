@@ -3,7 +3,13 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { loadImportWorklist, parseImportWorklist, parseServerImportArgs } from "../../src/service/import.ts";
+import { findGoalByStoredId, generateGoalId, takenGoalIds } from "../../src/goal-selection.ts";
+import {
+	loadImportWorklist,
+	parseImportWorklist,
+	parseServerImportArgs,
+	preserveImportedReferences,
+} from "../../src/service/import.ts";
 import { parseCommand } from "../../src/service/protocol.ts";
 
 test("rejects unsupported plan links at the command boundary", () => {
@@ -29,6 +35,48 @@ const goal = (id: string, extra: Record<string, unknown> = {}) => ({
 	createdAt: stamp,
 	updatedAt: stamp,
 	...extra,
+});
+
+test("replacement imports reserve dropped and retired references across repeated imports", () => {
+	const previous = parseImportWorklist({
+		version: 1,
+		goals: [goal("server-only-task", { previousIds: ["former-task"] })],
+		retiredIds: ["already-retired"],
+	});
+	const incoming = parseImportWorklist({ version: 1, goals: [] });
+	const replaced = preserveImportedReferences(previous, incoming);
+	expect(replaced.retiredIds).toEqual(["already-retired", "server-only-task", "former-task"]);
+	expect(generateGoalId("Server only task", takenGoalIds(replaced))).toBe("server-only-task-2");
+	expect(generateGoalId("Former task", takenGoalIds(replaced))).toBe("former-task-2");
+	expect(generateGoalId("Already retired", takenGoalIds(replaced))).toBe("already-retired-2");
+	expect(preserveImportedReferences(replaced, incoming)).toEqual(replaced);
+	expect(incoming).not.toHaveProperty("retiredIds");
+});
+
+test("replacement imports keep former references attached to retained goal identities", () => {
+	const previous = parseImportWorklist({
+		version: 1,
+		goals: [goal("current", { previousIds: ["legacy"] })],
+	});
+	const incoming = parseImportWorklist({
+		version: 1,
+		goals: [goal("renamed", { previousIds: ["current"] })],
+	});
+	const replaced = preserveImportedReferences(previous, incoming);
+	expect(replaced.goals[0].previousIds).toEqual(["current", "legacy"]);
+	expect(findGoalByStoredId(replaced.goals, "legacy")?.id).toBe("renamed");
+	expect(generateGoalId("Legacy", takenGoalIds(replaced))).toBe("legacy-2");
+	expect(preserveImportedReferences(replaced, incoming)).toEqual(replaced);
+	expect(incoming.goals[0].previousIds).toEqual(["current"]);
+});
+
+test("replacement imports reject conflicting preserved references", () => {
+	const previous = parseImportWorklist({
+		version: 1,
+		goals: [goal("current", { previousIds: ["legacy"] })],
+	});
+	const incoming = parseImportWorklist({ version: 1, goals: [goal("current"), goal("legacy")] });
+	expect(() => preserveImportedReferences(previous, incoming)).toThrow("collides");
 });
 
 test("import arguments name the file, project, and exactly one write mode", () => {
